@@ -40,14 +40,14 @@ public record ApprovalCreateRequest(
         Long requestId
 
 ) {
-    public Approval toEntity(User user, ResourceGroup group) {
+    public Approval toEntity(User user, ResourceGroup group, String encodedPassword) {
         return Approval.builder()
                 .user(user)
                 .resourceGroup(group)
                 .volumeSize(volumeSize)
                 .validDate(validDate)
                 .username(username)
-                .password(password)
+                .password(encodedPassword)
                 .serverName(serverName)
                 .build();
     }
