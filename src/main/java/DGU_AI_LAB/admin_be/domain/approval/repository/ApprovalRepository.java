@@ -9,4 +9,5 @@ import java.util.Optional;
 @Repository
 public interface ApprovalRepository extends JpaRepository<Approval, Long> {
     Optional<Approval> findFirstByUsernameOrderByCreatedAtDesc(String username);
+    Optional<Approval> findByUsername(String username);
 }
