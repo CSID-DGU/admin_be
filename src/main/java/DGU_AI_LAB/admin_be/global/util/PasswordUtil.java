@@ -8,11 +8,8 @@ import java.util.Base64;
 public class PasswordUtil {
     private PasswordUtil() {}
 
-    public static String encodePassword(String password) {
+    public static String encodePassword(String passwordBase64) {
         try {
-            // base64 인코딩
-            String passwordBase64 = Base64.getEncoder().encodeToString(password.getBytes(StandardCharsets.UTF_8));
-
             // sha256 해싱
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(passwordBase64.getBytes(StandardCharsets.UTF_8));
