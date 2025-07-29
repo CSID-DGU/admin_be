@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.users.controller;
 import DGU_AI_LAB.admin_be.domain.approval.dto.response.ApprovalResponseDTO;
 import DGU_AI_LAB.admin_be.domain.approval.service.ApprovalService;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserAuthRequestDTO;
+import DGU_AI_LAB.admin_be.domain.users.dto.response.UserAuthResponseDTO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -17,7 +18,8 @@ public class UserAuthController {
     private final ApprovalService approvalService;
 
     @PostMapping
-    public ApprovalResponseDTO userAuth(@RequestBody UserAuthRequestDTO request) {
-        return approvalService.userAuth(request);
+    public UserAuthResponseDTO userAuth(@RequestBody UserAuthRequestDTO request) {
+        ApprovalResponseDTO approvalResponse = approvalService.userAuth(request);
+        return new UserAuthResponseDTO(true, approvalResponse.username());
     }
 }

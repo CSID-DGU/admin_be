@@ -39,7 +39,7 @@ public class ApprovalService {
         Approval approval = approvalRepository.findByUsername(request.username())
                 .orElseThrow(() -> new UnauthorizedException(ErrorCode.USER_NOT_FOUND));
 
-        String encodedPassword = PasswordUtil.encodePassword(request.password());
+        String encodedPassword = PasswordUtil.encodePassword(request.passwordBase64());
 
         if (!encodedPassword.equals(approval.getPassword())) {
             throw new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO);
