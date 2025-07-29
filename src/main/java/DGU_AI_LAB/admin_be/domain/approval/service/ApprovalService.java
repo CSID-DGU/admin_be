@@ -13,8 +13,8 @@ import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
+import DGU_AI_LAB.admin_be.global.util.PasswordUtil;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,7 +26,6 @@ public class ApprovalService {
     private final UserRepository userRepository;
     private final ResourceGroupRepository resourceGroupRepository;
     private final RequestRepository requestRepository;
-    private final PasswordEncoder passwordEncoder;
 
     public ApprovalResponseDTO getApprovalByUsername(String username) {
         Approval approval = approvalRepository
@@ -40,7 +39,9 @@ public class ApprovalService {
         Approval approval = approvalRepository.findByUsername(request.username())
                 .orElseThrow(() -> new UnauthorizedException(ErrorCode.USER_NOT_FOUND));
 
-        if (!passwordEncoder.matches(request.password(), approval.getPassword())) {
+        String encodedPassword = PasswordUtil.encodePassword(request.password());
+
+        if (!encodedPassword.equals(approval.getPassword())) {
             throw new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO);
         }
 
@@ -54,7 +55,7 @@ public class ApprovalService {
         var group = resourceGroupRepository.findById(request.resourceGroupId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_GROUP_NOT_FOUND));
 
-        String encodedPassword = passwordEncoder.encode(request.password());
+        String encodedPassword = PasswordUtil.encodePassword(request.password());
 
         Approval approval = request.toEntity(user, group, encodedPassword);
         approvalRepository.save(approval);
