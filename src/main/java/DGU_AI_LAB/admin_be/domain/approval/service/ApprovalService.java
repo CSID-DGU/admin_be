@@ -2,11 +2,15 @@ package DGU_AI_LAB.admin_be.domain.approval.service;
 
 import DGU_AI_LAB.admin_be.domain.approval.dto.request.ApprovalCreateRequest;
 import DGU_AI_LAB.admin_be.domain.approval.dto.response.ApprovalResponseDTO;
+import DGU_AI_LAB.admin_be.domain.approval.dto.response.ApprovalToConfigResponseDTO;
 import DGU_AI_LAB.admin_be.domain.approval.entity.Approval;
 import DGU_AI_LAB.admin_be.domain.approval.repository.ApprovalRepository;
+import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
+import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserAuthRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
@@ -18,6 +22,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class ApprovalService {
@@ -26,6 +32,7 @@ public class ApprovalService {
     private final UserRepository userRepository;
     private final ResourceGroupRepository resourceGroupRepository;
     private final RequestRepository requestRepository;
+    private final NodeRepository nodeRepository;
 
     public ApprovalResponseDTO getApprovalByUsername(String username) {
         Approval approval = approvalRepository
@@ -46,6 +53,17 @@ public class ApprovalService {
         }
 
         return ApprovalResponseDTO.fromEntity(approval);
+    }
+
+    public ApprovalToConfigResponseDTO getApprovalConfigByUsername(String username) {
+        Approval approval = approvalRepository.findByUsername(username)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_APPROVAL_NOT_FOUND));
+
+        ResourceGroup group = approval.getResourceGroup();
+
+        List<Node> nodes = nodeRepository.findAllByResourceGroup(group);
+
+        return ApprovalToConfigResponseDTO.fromEntity(approval, nodes);
     }
 
     @Transactional
