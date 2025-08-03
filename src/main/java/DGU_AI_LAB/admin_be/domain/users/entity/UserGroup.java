@@ -11,13 +11,12 @@ import lombok.*;
 @Builder
 public class UserGroup {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Integer id;
+    private Long gid;
 
-    @Column(name = "ubuntu_groupname", nullable = false)
-    private String ubuntuGroupname;
+    @Column(name = "groupName", nullable = false)
+    private String groupName;
 
     @OneToOne
-    @JoinColumn(name = "ubuntu_gid", referencedColumnName = "id", nullable = false, unique = true)
-    private UsedId usedGid;
+    @JoinColumn(name = "uid", referencedColumnName = "uid", nullable = false)
+    private UsedId usedId;
 }

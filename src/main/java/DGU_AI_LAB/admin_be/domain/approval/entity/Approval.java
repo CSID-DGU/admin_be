@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.approval.entity;
 
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
+import DGU_AI_LAB.admin_be.domain.users.entity.UsedId;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
 import jakarta.persistence.*;
@@ -10,6 +11,7 @@ import java.time.LocalDateTime;
 
 @Table(name = "approval")
 @Getter
+@Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
@@ -20,7 +22,7 @@ public class Approval extends BaseTimeEntity{
     private Long approvalId;
 
     @Column(nullable = false)
-    private Integer volumeSize; // GB
+    private Integer volumeSize; // Gi
 
     @Column(name = "validDate")
     private LocalDateTime validDate;
@@ -38,6 +40,10 @@ public class Approval extends BaseTimeEntity{
     @ManyToOne(optional = false)
     @JoinColumn(name = "user_id")
     private User user;
+
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "uid", referencedColumnName = "uid", nullable = false)
+    private UsedId usedId;
 
     @ManyToOne(optional = false)
     @JoinColumn(name = "resource_group_id")

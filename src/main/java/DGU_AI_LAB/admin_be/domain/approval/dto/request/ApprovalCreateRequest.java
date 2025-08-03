@@ -5,6 +5,7 @@ import DGU_AI_LAB.admin_be.domain.approval.entity.ServerName;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Builder;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -28,6 +29,9 @@ public record ApprovalCreateRequest(
 
         @NotNull
         String username,
+
+        @NotBlank
+        String groupname,
 
         @NotNull
         String password,
