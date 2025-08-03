@@ -9,6 +9,7 @@ import java.util.List;
 @Builder
 public record ApprovalToConfigResponseDTO(
         String username,                  // ubuntu 계정명
+        String image,
         Long uid,
         Long gid,
         Integer volumeSize,               // 볼륨 크기 (Gi)
@@ -16,7 +17,6 @@ public record ApprovalToConfigResponseDTO(
         String gpu_group,                   // 리소스 그룹 정보
         ServerName server_type,             // 서버명 (ENUM)
         List<NodeDTO> gpu_nodes
-        // image 추가
 ) {
 
     @Builder
@@ -29,6 +29,7 @@ public record ApprovalToConfigResponseDTO(
 
     public static ApprovalToConfigResponseDTO fromEntity(Approval approval, List<Node> nodes, Long gid) {
         var group = approval.getResourceGroup();
+        var image = approval.getImage();
 
         List<NodeDTO> nodeDTOList = nodes.stream()
                 .map(node -> NodeDTO.builder()
@@ -41,6 +42,7 @@ public record ApprovalToConfigResponseDTO(
 
         return ApprovalToConfigResponseDTO.builder()
                 .username(approval.getUsername())
+                .image(image.getImageVersion() + ":" + image.getImageTag())
                 .uid(approval.getUsedId().getUid())
                 .gid(gid)
                 .volumeSize(approval.getVolumeSize())

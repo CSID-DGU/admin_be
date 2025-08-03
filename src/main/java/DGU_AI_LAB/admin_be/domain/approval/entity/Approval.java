@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.approval.entity;
 
+import DGU_AI_LAB.admin_be.domain.image.entity.Image;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.users.entity.UsedId;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
@@ -49,5 +50,8 @@ public class Approval extends BaseTimeEntity{
     @JoinColumn(name = "resource_group_id")
     private ResourceGroup resourceGroup;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "image_id", nullable = false)
+    private Image image;
 }
 

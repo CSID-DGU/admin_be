@@ -5,6 +5,7 @@ import DGU_AI_LAB.admin_be.domain.approval.dto.response.ApprovalResponseDTO;
 import DGU_AI_LAB.admin_be.domain.approval.dto.response.ApprovalToConfigResponseDTO;
 import DGU_AI_LAB.admin_be.domain.approval.entity.Approval;
 import DGU_AI_LAB.admin_be.domain.approval.repository.ApprovalRepository;
+import DGU_AI_LAB.admin_be.domain.image.repository.ImageRepository;
 import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
 import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
@@ -41,6 +42,7 @@ public class ApprovalService {
     private final UsedIdRepository usedIdRepository;
     private final UserService userService;
     private final UserGroupRepository userGroupRepository;
+    private final ImageRepository imageRepository;
 
     public ApprovalResponseDTO getApprovalByUsername(String username) {
         Approval approval = approvalRepository
@@ -84,6 +86,8 @@ public class ApprovalService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         var group = resourceGroupRepository.findById(request.resourceGroupId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_GROUP_NOT_FOUND));
+        var image = imageRepository.findById(request.imageId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.ENTITY_NOT_FOUND));
 
         String encodedPassword = PasswordUtil.encodePassword(request.password());
         String username = request.username();
@@ -92,7 +96,7 @@ public class ApprovalService {
         var ids = userService.allocateNextAvailableUidGid(username, groupname);
 
         UsedId newUsedId = usedIdRepository.save(new UsedId(ids.uid()));
-        Approval approval = request.toEntity(user, group, encodedPassword);
+        Approval approval = request.toEntity(user, group, image, encodedPassword);
         approval.setUsedId(newUsedId);
         approvalRepository.save(approval);
 
