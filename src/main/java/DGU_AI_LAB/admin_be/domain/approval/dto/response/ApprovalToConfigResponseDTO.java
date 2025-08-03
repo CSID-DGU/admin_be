@@ -9,12 +9,14 @@ import java.util.List;
 @Builder
 public record ApprovalToConfigResponseDTO(
         String username,                  // ubuntu 계정명
+        Long uid,
+        Long gid,
         Integer volumeSize,               // 볼륨 크기 (Gi)
         Boolean gpu_required,
         String gpu_group,                   // 리소스 그룹 정보
         ServerName server_type,             // 서버명 (ENUM)
         List<NodeDTO> gpu_nodes
-        // uid, gid, image 추가
+        // image 추가
 ) {
 
     @Builder
@@ -25,7 +27,7 @@ public record ApprovalToConfigResponseDTO(
             Integer num_gpu
     ) {}
 
-    public static ApprovalToConfigResponseDTO fromEntity(Approval approval, List<Node> nodes) {
+    public static ApprovalToConfigResponseDTO fromEntity(Approval approval, List<Node> nodes, Long gid) {
         var group = approval.getResourceGroup();
 
         List<NodeDTO> nodeDTOList = nodes.stream()
@@ -39,6 +41,8 @@ public record ApprovalToConfigResponseDTO(
 
         return ApprovalToConfigResponseDTO.builder()
                 .username(approval.getUsername())
+                .uid(approval.getUsedId().getUid())
+                .gid(gid)
                 .volumeSize(approval.getVolumeSize())
                 .gpu_required(true)
                 .gpu_group(group.getResourceGroupName())

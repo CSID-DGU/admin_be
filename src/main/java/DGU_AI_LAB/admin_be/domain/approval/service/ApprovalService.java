@@ -40,8 +40,7 @@ public class ApprovalService {
     private final NodeRepository nodeRepository;
     private final UsedIdRepository usedIdRepository;
     private final UserService userService;
-
-    private static final long UID_BASE = 10000;
+    private final UserGroupRepository userGroupRepository;
 
     public ApprovalResponseDTO getApprovalByUsername(String username) {
         Approval approval = approvalRepository
@@ -72,7 +71,11 @@ public class ApprovalService {
 
         List<Node> nodes = nodeRepository.findAllByResourceGroup(group);
 
-        return ApprovalToConfigResponseDTO.fromEntity(approval, nodes);
+        Long gid = userGroupRepository.findByUsedId(approval.getUsedId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.ENTITY_NOT_FOUND))
+                .getGid();
+
+        return ApprovalToConfigResponseDTO.fromEntity(approval, nodes, gid);
     }
 
     @Transactional

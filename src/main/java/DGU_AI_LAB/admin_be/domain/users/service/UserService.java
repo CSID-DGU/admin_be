@@ -135,18 +135,33 @@ public class UserService {
 
     private Long getOrCreateGid(String groupname, String username, Long uid) {
         Optional<UserGroup> group = userGroupRepository.findByGroupName(groupname);
-        if (group.isPresent()) return group.get().getGid();
+        if (group.isPresent()) {
+            UserGroup existingGroup = group.get();
 
-        Long gid = groupname.equals(username) ? uid : uid + 1;
-        UsedId usedId = usedIdRepository.findById(uid)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
+            boolean alreadyLinked = userGroupRepository.existsByGroupNameAndUid(groupname, uid);
+            if (!alreadyLinked) {
+                UsedId usedId = usedIdRepository.findById(uid)
+                        .orElseThrow(() -> new IllegalStateException("UsedId not found: " + uid));
 
-        userGroupRepository.save(UserGroup.builder()
-                .gid(gid)
-                .groupName(groupname)
-                .usedId(usedId)
-                .build());
-        return gid;
+                userGroupRepository.save(UserGroup.builder()
+                        .gid(existingGroup.getGid())
+                        .groupName(groupname)
+                        .usedId(usedId)
+                        .build());
+            }
+            return existingGroup.getGid();
+        } else {
+            Long gid = groupname.equals(username) ? uid : uid + 1;
+            UsedId usedId = usedIdRepository.findById(uid)
+                    .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
+
+            userGroupRepository.save(UserGroup.builder()
+                    .gid(gid)
+                    .groupName(groupname)
+                    .usedId(usedId)
+                    .build());
+            return gid;
+        }
     }
 
     public record UnixIdResult(Long uid, Long gid) {}
