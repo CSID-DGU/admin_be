@@ -11,7 +11,7 @@ import jakarta.validation.constraints.NotBlank;
 public record SaveRequestDTO(
         Long requestId,
         @NotBlank String serverName,
-        @NotBlank Status status,
+        @NotNull Status status,
         @NotNull List<RequestAnswerDTO> answers
 ) {
     public static SaveRequestDTO fromEntity(Request request) {

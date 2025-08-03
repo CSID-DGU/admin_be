@@ -2,9 +2,11 @@ package DGU_AI_LAB.admin_be.domain.approval.dto.request;
 
 import DGU_AI_LAB.admin_be.domain.approval.entity.Approval;
 import DGU_AI_LAB.admin_be.domain.approval.entity.ServerName;
+import DGU_AI_LAB.admin_be.domain.image.entity.Image;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Builder;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -18,6 +20,9 @@ public record ApprovalCreateRequest(
         Long userId,
 
         @NotNull
+        Long imageId,
+
+        @NotNull
         Long resourceGroupId,
 
         @NotNull @Min(1)
@@ -28,6 +33,9 @@ public record ApprovalCreateRequest(
 
         @NotNull
         String username,
+
+        @NotBlank
+        String groupname,
 
         @NotNull
         String password,
@@ -40,14 +48,15 @@ public record ApprovalCreateRequest(
         Long requestId
 
 ) {
-    public Approval toEntity(User user, ResourceGroup group) {
+    public Approval toEntity(User user, ResourceGroup group, Image image, String encodedPassword) {
         return Approval.builder()
                 .user(user)
+                .image(image)
                 .resourceGroup(group)
                 .volumeSize(volumeSize)
                 .validDate(validDate)
                 .username(username)
-                .password(password)
+                .password(encodedPassword)
                 .serverName(serverName)
                 .build();
     }
