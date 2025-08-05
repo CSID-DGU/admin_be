@@ -45,4 +45,11 @@ public class RequestService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
         return RequestResponseDTO.fromEntity(request);
     }
+
+    public List<RequestResponseDTO> getRequestsByUserId(Long userId) {
+        List<Request> requests = requestRepository.findAllByUser_UserId(userId);
+        return requests.stream()
+                .map(RequestResponseDTO::fromEntity)
+                .toList();
+    }
 }

@@ -14,6 +14,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
+import java.util.List;
+
 @Tag(name = "사용 신청", description = "서버 사용 신청 등록 및 조회 API")
 public interface RequestApi {
 
@@ -32,5 +34,12 @@ public interface RequestApi {
             content = @Content(schema = @Schema(implementation = SaveRequestDTO.class)))
     ResponseEntity<RequestResponseDTO> getRequest(
             @Parameter(description = "신청 ID", example = "1") @PathVariable Long id
+    );
+
+    @Operation(summary = "사용자별 신청 조회", description = "UserID로 사용자별 신청 내용을 조회합니다.")
+    @ApiResponse(responseCode = "200", description = "신청 반환",
+            content = @Content(schema = @Schema(implementation = SaveRequestDTO.class)))
+    ResponseEntity<List<RequestResponseDTO>> getRequestsByUser(
+            @Parameter(description = "USERID", example = "1") @PathVariable Long userId
     );
 }
