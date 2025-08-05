@@ -7,6 +7,7 @@ import java.util.List;
 
 public record RequestResponseDTO (
     Long requestID,
+    Long userID,
     String serverName,
     Status status,
     String reason,
@@ -15,6 +16,7 @@ public record RequestResponseDTO (
     public static RequestResponseDTO fromEntity(Request request) {
         return new RequestResponseDTO(
                 request.getRequestId(),
+                request.getUser().getUserId(),
                 request.getServerName(),
                 request.getStatus(),
                 request.getReason(),

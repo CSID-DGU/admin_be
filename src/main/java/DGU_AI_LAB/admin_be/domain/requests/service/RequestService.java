@@ -4,6 +4,9 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.RequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
+import DGU_AI_LAB.admin_be.domain.users.service.UserService;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -15,6 +18,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class RequestService {
     private final RequestRepository requestRepository;
+    private final UserRepository userRepository;
 
     // TODO: saveRequestDTO 메서드가 두개인데, 수정이 필요한 것 같아요!
     @Transactional
@@ -23,7 +27,10 @@ public class RequestService {
             throw new BusinessException(ErrorCode.MISSING_REQUEST_PARAMETER);
         }
 
-        Request saved = requestRepository.save(requestDto.toEntity());
+        User user = userRepository.findById(requestDto.userId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        Request saved = requestRepository.save(requestDto.toEntity(user));
         return RequestResponseDTO.fromEntity(saved);
     }
 

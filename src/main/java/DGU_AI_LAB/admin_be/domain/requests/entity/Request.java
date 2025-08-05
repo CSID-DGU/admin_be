@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.entity;
 
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
 import jakarta.persistence.*;
 import lombok.*;
@@ -28,6 +29,10 @@ public class Request extends BaseTimeEntity  {
 
     @Column(name = "reason", columnDefinition = "TEXT")
     private String reason;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
 
     @Builder.Default
     @OneToMany(mappedBy = "request", cascade = CascadeType.ALL, orphanRemoval = true)
