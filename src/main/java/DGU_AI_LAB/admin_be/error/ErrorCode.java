@@ -64,6 +64,16 @@ public enum ErrorCode {
     JSON_PARSING_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "JSON 파싱에 실패하였습니다."),
 
     /**
+     * 502 Bad Gateway
+     */
+    SLACK_DM_CHANNEL_FAILED(HttpStatus.BAD_GATEWAY, "Slack DM 채널 열기를 실패하였습니다."),
+
+    /**
+     * 503 Service Unavailable
+     */
+    SLACK_SEND_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "Slack 메시지 전송에 실패하였습니다."),
+
+    /**
      * User Error
      */
     AUTHENTICATION_FAILED(HttpStatus.UNAUTHORIZED, "사용자 인증에 실패하였습니다."),
@@ -71,6 +81,8 @@ public enum ErrorCode {
     USER_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 가입된 사용자입니다."),
     DUPLICATE_NAME(HttpStatus.CONFLICT, "중복된 닉네임입니다."),
     INVALID_LOGIN_INFO(HttpStatus.BAD_REQUEST, "잘못된 로그인 입력값입니다."),
+    SLACK_USER_NOT_FOUND(HttpStatus.NOT_FOUND, "Slack 사용자를 찾을 수 없습니다."),
+    SLACK_USER_EMAIL_NOT_MATCH(HttpStatus.NOT_FOUND, "이메일이 일치하는 Slack 사용자를 찾을 수 없습니다."),
 
     /**
      * Approval Error
