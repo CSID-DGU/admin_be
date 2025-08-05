@@ -163,4 +163,9 @@ public class AlarmService {
             throw new BusinessException(ErrorCode.SLACK_SEND_FAILED);
         }
     }
+
+    public void sendAllAlerts(String username, String email, String subject, String message) {
+        sendDMAlert(username, email, message);
+        sendMailAlert(email, subject, message);
+    }
 }
