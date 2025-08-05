@@ -32,4 +32,23 @@ public interface AlarmApi {
             @Parameter(description = "전송할 메시지")
             @RequestParam @NotBlank String message
     );
+
+    @Operation(
+            summary = "Email 알림 전송",
+            description = "Email로 알림 메시지를 전송합니다"
+    )
+    @ApiResponse(
+            responseCode = "200", description = "Email 전송 성공",
+            content = @Content(schema = @Schema(implementation = SuccessResponse.class))
+    )
+    ResponseEntity<?> sendEmailAlert(
+            @Parameter(description = "이메일 받을 주소")
+            @RequestParam @NotBlank String to,
+
+            @Parameter(description = "이메일 제목")
+            @RequestParam @Email String subject,
+
+            @Parameter(description = "이메일 내용")
+            @RequestParam @NotBlank String body
+    );
 }

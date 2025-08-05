@@ -30,6 +30,27 @@ public class AlarmController implements AlarmApi {
             @RequestParam("message") String message
     ) {
         alarmService.sendDMAlert(username, email, message);
-        return ResponseEntity.ok("Slack DM 전송 요청 완료");
+        return ResponseEntity.ok("Alert sent to Slack DM");
+    }
+
+    @PostMapping("/email")
+    public ResponseEntity<?> sendEmailAlert(
+            @RequestParam String to,
+            @RequestParam String subject,
+            @RequestParam String body
+    ) {
+        alarmService.sendMailAlert(to, subject, body);
+        return ResponseEntity.ok("Alert sent to Email");
+    }
+
+    @PostMapping
+    public ResponseEntity<String> sendAllAlerts(
+            @RequestParam("username") String username,
+            @RequestParam("email") String email,
+            @RequestParam("subject") String subject,
+            @RequestParam("message") String message
+    ) {
+        alarmService.sendAllAlerts(username, email, subject, message);
+        return ResponseEntity.ok("Slack DM 및 이메일 전송 완료");
     }
 }
