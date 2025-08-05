@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.alarm.controller;
 
+import DGU_AI_LAB.admin_be.domain.alarm.controller.docs.AlarmApi;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -12,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/alert")
-public class AlarmController {
+public class AlarmController implements AlarmApi {
 
     private final AlarmService alarmService;
 
