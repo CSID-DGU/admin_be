@@ -31,7 +31,7 @@ public class RequestProcessingController implements RequestProcessingApi {
 
     @PostMapping("/reject")
     public ResponseEntity<?> reject(@RequestBody @Valid RequestRejectDTO request) {
-        requestProcessingService.rejectRequest(request.requestId());
+        requestProcessingService.rejectRequest(request.requestId(), request.reason());
         return ResponseEntity.ok().build();
     }
 }

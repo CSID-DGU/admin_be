@@ -9,6 +9,7 @@ public record RequestResponseDTO (
     Long requestID,
     String serverName,
     Status status,
+    String reason,
     List<AnswerResponseDTO> answers
 ) {
     public static RequestResponseDTO fromEntity(Request request) {
@@ -16,6 +17,7 @@ public record RequestResponseDTO (
                 request.getRequestId(),
                 request.getServerName(),
                 request.getStatus(),
+                request.getReason(),
                 request.getAnswers().stream()
                         .map(AnswerResponseDTO::fromEntity)
                         .toList()

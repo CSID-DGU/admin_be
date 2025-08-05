@@ -26,11 +26,19 @@ public class Request extends BaseTimeEntity  {
     @Builder.Default
     private Status status = Status.HOLD;
 
+    @Column(name = "reason", columnDefinition = "TEXT")
+    private String reason;
+
     @Builder.Default
     @OneToMany(mappedBy = "request", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Answer> answers = new ArrayList<>();
 
     public void updateStatus(Status status) {
         this.status = status;
+    }
+
+    public void reject(Status status, String reason) {
+        this.status = status;
+        this.reason = reason;
     }
 }

@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.RequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -17,24 +18,24 @@ public class RequestService {
 
     // TODO: saveRequestDTO 메서드가 두개인데, 수정이 필요한 것 같아요!
     @Transactional
-    public SaveRequestDTO saveRequest(SaveRequestDTO UseRequest) {
-        if (UseRequest.answers() == null || UseRequest.answers().isEmpty()) {
+    public RequestResponseDTO saveRequest(SaveRequestDTO requestDto) {
+        if (requestDto.answers() == null || requestDto.answers().isEmpty()) {
             throw new BusinessException(ErrorCode.MISSING_REQUEST_PARAMETER);
         }
 
-        Request saved = requestRepository.save(UseRequest.toEntity());
-        return SaveRequestDTO.fromEntity(saved);
+        Request saved = requestRepository.save(requestDto.toEntity());
+        return RequestResponseDTO.fromEntity(saved);
     }
 
-    public List<SaveRequestDTO> getAllRequests() {
+    public List<RequestResponseDTO> getAllRequests() {
         return requestRepository.findAll().stream()
-                .map(SaveRequestDTO::fromEntity)
+                .map(RequestResponseDTO::fromEntity)
                 .toList();
     }
 
-    public SaveRequestDTO getRequestById(Long id) {
+    public RequestResponseDTO getRequestById(Long id) {
         Request request = requestRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        return SaveRequestDTO.fromEntity(request);
+        return RequestResponseDTO.fromEntity(request);
     }
 }

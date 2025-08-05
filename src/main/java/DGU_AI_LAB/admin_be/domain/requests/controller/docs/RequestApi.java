@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller.docs;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.RequestResponseDTO;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -29,7 +30,7 @@ public interface RequestApi {
     @Operation(summary = "개별 신청 조회", description = "ID로 특정 신청 내용을 조회합니다.")
     @ApiResponse(responseCode = "200", description = "신청 반환",
             content = @Content(schema = @Schema(implementation = SaveRequestDTO.class)))
-    ResponseEntity<SaveRequestDTO> getRequest(
+    ResponseEntity<RequestResponseDTO> getRequest(
             @Parameter(description = "신청 ID", example = "1") @PathVariable Long id
     );
 }

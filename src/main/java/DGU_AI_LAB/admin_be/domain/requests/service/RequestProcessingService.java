@@ -73,10 +73,10 @@ public class RequestProcessingService {
     }
 
     @Transactional
-    public void rejectRequest(Long requestId) {
+    public void rejectRequest(Long requestId, String reason) {
         Request request = requestRepository.findById(requestId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        request.updateStatus(Status.REJECTED);
+        request.reject(Status.REJECTED, reason);
     }
 }
