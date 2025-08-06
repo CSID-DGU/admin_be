@@ -1,8 +1,7 @@
-package DGU_AI_LAB.admin_be.domain.admins.controller.docs;
+package DGU_AI_LAB.admin_be.domain.users.controller.docs;
 
-import DGU_AI_LAB.admin_be.domain.admins.dto.request.UserLoginRequestDTO;
-import DGU_AI_LAB.admin_be.domain.admins.dto.response.UserTokenResponseDTO;
-import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
+import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -24,11 +23,4 @@ public interface AuthApi {
     )
     ResponseEntity<UserTokenResponseDTO> login(@RequestBody @Valid UserLoginRequestDTO request);
 
-    @Operation(summary = "테스트용 관리자 회원가입", description = "테스트용으로 관리자 계정을 등록합니다. (실서비스에서는 사용하지 않습니다)")
-    @ApiResponse(
-            responseCode = "200",
-            description = "회원가입 성공",
-            content = @Content(schema = @Schema(implementation = SuccessResponse.class))
-    )
-    ResponseEntity<?> register(@RequestBody @Valid UserLoginRequestDTO request);
 }

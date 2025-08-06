@@ -1,4 +1,4 @@
-package DGU_AI_LAB.admin_be.domain.admins.dto.response;
+package DGU_AI_LAB.admin_be.domain.users.dto.response;
 
 public record UserTokenResponseDTO(
         String accessToken,
