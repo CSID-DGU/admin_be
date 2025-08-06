@@ -15,7 +15,7 @@ public record UserCreateRequestDTO(
     public User toEntity() {
         return User.builder()
                 .name(name)
-                .webId(user_id)
+                //.webId(user_id)
                 .email(email)
                 .password(password)
                 .isActive(isActive)
