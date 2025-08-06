@@ -12,10 +12,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 import jakarta.validation.Valid;
 
-@Tag(name = "인증", description = "관리자 로그인 및 회원가입 API")
+@Tag(name = "인증", description = "로그인 및 회원가입 API")
 public interface AuthApi {
 
-    @Operation(summary = "관리자 로그인", description = "아이디/비밀번호로 로그인하여 액세스 토큰을 발급받습니다.")
+    @Operation(summary = "유저/관리자 로그인", description = "이메일/비밀번호로 로그인하여 액세스 토큰을 발급받습니다.")
     @ApiResponse(
             responseCode = "200",
             description = "로그인 성공",
