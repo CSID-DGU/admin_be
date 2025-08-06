@@ -13,7 +13,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
-import DGU_AI_LAB.admin_be.domain.users.dto.request.UserAuthRequestDTO;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.ApprovalAuthRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.UsedId;
 import DGU_AI_LAB.admin_be.domain.users.repository.UsedIdRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserGroupRepository;
@@ -52,7 +52,7 @@ public class ApprovalService {
         return ApprovalResponseDTO.fromEntity(approval);
     }
 
-    public ApprovalResponseDTO userAuth(UserAuthRequestDTO request) {
+    public ApprovalResponseDTO userAuth(ApprovalAuthRequestDTO request) {
         Approval approval = approvalRepository.findByUsername(request.username())
                 .orElseThrow(() -> new UnauthorizedException(ErrorCode.USER_NOT_FOUND));
 
