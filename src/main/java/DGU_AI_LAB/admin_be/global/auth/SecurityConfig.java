@@ -45,7 +45,7 @@ public class SecurityConfig {
                 .sessionManagement(config -> config.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(config -> config.authenticationEntryPoint(jwtAuthenticationEntryPoint))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(SecurityWhitelist.SPRING_WHITE_LIST).permitAll()
+                        .requestMatchers(SecurityWhitelist.UNPROTECTED_PATHS.toArray(new String[0])).permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilter(corsConfig.corsFilter())

@@ -100,15 +100,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         log.info("[JwtAuthFilter] 현재 요청 URI = {}", path);
 
-        if (SecurityWhitelist.EXACT_SKIP_PATHS.contains(path)) {
-            return true;
-        }
-
-        for (String pattern : SecurityWhitelist.PATTERN_SKIP_PATHS) {
+        for (String pattern : SecurityWhitelist.UNPROTECTED_PATHS) {
             if (pathMatcher.match(pattern, path)) {
+                log.info("[JwtAuthFilter] 인증 불필요한 경로: {}", pattern);
                 return true;
             }
         }
         return false;
     }
+
 }
