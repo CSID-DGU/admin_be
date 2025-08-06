@@ -25,7 +25,7 @@ public record RequestApproveDTO(
         return User.builder()
                 .name(name)
                 .email(email)
-                .webId(username)
+                //.webId(username)
                 .password(passwordEncoder.encode(defaultPassword))
                 .role(DEFAULT_ROLE)
                 .build();
