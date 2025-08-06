@@ -19,7 +19,7 @@ public class AuthController implements AuthApi {
     private final UserLoginService userLoginService;
 
     /**
-     * 회원가입
+     * 3) 회원가입
      */
     @PostMapping("/register")
     public ResponseEntity<Void> register(@RequestBody @Valid UserRegisterRequestDTO request) {
