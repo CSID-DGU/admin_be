@@ -34,6 +34,7 @@ public class UserService {
 
     private static final long UID_BASE = 10000;
 
+
     /**
      * 유저 생성
      */
