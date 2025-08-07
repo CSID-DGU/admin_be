@@ -5,6 +5,7 @@ import java.util.stream.Collectors;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Answer;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.NotBlank;
 
@@ -12,6 +13,7 @@ public record SaveRequestDTO(
         Long requestId,
         @NotBlank String serverName,
         @NotNull Status status,
+        @NotNull Long userId,
         @NotNull List<RequestAnswerDTO> answers
 ) {
     public static SaveRequestDTO fromEntity(Request request) {
@@ -23,14 +25,16 @@ public record SaveRequestDTO(
                 request.getRequestId(),
                 request.getServerName(),
                 request.getStatus(),
+                request.getUser().getUserId(),
                 answerDTOs
         );
     }
 
-    public Request toEntity() {
+    public Request toEntity(User user) {
         Request request = Request.builder()
                 .serverName(this.serverName)
                 .status(this.status)
+                .user(user)
                 .build();
 
         List<Answer> answerEntities = this.answers.stream()
