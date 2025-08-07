@@ -26,7 +26,7 @@ public class SecurityConfig {
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
     private final CorsConfig corsConfig;
     private final JwtProvider jwtProvider;
-    private final AuthService authService;
+    private final CustomUserDetailsService customUserDetailsService;
     private final RedisTemplate<String, String> redisTemplate;
 
     @Bean
@@ -45,12 +45,12 @@ public class SecurityConfig {
                 .sessionManagement(config -> config.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(config -> config.authenticationEntryPoint(jwtAuthenticationEntryPoint))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(SecurityWhitelist.SPRING_WHITE_LIST).permitAll()
+                        .requestMatchers(SecurityWhitelist.UNPROTECTED_PATHS.toArray(new String[0])).permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilter(corsConfig.corsFilter())
                 .addFilterBefore(
-                        new JwtAuthenticationFilter(jwtProvider, authService, redisTemplate),
+                        new JwtAuthenticationFilter(jwtProvider, customUserDetailsService, redisTemplate),
                         UsernamePasswordAuthenticationFilter.class
                 )
                 .addFilterBefore(new ExceptionHandlerFilter(), JwtAuthenticationFilter.class)
@@ -62,4 +62,3 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 }
-
