@@ -34,12 +34,12 @@ public class UserController {
         return SuccessResponse.ok(userService.createUser(request));
     }
 
-    @PutMapping("/{id}")
+    @PutMapping("/{id}") // TODO: 관리자용 updateUser와 분리 필요
     public ResponseEntity<SuccessResponse<?>> updateUser(@PathVariable Long id, @Valid @RequestBody UserUpdateRequestDTO request) {
         return SuccessResponse.ok(userService.updateUser(id, request));
     }
 
-    @DeleteMapping("/{id}")
+    @DeleteMapping("/{id}") // TODO: soft delete로 수정하기
     public ResponseEntity<SuccessResponse<?>> deleteUser(@PathVariable Long id) {
         userService.deleteUser(id);
         return SuccessResponse.ok(null);

@@ -1,7 +1,9 @@
 package DGU_AI_LAB.admin_be.error;
 
+import DGU_AI_LAB.admin_be.domain.users.dto.response.UserAuthResponseDTO;
 import DGU_AI_LAB.admin_be.error.dto.ErrorResponse;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +28,16 @@ public class GlobalExceptionHandler {
         log.error(">>> handle: MethodArgumentNotValidException ", e);
         final ErrorResponse errorBaseResponse = ErrorResponse.of(ErrorCode.BAD_REQUEST);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorBaseResponse);
+    }
+
+    /**
+     * UnauthorizedException을 handling합니다.
+     */
+    @ExceptionHandler(UnauthorizedException.class)
+    protected ResponseEntity<UserAuthResponseDTO> handleUnauthorizedException(UnauthorizedException e) {
+        log.warn(">>> handle: UnauthorizedException - {}", e.getMessage());
+        UserAuthResponseDTO response = new UserAuthResponseDTO(false, "");
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
     }
 
     /**

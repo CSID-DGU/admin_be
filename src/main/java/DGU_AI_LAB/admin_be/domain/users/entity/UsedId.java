@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.users.entity;
 
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -14,5 +15,6 @@ import lombok.*;
 @Builder
 public class UsedId extends BaseTimeEntity {
     @Id
-    private Long id;
+    @Column(name = "uid")
+    private Long uid;
 }

@@ -25,16 +25,17 @@ public record RequestApproveDTO(
         return User.builder()
                 .name(name)
                 .email(email)
-                .webId(username)
+                //.webId(username)
                 .password(passwordEncoder.encode(defaultPassword))
                 .role(DEFAULT_ROLE)
                 .build();
     }
 
-    public Approval toApprovalEntity(ResourceGroup resourceGroup, User user) {
+    public Approval toApprovalEntity(PasswordEncoder passwordEncoder, String defaultPassword, ResourceGroup resourceGroup, User user) {
         return Approval.builder()
                 .user(user)
                 .resourceGroup(resourceGroup)
+                .password(passwordEncoder.encode(defaultPassword))
                 .validDate(validDate)
                 .volumeSize(volumeSize.intValue()) // TODO: 여기 수정 필요 (Integer, Long)
                 .build();

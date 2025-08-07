@@ -1,10 +1,11 @@
 package DGU_AI_LAB.admin_be.global.auth.jwt;
 
-import DGU_AI_LAB.admin_be.domain.admins.entity.Admin;
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
+import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
+import DGU_AI_LAB.admin_be.global.auth.CustomUserDetailsService;
 import DGU_AI_LAB.admin_be.global.auth.SecurityWhitelist;
-import DGU_AI_LAB.admin_be.global.auth.AuthService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -21,7 +22,6 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -33,7 +33,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER = "Bearer ";
 
     private final JwtProvider jwtProvider;
-    private final AuthService authService;
+    private final CustomUserDetailsService customUserDetailsService;
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private static final AntPathMatcher pathMatcher = new AntPathMatcher();
@@ -51,11 +51,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             jwtProvider.validateAccessToken(accessToken);
             log.info("[JwtAuthFilter] AccessToken 유효성 검사 통과");
 
-            final Long adminId = jwtProvider.getSubject(accessToken);
-            Admin admin = authService.loadAdminEntityById(adminId);
+            final Long userId = jwtProvider.getSubject(accessToken);
+            User user = customUserDetailsService.loadUserEntityById(userId);
 
+            CustomUserDetails userDetails = new CustomUserDetails(user, null);
             UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(admin, null, Collections.emptyList());
+                    new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
             SecurityContextHolder.getContext().setAuthentication(authentication);
 
@@ -99,15 +100,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         log.info("[JwtAuthFilter] 현재 요청 URI = {}", path);
 
-        if (SecurityWhitelist.EXACT_SKIP_PATHS.contains(path)) {
-            return true;
-        }
-
-        for (String pattern : SecurityWhitelist.PATTERN_SKIP_PATHS) {
+        for (String pattern : SecurityWhitelist.UNPROTECTED_PATHS) {
             if (pathMatcher.match(pattern, path)) {
+                log.info("[JwtAuthFilter] 인증 불필요한 경로: {}", pattern);
                 return true;
             }
         }
         return false;
     }
+
 }

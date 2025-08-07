@@ -4,6 +4,8 @@ import DGU_AI_LAB.admin_be.domain.approval.dto.response.ApprovalResponseDTO;
 import DGU_AI_LAB.admin_be.domain.approval.entity.Approval;
 import DGU_AI_LAB.admin_be.domain.approval.repository.ApprovalRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RequestApproveDTO;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
@@ -26,6 +28,7 @@ public class RequestProcessingService {
     private final ApprovalRepository approvalRepository;
     private final ResourceGroupRepository resourceGroupRepository;
     private final PasswordEncoder passwordEncoder;
+    private final RequestRepository requestRepository;
 
     @Value("${app.default-password}")
     private String defaultPassword;
@@ -57,7 +60,7 @@ public class RequestProcessingService {
 
         // 승인 정보 저장
         Approval approval = approvalRepository.save(
-                request.toApprovalEntity(resourceGroup, user)
+                request.toApprovalEntity(passwordEncoder, defaultPassword, resourceGroup, user)
         );
 
         return ApprovalResponseDTO.fromEntity(approval);
@@ -70,7 +73,10 @@ public class RequestProcessingService {
     }
 
     @Transactional
-    public int rejectRequest() {
-        return 200;
+    public void rejectRequest(Long requestId) {
+        Request request = requestRepository.findById(requestId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        request.updateStatus(Status.REJECTED);
     }
 }

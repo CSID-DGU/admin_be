@@ -12,6 +12,7 @@ public record ApprovalResponseDTO(
         Long approvalId,
         String username,                  // ubuntu 계정명
         Long userId,                      // 유저 ID
+        String password,                  // 비밀번호
         ResourceGroupDTO resourceGroup,   // 리소스 그룹 정보
         Integer volumeSize,               // 볼륨 크기 (GB)
         LocalDateTime validDate,          // 유효 기간
@@ -23,8 +24,7 @@ public record ApprovalResponseDTO(
     public record ResourceGroupDTO(
             Long id,
             String name,
-            GroupType groupType,
-            Integer groupNumber
+            GroupType groupType
     ) {}
 
     public static ApprovalResponseDTO fromEntity(Approval approval) {
@@ -33,6 +33,7 @@ public record ApprovalResponseDTO(
                 .approvalId(approval.getApprovalId())
                 .username(approval.getUsername())
                 .userId(approval.getUser().getUserId())
+                .password(approval.getPassword())
                 .volumeSize(approval.getVolumeSize())
                 .validDate(approval.getValidDate())
                 .approvedAt(approval.getCreatedAt())

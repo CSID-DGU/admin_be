@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.requests.controller;
 import DGU_AI_LAB.admin_be.domain.approval.entity.Approval;
 import DGU_AI_LAB.admin_be.domain.requests.controller.docs.RequestProcessingApi;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RequestApproveDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RequestRejectDTO;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestProcessingService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -29,8 +30,8 @@ public class RequestProcessingController implements RequestProcessingApi {
     }
 
     @PostMapping("/reject")
-    public ResponseEntity<?> reject() {
-        requestProcessingService.rejectRequest();
+    public ResponseEntity<?> reject(@RequestBody @Valid RequestRejectDTO request) {
+        requestProcessingService.rejectRequest(request.requestId());
         return ResponseEntity.ok().build();
     }
 }

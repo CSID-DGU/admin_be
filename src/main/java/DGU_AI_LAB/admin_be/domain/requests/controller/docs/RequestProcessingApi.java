@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.requests.controller.docs;
 
 import DGU_AI_LAB.admin_be.domain.approval.entity.Approval;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RequestApproveDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RequestRejectDTO;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -29,7 +30,8 @@ public interface RequestProcessingApi {
             @Parameter(description = "승인 ID", example = "1") @PathVariable Long id
     );
 
-    @Operation(summary = "사용 신청 거절", description = "사용자의 신청을 거절 처리합니다. (구현 미완료)")
-    @ApiResponse(responseCode = "200", description = "거절 처리 완료")
-    ResponseEntity<?> reject();
+    @Operation(summary = "사용 신청 거절", description = "사용자의 신청을 거절 처리합니다.")
+    @ApiResponse(responseCode = "200", description = "거절 처리 완료",
+            content = @Content(schema = @Schema(implementation = RequestRejectDTO.class)))
+    ResponseEntity<?> reject(@Parameter(description = "거절 ID", example = "1") @RequestBody @Valid RequestRejectDTO request);
 }

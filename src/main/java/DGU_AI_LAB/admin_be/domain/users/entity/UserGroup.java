@@ -4,20 +4,22 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
+@IdClass(UserGroupId.class)
 @Table(name = "user_groups")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
 public class UserGroup {
+
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Integer id;
+    private Long gid;
 
-    @Column(name = "ubuntu_groupname", nullable = false)
-    private String ubuntuGroupname;
-
+    @Id
     @OneToOne
-    @JoinColumn(name = "ubuntu_gid", referencedColumnName = "id", nullable = false, unique = true)
-    private UsedId usedGid;
+    @JoinColumn(name = "uid", referencedColumnName = "uid", nullable = false, unique = true)
+    private UsedId usedId;
+
+    @Column(name = "groupName", nullable = false)
+    private String groupName;
 }
