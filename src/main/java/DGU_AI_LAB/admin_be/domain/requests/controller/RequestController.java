@@ -1,34 +1,57 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller;
 
-import DGU_AI_LAB.admin_be.domain.requests.controller.docs.RequestApi;
-import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.ModifyRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestService;
+import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 
+import java.util.List;
+
 @RestController
-@RequestMapping("/api/requests")
 @RequiredArgsConstructor
-public class RequestController implements RequestApi {
+@RequestMapping("/api/requests")
+public class RequestController {
 
     private final RequestService requestService;
 
-    @PostMapping
-    public ResponseEntity<?> saveRequest(@Valid @RequestBody SaveRequestDTO request) {
-        return ResponseEntity.ok(requestService.saveRequest(request));
+    // 본인 요청 조회
+    @GetMapping("/my")
+    public ResponseEntity<List<SaveRequestResponseDTO>> getMyRequests(
+            @AuthenticationPrincipal CustomUserDetails user
+    ) {
+        return ResponseEntity.ok(requestService.getRequestsByUserId(user.getUserId()));
     }
 
-    // 전체 사용 신청 목록 조회
-    @GetMapping
-    public ResponseEntity<?> getAllRequests() {
-        return ResponseEntity.ok(requestService.getAllRequests());
+    @PostMapping("/modify")
+    public ResponseEntity<Void> requestModification(@RequestBody ModifyRequestDTO dto) {
+        requestService.requestModification(dto);
+        return ResponseEntity.ok().build();
     }
 
-    // 개별 사용 신청 목록 조회
-    @GetMapping("/{id}")
-    public ResponseEntity<SaveRequestDTO> getRequest(@PathVariable Long id) {
-        return ResponseEntity.ok(requestService.getRequestById(id));
+    @PostMapping("/modify/approve")
+    public ResponseEntity<Void> approveModification(@RequestBody ApproveModificationDTO dto) {
+        requestService.approveModification(dto);
+        return ResponseEntity.ok().build();
     }
+
+    @GetMapping("/usage")
+    public ResponseEntity<List<ResourceUsageDTO>> getAllResourceUsage() {
+        return ResponseEntity.ok(requestService.getAllFulfilledResourceUsage());
+    }
+
+    @GetMapping("/containers")
+    public ResponseEntity<List<ContainerInfoDTO>> getAllActiveContainers() {
+        return ResponseEntity.ok(requestService.getActiveContainers());
+    }
+
+
+
 }

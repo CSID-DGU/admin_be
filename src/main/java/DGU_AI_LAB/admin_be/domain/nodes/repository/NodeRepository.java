@@ -1,11 +1,12 @@
 package DGU_AI_LAB.admin_be.domain.nodes.repository;
 
 import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
-import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
 
-import java.util.List;
+import java.util.Optional;
 
-public interface NodeRepository extends JpaRepository<Node, Long> {
-    List<Node> findAllByResourceGroup(ResourceGroup resourceGroup);
+@Repository
+public interface NodeRepository extends JpaRepository<Node, String> {
+    Optional<Node> findByNodeIdAndResourceGroup_RsgroupId(String nodeId, Integer rsgroupId);
 }

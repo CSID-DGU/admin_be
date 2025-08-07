@@ -1,11 +1,9 @@
 package DGU_AI_LAB.admin_be.domain.users.entity;
 
-import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
+import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
 import jakarta.persistence.*;
 import lombok.*;
-
-import java.util.List;
 
 @Entity
 @Table(name = "users")
@@ -19,31 +17,31 @@ public class User extends BaseTimeEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long userId;
 
-    /**
-    ubuntu username은 Approval에서 관리한다.
-     따라서 이 name은 사용자의 실제 이름(김XX)을 저장한다.
-     */
-    // 사용자 실제 이름
-    @Column(name = "name", nullable = false)
-    private String name;
-
-//    // 웹 아이디
-//    @Column(name = "webId", nullable = false)
-//    private String webId;
-
-    @Column(name = "email", nullable = false)
+    @Column(name = "email", nullable = false, length = 100)
     private String email;
 
-    @Column(name = "password", nullable = false)
+    @Column(name = "password", nullable = false, length = 255)
     private String password;
 
-    /**
-     * Role은 기본적으로 USER로만 생성되며, ADMIN으로 변경하기 위해서는 서버실에 방문해야 한다.
-     */
+    @Column(name = "ubuntu_uid")
+    private Long ubuntuUid;
+
+    @Column(name = "name", nullable = false, length = 100)
+    private String name;
+
     @Enumerated(EnumType.STRING)
-    @Column(name = "role", nullable = false)
+    @Column(name = "role", nullable = false, length = 20)
     @Builder.Default
     private Role role = Role.USER;
+
+    @Column(name = "student_id", nullable = false, length = 100)
+    private String studentId;
+
+    @Column(name = "phone", nullable = false, length = 100)
+    private String phone;
+
+    @Column(name = "department", nullable = false, length = 100)
+    private String department;
 
     @Column(name = "is_active", nullable = false)
     @Builder.Default
@@ -54,12 +52,23 @@ public class User extends BaseTimeEntity {
         this.isActive = isActive;
     }
 
-    /**
-     * 한 명의 유저가 여러 개의 키를 사용할 수 있음.
-     * 여러 PC에서 접속하면 그만큼 키의 수가 늘어남.
-     */
-    @OneToMany(mappedBy = "user")
-    private List<UserKey> userKeys;
+    public void updateUbuntuUid(Long ubuntuUid) {
+        this.ubuntuUid = ubuntuUid;
+    }
+
+    public void updateUbuntuGroup(Group group) {
+        this.ubuntuGroup = group;
+    }
+
+    public void updateUnixInfo(Long ubuntuUid, Group ubuntuGroup) {
+        this.ubuntuUid = ubuntuUid;
+        this.ubuntuGroup = ubuntuGroup;
+    }
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "ubuntu_gid")
+    private Group ubuntuGroup;
+
 
 
 }

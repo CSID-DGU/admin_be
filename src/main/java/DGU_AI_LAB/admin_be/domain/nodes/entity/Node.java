@@ -4,32 +4,27 @@ import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import jakarta.persistence.*;
 import lombok.*;
 
-@Table(name = "node")
+@Entity
+@Table(name = "nodes")
+@IdClass(NodeId.class)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
-@Entity
 public class Node {
 
-    @Id @GeneratedValue
-    private Long nodeId;
+    @Id
+    @Column(name = "node_id", length = 100, nullable = false)
+    private String nodeId;
 
-    @Column(nullable = false, unique = true)
-    private String nodeName; // Lab 1, Farm 2 ...
-
-    @Column(nullable = false)
-    private Integer numberGpu; // GPU 개수
-
-    @Column(nullable = false)
-    private Integer memorySize; // GB 단위
-
-    @Column(nullable = false)
-    private Integer cpuCore; // CPU 코어 개수
-
-    @ManyToOne(optional = false)
-    @JoinColumn(name = "resource_group_id")
+    @Id
+    @ManyToOne(optional = false, fetch = FetchType.LAZY)
+    @JoinColumn(name = "rsgroup_id", nullable = false)
     private ResourceGroup resourceGroup;
 
-}
+    @Column(name = "memory_size_GB", nullable = false)
+    private Integer memorySizeGB;
 
+    @Column(name = "CPU_core_count", nullable = false)
+    private Integer cpuCoreCount;
+}

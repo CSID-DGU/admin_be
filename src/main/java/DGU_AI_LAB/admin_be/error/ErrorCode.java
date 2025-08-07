@@ -73,6 +73,8 @@ public enum ErrorCode {
     DUPLICATE_NAME(HttpStatus.CONFLICT, "중복된 닉네임입니다."),
     INVALID_LOGIN_INFO(HttpStatus.BAD_REQUEST, "잘못된 로그인 입력값입니다."),
     INVALID_AUTH_CODE(HttpStatus.BAD_REQUEST, "올바르지 않은 인증 코드입니다."),
+    GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "지정된 그룹을 찾을 수 없습니다."),
+    UID_ALLOCATION_FAILED(HttpStatus.BAD_REQUEST, "UID를 할당하는 데 실패했습니다."), // 이 부분 고민
 
     /**
      * Approval Error
@@ -87,7 +89,12 @@ public enum ErrorCode {
     /**
      * Node Error
      */
-    NODE_NOT_FOUND(HttpStatus.NOT_FOUND, "노드를 찾을 수 없습니다.")
+    NODE_NOT_FOUND(HttpStatus.NOT_FOUND, "노드를 찾을 수 없습니다."),
+
+    /**
+     * Request Error
+     */
+    INVALID_REQUEST_STATUS(HttpStatus.CONFLICT, "이미 처리된 신청입니다.");
 
 
     ;
