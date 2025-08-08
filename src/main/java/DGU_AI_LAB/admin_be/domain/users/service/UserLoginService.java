@@ -45,6 +45,9 @@ public class UserLoginService {
                 .email(request.email())
                 .password(passwordEncoder.encode(request.password()))
                 .name(request.name())
+                .department(request.department())
+                .studentId(request.studentId())
+                .phone(request.phone())
                 .role(Role.USER)
                 .isActive(true)
                 .build();
