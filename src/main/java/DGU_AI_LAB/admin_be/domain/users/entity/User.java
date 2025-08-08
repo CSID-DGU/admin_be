@@ -28,10 +28,6 @@ public class User extends BaseTimeEntity {
     @Column(name = "name", nullable = false)
     private String name;
 
-//    // 웹 아이디
-//    @Column(name = "webId", nullable = false)
-//    private String webId;
-
     @Column(name = "email", nullable = false)
     private String email;
 
@@ -52,6 +48,16 @@ public class User extends BaseTimeEntity {
 
     @OneToMany(mappedBy = "user")
     private List<Request> requests;
+
+    @Column(name = "department", nullable = false)
+    private String department;
+
+    @Column(name = "student_id", nullable = false)
+    private String studentId;
+
+    @Column(name = "phone", nullable = false)
+    private String phone;
+
 
     public void updateUserInfo(String password, Boolean isActive) {
         this.password = password;
