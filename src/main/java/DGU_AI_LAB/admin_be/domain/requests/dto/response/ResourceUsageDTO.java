@@ -7,18 +7,14 @@ import lombok.Builder;
 public record ResourceUsageDTO(
         Long userId,
         String userName,
-        String nodeId,
-        Integer memorySizeGB,
-        Integer cpuCoreCount,
+        Integer resourceGroupId,
         Long volumeSizeByte
 ) {
     public static ResourceUsageDTO fromEntity(Request request) {
         return ResourceUsageDTO.builder()
                 .userId(request.getUser().getUserId())
                 .userName(request.getUser().getName())
-                .nodeId(request.getNode().getNodeId())
-                .memorySizeGB(request.getNode().getMemorySizeGB())
-                .cpuCoreCount(request.getNode().getCpuCoreCount())
+                .resourceGroupId(request.getResourceGroup().getRsgroupId())
                 .volumeSizeByte(request.getVolumeSizeByte())
                 .build();
     }

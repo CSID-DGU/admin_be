@@ -4,6 +4,7 @@ import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserCreateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserUpdateRequestDTO;
+import DGU_AI_LAB.admin_be.domain.users.dto.response.MyInfoResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
@@ -100,5 +101,15 @@ public class UserService {
 
         log.info("[updateUser] userId={} 정보 수정 완료", userId);
         return UserResponseDTO.fromEntity(user);
+    }
+
+    /**
+     * 유저 단일 조회
+     */
+    @Transactional(readOnly = true)
+    public MyInfoResponseDTO getMyInfo(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
+        return MyInfoResponseDTO.fromEntity(user);
     }
 }

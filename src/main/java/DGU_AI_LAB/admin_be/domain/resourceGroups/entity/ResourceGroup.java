@@ -9,11 +9,12 @@ import lombok.*;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
+@EqualsAndHashCode(of = "rsgroupId")
 public class ResourceGroup {
 
     @Id
     @Column(name = "rsgroup_id", nullable = false)
-    private Long rsgroupId;
+    private Integer rsgroupId;
 
     @Column(name = "description", length = 500)
     private String description;

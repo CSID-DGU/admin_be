@@ -1,15 +1,16 @@
 package DGU_AI_LAB.admin_be.domain.requests.dto.request;
 
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
-import lombok.Builder;
 
-@Builder
+import java.time.LocalDateTime;
+
 public record ModifyRequestDTO(
         Long requestId,
-        Long newVolumeSizeByte,
-        String comment // 변경 사유
+        Long requestedVolumeSizeByte,
+        LocalDateTime requestedExpiresAt,
+        String reason
 ) {
     public void applyTo(Request request) {
-        request.requestModification(newVolumeSizeByte, comment);
+        request.requestModification(requestedVolumeSizeByte, requestedExpiresAt, reason);
     }
 }

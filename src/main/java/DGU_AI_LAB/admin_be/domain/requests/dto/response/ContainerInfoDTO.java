@@ -4,6 +4,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import lombok.Builder;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Builder
 public record ContainerInfoDTO(
@@ -11,8 +12,8 @@ public record ContainerInfoDTO(
         String userName,
         String ubuntuUsername,
         Long ubuntuUid,
-        Long ubuntuGid,
-        String nodeId,
+        List<Long> ubuntuGids,
+        Integer resourceGroupId,
         String imageName,
         String imageVersion,
         LocalDateTime expiresAt
@@ -22,9 +23,9 @@ public record ContainerInfoDTO(
                 .userId(request.getUser().getUserId())
                 .userName(request.getUser().getName())
                 .ubuntuUsername(request.getUbuntuUsername())
-                .ubuntuUid(request.getUser().getUbuntuUid())
-                .ubuntuGid(request.getUbuntuGroup() != null ? request.getUbuntuGroup().getUbuntuGid() : null)
-                .nodeId(request.getNode().getNodeId())
+                .ubuntuUid(request.getUbuntuUid())
+                .ubuntuGids(request.getUbuntuGroups().stream().map(g -> g.getUbuntuGid()).toList())
+                .resourceGroupId(request.getResourceGroup() != null ? request.getResourceGroup().getRsgroupId() : null)
                 .imageName(request.getContainerImage().getImageName())
                 .imageVersion(request.getContainerImage().getImageVersion())
                 .expiresAt(request.getExpiresAt())

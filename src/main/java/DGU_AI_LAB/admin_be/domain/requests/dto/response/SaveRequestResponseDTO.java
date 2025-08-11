@@ -9,10 +9,11 @@ import java.time.LocalDateTime;
 @Builder
 public record SaveRequestResponseDTO(
         Long requestId,
-        String nodeId,
+        Integer resourceGroupId,
         String imageName,
         String imageVersion,
         String ubuntuUsername,
+        Long ubuntuUid,
         Long volumeSizeByte,
         String cudaVersion,
         String usagePurpose,
@@ -25,10 +26,11 @@ public record SaveRequestResponseDTO(
     public static SaveRequestResponseDTO fromEntity(Request request) {
         return SaveRequestResponseDTO.builder()
                 .requestId(request.getRequestId())
-                .nodeId(request.getNode().getNodeId())
+                .resourceGroupId(request.getResourceGroup() != null ? request.getResourceGroup().getRsgroupId() : null)
                 .imageName(request.getContainerImage().getImageName())
                 .imageVersion(request.getContainerImage().getImageVersion())
                 .ubuntuUsername(request.getUbuntuUsername())
+                .ubuntuUid(request.getUbuntuUid())
                 .volumeSizeByte(request.getVolumeSizeByte())
                 .cudaVersion(request.getCudaVersion())
                 .usagePurpose(request.getUsagePurpose())
