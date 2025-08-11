@@ -1,6 +1,5 @@
 package DGU_AI_LAB.admin_be.domain.users.dto.request;
 
-import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;

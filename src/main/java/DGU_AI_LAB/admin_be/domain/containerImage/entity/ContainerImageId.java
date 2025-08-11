@@ -1,6 +1,9 @@
 package DGU_AI_LAB.admin_be.domain.containerImage.entity;
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.io.Serializable;
 import java.util.Objects;

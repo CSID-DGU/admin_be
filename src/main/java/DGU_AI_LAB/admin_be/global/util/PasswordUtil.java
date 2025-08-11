@@ -3,7 +3,6 @@ package DGU_AI_LAB.admin_be.global.util;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Base64;
 
 public class PasswordUtil {
     private PasswordUtil() {}

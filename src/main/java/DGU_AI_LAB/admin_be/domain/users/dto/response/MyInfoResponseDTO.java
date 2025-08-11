@@ -1,7 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.users.dto.response;
 
-import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.entity.Role;
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
 
 import java.time.LocalDateTime;
 

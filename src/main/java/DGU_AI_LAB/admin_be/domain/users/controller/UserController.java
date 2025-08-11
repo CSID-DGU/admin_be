@@ -1,18 +1,14 @@
 package DGU_AI_LAB.admin_be.domain.users.controller;
 
-import DGU_AI_LAB.admin_be.domain.users.dto.request.UserCreateRequestDTO;
-import DGU_AI_LAB.admin_be.domain.users.dto.request.UserUpdateRequestDTO;
-import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.service.UserService;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequiredArgsConstructor

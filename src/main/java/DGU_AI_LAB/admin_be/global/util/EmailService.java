@@ -2,7 +2,6 @@ package DGU_AI_LAB.admin_be.global.util;
 
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
-import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
