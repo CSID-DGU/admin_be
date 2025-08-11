@@ -4,10 +4,12 @@ import DGU_AI_LAB.admin_be.domain.users.dto.request.UserCreateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.service.UserService;
+import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -19,30 +21,11 @@ public class UserController {
 
     private final UserService userService;
 
-    @GetMapping("/{id}")
-    public ResponseEntity<SuccessResponse<?>> getUser(@PathVariable Long id) {
-        return SuccessResponse.ok(userService.getUserById(id));
-    }
-
-    @GetMapping
-    public ResponseEntity<SuccessResponse<?>> getAllUsers() {
-        return SuccessResponse.ok(userService.getAllUsers());
-    }
-
-    @PostMapping
-    public ResponseEntity<SuccessResponse<?>> createUser(@Valid @RequestBody UserCreateRequestDTO request) {
-        return SuccessResponse.ok(userService.createUser(request));
-    }
-
-    @PutMapping("/{id}") // TODO: 관리자용 updateUser와 분리 필요
-    public ResponseEntity<SuccessResponse<?>> updateUser(@PathVariable Long id, @Valid @RequestBody UserUpdateRequestDTO request) {
-        return SuccessResponse.ok(userService.updateUser(id, request));
-    }
-
-    @DeleteMapping("/{id}") // TODO: soft delete로 수정하기
-    public ResponseEntity<SuccessResponse<?>> deleteUser(@PathVariable Long id) {
-        userService.deleteUser(id);
-        return SuccessResponse.ok(null);
+    @GetMapping("/me")
+    public ResponseEntity<SuccessResponse<?>> getMyInfo(
+            @AuthenticationPrincipal CustomUserDetails principal
+    ) {
+        return SuccessResponse.ok(userService.getMyInfo(principal.getUserId()));
     }
 }
 
