@@ -25,30 +25,6 @@ public class Request extends BaseTimeEntity {
     @Column(name = "request_id")
     private Long requestId;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumns({
-            @JoinColumn(name = "image_name", referencedColumnName = "image_name", nullable = false),
-            @JoinColumn(name = "image_version", referencedColumnName = "image_version", nullable = false)
-    })
-    private ContainerImage containerImage;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "rsgroup_id", nullable = false)
-    private ResourceGroup resourceGroup;
-
-    @ManyToMany
-    @JoinTable(
-            name = "RequestGroups",
-            joinColumns = @JoinColumn(name = "request_id"),
-            inverseJoinColumns = @JoinColumn(name = "ubuntu_gid")
-    )
-    @Builder.Default
-    private Set<Group> ubuntuGroups = new LinkedHashSet<>();
-
     @Column(name = "ubuntu_username", nullable = false, length = 100)
     private String ubuntuUsername;
 
@@ -70,6 +46,9 @@ public class Request extends BaseTimeEntity {
     @Column(name = "form_answers", columnDefinition = "json", nullable = false)
     private String formAnswers;
 
+    /**
+     * 허가받은 경우 값이 존재
+     */
     @Column(name = "approved_at")
     private LocalDateTime approvedAt;
 
@@ -78,14 +57,47 @@ public class Request extends BaseTimeEntity {
     @Builder.Default
     private Status status = Status.PENDING;
 
+    /**
+     * 거절 사유 등, status에 대한 설명
+     */
     @Column(name = "comment", length = 300)
     private String comment;
 
+    /**
+     * 사용자가 볼륨 수정 요청 시 담아두는 값
+     */
     @Column(name = "requested_volume_size_byte")
     private Long requestedVolumeSizeByte;
 
+    /**
+     * 사용자가 만료일 수정 요청 시 담아두는 값
+     */
     @Column(name = "requested_expires_at")
     private LocalDateTime requestedExpiresAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "rsgroup_id", nullable = false)
+    private ResourceGroup resourceGroup;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumns({
+            @JoinColumn(name = "image_name", referencedColumnName = "image_name", nullable = false),
+            @JoinColumn(name = "image_version", referencedColumnName = "image_version", nullable = false)
+    })
+    private ContainerImage containerImage;
+
+    @ManyToMany
+    @JoinTable(
+            name = "RequestGroups",
+            joinColumns = @JoinColumn(name = "request_id"),
+            inverseJoinColumns = @JoinColumn(name = "ubuntu_gid")
+    )
+    @Builder.Default
+    private Set<Group> ubuntuGroups = new LinkedHashSet<>();
 
     // ==== 비즈니스 로직 ====
     public void updateStatus(Status status, String comment, LocalDateTime approvedAt) {

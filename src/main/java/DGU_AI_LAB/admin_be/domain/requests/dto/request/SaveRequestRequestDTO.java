@@ -24,7 +24,7 @@ public record SaveRequestRequestDTO(
         String usagePurpose,
         String formAnswers, // JSON String
         LocalDateTime expiresAt,
-        Set<Long> ubuntuGids // 다대다
+        Set<Long> ubuntuGids
 ) {
     public Request toEntity(
             User user,
