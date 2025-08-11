@@ -22,7 +22,6 @@ public class RequestController {
 
     private final RequestService requestService;
 
-    // 본인 요청 조회
     @GetMapping("/my")
     public ResponseEntity<List<SaveRequestResponseDTO>> getMyRequests(
             @AuthenticationPrincipal CustomUserDetails user
