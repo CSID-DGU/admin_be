@@ -15,6 +15,9 @@ import lombok.*;
 @EqualsAndHashCode(of = "nodeId")
 public class Node {
 
+    /**
+     * ex. LAB1, FARM2 ...
+     */
     @Id
     @Column(name = "node_id", length = 100)
     private String nodeId;

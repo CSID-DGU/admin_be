@@ -1,9 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.groups.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
+import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
@@ -21,4 +19,9 @@ public class Group {
 
     @Column(name = "group_name", nullable = false, length = 100)
     private String groupName;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @MapsId
+    @JoinColumn(name = "ubuntu_gid")
+    private UsedId usedId;
 }
