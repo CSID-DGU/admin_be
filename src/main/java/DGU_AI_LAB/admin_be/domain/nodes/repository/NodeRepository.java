@@ -8,5 +8,4 @@ import java.util.Optional;
 
 @Repository
 public interface NodeRepository extends JpaRepository<Node, String> {
-    Optional<Node> findByNodeIdAndResourceGroup_RsgroupId(String nodeId, Integer rsgroupId);
 }

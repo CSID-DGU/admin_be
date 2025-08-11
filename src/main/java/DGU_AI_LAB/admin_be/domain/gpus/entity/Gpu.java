@@ -6,30 +6,19 @@ import lombok.*;
 
 @Entity
 @Table(name = "gpus")
-@IdClass(GpuId.class)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
+@EqualsAndHashCode(of = "gpuId")
 public class Gpu {
 
     @Id
     @Column(name = "gpu_id", nullable = false)
     private Long gpuId;
 
-    @Id
-    @Column(name = "node_id", nullable = false, insertable = false, updatable = false)
-    private String nodeId;
-
-    @Id
-    @Column(name = "rsgroup_id", nullable = false, insertable = false, updatable = false)
-    private Long resourceGroup;
-
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumns({
-            @JoinColumn(name = "node_id", referencedColumnName = "node_id"),
-            @JoinColumn(name = "rsgroup_id", referencedColumnName = "rsgroup_id")
-    })
+    @JoinColumn(name = "node_id", nullable = false)
     private Node node;
 
     @Column(name = "gpu_model", nullable = false, length = 100)
