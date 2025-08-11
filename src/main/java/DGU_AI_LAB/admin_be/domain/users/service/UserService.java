@@ -30,32 +30,6 @@ public class UserService {
     private static final long UID_BASE = 10000; // TODO: 이부분 시스템에 맞추어서 수정하기
 
     /**
-     * 유저 생성
-     */
-    public UserResponseDTO createUser(UserCreateRequestDTO request) {
-        log.info("[createUser] name={}", request.name());
-
-        Long uid = getNextAvailableUid();
-        Long gid = uid; // 기본적으로 UID와 동일한 GID 사용
-
-        Group group = groupRepository.findById(gid)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
-
-        User user = request.toEntity();
-        user.updateUbuntuUid(uid);
-        user.updateUbuntuGroup(group);
-
-        User saved = userRepository.save(user);
-        log.info("[createUser] user created with userId={}", saved.getUserId());
-
-        return UserResponseDTO.fromEntity(saved);
-    }
-
-    private Long getNextAvailableUid() {
-        return userRepository.findMaxUbuntuUid().orElse(UID_BASE - 1) + 1;
-    }
-
-    /**
      * 단일 유저 조회
      */
     @Transactional(readOnly = true)

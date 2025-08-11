@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.dto.request;
 
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -17,5 +18,30 @@ public record UserRegisterRequestDTO(
 
         @Schema(description = "사용자 이름", example = "이소은")
         @NotBlank
-        String name
-) {}
+        String name,
+
+        @Schema(description = "학과", example = "컴퓨터공학과")
+        @NotBlank
+        String department,
+
+        @Schema(description = "학번", example = "202312345")
+        @NotBlank
+        String studentId,
+
+        @Schema(description = "전화번호", example = "010-1234-5678")
+        @NotBlank
+        String phone
+) {
+        /** 비밀번호는 서비스에서 암호화한 값을 넘겨서 처리 */
+        public User toEntity(String encodedPassword) {
+                return User.builder()
+                        .email(email)
+                        .password(encodedPassword)
+                        .name(name)
+                        .department(department)
+                        .studentId(studentId)
+                        .phone(phone)
+                        // role, isActive는 엔티티의 @Builder.Default 로 기본값 사용
+                        .build();
+        }
+}
