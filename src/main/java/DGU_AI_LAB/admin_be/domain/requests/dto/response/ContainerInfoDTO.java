@@ -24,11 +24,18 @@ public record ContainerInfoDTO(
                 .userName(request.getUser().getName())
                 .ubuntuUsername(request.getUbuntuUsername())
                 .ubuntuUid(request.getUbuntuUid())
-                .ubuntuGids(request.getUbuntuGroups().stream().map(g -> g.getUbuntuGid()).toList())
-                .resourceGroupId(request.getResourceGroup() != null ? request.getResourceGroup().getRsgroupId() : null)
+                .ubuntuGids(
+                        request.getRequestGroups().stream()
+                                .map(rg -> rg.getGroup().getUbuntuGid())
+                                .toList()
+                )
+                .resourceGroupId(request.getResourceGroup() != null
+                        ? request.getResourceGroup().getRsgroupId()
+                        : null)
                 .imageName(request.getContainerImage().getImageName())
                 .imageVersion(request.getContainerImage().getImageVersion())
                 .expiresAt(request.getExpiresAt())
                 .build();
     }
+
 }
