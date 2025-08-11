@@ -17,7 +17,7 @@ public interface AuthApi {
     @Operation(
             summary = "회원가입",
             description = "이메일 인증이 완료된 사용자가 회원가입을 진행합니다.\n" +
-                    "이메일 인증이 완료되지 않으면 예외를 반환합니다.\n" +
+                    "이메일 인증이 완료되지 않으면, 예외를 반환합니다.\n" +
                     "이메일을 기준으로 인증 여부를 조회합니다.",
             requestBody = @RequestBody(
                     required = true,
