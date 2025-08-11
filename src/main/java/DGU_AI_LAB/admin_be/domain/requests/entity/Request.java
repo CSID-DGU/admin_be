@@ -13,7 +13,6 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 @Entity
-@Table(name = "requests")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
@@ -90,14 +89,9 @@ public class Request extends BaseTimeEntity {
     })
     private ContainerImage containerImage;
 
-    @ManyToMany
-    @JoinTable(
-            name = "RequestGroups",
-            joinColumns = @JoinColumn(name = "request_id"),
-            inverseJoinColumns = @JoinColumn(name = "ubuntu_gid")
-    )
+    @OneToMany(mappedBy = "request", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
-    private Set<Group> ubuntuGroups = new LinkedHashSet<>();
+    private java.util.Set<RequestGroup> requestGroups = new java.util.LinkedHashSet<>();
 
     // ==== 비즈니스 로직 ====
     public void updateStatus(Status status, String comment, LocalDateTime approvedAt) {
@@ -143,5 +137,17 @@ public class Request extends BaseTimeEntity {
         this.requestedVolumeSizeByte = null;
         this.requestedExpiresAt = null;
         this.comment = "변경 요청 거절: " + reason;
+    }
+
+    public void addGroup(Group group) {
+        RequestGroup rg = RequestGroup.builder()
+                .request(this)
+                .group(group)
+                .build();
+        this.requestGroups.add(rg);
+    }
+
+    public void removeGroup(Long ubuntuGid) {
+        this.requestGroups.removeIf(rg -> rg.getGroup().getUbuntuGid().equals(ubuntuGid));
     }
 }
