@@ -1,6 +1,5 @@
 package DGU_AI_LAB.admin_be.domain.users.entity;
 
-import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
 import jakarta.persistence.*;
 import lombok.*;
@@ -15,16 +14,14 @@ public class User extends BaseTimeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "user_id")
     private Long userId;
 
-    @Column(name = "email", nullable = false, length = 100)
+    @Column(name = "email", nullable = false, length = 100, unique = true)
     private String email;
 
     @Column(name = "password", nullable = false, length = 255)
     private String password;
-
-    @Column(name = "ubuntu_uid")
-    private Long ubuntuUid;
 
     @Column(name = "name", nullable = false, length = 100)
     private String name;
@@ -47,28 +44,8 @@ public class User extends BaseTimeEntity {
     @Builder.Default
     private Boolean isActive = true;
 
-    public void updateUserInfo(String password, Boolean isActive) {
-        this.password = password;
-        this.isActive = isActive;
+    public void updateUserInfo(String encodedPassword, Boolean isActive) {
+        if (encodedPassword != null) this.password = encodedPassword;
+        if (isActive != null) this.isActive = isActive;
     }
-
-    public void updateUbuntuUid(Long ubuntuUid) {
-        this.ubuntuUid = ubuntuUid;
-    }
-
-    public void updateUbuntuGroup(Group group) {
-        this.ubuntuGroup = group;
-    }
-
-    public void updateUnixInfo(Long ubuntuUid, Group ubuntuGroup) {
-        this.ubuntuUid = ubuntuUid;
-        this.ubuntuGroup = ubuntuGroup;
-    }
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "ubuntu_gid")
-    private Group ubuntuGroup;
-
-
-
 }
