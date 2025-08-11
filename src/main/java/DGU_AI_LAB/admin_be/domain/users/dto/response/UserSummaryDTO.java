@@ -10,8 +10,6 @@ public record UserSummaryDTO(
         Long userId,
         String name,
         String email,
-        Long ubuntuUid,
-        Long ubuntuGid,
         String role,
         Boolean isActive,
         LocalDateTime createdAt
@@ -21,8 +19,6 @@ public record UserSummaryDTO(
                 .userId(user.getUserId())
                 .name(user.getName())
                 .email(user.getEmail())
-                .ubuntuUid(user.getUbuntuUid())
-                .ubuntuGid(user.getUbuntuGroup() != null ? user.getUbuntuGroup().getUbuntuGid() : null)
                 .role(user.getRole().name())
                 .isActive(user.getIsActive())
                 .createdAt(user.getCreatedAt())

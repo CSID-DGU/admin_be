@@ -26,11 +26,6 @@ public class AdminUserController {
         return SuccessResponse.ok(userService.getAllUsers());
     }
 
-    @PostMapping
-    public ResponseEntity<SuccessResponse<?>> createUser(@Valid @RequestBody UserCreateRequestDTO request) {
-        return SuccessResponse.ok(userService.createUser(request));
-    }
-
     @PutMapping("/{id}") // TODO: 관리자용 updateUser와 분리 필요
     public ResponseEntity<SuccessResponse<?>> updateUser(@PathVariable Long id, @Valid @RequestBody UserUpdateRequestDTO request) {
         return SuccessResponse.ok(userService.updateUser(id, request));
