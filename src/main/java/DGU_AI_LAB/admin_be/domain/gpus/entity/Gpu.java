@@ -21,6 +21,9 @@ public class Gpu {
     @JoinColumn(name = "node_id", nullable = false)
     private Node node;
 
+    /**
+     * ex. RTX4050, A3000
+     */
     @Column(name = "gpu_model", nullable = false, length = 100)
     private String gpuModel;
 
