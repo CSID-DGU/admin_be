@@ -36,22 +36,4 @@ public class RequestController {
         return ResponseEntity.ok().build();
     }
 
-    @PostMapping("/modify/approve")
-    public ResponseEntity<Void> approveModification(@RequestBody ApproveModificationDTO dto) {
-        requestService.approveModification(dto);
-        return ResponseEntity.ok().build();
-    }
-
-    @GetMapping("/usage")
-    public ResponseEntity<List<ResourceUsageDTO>> getAllResourceUsage() {
-        return ResponseEntity.ok(requestService.getAllFulfilledResourceUsage());
-    }
-
-    @GetMapping("/containers")
-    public ResponseEntity<List<ContainerInfoDTO>> getAllActiveContainers() {
-        return ResponseEntity.ok(requestService.getActiveContainers());
-    }
-
-
-
 }
