@@ -41,24 +41,25 @@ public class RequestService {
         User user = userRepository.findById(dto.userId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
-        ResourceGroup resourceGroup = resourceGroupRepository.findById(dto.resourceGroupId())
+        ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        ContainerImage image = containerImageRepository.findByImageNameAndImageVersion(
+        ContainerImage img = containerImageRepository.findByImageNameAndImageVersion(
                 dto.imageName(), dto.imageVersion()
         ).orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        Set<Group> groups = new HashSet<>();
-        if (dto.ubuntuGids() != null && !dto.ubuntuGids().isEmpty()) {
-            groups = new HashSet<>(groupRepository.findAllByUbuntuGidIn(dto.ubuntuGids()));
-            if (groups.size() != dto.ubuntuGids().size()) {
-                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND); // 일부 그룹 미존재
-            }
+        Set<Group> groups = dto.ubuntuGids() == null || dto.ubuntuGids().isEmpty()
+                ? Set.of()
+                : new HashSet<>(groupRepository.findAllByUbuntuGidIn(dto.ubuntuGids()));
+
+        if (groups.size() != (dto.ubuntuGids() == null ? 0 : dto.ubuntuGids().size())) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
 
-        Request saved = requestRepository.save(dto.toEntity(user, resourceGroup, image, groups));
+        Request saved = requestRepository.save(dto.toEntity(user, rg, img, groups));
         return SaveRequestResponseDTO.fromEntity(saved);
     }
+
 
     /** 신청 승인 */
     @Transactional

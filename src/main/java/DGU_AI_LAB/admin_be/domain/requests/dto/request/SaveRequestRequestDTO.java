@@ -22,7 +22,7 @@ public record SaveRequestRequestDTO(
         Long volumeSizeByte,
         String cudaVersion,
         String usagePurpose,
-        String formAnswers, // JSON String
+        String formAnswers,
         LocalDateTime expiresAt,
         Set<Long> ubuntuGids
 ) {
@@ -32,7 +32,8 @@ public record SaveRequestRequestDTO(
             ContainerImage image,
             Set<Group> groups
     ) {
-        return Request.builder()
+        // 1) 본체 먼저 생성
+        Request req = Request.builder()
                 .user(user)
                 .resourceGroup(resourceGroup)
                 .containerImage(image)
@@ -44,7 +45,13 @@ public record SaveRequestRequestDTO(
                 .formAnswers(formAnswers)
                 .expiresAt(expiresAt)
                 .status(Status.PENDING)
-                .ubuntuGroups(groups)
                 .build();
+
+        // 2) 그룹 연결은 addGroup()으로 — 중간 엔티티(request_groups) 생성
+        if (groups != null && !groups.isEmpty()) {
+            groups.forEach(req::addGroup);
+        }
+
+        return req;
     }
 }
