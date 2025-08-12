@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.resourceGroups.controller;
 
 import DGU_AI_LAB.admin_be.domain.gpus.dto.response.GpuTypeResponseDTO;
+import DGU_AI_LAB.admin_be.domain.resourceGroups.controller.docs.ResourceGroupApi;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.service.ResourceGroupService;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import lombok.RequiredArgsConstructor;
@@ -16,7 +17,7 @@ import java.util.List;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/resources")
-public class ResourceGroupController {
+public class ResourceGroupController implements ResourceGroupApi {
 
     private final ResourceGroupService resourceGroupService;
 
