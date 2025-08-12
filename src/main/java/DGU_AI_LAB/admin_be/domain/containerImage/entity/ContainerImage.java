@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.containerImage.entity;
 
+import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -9,7 +10,7 @@ import lombok.*;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
-public class ContainerImage {
+public class ContainerImage extends BaseTimeEntity  {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "image_id")
@@ -20,4 +21,10 @@ public class ContainerImage {
 
     @Column(name = "image_version", length = 100, nullable = false)
     private String imageVersion;
+
+    @Column(name = "cuda_version", length = 100, nullable = false)
+    private String cudaVersion;
+
+    @Column(name = "description", length = 500, nullable = false)
+    private String description;
 }
