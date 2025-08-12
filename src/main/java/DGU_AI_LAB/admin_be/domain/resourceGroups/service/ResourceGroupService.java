@@ -28,20 +28,7 @@ public class ResourceGroupService {
         List<Object[]> gpuSummaries = gpuRepository.findGpuSummary();
 
         List<GpuTypeResponseDTO> response = gpuSummaries.stream()
-                .map(obj -> {
-                    String gpuModel = (String) obj[0];
-                    Integer ramGb = (Integer) obj[1];
-                    String resourceGroupName = (String) obj[2];
-                    Long availableNodes = ((Number) obj[3]).longValue();
-
-                    return GpuTypeResponseDTO.builder()
-                            .gpuModel(gpuModel)
-                            .ramGb(ramGb)
-                            .resourceGroupName(resourceGroupName)
-                            .availableNodes(availableNodes)
-                            .isAvailable(true)
-                            .build();
-                })
+                .map(GpuTypeResponseDTO::fromQueryResult)
                 .collect(Collectors.toList());
 
         log.info("[getGpuTypeResources] GPU 기종별 리소스 정보 조회 완료. {}개 기종", response.size());
