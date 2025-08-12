@@ -2,20 +2,31 @@ package DGU_AI_LAB.admin_be.domain.requests.dto.response;
 
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 
 import java.time.LocalDateTime;
 
 @Builder
+@Schema(description = "사용자 대시보드 서버 목록 응답 DTO")
 public record UserServerResponseDTO(
+        @Schema(description = "서버 신청 고유 ID", example = "1")
         Long requestId,
+        @Schema(description = "할당된 서버 주소 (승인 후 유효)", example = "192.168.1.100", nullable = true)
         String serverAddress,
+        @Schema(description = "서버 사용 만료일", example = "2025-12-31T23:59:59")
         LocalDateTime expiresAt,
+        @Schema(description = "할당된 볼륨 크기 (GB)", example = "100")
         Long volumeSizeGB,
+        @Schema(description = "사용된 CUDA 버전", example = "12.0")
         String cudaVersion,
+        @Schema(description = "할당된 CPU 코어 수", example = "8")
         Integer cpuCoreCount,
+        @Schema(description = "할당된 메모리 크기 (GB)", example = "32")
         Integer memoryGB,
+        @Schema(description = "할당된 리소스 그룹명 (GPU 스펙 묶음)", example = "RTX 3090 D6 24GB 그룹")
         String resourceGroupName,
+        @Schema(description = "서버 신청 상태", example = "FULFILLED", allowableValues = {"PENDING", "FULFILLED", "DENIED", "MODIFICATION_REQUESTED", "MODIFICATION_APPROVED", "MODIFICATION_REJECTED"})
         Status status
 ) {
     public static UserServerResponseDTO fromEntity(Request request, String serverAddress, Integer cpuCoreCount, Integer memoryGB, String resourceGroupName) {
@@ -23,7 +34,7 @@ public record UserServerResponseDTO(
                 .requestId(request.getRequestId())
                 .serverAddress(serverAddress)
                 .expiresAt(request.getExpiresAt())
-                .volumeSizeGB(request.getVolumeSizeByte() / (1024L * 1024 * 1024)) // Byte를 GB로 변환
+                .volumeSizeGB(request.getVolumeSizeByte() / (1024L * 1024 * 1024))
                 .cudaVersion(request.getCudaVersion())
                 .cpuCoreCount(cpuCoreCount)
                 .memoryGB(memoryGB)
