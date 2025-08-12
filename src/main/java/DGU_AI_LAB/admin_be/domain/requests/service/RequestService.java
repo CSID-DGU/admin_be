@@ -104,6 +104,14 @@ public class RequestService {
         return SaveRequestResponseDTO.fromEntity(request);
     }
 
+    /** 모든 신청 목록 (관리자용) */
+    @Transactional(readOnly = true)
+    public List<SaveRequestResponseDTO> getAllRequests() {
+        return requestRepository.findAll().stream()
+                .map(SaveRequestResponseDTO::fromEntity)
+                .toList();
+    }
+
     /** 내 신청 목록 */
     @Transactional(readOnly = true)
     public List<SaveRequestResponseDTO> getRequestsByUserId(Long userId) {
