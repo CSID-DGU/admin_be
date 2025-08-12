@@ -14,6 +14,7 @@ import lombok.*;
 public class Gpu {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "gpu_id", nullable = false)
     private Long gpuId;
 
