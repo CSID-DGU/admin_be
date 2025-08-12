@@ -15,7 +15,6 @@ public record SaveRequestResponseDTO(
         String ubuntuUsername,
         Long ubuntuUid,
         Long volumeSizeByte,
-        String cudaVersion,
         String usagePurpose,
         String formAnswers,
         LocalDateTime expiresAt,
