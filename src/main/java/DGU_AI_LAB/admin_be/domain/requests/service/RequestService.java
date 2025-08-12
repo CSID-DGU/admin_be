@@ -82,11 +82,19 @@ public class RequestService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
 
-        ContainerImage containerImage = containerImageRepository.findByImageNameAndImageVersion(
-                dto.imageName(), dto.imageVersion()
-        ).orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        ContainerImage image = containerImageRepository.findById(dto.imageId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        dto.applyTo(request, containerImage);
+        ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        request.approve(
+                image,
+                rg,
+                dto.volumeSizeGiB(),
+                dto.expiresAt(),
+                dto.adminComment()
+        );
         return SaveRequestResponseDTO.fromEntity(request);
     }
 

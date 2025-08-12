@@ -1,10 +1,12 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -38,5 +40,10 @@ public class AdminRequestController {
     public ResponseEntity<List<SaveRequestResponseDTO>> getAllRequests() {
         List<SaveRequestResponseDTO> requests = requestService.getAllRequests();
         return ResponseEntity.ok(requests);
+    }
+
+    @PatchMapping("/approval")
+    public ResponseEntity<SaveRequestResponseDTO> approve(@RequestBody @Valid ApproveRequestDTO dto) {
+        return ResponseEntity.ok(requestService.approveRequest(dto));
     }
 }

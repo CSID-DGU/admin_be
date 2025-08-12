@@ -86,12 +86,17 @@ public class Request extends BaseTimeEntity {
         this.approvedAt = approvedAt;
     }
 
-    public void approve(ContainerImage image, Long volumeSizeGiB) {
+    public void approve(ContainerImage image, ResourceGroup resourceGroup, Long volumeSizeGiB, LocalDateTime expiresAt, String adminComment) {
         this.containerImage = image;
+        this.resourceGroup = resourceGroup;
         this.volumeSizeGiB = volumeSizeGiB;
+        this.expiresAt = expiresAt;
         this.status = Status.FULFILLED;
         this.approvedAt = LocalDateTime.now();
-        this.adminComment = null;
+
+        if (adminComment != null && !adminComment.isBlank()) {
+            this.adminComment = adminComment;
+        }
     }
 
     public void reject(String comment) {
