@@ -2,6 +2,8 @@ package DGU_AI_LAB.admin_be.domain.resourceGroups.service;
 
 import DGU_AI_LAB.admin_be.domain.gpus.dto.response.GpuTypeResponseDTO;
 import DGU_AI_LAB.admin_be.domain.gpus.repository.GpuRepository;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,6 +28,11 @@ public class ResourceGroupService {
         log.info("[getGpuTypeResources] GPU 기종별 리소스 정보 조회 시작");
 
         List<Object[]> gpuSummaries = gpuRepository.findGpuSummary();
+
+        if (gpuSummaries.isEmpty()) {
+            log.warn("[getGpuTypeResources] 조회된 GPU 기종별 리소스가 없습니다.");
+            throw new BusinessException(ErrorCode.NO_AVAILABLE_RESOURCES);
+        }
 
         List<GpuTypeResponseDTO> response = gpuSummaries.stream()
                 .map(GpuTypeResponseDTO::fromQueryResult)
