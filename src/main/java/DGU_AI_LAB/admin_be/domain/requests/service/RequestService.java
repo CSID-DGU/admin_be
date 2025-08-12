@@ -13,11 +13,15 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
+import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
+import DGU_AI_LAB.admin_be.domain.usedIds.repository.UsedIdRepository;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.util.PasswordUtil;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,19 +38,26 @@ public class RequestService {
     private final ContainerImageRepository containerImageRepository;
     private final GroupRepository groupRepository;
     private final ResourceGroupRepository resourceGroupRepository;
+    private final UsedIdRepository usedIdRepository;
+    private final PasswordEncoder passwordEncoder;
 
     /** 신청 생성 */
     @Transactional
-    public SaveRequestResponseDTO createRequest(SaveRequestRequestDTO dto) {
-        User user = userRepository.findById(dto.userId())
+    public SaveRequestResponseDTO createRequest(Long userId, SaveRequestRequestDTO dto) {
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        ContainerImage img = containerImageRepository.findByImageNameAndImageVersion(
-                dto.imageName(), dto.imageVersion()
-        ).orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        ContainerImage img = containerImageRepository.findById(dto.imageId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        // 수정 필요
+        UsedId usedId = usedIdRepository.findById(dto.ubuntuUid())
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        String ubuntuPassword = PasswordUtil.encodePassword(dto.ubuntuPassword());
 
         Set<Group> groups = dto.ubuntuGids() == null || dto.ubuntuGids().isEmpty()
                 ? Set.of()
@@ -56,7 +67,7 @@ public class RequestService {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
 
-        Request saved = requestRepository.save(dto.toEntity(user, rg, img, groups));
+        Request saved = requestRepository.save(dto.toEntity(user, rg, img, usedId, groups, ubuntuPassword));
         return SaveRequestResponseDTO.fromEntity(saved);
     }
 
@@ -105,7 +116,7 @@ public class RequestService {
     }
 
     /** 변경 요청 */
-    @Transactional
+    /*@Transactional
     public void requestModification(ModifyRequestDTO dto) {
         Request request = requestRepository.findById(dto.requestId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
@@ -115,10 +126,10 @@ public class RequestService {
         }
 
         dto.applyTo(request);
-    }
+    }*/
 
     /** 변경 승인 */
-    @Transactional
+    /*@Transactional
     public void approveModification(ApproveModificationDTO dto) {
         Request request = requestRepository.findById(dto.requestId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
@@ -128,7 +139,7 @@ public class RequestService {
         }
 
         dto.applyTo(request);
-    }
+    }*/
 
     /** 승인 완료 자원 사용량 */
     @Transactional(readOnly = true)

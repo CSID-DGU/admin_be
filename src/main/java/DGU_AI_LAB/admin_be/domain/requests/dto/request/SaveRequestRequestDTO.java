@@ -5,24 +5,28 @@ import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
+import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Builder;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.Set;
 
 @Builder
 public record SaveRequestRequestDTO(
-        Long userId,
         Integer resourceGroupId,
-        String imageName,
-        String imageVersion,
+        Long imageId,
         String ubuntuUsername,
+        String ubuntuPassword,
         Long ubuntuUid,
-        Long volumeSizeByte,
-        String cudaVersion,
+        Long volumeSizeGiB,
         String usagePurpose,
-        String formAnswers,
+        Map<String, Object> formAnswers,
         LocalDateTime expiresAt,
         Set<Long> ubuntuGids
 ) {
@@ -30,19 +34,28 @@ public record SaveRequestRequestDTO(
             User user,
             ResourceGroup resourceGroup,
             ContainerImage image,
-            Set<Group> groups
+            UsedId ubuntuUid,
+            Set<Group> groups,
+            String ubuntuPassword
     ) {
+        String formAnswersJson;
+        try {
+            formAnswersJson = new ObjectMapper().writeValueAsString(formAnswers);
+        } catch (JsonProcessingException e) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+
         // 1) 본체 먼저 생성
         Request req = Request.builder()
                 .user(user)
                 .resourceGroup(resourceGroup)
                 .containerImage(image)
-                .ubuntuUsername(ubuntuUsername)
                 .ubuntuUid(ubuntuUid)
-                .volumeSizeByte(volumeSizeByte)
-                .cudaVersion(cudaVersion)
+                .ubuntuUsername(ubuntuUsername)
+                .ubuntuPassword(ubuntuPassword)
+                .volumeSizeGiB(volumeSizeGiB)
                 .usagePurpose(usagePurpose)
-                .formAnswers(formAnswers)
+                .formAnswers(formAnswersJson)
                 .expiresAt(expiresAt)
                 .status(Status.PENDING)
                 .build();

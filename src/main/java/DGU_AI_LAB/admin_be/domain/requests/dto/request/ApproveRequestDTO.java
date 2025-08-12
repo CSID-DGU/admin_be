@@ -9,6 +9,6 @@ public record ApproveRequestDTO(
         String imageVersion
 ) {
     public void applyTo(Request request, ContainerImage image) {
-        request.approve(image, request.getVolumeSizeByte(), request.getCudaVersion());
+        request.approve(image, request.getVolumeSizeGiB());
     }
 }

@@ -30,15 +30,13 @@ public record SaveRequestResponseDTO(
                 .imageName(request.getContainerImage().getImageName())
                 .imageVersion(request.getContainerImage().getImageVersion())
                 .ubuntuUsername(request.getUbuntuUsername())
-                .ubuntuUid(request.getUbuntuUid())
-                .volumeSizeByte(request.getVolumeSizeByte())
-                .cudaVersion(request.getCudaVersion())
+                .volumeSizeByte(request.getVolumeSizeGiB())
                 .usagePurpose(request.getUsagePurpose())
                 .formAnswers(request.getFormAnswers())
                 .expiresAt(request.getExpiresAt())
                 .status(request.getStatus())
                 .approvedAt(request.getApprovedAt())
-                .comment(request.getComment())
+                .comment(request.getAdminComment())
                 .build();
     }
 }
