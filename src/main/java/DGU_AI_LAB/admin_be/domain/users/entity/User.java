@@ -48,4 +48,12 @@ public class User extends BaseTimeEntity {
         if (encodedPassword != null) this.password = encodedPassword;
         if (isActive != null) this.isActive = isActive;
     }
+
+    public void updatePassword(String newEncodedPassword) {
+        this.password = newEncodedPassword;
+    }
+
+    public void updatePhone(String newPhone) {
+        this.phone = newPhone;
+    }
 }
