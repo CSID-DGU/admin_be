@@ -101,7 +101,6 @@ public class Request extends BaseTimeEntity {
 
     public void reject(String comment) {
         this.status = Status.DENIED;
-        this.approvedAt = LocalDateTime.now();
         this.adminComment = comment;
     }
 

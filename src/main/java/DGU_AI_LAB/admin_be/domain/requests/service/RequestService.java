@@ -108,7 +108,9 @@ public class RequestService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
 
-        dto.applyTo(request);
+        request.reject(
+                dto.adminComment()
+        );
         return SaveRequestResponseDTO.fromEntity(request);
     }
 

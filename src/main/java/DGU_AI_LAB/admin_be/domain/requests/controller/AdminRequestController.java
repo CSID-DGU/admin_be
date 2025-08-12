@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.requests.controller;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
@@ -45,5 +46,10 @@ public class AdminRequestController {
     @PatchMapping("/approval")
     public ResponseEntity<SaveRequestResponseDTO> approve(@RequestBody @Valid ApproveRequestDTO dto) {
         return ResponseEntity.ok(requestService.approveRequest(dto));
+    }
+
+    @PatchMapping("/reject")
+    public ResponseEntity<SaveRequestResponseDTO> reject(@RequestBody @Valid RejectRequestDTO dto) {
+        return ResponseEntity.ok(requestService.rejectRequest(dto));
     }
 }
