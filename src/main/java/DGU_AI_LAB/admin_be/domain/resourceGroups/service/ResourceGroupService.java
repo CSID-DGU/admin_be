@@ -2,13 +2,10 @@ package DGU_AI_LAB.admin_be.domain.resourceGroups.service;
 
 import DGU_AI_LAB.admin_be.domain.gpus.dto.response.GpuTypeResponseDTO;
 import DGU_AI_LAB.admin_be.domain.gpus.repository.GpuRepository;
-import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.GetMapping;
 
 import java.util.List;
 import java.util.stream.Collectors;
