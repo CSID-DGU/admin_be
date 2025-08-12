@@ -1,6 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller;
 
-import DGU_AI_LAB.admin_be.domain.requests.dto.request.ModifyRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.controller.docs.RequestApi;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestService;
@@ -16,7 +16,7 @@ import java.util.List;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/requests")
-public class RequestController {
+public class RequestController implements RequestApi {
 
     private final RequestService requestService;
 
