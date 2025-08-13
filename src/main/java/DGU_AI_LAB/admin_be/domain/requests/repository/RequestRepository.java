@@ -7,11 +7,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface RequestRepository extends JpaRepository<Request, Long> {
     List<Request> findAllByUser(User user);
     List<Request> findAllByUser_UserId(Long userId);
     List<Request> findAllByStatus(Status status);
+    Optional<Request> findByUbuntuUsernameAndUbuntuPassword(String username, String passwordBase64);
 
 }
