@@ -2,13 +2,12 @@ package DGU_AI_LAB.admin_be.domain.resourceGroups.service;
 
 import DGU_AI_LAB.admin_be.domain.gpus.dto.response.GpuTypeResponseDTO;
 import DGU_AI_LAB.admin_be.domain.gpus.repository.GpuRepository;
-import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.GetMapping;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -30,21 +29,13 @@ public class ResourceGroupService {
 
         List<Object[]> gpuSummaries = gpuRepository.findGpuSummary();
 
-        List<GpuTypeResponseDTO> response = gpuSummaries.stream()
-                .map(obj -> {
-                    String gpuModel = (String) obj[0];
-                    Integer ramGb = (Integer) obj[1];
-                    String resourceGroupName = (String) obj[2];
-                    Long availableNodes = ((Number) obj[3]).longValue();
+        if (gpuSummaries.isEmpty()) {
+            log.warn("[getGpuTypeResources] 조회된 GPU 기종별 리소스가 없습니다.");
+            throw new BusinessException(ErrorCode.NO_AVAILABLE_RESOURCES);
+        }
 
-                    return GpuTypeResponseDTO.builder()
-                            .gpuModel(gpuModel)
-                            .ramGb(ramGb)
-                            .resourceGroupName(resourceGroupName)
-                            .availableNodes(availableNodes)
-                            .isAvailable(true)
-                            .build();
-                })
+        List<GpuTypeResponseDTO> response = gpuSummaries.stream()
+                .map(GpuTypeResponseDTO::fromQueryResult)
                 .collect(Collectors.toList());
 
         log.info("[getGpuTypeResources] GPU 기종별 리소스 정보 조회 완료. {}개 기종", response.size());

@@ -1,6 +1,5 @@
 package DGU_AI_LAB.admin_be.domain.users.controller;
 
-import DGU_AI_LAB.admin_be.domain.users.dto.request.UserCreateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.service.UserService;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;

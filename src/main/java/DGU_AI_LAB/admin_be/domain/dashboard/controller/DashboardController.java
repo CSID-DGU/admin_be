@@ -1,7 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.dashboard.controller;
 
+import DGU_AI_LAB.admin_be.domain.dashboard.controller.docs.DashBoardApi;
 import DGU_AI_LAB.admin_be.domain.dashboard.service.DashboardService;
-import DGU_AI_LAB.admin_be.domain.gpus.dto.response.GpuTypeResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.UserServerResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
@@ -10,7 +10,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
@@ -18,13 +21,13 @@ import java.util.List;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/dashboard")
-public class DashboardController {
+public class DashboardController implements DashBoardApi {
 
     private final DashboardService dashboardService;
 
 
     /**
-     * 사용자 신청 현황 서버 목록 조회 API -> 다른 곳으로 옮겨야 함 (Request)
+     * 사용자 신청 현황 서버 목록 조회 API (대시보드 전용)
      * GET /api/dashboard/me/servers
      *
      * @param principal 현재 로그인한 사용자의 인증 정보 (CustomUserDetails)
@@ -36,8 +39,6 @@ public class DashboardController {
             @AuthenticationPrincipal CustomUserDetails principal,
             @RequestParam(name = "status") Status status
     ) {
-        // 현재 로그인한 사용자의 ID와 요청 상태를 기반으로 서버 목록을 조회합니다.
-        log.info("[getUserServers] 사용자 서버 목록 조회 API 호출 - userId: {}, status: {}", principal.getUserId(), status);
         List<UserServerResponseDTO> userServers = dashboardService.getUserServers(principal.getUserId(), status);
         return SuccessResponse.ok(userServers);
     }
