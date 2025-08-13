@@ -85,8 +85,13 @@ public enum ErrorCode {
     INVALID_AUTH_CODE(HttpStatus.BAD_REQUEST, "올바르지 않은 인증 코드입니다."),
     GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "지정된 그룹을 찾을 수 없습니다."),
     UID_ALLOCATION_FAILED(HttpStatus.BAD_REQUEST, "UID를 할당하는 데 실패했습니다."), // 이 부분 고민
+
     SLACK_USER_NOT_FOUND(HttpStatus.NOT_FOUND, "Slack 사용자를 찾을 수 없습니다."),
     SLACK_USER_EMAIL_NOT_MATCH(HttpStatus.NOT_FOUND, "이메일이 일치하는 Slack 사용자를 찾을 수 없습니다."),
+
+    INVALID_PASSWORD(HttpStatus.UNAUTHORIZED, "현재 비밀번호가 일치하지 않습니다."),
+    PASSWORD_CHANGE_SAME_AS_OLD(HttpStatus.BAD_REQUEST, "새 비밀번호가 현재 비밀번호와 동일합니다."),
+
 
     /**
      * Approval Error
@@ -97,6 +102,7 @@ public enum ErrorCode {
      * Resource Group Error
      */
     RESOURCE_GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "리소스 그룹을 찾을 수 없습니다."),
+    NO_AVAILABLE_RESOURCES(HttpStatus.NOT_FOUND, "사용 가능한 리소스가 없습니다."),
 
     /**
      * Node Error

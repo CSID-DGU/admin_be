@@ -15,5 +15,5 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     List<Request> findAllByUser_UserId(Long userId);
     List<Request> findAllByStatus(Status status);
     Optional<Request> findByUbuntuUsernameAndUbuntuPassword(String username, String passwordBase64);
-
+    List<Request> findByUserUserIdAndStatus(Long userId, Status status);
 }
