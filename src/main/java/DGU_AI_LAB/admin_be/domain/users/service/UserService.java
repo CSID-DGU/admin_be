@@ -1,6 +1,5 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
-import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PasswordUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PhoneUpdateRequestDTO;
