@@ -54,8 +54,8 @@ public class RequestService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
         // 수정 필요
-        UsedId usedId = usedIdRepository.findById(dto.ubuntuUid())
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        /*UsedId usedId = usedIdRepository.findById(dto.ubuntuUid())
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));*/
 
         String ubuntuPassword = PasswordUtil.encodePassword(dto.ubuntuPassword());
 
@@ -67,7 +67,7 @@ public class RequestService {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
 
-        Request saved = requestRepository.save(dto.toEntity(user, rg, img, usedId, groups, ubuntuPassword));
+        Request saved = requestRepository.save(dto.toEntity(user, rg, img, groups, ubuntuPassword));
         return SaveRequestResponseDTO.fromEntity(saved);
     }
 

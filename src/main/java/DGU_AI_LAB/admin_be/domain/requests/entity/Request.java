@@ -64,7 +64,7 @@ public class Request extends BaseTimeEntity {
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "ubuntuUid", referencedColumnName = "id_value", nullable = false)
+    @JoinColumn(name = "ubuntuUid", referencedColumnName = "id_value", nullable = true)
     private UsedId ubuntuUid;
 
     @ManyToOne(fetch = FetchType.LAZY)

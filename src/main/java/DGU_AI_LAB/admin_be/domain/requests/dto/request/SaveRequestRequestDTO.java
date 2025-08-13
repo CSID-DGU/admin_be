@@ -11,6 +11,7 @@ import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 
 import java.time.LocalDateTime;
@@ -19,22 +20,32 @@ import java.util.Set;
 
 @Builder
 public record SaveRequestRequestDTO(
+        @Schema(description = "자원 그룹 id", example = "1")
         Integer resourceGroupId,
+
+        @Schema(description = "이미지 id", example = "1")
         Long imageId,
+
         String ubuntuUsername,
         String ubuntuPassword,
-        Long ubuntuUid,
+
+        @Schema(description = "볼륨 사이즈", example = "20")
         Long volumeSizeGiB,
+
         String usagePurpose,
+
+        @Schema(description = "폼 응답", example = "{\"question\": \"answer\"}")
         Map<String, Object> formAnswers,
+
         LocalDateTime expiresAt,
+
+        @Schema(description = "gid", example = "10001")
         Set<Long> ubuntuGids
 ) {
     public Request toEntity(
             User user,
             ResourceGroup resourceGroup,
             ContainerImage image,
-            UsedId ubuntuUid,
             Set<Group> groups,
             String ubuntuPassword
     ) {
@@ -50,7 +61,6 @@ public record SaveRequestRequestDTO(
                 .user(user)
                 .resourceGroup(resourceGroup)
                 .containerImage(image)
-                .ubuntuUid(ubuntuUid)
                 .ubuntuUsername(ubuntuUsername)
                 .ubuntuPassword(ubuntuPassword)
                 .volumeSizeGiB(volumeSizeGiB)

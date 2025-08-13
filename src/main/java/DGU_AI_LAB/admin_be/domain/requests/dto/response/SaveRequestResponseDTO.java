@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.requests.dto.response;
 
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import com.fasterxml.jackson.annotation.JsonRawValue;
 import lombok.Builder;
 
 import java.time.LocalDateTime;
@@ -16,7 +17,7 @@ public record SaveRequestResponseDTO(
         Long ubuntuUid,
         Long volumeSizeByte,
         String usagePurpose,
-        String formAnswers,
+        @JsonRawValue String formAnswers,
         LocalDateTime expiresAt,
         Status status,
         LocalDateTime approvedAt,
