@@ -21,14 +21,22 @@ import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.util.PasswordUtil;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RequestService {
@@ -40,6 +48,10 @@ public class RequestService {
     private final ResourceGroupRepository resourceGroupRepository;
     private final UsedIdRepository usedIdRepository;
     private final PasswordEncoder passwordEncoder;
+    private final RestTemplate restTemplate;
+
+    @Value("${pvc.base-url}")
+    private String pvcBaseUrl;
 
     /** 신청 생성 */
     @Transactional
@@ -95,6 +107,31 @@ public class RequestService {
                 dto.expiresAt(),
                 dto.adminComment()
         );
+
+        requestRepository.flush();
+
+        // pvc post
+        String url = pvcBaseUrl + "/pvc";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        PvcRequest body = new PvcRequest(
+                request.getUbuntuUsername(),
+                request.getVolumeSizeGiB()
+        );
+
+        HttpEntity<PvcRequest> entity = new HttpEntity<>(body, headers);
+
+        try {
+            ResponseEntity<Void> res = restTemplate.postForEntity(url, entity, Void.class);
+            if (!res.getStatusCode().is2xxSuccessful()) {
+                throw new BusinessException(ErrorCode.EXTERNAL_API_FAILED);
+            }
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.EXTERNAL_API_FAILED);
+        }
+
         return SaveRequestResponseDTO.fromEntity(request);
     }
 

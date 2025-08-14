@@ -67,6 +67,7 @@ public enum ErrorCode {
      * 502 Bad Gateway
      */
     SLACK_DM_CHANNEL_FAILED(HttpStatus.BAD_GATEWAY, "Slack DM 채널 열기를 실패하였습니다."),
+    EXTERNAL_API_FAILED(HttpStatus.BAD_GATEWAY, "외부 API 호출에 실패했습니다."),
 
     /**
      * 503 Service Unavailable
