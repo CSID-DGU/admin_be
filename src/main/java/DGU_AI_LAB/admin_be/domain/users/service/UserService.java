@@ -1,11 +1,15 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.UserAuthRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PasswordUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PhoneUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserCreateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.MyInfoResponseDTO;
+import DGU_AI_LAB.admin_be.domain.users.dto.response.UserAuthResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
@@ -13,6 +17,8 @@ import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
+import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
+import DGU_AI_LAB.admin_be.global.util.PasswordUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -28,6 +34,8 @@ import java.util.List;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final GroupRepository groupRepository;
+    private final RequestRepository requestRepository;
     private final PasswordEncoder passwordEncoder;
 
     private static final long UID_BASE = 10000; // TODO: 이부분 시스템에 맞추어서 수정하기
@@ -89,6 +97,23 @@ public class UserService {
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
         return MyInfoResponseDTO.fromEntity(user);
     }
+
+    /** ssh 로그인 */
+    @Transactional
+    public UserAuthResponseDTO userAuth(UserAuthRequestDTO dto) {
+        String encodedPassword = PasswordUtil.encodePassword(dto.passwordBase64());
+
+        Request request = requestRepository.findByUbuntuUsernameAndUbuntuPassword(dto.username(), encodedPassword)
+                .orElseThrow(() -> new UnauthorizedException(ErrorCode.USER_NOT_FOUND));
+
+
+        if (!encodedPassword.equals(request.getUbuntuPassword())) {
+            throw new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO);
+        }
+
+        return new UserAuthResponseDTO(true, request.getUbuntuUsername());
+    }
+}
 
     /**
      * 사용자 비밀번호 변경

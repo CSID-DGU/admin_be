@@ -15,7 +15,7 @@ public record ResourceUsageDTO(
                 .userId(request.getUser().getUserId())
                 .userName(request.getUser().getName())
                 .resourceGroupId(request.getResourceGroup().getRsgroupId())
-                .volumeSizeByte(request.getVolumeSizeByte())
+                .volumeSizeByte(request.getVolumeSizeGiB())
                 .build();
     }
 }

@@ -9,8 +9,8 @@ public class PasswordUtil {
 
     public static String encodePassword(String passwordBase64) {
         try {
-            // sha256 해싱
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            // sha512 해싱
+            MessageDigest digest = MessageDigest.getInstance("SHA-512");
             byte[] hash = digest.digest(passwordBase64.getBytes(StandardCharsets.UTF_8));
 
             // byte[] -> hex

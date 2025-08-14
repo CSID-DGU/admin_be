@@ -10,7 +10,7 @@ public record ModifyRequestDTO(
         LocalDateTime requestedExpiresAt,
         String reason
 ) {
-    public void applyTo(Request request) {
+    /*public void applyTo(Request request) {
         request.requestModification(requestedVolumeSizeByte, requestedExpiresAt, reason);
-    }
+    }*/
 }

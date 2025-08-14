@@ -5,7 +5,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 public record ApproveModificationDTO(
         Long requestId
 ) {
-    public void applyTo(Request request) {
+    /*public void applyTo(Request request) {
         request.applyModification();
-    }
+    }*/
 }

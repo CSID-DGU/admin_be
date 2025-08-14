@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.requests.dto.response;
 
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import com.fasterxml.jackson.annotation.JsonRawValue;
 import lombok.Builder;
 
 import java.time.LocalDateTime;
@@ -15,9 +16,8 @@ public record SaveRequestResponseDTO(
         String ubuntuUsername,
         Long ubuntuUid,
         Long volumeSizeByte,
-        String cudaVersion,
         String usagePurpose,
-        String formAnswers,
+        @JsonRawValue String formAnswers,
         LocalDateTime expiresAt,
         Status status,
         LocalDateTime approvedAt,
@@ -30,15 +30,13 @@ public record SaveRequestResponseDTO(
                 .imageName(request.getContainerImage().getImageName())
                 .imageVersion(request.getContainerImage().getImageVersion())
                 .ubuntuUsername(request.getUbuntuUsername())
-                .ubuntuUid(request.getUbuntuUid())
-                .volumeSizeByte(request.getVolumeSizeByte())
-                .cudaVersion(request.getCudaVersion())
+                .volumeSizeByte(request.getVolumeSizeGiB())
                 .usagePurpose(request.getUsagePurpose())
                 .formAnswers(request.getFormAnswers())
                 .expiresAt(request.getExpiresAt())
                 .status(request.getStatus())
                 .approvedAt(request.getApprovedAt())
-                .comment(request.getComment())
+                .comment(request.getAdminComment())
                 .build();
     }
 }
