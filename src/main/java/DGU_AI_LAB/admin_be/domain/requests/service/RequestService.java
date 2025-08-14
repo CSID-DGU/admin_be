@@ -170,6 +170,12 @@ public class RequestService {
                 .toList();
     }
 
+    /** ubuntu username 중복 검사 */
+    @Transactional(readOnly = true)
+    public boolean isUbuntuUsernameAvailable(String username) {
+        return !requestRepository.existsByUbuntuUsername(username);
+    }
+
     /** 변경 요청 */
     /*@Transactional
     public void requestModification(ModifyRequestDTO dto) {
