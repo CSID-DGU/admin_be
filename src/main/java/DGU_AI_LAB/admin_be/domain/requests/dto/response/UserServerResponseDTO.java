@@ -16,12 +16,11 @@ public record UserServerResponseDTO(
         String serverAddress,
         @Schema(description = "서버 사용 만료일", example = "2025-12-31T23:59:59")
         LocalDateTime expiresAt,
-        @Schema(description = "할당된 볼륨 크기 (GB)", example = "100")
-        Long volumeSizeGB,
-        @Schema(description = "사용된 CUDA 버전", example = "12.0")
-        String cudaVersion,
+        @Schema(description = "할당된 볼륨 크기 (GiB)", example = "100")
+        Long volumeSizeGiB,
         @Schema(description = "할당된 CPU 코어 수", example = "8")
         Integer cpuCoreCount,
+        // TODO: 용도가 무엇인지 모르겠으나 GiB로 통일하는 것이 좋아보임.
         @Schema(description = "할당된 메모리 크기 (GB)", example = "32")
         Integer memoryGB,
         @Schema(description = "할당된 리소스 그룹명 (GPU 스펙 묶음)", example = "RTX 3090 D6 24GB 그룹")
@@ -34,8 +33,7 @@ public record UserServerResponseDTO(
                 .requestId(request.getRequestId())
                 .serverAddress(serverAddress)
                 .expiresAt(request.getExpiresAt())
-                .volumeSizeGB(request.getVolumeSizeByte() / (1024L * 1024 * 1024))
-                .cudaVersion(request.getCudaVersion())
+                .volumeSizeGiB(request.getVolumeSizeGiB() / (1024L * 1024 * 1024))
                 .cpuCoreCount(cpuCoreCount)
                 .memoryGB(memoryGB)
                 .resourceGroupName(resourceGroupName)

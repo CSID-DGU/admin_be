@@ -6,7 +6,6 @@ import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserAuthRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PasswordUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PhoneUpdateRequestDTO;
-import DGU_AI_LAB.admin_be.domain.users.dto.request.UserCreateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.MyInfoResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserAuthResponseDTO;
@@ -113,7 +112,6 @@ public class UserService {
 
         return new UserAuthResponseDTO(true, request.getUbuntuUsername());
     }
-}
 
     /**
      * 사용자 비밀번호 변경
