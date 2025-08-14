@@ -15,6 +15,7 @@ public record SaveRequestResponseDTO(
         String imageVersion,
         String ubuntuUsername,
         Long ubuntuUid,
+        java.util.List<Long> ubuntuGids,
         Long volumeSizeByte,
         String usagePurpose,
         @JsonRawValue String formAnswers,
@@ -30,6 +31,14 @@ public record SaveRequestResponseDTO(
                 .imageName(request.getContainerImage().getImageName())
                 .imageVersion(request.getContainerImage().getImageVersion())
                 .ubuntuUsername(request.getUbuntuUsername())
+                .ubuntuUid(request.getUbuntuUid() != null
+                        ? request.getUbuntuUid().getIdValue()
+                        : null)
+                .ubuntuGids(
+                        request.getRequestGroups().stream()
+                                .map(rg -> rg.getGroup().getUbuntuGid()) // RequestGroup → Group → ubuntuGid
+                                .toList()
+                )
                 .volumeSizeByte(request.getVolumeSizeGiB())
                 .usagePurpose(request.getUsagePurpose())
                 .formAnswers(request.getFormAnswers())
