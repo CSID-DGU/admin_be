@@ -24,7 +24,7 @@ public class Request extends BaseTimeEntity {
     @Column(name = "request_id")
     private Long requestId;
 
-    @Column(name = "ubuntu_username", nullable = false, length = 100)
+    @Column(name = "ubuntu_username", nullable = false, length = 100, unique = true)
     private String ubuntuUsername;
 
     @Column(name = "ubuntu_password", nullable = false)
