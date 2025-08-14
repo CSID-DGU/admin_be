@@ -5,7 +5,6 @@ import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
-import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -38,8 +37,6 @@ public record SaveRequestRequestDTO(
         Map<String, Object> formAnswers,
 
         LocalDateTime expiresAt,
-
-        @Schema(description = "gid", example = "10001")
         Set<Long> ubuntuGids
 ) {
     public Request toEntity(
@@ -69,11 +66,6 @@ public record SaveRequestRequestDTO(
                 .expiresAt(expiresAt)
                 .status(Status.PENDING)
                 .build();
-
-        // 2) 그룹 연결은 addGroup()으로 — 중간 엔티티(request_groups) 생성
-        if (groups != null && !groups.isEmpty()) {
-            groups.forEach(req::addGroup);
-        }
 
         return req;
     }

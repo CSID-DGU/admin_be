@@ -15,6 +15,7 @@ import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
 import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
 import DGU_AI_LAB.admin_be.domain.usedIds.repository.UsedIdRepository;
+import DGU_AI_LAB.admin_be.domain.usedIds.service.IdAllocationService;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -49,6 +50,7 @@ public class RequestService {
     private final UsedIdRepository usedIdRepository;
     private final PasswordEncoder passwordEncoder;
     private final RestTemplate restTemplate;
+    private final IdAllocationService idAllocationService;
 
     @Value("${pvc.base-url}")
     private String pvcBaseUrl;
@@ -65,24 +67,32 @@ public class RequestService {
         ContainerImage img = containerImageRepository.findById(dto.imageId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        // 수정 필요
-        /*UsedId usedId = usedIdRepository.findById(dto.ubuntuUid())
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));*/
-
         String ubuntuPassword = PasswordUtil.encodePassword(dto.ubuntuPassword());
 
-        Set<Group> groups = dto.ubuntuGids() == null || dto.ubuntuGids().isEmpty()
-                ? Set.of()
-                : new HashSet<>(groupRepository.findAllByUbuntuGidIn(dto.ubuntuGids()));
+        Request req = dto.toEntity(
+                user,
+                rg,
+                img,
+                java.util.Collections.emptySet(),
+                ubuntuPassword
+        );
 
-        if (groups.size() != (dto.ubuntuGids() == null ? 0 : dto.ubuntuGids().size())) {
-            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        req = requestRepository.save(req);
+        requestRepository.flush();
+
+        if (dto.ubuntuGids() != null && !dto.ubuntuGids().isEmpty()) {
+            Set<Group> found = new java.util.HashSet<>(groupRepository.findAllByUbuntuGidIn(dto.ubuntuGids()));
+
+            if (found.size() != dto.ubuntuGids().size()) {
+                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+            }
+
+            for (Group g : found) {
+                req.addGroup(g);
+            }
         }
-
-        Request saved = requestRepository.save(dto.toEntity(user, rg, img, groups, ubuntuPassword));
-        return SaveRequestResponseDTO.fromEntity(saved);
+        return SaveRequestResponseDTO.fromEntity(req);
     }
-
 
     /** 신청 승인 */
     @Transactional
@@ -92,6 +102,18 @@ public class RequestService {
 
         if (request.getStatus() != Status.PENDING) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+        }
+
+        // UID 할당
+        var allocation = idAllocationService.allocateFor(request);
+
+        request.assignUbuntuUid(allocation.getUid());
+
+        boolean alreadyLinked = request.getRequestGroups().stream()
+                .anyMatch(rg -> rg.getGroup().getUbuntuGid()
+                        .equals(allocation.getPrimaryGroup().getUbuntuGid()));
+        if (!alreadyLinked) {
+            request.addGroup(allocation.getPrimaryGroup());
         }
 
         ContainerImage image = containerImageRepository.findById(dto.imageId())

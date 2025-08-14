@@ -5,6 +5,8 @@ import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
 import jakarta.persistence.*;
 import lombok.*;
@@ -128,13 +130,25 @@ public class Request extends BaseTimeEntity {
         this.adminComment = "변경 요청 거절: " + reason;
     }*/
 
+    public void assignUbuntuUid(UsedId uid) {
+        this.ubuntuUid = uid;
+    }
+
     public void addGroup(Group group) {
+        Long rid = this.getRequestId();
+        if (rid == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+
         RequestGroup rg = RequestGroup.builder()
+                .id(new RequestGroupId(rid, group.getUbuntuGid()))
                 .request(this)
                 .group(group)
                 .build();
+
         this.requestGroups.add(rg);
     }
+
 
     public void removeGroup(Long ubuntuGid) {
         this.requestGroups.removeIf(rg -> rg.getGroup().getUbuntuGid().equals(ubuntuGid));
