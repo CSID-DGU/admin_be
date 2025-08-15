@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/pods")
+@RequestMapping("/api/admin/pods")
 public class PodController implements PodApi {
 
     private final KubernetesClient client;
