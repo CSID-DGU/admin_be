@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonRawValue;
 import lombok.Builder;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Builder
 public record SaveRequestResponseDTO(
@@ -15,6 +16,7 @@ public record SaveRequestResponseDTO(
         String imageVersion,
         String ubuntuUsername,
         Long ubuntuUid,
+        List<Long> ubuntuGids,
         Long volumeSizeByte,
         String usagePurpose,
         @JsonRawValue String formAnswers,
@@ -30,6 +32,14 @@ public record SaveRequestResponseDTO(
                 .imageName(request.getContainerImage().getImageName())
                 .imageVersion(request.getContainerImage().getImageVersion())
                 .ubuntuUsername(request.getUbuntuUsername())
+                .ubuntuUid(request.getUbuntuUid() != null
+                        ? request.getUbuntuUid().getIdValue()
+                        : null)
+                .ubuntuGids(
+                        request.getRequestGroups().stream()
+                                .map(rg -> rg.getGroup().getUbuntuGid())
+                                .toList()
+                )
                 .volumeSizeByte(request.getVolumeSizeGiB())
                 .usagePurpose(request.getUsagePurpose())
                 .formAnswers(request.getFormAnswers())

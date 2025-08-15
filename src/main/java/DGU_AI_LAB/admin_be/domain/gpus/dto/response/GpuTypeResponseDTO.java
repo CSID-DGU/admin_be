@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.gpus.dto.response;
 
+import DGU_AI_LAB.admin_be.domain.gpus.repository.GpuRepository;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 
@@ -12,6 +13,8 @@ public record GpuTypeResponseDTO(
 
         @Schema(description = "GPU RAM 크기 (GB)", example = "24")
         Integer ramGb,
+
+        String description,
 
         @Schema(description = "GPU가 속한 리소스 그룹명 (같은 스펙 묶음)", example = "RTX 3090")
         String resourceGroupName,
@@ -38,6 +41,15 @@ public record GpuTypeResponseDTO(
                 .resourceGroupName(resourceGroupName)
                 .availableNodes(availableNodes)
                 .isAvailable(true) // 현재는 항상 true로 가정
+                .build();
+    }
+
+    public static GpuTypeResponseDTO fromSummary(GpuRepository.GpuSummary s) {
+        return GpuTypeResponseDTO.builder()
+                .gpuModel(s.getGpuModel())
+                .ramGb(s.getRamGb())
+                .description(s.getDescription())
+                .availableNodes(s.getNodeCount())
                 .build();
     }
 }

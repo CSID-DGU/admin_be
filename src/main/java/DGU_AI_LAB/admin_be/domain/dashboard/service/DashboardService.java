@@ -45,7 +45,7 @@ public class DashboardService {
                     if (resourceGroup != null) {
                         resourceGroupName = resourceGroup.getDescription();
 
-                        List<Node> nodesInGroup = nodeRepository.findByRsgroupId(resourceGroup.getRsgroupId());
+                        List<Node> nodesInGroup = nodeRepository.findAllByResourceGroup(resourceGroup);
                         if (!nodesInGroup.isEmpty()) {
                             Node representativeNode = nodesInGroup.get(0);
                             cpuCoreCount = representativeNode.getCpuCoreCount();

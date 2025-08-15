@@ -4,7 +4,10 @@ import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
+import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
+import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.*;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.AcceptInfoResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
@@ -15,20 +18,29 @@ import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
 import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
 import DGU_AI_LAB.admin_be.domain.usedIds.repository.UsedIdRepository;
+import DGU_AI_LAB.admin_be.domain.usedIds.service.IdAllocationService;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.util.PasswordUtil;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RequestService {
@@ -40,6 +52,12 @@ public class RequestService {
     private final ResourceGroupRepository resourceGroupRepository;
     private final UsedIdRepository usedIdRepository;
     private final PasswordEncoder passwordEncoder;
+    private final RestTemplate restTemplate;
+    private final IdAllocationService idAllocationService;
+    private final NodeRepository nodeRepository;
+
+    @Value("${pvc.base-url}")
+    private String pvcBaseUrl;
 
     /** 신청 생성 */
     @Transactional
@@ -53,24 +71,32 @@ public class RequestService {
         ContainerImage img = containerImageRepository.findById(dto.imageId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        // 수정 필요
-        /*UsedId usedId = usedIdRepository.findById(dto.ubuntuUid())
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));*/
-
         String ubuntuPassword = PasswordUtil.encodePassword(dto.ubuntuPassword());
 
-        Set<Group> groups = dto.ubuntuGids() == null || dto.ubuntuGids().isEmpty()
-                ? Set.of()
-                : new HashSet<>(groupRepository.findAllByUbuntuGidIn(dto.ubuntuGids()));
+        Request req = dto.toEntity(
+                user,
+                rg,
+                img,
+                java.util.Collections.emptySet(),
+                ubuntuPassword
+        );
 
-        if (groups.size() != (dto.ubuntuGids() == null ? 0 : dto.ubuntuGids().size())) {
-            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        req = requestRepository.save(req);
+        requestRepository.flush();
+
+        if (dto.ubuntuGids() != null && !dto.ubuntuGids().isEmpty()) {
+            Set<Group> found = new java.util.HashSet<>(groupRepository.findAllByUbuntuGidIn(dto.ubuntuGids()));
+
+            if (found.size() != dto.ubuntuGids().size()) {
+                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+            }
+
+            for (Group g : found) {
+                req.addGroup(g);
+            }
         }
-
-        Request saved = requestRepository.save(dto.toEntity(user, rg, img, groups, ubuntuPassword));
-        return SaveRequestResponseDTO.fromEntity(saved);
+        return SaveRequestResponseDTO.fromEntity(req);
     }
-
 
     /** 신청 승인 */
     @Transactional
@@ -80,6 +106,18 @@ public class RequestService {
 
         if (request.getStatus() != Status.PENDING) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+        }
+
+        // UID 할당
+        var allocation = idAllocationService.allocateFor(request);
+
+        request.assignUbuntuUid(allocation.getUid());
+
+        boolean alreadyLinked = request.getRequestGroups().stream()
+                .anyMatch(rg -> rg.getGroup().getUbuntuGid()
+                        .equals(allocation.getPrimaryGroup().getUbuntuGid()));
+        if (!alreadyLinked) {
+            request.addGroup(allocation.getPrimaryGroup());
         }
 
         ContainerImage image = containerImageRepository.findById(dto.imageId())
@@ -95,6 +133,31 @@ public class RequestService {
                 dto.expiresAt(),
                 dto.adminComment()
         );
+
+        requestRepository.flush();
+
+        // pvc post
+        String url = pvcBaseUrl + "/pvc";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        PvcRequest body = new PvcRequest(
+                request.getUbuntuUsername(),
+                request.getVolumeSizeGiB()
+        );
+
+        HttpEntity<PvcRequest> entity = new HttpEntity<>(body, headers);
+
+        try {
+            ResponseEntity<Void> res = restTemplate.postForEntity(url, entity, Void.class);
+            if (!res.getStatusCode().is2xxSuccessful()) {
+                throw new BusinessException(ErrorCode.EXTERNAL_API_FAILED);
+            }
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.EXTERNAL_API_FAILED);
+        }
+
         return SaveRequestResponseDTO.fromEntity(request);
     }
 
@@ -131,6 +194,23 @@ public class RequestService {
         return requestRepository.findAllByUser_UserId(userId).stream()
                 .map(SaveRequestResponseDTO::fromEntity)
                 .toList();
+    }
+
+    /** ubuntu username 중복 검사 */
+    @Transactional(readOnly = true)
+    public boolean isUbuntuUsernameAvailable(String username) {
+        return !requestRepository.existsByUbuntuUsername(username);
+    }
+
+    /** config server용 acceptinfo */
+    public AcceptInfoResponseDTO getAcceptInfo(String username) {
+        Request request = requestRepository.findByUbuntuUsername(username)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_APPROVAL_NOT_FOUND));
+
+        ResourceGroup group = request.getResourceGroup();
+        List<Node> nodes = nodeRepository.findAllByResourceGroup(group);
+
+        return AcceptInfoResponseDTO.fromEntity(request, nodes);
     }
 
     /** 변경 요청 */

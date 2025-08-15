@@ -36,6 +36,16 @@ public class RequestController implements RequestApi {
         return ResponseEntity.ok(requestService.getRequestsByUserId(user.getUserId()));
     }
 
+    @GetMapping("/check-username")
+    public ResponseEntity<?> checkUbuntuUsername(@RequestParam String username) {
+        boolean available = requestService.isUbuntuUsernameAvailable(username);
+        return ResponseEntity.ok().body(
+                java.util.Map.of(
+                        "available", available
+                )
+        );
+    }
+
     /*@PostMapping("/modify")
     public ResponseEntity<Void> requestModification(@RequestBody ModifyRequestDTO dto) {
         requestService.requestModification(dto);

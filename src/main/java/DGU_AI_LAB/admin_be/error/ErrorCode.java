@@ -67,6 +67,7 @@ public enum ErrorCode {
      * 502 Bad Gateway
      */
     SLACK_DM_CHANNEL_FAILED(HttpStatus.BAD_GATEWAY, "Slack DM 채널 열기를 실패하였습니다."),
+    EXTERNAL_API_FAILED(HttpStatus.BAD_GATEWAY, "외부 API 호출에 실패했습니다."),
 
     /**
      * 503 Service Unavailable
@@ -84,7 +85,7 @@ public enum ErrorCode {
     INVALID_LOGIN_INFO(HttpStatus.BAD_REQUEST, "잘못된 로그인 입력값입니다."),
     INVALID_AUTH_CODE(HttpStatus.BAD_REQUEST, "올바르지 않은 인증 코드입니다."),
     GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "지정된 그룹을 찾을 수 없습니다."),
-    UID_ALLOCATION_FAILED(HttpStatus.BAD_REQUEST, "UID를 할당하는 데 실패했습니다."), // 이 부분 고민
+    UID_ALLOCATION_FAILED(HttpStatus.BAD_REQUEST, "UID를 할당에 실패했습니다."),
 
     SLACK_USER_NOT_FOUND(HttpStatus.NOT_FOUND, "Slack 사용자를 찾을 수 없습니다."),
     SLACK_USER_EMAIL_NOT_MATCH(HttpStatus.NOT_FOUND, "이메일이 일치하는 Slack 사용자를 찾을 수 없습니다."),
