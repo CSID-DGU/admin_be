@@ -10,12 +10,38 @@ import java.util.List;
 @Repository
 public interface GpuRepository extends JpaRepository<Gpu, Long> {
 
-    @Query("SELECT g.gpuModel, g.ramGb, rg.description, COUNT(DISTINCT n.nodeId) " +
-            "FROM Gpu g JOIN g.node n JOIN ResourceGroup rg ON n.rsgroupId = rg.rsgroupId " +
-            "GROUP BY g.gpuModel, g.ramGb, rg.description")
-    List<Object[]> findGpuSummary();
-    @Query("SELECT DISTINCT n.cpuCoreCount, n.memorySizeGB " +
-            "FROM Gpu g JOIN g.node n " +
-            "WHERE g.gpuModel = :gpuModel")
-    List<Object[]> findNodeSpecsByGpuModel(String gpuModel);
+    // GPU 요약 프로젝션
+    interface GpuSummary {
+        String getGpuModel();
+        Integer getRamGb();
+        String getDescription();
+        Long getNodeCount();
+    }
+
+    @Query("""
+        SELECT g.gpuModel AS gpuModel,
+               g.ramGb AS ramGb,
+               rg.description AS description,
+               COUNT(DISTINCT n.nodeId) AS nodeCount
+        FROM Gpu g
+        JOIN g.node n
+        JOIN n.resourceGroup rg
+        GROUP BY g.gpuModel, g.ramGb, rg.description
+    """)
+    List<GpuSummary> findGpuSummary();
+
+    // GPU 모델별 노드 사양 조회
+    interface NodeSpec {
+        Integer getCpuCoreCount();
+        Integer getMemorySizeGB();
+    }
+
+    @Query("""
+        SELECT DISTINCT n.cpuCoreCount AS cpuCoreCount,
+                        n.memorySizeGB AS memorySizeGB
+        FROM Gpu g
+        JOIN g.node n
+        WHERE g.gpuModel = :gpuModel
+    """)
+    List<NodeSpec> findNodeSpecsByGpuModel(String gpuModel);
 }

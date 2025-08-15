@@ -12,6 +12,7 @@ import java.util.Optional;
 @Repository
 public interface RequestRepository extends JpaRepository<Request, Long> {
     List<Request> findAllByUser(User user);
+    Optional<Request> findByUbuntuUsername(String username);
     List<Request> findAllByUser_UserId(Long userId);
     List<Request> findAllByStatus(Status status);
     Optional<Request> findByUbuntuUsernameAndUbuntuPassword(String username, String passwordBase64);

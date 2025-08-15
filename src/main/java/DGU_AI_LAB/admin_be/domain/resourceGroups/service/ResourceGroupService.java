@@ -27,16 +27,24 @@ public class ResourceGroupService {
     public List<GpuTypeResponseDTO> getGpuTypeResources() {
         log.info("[getGpuTypeResources] GPU 기종별 리소스 정보 조회 시작");
 
-        List<Object[]> gpuSummaries = gpuRepository.findGpuSummary();
+        List<GpuRepository.GpuSummary> gpuSummaries = gpuRepository.findGpuSummary();
+
+        for (GpuRepository.GpuSummary summary : gpuSummaries) {
+            System.out.println(summary.getGpuModel());
+            System.out.println(summary.getRamGb());
+            System.out.println(summary.getDescription());
+            System.out.println(summary.getNodeCount());
+        }
 
         if (gpuSummaries.isEmpty()) {
             log.warn("[getGpuTypeResources] 조회된 GPU 기종별 리소스가 없습니다.");
             throw new BusinessException(ErrorCode.NO_AVAILABLE_RESOURCES);
         }
 
-        List<GpuTypeResponseDTO> response = gpuSummaries.stream()
-                .map(GpuTypeResponseDTO::fromQueryResult)
-                .collect(Collectors.toList());
+        var summaries = gpuRepository.findGpuSummary(); // List<GpuSummary>
+        var response = summaries.stream()
+                .map(GpuTypeResponseDTO::fromSummary)
+                .toList();
 
         log.info("[getGpuTypeResources] GPU 기종별 리소스 정보 조회 완료. {}개 기종", response.size());
         return response;

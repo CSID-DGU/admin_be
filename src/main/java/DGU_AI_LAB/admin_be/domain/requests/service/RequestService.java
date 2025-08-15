@@ -4,7 +4,10 @@ import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
+import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
+import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.*;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.AcceptInfoResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
@@ -51,6 +54,7 @@ public class RequestService {
     private final PasswordEncoder passwordEncoder;
     private final RestTemplate restTemplate;
     private final IdAllocationService idAllocationService;
+    private final NodeRepository nodeRepository;
 
     @Value("${pvc.base-url}")
     private String pvcBaseUrl;
@@ -196,6 +200,17 @@ public class RequestService {
     @Transactional(readOnly = true)
     public boolean isUbuntuUsernameAvailable(String username) {
         return !requestRepository.existsByUbuntuUsername(username);
+    }
+
+    /** config server용 acceptinfo */
+    public AcceptInfoResponseDTO getAcceptInfo(String username) {
+        Request request = requestRepository.findByUbuntuUsername(username)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_APPROVAL_NOT_FOUND));
+
+        ResourceGroup group = request.getResourceGroup();
+        List<Node> nodes = nodeRepository.findAllByResourceGroup(group);
+
+        return AcceptInfoResponseDTO.fromEntity(request, nodes);
     }
 
     /** 변경 요청 */
