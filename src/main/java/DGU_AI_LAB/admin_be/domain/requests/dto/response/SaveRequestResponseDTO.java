@@ -2,9 +2,11 @@ package DGU_AI_LAB.admin_be.domain.requests.dto.response;
 
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import com.fasterxml.jackson.annotation.JsonRawValue;
 import lombok.Builder;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Builder
 public record SaveRequestResponseDTO(
@@ -14,10 +16,10 @@ public record SaveRequestResponseDTO(
         String imageVersion,
         String ubuntuUsername,
         Long ubuntuUid,
+        List<Long> ubuntuGids,
         Long volumeSizeByte,
-        String cudaVersion,
         String usagePurpose,
-        String formAnswers,
+        @JsonRawValue String formAnswers,
         LocalDateTime expiresAt,
         Status status,
         LocalDateTime approvedAt,
@@ -30,15 +32,21 @@ public record SaveRequestResponseDTO(
                 .imageName(request.getContainerImage().getImageName())
                 .imageVersion(request.getContainerImage().getImageVersion())
                 .ubuntuUsername(request.getUbuntuUsername())
-                .ubuntuUid(request.getUbuntuUid())
-                .volumeSizeByte(request.getVolumeSizeByte())
-                .cudaVersion(request.getCudaVersion())
+                .ubuntuUid(request.getUbuntuUid() != null
+                        ? request.getUbuntuUid().getIdValue()
+                        : null)
+                .ubuntuGids(
+                        request.getRequestGroups().stream()
+                                .map(rg -> rg.getGroup().getUbuntuGid())
+                                .toList()
+                )
+                .volumeSizeByte(request.getVolumeSizeGiB())
                 .usagePurpose(request.getUsagePurpose())
                 .formAnswers(request.getFormAnswers())
                 .expiresAt(request.getExpiresAt())
                 .status(request.getStatus())
                 .approvedAt(request.getApprovedAt())
-                .comment(request.getComment())
+                .comment(request.getAdminComment())
                 .build();
     }
 }

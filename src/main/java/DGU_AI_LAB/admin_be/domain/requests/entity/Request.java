@@ -3,7 +3,10 @@ package DGU_AI_LAB.admin_be.domain.requests.entity;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
+import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
 import jakarta.persistence.*;
 import lombok.*;
@@ -23,20 +26,17 @@ public class Request extends BaseTimeEntity {
     @Column(name = "request_id")
     private Long requestId;
 
-    @Column(name = "ubuntu_username", nullable = false, length = 100)
+    @Column(name = "ubuntu_username", nullable = false, length = 100, unique = true)
     private String ubuntuUsername;
 
-    @Column(name = "ubuntu_uid", nullable = false)
-    private Long ubuntuUid;
+    @Column(name = "ubuntu_password", nullable = false)
+    private String ubuntuPassword;
+
+    @Column(name = "volume_size_GiB", nullable = false)
+    private Long volumeSizeGiB;
 
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
-
-    @Column(name = "volume_size_byte", nullable = false)
-    private Long volumeSizeByte;
-
-    @Column(name = "cuda_version", nullable = false, length = 100)
-    private String cudaVersion;
 
     @Column(name = "usage_purpose", nullable = false, length = 1000)
     private String usagePurpose;
@@ -58,34 +58,23 @@ public class Request extends BaseTimeEntity {
     /**
      * 거절 사유 등, status에 대한 설명
      */
-    @Column(name = "comment", length = 300)
-    private String comment;
-
-    /**
-     * 사용자가 볼륨 수정 요청 시 담아두는 값
-     */
-    @Column(name = "requested_volume_size_byte")
-    private Long requestedVolumeSizeByte;
-
-    /**
-     * 사용자가 만료일 수정 요청 시 담아두는 값
-     */
-    @Column(name = "requested_expires_at")
-    private LocalDateTime requestedExpiresAt;
+    @Column(name = "admin_comment", length = 300)
+    private String adminComment;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "ubuntuUid", referencedColumnName = "id_value", nullable = true)
+    private UsedId ubuntuUid;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "rsgroup_id", nullable = false)
     private ResourceGroup resourceGroup;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumns({
-            @JoinColumn(name = "image_name", referencedColumnName = "image_name", nullable = false),
-            @JoinColumn(name = "image_version", referencedColumnName = "image_version", nullable = false)
-    })
+    @JoinColumn(name = "image_id", nullable = false)
     private ContainerImage containerImage;
 
     @OneToMany(mappedBy = "request", cascade = CascadeType.ALL, orphanRemoval = true)
@@ -95,56 +84,71 @@ public class Request extends BaseTimeEntity {
     // ==== 비즈니스 로직 ====
     public void updateStatus(Status status, String comment, LocalDateTime approvedAt) {
         this.status = status;
-        this.comment = comment;
+        this.adminComment = comment;
         this.approvedAt = approvedAt;
     }
 
-    public void approve(ContainerImage image, Long volumeSizeByte, String cudaVersion) {
+    public void approve(ContainerImage image, ResourceGroup resourceGroup, Long volumeSizeGiB, LocalDateTime expiresAt, String adminComment) {
         this.containerImage = image;
-        this.volumeSizeByte = volumeSizeByte;
-        this.cudaVersion = cudaVersion;
+        this.resourceGroup = resourceGroup;
+        this.volumeSizeGiB = volumeSizeGiB;
+        this.expiresAt = expiresAt;
         this.status = Status.FULFILLED;
         this.approvedAt = LocalDateTime.now();
-        this.comment = null;
+
+        if (adminComment != null && !adminComment.isBlank()) {
+            this.adminComment = adminComment;
+        }
     }
 
     public void reject(String comment) {
         this.status = Status.DENIED;
-        this.approvedAt = LocalDateTime.now();
-        this.comment = comment;
+        this.adminComment = comment;
     }
 
-    public void requestModification(Long newVolumeSizeByte, LocalDateTime newExpiresAt, String reason) {
-        this.requestedVolumeSizeByte = newVolumeSizeByte;
+    /*public void requestModification(Long newVolumeSizeByte, LocalDateTime newExpiresAt, String reason) {
+        this.requestedVolumeSizeGi = newVolumeSizeByte;
         this.requestedExpiresAt = newExpiresAt;
-        this.comment = "변경 요청: " + reason;
-    }
+        this.adminComment = "변경 요청: " + reason;
+    }*/
 
-    public void applyModification() {
-        if (this.requestedVolumeSizeByte != null) {
-            this.volumeSizeByte = this.requestedVolumeSizeByte;
+    /*public void applyModification() {
+        if (this.requestedVolumeSizeGi != null) {
+            this.volumeSizeGiB = this.requestedVolumeSizeGi;
         }
         if (this.requestedExpiresAt != null) {
             this.expiresAt = this.requestedExpiresAt;
         }
-        this.requestedVolumeSizeByte = null;
+        this.requestedVolumeSizeGi = null;
         this.requestedExpiresAt = null;
-        this.comment = "변경 완료됨";
-    }
+        this.adminComment = "변경 완료됨";
+    }*/
 
-    public void rejectModification(String reason) {
-        this.requestedVolumeSizeByte = null;
+    /*public void rejectModification(String reason) {
+        this.requestedVolumeSizeGi = null;
         this.requestedExpiresAt = null;
-        this.comment = "변경 요청 거절: " + reason;
+        this.adminComment = "변경 요청 거절: " + reason;
+    }*/
+
+    public void assignUbuntuUid(UsedId uid) {
+        this.ubuntuUid = uid;
     }
 
     public void addGroup(Group group) {
+        Long rid = this.getRequestId();
+        if (rid == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+
         RequestGroup rg = RequestGroup.builder()
+                .id(new RequestGroupId(rid, group.getUbuntuGid()))
                 .request(this)
                 .group(group)
                 .build();
+
         this.requestGroups.add(rg);
     }
+
 
     public void removeGroup(Long ubuntuGid) {
         this.requestGroups.removeIf(rg -> rg.getGroup().getUbuntuGid().equals(ubuntuGid));

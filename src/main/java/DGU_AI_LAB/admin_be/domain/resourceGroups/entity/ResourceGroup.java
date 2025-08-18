@@ -21,4 +21,7 @@ public class ResourceGroup {
 
     @Column(name = "description", length = 500)
     private String description;
+
+    @Column(name = "server_name", length = 300)
+    private String serverName;
 }

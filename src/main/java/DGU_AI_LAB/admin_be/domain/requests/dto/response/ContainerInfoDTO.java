@@ -23,7 +23,7 @@ public record ContainerInfoDTO(
                 .userId(request.getUser().getUserId())
                 .userName(request.getUser().getName())
                 .ubuntuUsername(request.getUbuntuUsername())
-                .ubuntuUid(request.getUbuntuUid())
+                //.ubuntuUid(request.getUbuntuUid())
                 .ubuntuGids(
                         request.getRequestGroups().stream()
                                 .map(rg -> rg.getGroup().getUbuntuGid())

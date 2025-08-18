@@ -1,7 +1,9 @@
 package DGU_AI_LAB.admin_be.domain.users.controller.docs;
 
+import DGU_AI_LAB.admin_be.domain.users.dto.request.UserAuthRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.domain.users.dto.response.UserAuthResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -45,4 +47,26 @@ public interface AuthApi {
     )
     @ApiResponse(responseCode = "200", description = "로그인 성공 및 토큰 발급")
     ResponseEntity<UserTokenResponseDTO> login(UserLoginRequestDTO request);
+
+    @Operation(
+            summary = "SSH 로그인",
+            description = "사용자가 입력한 username과 password를 request에 있는 정보와 비교합니다.",
+            requestBody = @RequestBody(
+                    required = true,
+                    description = "SSH 로그인 인증 정보",
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = UserAuthRequestDTO.class)
+                    )
+            )
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "인증 결과 반환",
+            content = @Content(
+                    mediaType = "application/json",
+                    schema = @Schema(implementation = UserAuthResponseDTO.class)
+            )
+    )
+    ResponseEntity<UserAuthResponseDTO> userAuth(UserAuthRequestDTO request);
 }
