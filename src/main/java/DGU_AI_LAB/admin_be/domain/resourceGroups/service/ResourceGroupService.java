@@ -2,6 +2,8 @@ package DGU_AI_LAB.admin_be.domain.resourceGroups.service;
 
 import DGU_AI_LAB.admin_be.domain.gpus.dto.response.GpuTypeResponseDTO;
 import DGU_AI_LAB.admin_be.domain.gpus.repository.GpuRepository;
+import DGU_AI_LAB.admin_be.domain.resourceGroups.dto.response.ResourceGroupResponseDTO;
+import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +21,7 @@ import java.util.stream.Collectors;
 public class ResourceGroupService {
 
     private final GpuRepository gpuRepository;
+    private final ResourceGroupRepository resourceGroupRepository;
 
     /**
      * GPU 기종별 리소스 정보 조회
@@ -47,6 +50,26 @@ public class ResourceGroupService {
                 .toList();
 
         log.info("[getGpuTypeResources] GPU 기종별 리소스 정보 조회 완료. {}개 기종", response.size());
+        return response;
+    }
+
+    /**
+     * 모든 리소스 그룹 정보를 조회하는 API
+     * GET /api/resources/groups
+     */
+    public List<ResourceGroupResponseDTO> getAllResourceGroups() {
+        log.info("[getAllResourceGroups] 모든 리소스 그룹 정보 조회 시작");
+        var resourceGroups = resourceGroupRepository.findAll();
+
+        if (resourceGroups.isEmpty()) {
+            log.warn("[getAllResourceGroups] 조회된 리소스 그룹이 없습니다.");
+        }
+
+        var response = resourceGroups.stream()
+                .map(ResourceGroupResponseDTO::fromEntity)
+                .toList();
+
+        log.info("[getAllResourceGroups] 모든 리소스 그룹 정보 조회 완료. {}개 그룹", response.size());
         return response;
     }
 }
