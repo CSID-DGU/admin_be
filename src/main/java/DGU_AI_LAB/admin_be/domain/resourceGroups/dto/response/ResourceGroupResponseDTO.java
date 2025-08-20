@@ -6,12 +6,14 @@ import lombok.Builder;
 @Builder
 public record ResourceGroupResponseDTO(
         Integer rsgroupId,
-        String description
+        String description,
+        String serverName
 ) {
     public static ResourceGroupResponseDTO fromEntity(ResourceGroup resourceGroup) {
         return ResourceGroupResponseDTO.builder()
                 .rsgroupId(resourceGroup.getRsgroupId())
                 .description(resourceGroup.getDescription())
+                .serverName(resourceGroup.getServerName())
                 .build();
     }
 }
