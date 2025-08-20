@@ -93,6 +93,11 @@ public enum ErrorCode {
     INVALID_PASSWORD(HttpStatus.UNAUTHORIZED, "현재 비밀번호가 일치하지 않습니다."),
     PASSWORD_CHANGE_SAME_AS_OLD(HttpStatus.BAD_REQUEST, "새 비밀번호가 현재 비밀번호와 동일합니다."),
 
+    /**
+     * Group Error
+     */
+    NO_AVAILABLE_GROUPS(HttpStatus.NOT_FOUND, "존재하는 그룹 정보가 없습니다."),
+
 
     /**
      * Approval Error
