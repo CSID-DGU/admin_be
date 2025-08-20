@@ -18,7 +18,7 @@ import java.util.Set;
 public class Node {
 
     /**
-     * ex. LAB1, FARM2 ...
+     * ex. LAB, FARM ...
      */
     @Id
     @Column(name = "node_id", length = 100)

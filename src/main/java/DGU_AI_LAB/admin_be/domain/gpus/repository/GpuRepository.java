@@ -12,9 +12,9 @@ public interface GpuRepository extends JpaRepository<Gpu, Long> {
 
     // GPU 요약 프로젝션
     interface GpuSummary {
-        String getGpuModel();
         Integer getRamGb();
         String getDescription();
+        String getResourceGroupName();
         Long getNodeCount();
         Integer getRsgroupId();
         String getNodeId();
@@ -22,9 +22,9 @@ public interface GpuRepository extends JpaRepository<Gpu, Long> {
     }
 
     @Query("""
-        SELECT g.gpuModel AS gpuModel,
-               g.ramGb AS ramGb,
+        SELECT g.ramGb AS ramGb,
                rg.description AS description,
+               rg.resourceGroupName AS resourceGroupName,
                COUNT(DISTINCT n.nodeId) AS nodeCount,
                rg.rsgroupId AS rsgroupId,
                n.nodeId AS nodeId,
@@ -32,7 +32,7 @@ public interface GpuRepository extends JpaRepository<Gpu, Long> {
         FROM Gpu g
         JOIN g.node n
         JOIN n.resourceGroup rg
-        GROUP BY g.gpuModel, g.ramGb, rg.description, rg.rsgroupId, n.nodeId, rg.serverName
+        GROUP BY g.ramGb, rg.description, rg.resourceGroupName, rg.rsgroupId, n.nodeId, rg.serverName
     """)
     List<GpuSummary> findGpuSummary();
 
