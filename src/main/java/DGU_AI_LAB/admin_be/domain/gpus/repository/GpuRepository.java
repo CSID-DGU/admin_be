@@ -17,7 +17,8 @@ public interface GpuRepository extends JpaRepository<Gpu, Long> {
         String getDescription();
         Long getNodeCount();
         Integer getRsgroupId();
-        String getNodeId(); // 이 부분을 추가해야 합니다! 🚀
+        String getNodeId();
+        String getServerName();
     }
 
     @Query("""
@@ -26,11 +27,12 @@ public interface GpuRepository extends JpaRepository<Gpu, Long> {
                rg.description AS description,
                COUNT(DISTINCT n.nodeId) AS nodeCount,
                rg.rsgroupId AS rsgroupId,
-               n.nodeId AS nodeId
+               n.nodeId AS nodeId,
+               rg.serverName AS serverName
         FROM Gpu g
         JOIN g.node n
         JOIN n.resourceGroup rg
-        GROUP BY g.gpuModel, g.ramGb, rg.description, rg.rsgroupId, n.nodeId
+        GROUP BY g.gpuModel, g.ramGb, rg.description, rg.rsgroupId, n.nodeId, rg.serverName
     """)
     List<GpuSummary> findGpuSummary();
 
