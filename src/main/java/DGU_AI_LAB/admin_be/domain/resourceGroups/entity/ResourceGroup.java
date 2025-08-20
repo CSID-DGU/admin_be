@@ -19,9 +19,12 @@ public class ResourceGroup {
     @Column(name = "rsgroup_id", nullable = false)
     private Integer rsgroupId;
 
+    @Column(name = "resource_group_name", length = 300)
+    private String resourceGroupName; // ex. 3090ti ...
+
     @Column(name = "description", length = 500)
     private String description;
 
     @Column(name = "server_name", length = 300)
-    private String serverName;
+    private String serverName; // ex. FARM, LAB
 }

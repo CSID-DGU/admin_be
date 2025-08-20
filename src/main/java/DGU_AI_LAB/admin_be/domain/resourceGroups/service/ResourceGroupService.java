@@ -30,7 +30,7 @@ public class ResourceGroupService {
         List<GpuRepository.GpuSummary> gpuSummaries = gpuRepository.findGpuSummary();
 
         for (GpuRepository.GpuSummary summary : gpuSummaries) {
-            System.out.println(summary.getGpuModel());
+            System.out.println(summary.getResourceGroupName());
             System.out.println(summary.getRamGb());
             System.out.println(summary.getDescription());
             System.out.println(summary.getNodeCount());
@@ -41,7 +41,7 @@ public class ResourceGroupService {
             throw new BusinessException(ErrorCode.NO_AVAILABLE_RESOURCES);
         }
 
-        var summaries = gpuRepository.findGpuSummary(); // List<GpuSummary>
+        var summaries = gpuRepository.findGpuSummary();
         var response = summaries.stream()
                 .map(GpuTypeResponseDTO::fromSummary)
                 .toList();
