@@ -25,6 +25,9 @@ public record GpuTypeResponseDTO(
         @Schema(description = "노드 ID", example = "LAB1")
         String nodeId,
 
+        @Schema(description = "서버명", example = "서버01") // serverName 필드 추가
+        String serverName,
+
         @Schema(description = "사용 가능한 노드(서버) 개수", example = "5")
         Long availableNodes,
 
@@ -41,14 +44,15 @@ public record GpuTypeResponseDTO(
      * [3] availableNodes
      * [4] rsgroupId
      * [5] nodeId
+     * [6] serverName
      * </p>
      *
      * @param queryResult 쿼리 결과 객체 배열
      * @return 변환된 GpuTypeResponseDTO
      */
     public static GpuTypeResponseDTO fromQueryResult(Object[] queryResult) {
-        if (queryResult == null || queryResult.length < 6) {
-            throw new IllegalArgumentException("Invalid query result format for GpuTypeResponseDTO. Expected at least 6 elements.");
+        if (queryResult == null || queryResult.length < 7) {
+            throw new IllegalArgumentException("Invalid query result format for GpuTypeResponseDTO. Expected at least 7 elements.");
         }
         String gpuModel = (String) queryResult[0];
         Integer ramGb = (Integer) queryResult[1];
@@ -56,6 +60,7 @@ public record GpuTypeResponseDTO(
         Long availableNodes = ((Number) queryResult[3]).longValue();
         Integer rsgroupId = (Integer) queryResult[4];
         String nodeId = (String) queryResult[5];
+        String serverName = (String) queryResult[6];
 
         return GpuTypeResponseDTO.builder()
                 .gpuModel(gpuModel)
@@ -63,7 +68,8 @@ public record GpuTypeResponseDTO(
                 .resourceGroupName(resourceGroupName)
                 .availableNodes(availableNodes)
                 .rsgroupId(rsgroupId)
-                .nodeId(nodeId) // nodeId를 빌더에 추가
+                .nodeId(nodeId)
+                .serverName(serverName)
                 .isAvailable(true) // 현재는 항상 true로 가정
                 .build();
     }
@@ -71,7 +77,7 @@ public record GpuTypeResponseDTO(
     /**
      * GpuSummary 객체를 DTO로 변환하는 팩토리 메서드입니다.
      * <p>
-     * GpuSummary 인터페이스에 nodeId를 가져오는 메서드가 있다고 가정합니다.
+     * GpuSummary 인터페이스에 serverName을 가져오는 메서드가 있다고 가정합니다.
      * </p>
      *
      * @param s GpuSummary 객체
@@ -85,6 +91,7 @@ public record GpuTypeResponseDTO(
                 .availableNodes(s.getNodeCount())
                 .rsgroupId(s.getRsgroupId())
                 .nodeId(s.getNodeId())
+                .serverName(s.getServerName())
                 .build();
     }
 }
