@@ -74,11 +74,9 @@ public record SaveRequestResponseDTO(
     public static SaveRequestResponseDTO fromEntity(Request request) {
         return SaveRequestResponseDTO.builder()
                 .requestId(request.getRequestId())
-                .resourceGroupId(request.getResourceGroup() != null ? request.getResourceGroup().getRsgroupId() : null)
-                .resourceGroup(request.getResourceGroup() != null ? 
-                        AdminResourceGroupInfo.fromEntity(request.getResourceGroup()) : null)
-                .user(request.getUser() != null ? 
-                        AdminUserInfo.fromEntity(request.getUser()) : null)
+                .resourceGroupId(request.getResourceGroup().getRsgroupId())
+                .resourceGroup(AdminResourceGroupInfo.fromEntity(request.getResourceGroup()))
+                .user(AdminUserInfo.fromEntity(request.getUser()))
                 .imageName(request.getContainerImage().getImageName())
                 .imageVersion(request.getContainerImage().getImageVersion())
                 .ubuntuUsername(request.getUbuntuUsername())

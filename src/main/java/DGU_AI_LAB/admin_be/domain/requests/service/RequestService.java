@@ -95,6 +95,18 @@ public class RequestService {
                 req.addGroup(g);
             }
         }
+        
+        // Validate required entities before DTO conversion
+        if (req.getResourceGroup() == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_GROUP_NOT_FOUND);
+        }
+        if (req.getUser() == null) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+        if (req.getContainerImage() == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        
         return SaveRequestResponseDTO.fromEntity(req);
     }
 
@@ -158,6 +170,17 @@ public class RequestService {
             throw new BusinessException(ErrorCode.EXTERNAL_API_FAILED);
         }
 
+        // Validate required entities before DTO conversion
+        if (request.getResourceGroup() == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_GROUP_NOT_FOUND);
+        }
+        if (request.getUser() == null) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+        if (request.getContainerImage() == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        
         return SaveRequestResponseDTO.fromEntity(request);
     }
 
@@ -174,6 +197,18 @@ public class RequestService {
         request.reject(
                 dto.adminComment()
         );
+        
+        // Validate required entities before DTO conversion
+        if (request.getResourceGroup() == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_GROUP_NOT_FOUND);
+        }
+        if (request.getUser() == null) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+        if (request.getContainerImage() == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        
         return SaveRequestResponseDTO.fromEntity(request);
     }
 
@@ -181,7 +216,7 @@ public class RequestService {
     @Transactional(readOnly = true)
     public List<SaveRequestResponseDTO> getAllRequests() {
         return requestRepository.findAll().stream()
-                .map(SaveRequestResponseDTO::fromEntity)
+                .map(this::validateAndConvertToDTO)
                 .toList();
     }
 
@@ -192,7 +227,7 @@ public class RequestService {
             throw new BusinessException(ErrorCode.USER_NOT_FOUND);
         }
         return requestRepository.findAllByUser_UserId(userId).stream()
-                .map(SaveRequestResponseDTO::fromEntity)
+                .map(this::validateAndConvertToDTO)
                 .toList();
     }
 
@@ -253,5 +288,20 @@ public class RequestService {
         return requestRepository.findAllByStatus(Status.FULFILLED).stream()
                 .map(ContainerInfoDTO::fromEntity)
                 .toList();
+    }
+    
+    private SaveRequestResponseDTO validateAndConvertToDTO(Request request) {
+        // Validate required entities before DTO conversion
+        if (request.getResourceGroup() == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_GROUP_NOT_FOUND);
+        }
+        if (request.getUser() == null) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+        if (request.getContainerImage() == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        
+        return SaveRequestResponseDTO.fromEntity(request);
     }
 }
