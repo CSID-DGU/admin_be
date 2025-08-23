@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.dashboard.service;
 
+import DGU_AI_LAB.admin_be.domain.containerImage.dto.response.ContainerImageResponseDTO;
 import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
 import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.UserServerResponseDTO;
@@ -53,12 +54,18 @@ public class DashboardService {
                         }
                     }
 
+                    ContainerImageResponseDTO containerImageDTO = null;
+                    if (request.getContainerImage() != null) {
+                        containerImageDTO = ContainerImageResponseDTO.fromEntity(request.getContainerImage());
+                    }
+
                     return UserServerResponseDTO.fromEntity(
                             request,
                             serverAddress,
                             cpuCoreCount,
                             memoryGB,
-                            resourceGroupName
+                            resourceGroupName,
+                            containerImageDTO
                     );
                 })
                 .collect(Collectors.toList());
