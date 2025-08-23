@@ -32,7 +32,12 @@ public class DashboardService {
     public List<UserServerResponseDTO> getUserServers(Long userId, Status status) {
         log.info("[getUserServers] userId={}의 status={} 서버 목록 조회 시작", userId, status);
 
-        List<Request> requests = requestRepository.findByUserUserIdAndStatus(userId, status);
+        List<Request> requests;
+        if (status == Status.ALL) {
+            requests = requestRepository.findAllByUser_UserId(userId);
+        } else {
+            requests = requestRepository.findByUserUserIdAndStatus(userId, status);
+        }
 
         return requests.stream()
                 .map(request -> {
