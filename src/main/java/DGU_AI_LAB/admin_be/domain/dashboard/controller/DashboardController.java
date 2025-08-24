@@ -31,8 +31,9 @@ public class DashboardController implements DashBoardApi {
      * GET /api/dashboard/me/servers
      *
      * @param principal 현재 로그인한 사용자의 인증 정보 (CustomUserDetails)
-     * @param status    조회할 서버 요청의 상태 (필수 값: PENDING, FULFILLED, DENIED 등)
+     * @param status    조회할 서버 요청의 상태 (필수 값: PENDING, FULFILLED, DENIED, ALL)
      * 사용자의 승인받은 서버 목록 또는 승인 대기중인 신청 목록을 필터링하여 반환합니다.
+     * 'ALL' 상태를 사용하면 모든 상태의 요청을 반환합니다.
      */
     @GetMapping("/me/servers")
     public ResponseEntity<SuccessResponse<?>> getUserServers(
