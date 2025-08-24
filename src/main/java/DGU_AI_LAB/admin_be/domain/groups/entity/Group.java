@@ -10,18 +10,21 @@ import lombok.*;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
-@EqualsAndHashCode(of = "ubuntuGid")
+@EqualsAndHashCode(of = "groupId")
 public class Group {
 
     @Id
-    @Column(name = "ubuntu_gid", nullable = false)
-    private Long ubuntuGid;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "group_id")
+    private Long groupId;
 
     @Column(name = "group_name", nullable = false, length = 100)
     private String groupName;
 
+    @Column(name = "ubuntu_gid", unique = true, nullable = false)
+    private Long ubuntuGid;
+
     @OneToOne(fetch = FetchType.LAZY)
-    @MapsId
-    @JoinColumn(name = "ubuntu_gid")
+    @JoinColumn(name = "ubuntu_gid", referencedColumnName = "id_value", insertable = false, updatable = false)
     private UsedId usedId;
 }
