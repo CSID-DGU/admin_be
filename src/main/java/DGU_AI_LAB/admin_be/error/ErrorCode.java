@@ -97,6 +97,7 @@ public enum ErrorCode {
      * Group Error
      */
     NO_AVAILABLE_GROUPS(HttpStatus.NOT_FOUND, "존재하는 그룹 정보가 없습니다."),
+    DUPLICATE_GROUP_ID(HttpStatus.CONFLICT, "중복된 그룹 ID를 할당할 수 없습니다."),
 
 
     /**
