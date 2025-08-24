@@ -159,16 +159,18 @@ public class RequestService {
                 request.getVolumeSizeGiB()
         );
 
-        HttpEntity<PvcRequest> entity = new HttpEntity<>(body, headers);
+        // Should enable when pvc service is ready
 
-        try {
-            ResponseEntity<Void> res = restTemplate.postForEntity(url, entity, Void.class);
-            if (!res.getStatusCode().is2xxSuccessful()) {
-                throw new BusinessException(ErrorCode.EXTERNAL_API_FAILED);
-            }
-        } catch (Exception ex) {
-            throw new BusinessException(ErrorCode.EXTERNAL_API_FAILED);
-        }
+//        HttpEntity<PvcRequest> entity = new HttpEntity<>(body, headers);
+//
+//        try {
+//            ResponseEntity<Void> res = restTemplate.postForEntity(url, entity, Void.class);
+//            if (!res.getStatusCode().is2xxSuccessful()) {
+//                throw new BusinessException(ErrorCode.EXTERNAL_API_FAILED);
+//            }
+//        } catch (Exception ex) {
+//            throw new BusinessException(ErrorCode.EXTERNAL_API_FAILED);
+//        }
 
         // Validate required entities before DTO conversion
         if (request.getResourceGroup() == null) {
@@ -190,7 +192,7 @@ public class RequestService {
         Request request = requestRepository.findById(dto.requestId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        if (request.getStatus() != Status.PENDING) {
+        if (!(request.getStatus() == Status.PENDING || request.getStatus() == Status.FULFILLED)) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
 

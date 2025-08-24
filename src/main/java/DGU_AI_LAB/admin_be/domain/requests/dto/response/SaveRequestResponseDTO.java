@@ -16,6 +16,7 @@ public record SaveRequestResponseDTO(
         Integer resourceGroupId,
         AdminResourceGroupInfo resourceGroup,
         AdminUserInfo user,
+        Long imageId,
         String imageName,
         String imageVersion,
         String ubuntuUsername,
@@ -77,6 +78,7 @@ public record SaveRequestResponseDTO(
                 .resourceGroupId(request.getResourceGroup().getRsgroupId())
                 .resourceGroup(AdminResourceGroupInfo.fromEntity(request.getResourceGroup()))
                 .user(AdminUserInfo.fromEntity(request.getUser()))
+                .imageId(request.getContainerImage().getImageId())
                 .imageName(request.getContainerImage().getImageName())
                 .imageVersion(request.getContainerImage().getImageVersion())
                 .ubuntuUsername(request.getUbuntuUsername())
