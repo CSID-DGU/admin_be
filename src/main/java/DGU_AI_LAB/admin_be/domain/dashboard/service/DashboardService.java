@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.dashboard.service;
 
+import DGU_AI_LAB.admin_be.domain.containerImage.dto.response.ContainerImageResponseDTO;
 import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
 import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.UserServerResponseDTO;
@@ -31,7 +32,12 @@ public class DashboardService {
     public List<UserServerResponseDTO> getUserServers(Long userId, Status status) {
         log.info("[getUserServers] userId={}의 status={} 서버 목록 조회 시작", userId, status);
 
-        List<Request> requests = requestRepository.findByUserUserIdAndStatus(userId, status);
+        List<Request> requests;
+        if (status == Status.ALL) {
+            requests = requestRepository.findAllByUser_UserId(userId);
+        } else {
+            requests = requestRepository.findByUserUserIdAndStatus(userId, status);
+        }
 
         return requests.stream()
                 .map(request -> {
@@ -53,12 +59,18 @@ public class DashboardService {
                         }
                     }
 
+                    ContainerImageResponseDTO containerImageDTO = null;
+                    if (request.getContainerImage() != null) {
+                        containerImageDTO = ContainerImageResponseDTO.fromEntity(request.getContainerImage());
+                    }
+
                     return UserServerResponseDTO.fromEntity(
                             request,
                             serverAddress,
                             cpuCoreCount,
                             memoryGB,
-                            resourceGroupName
+                            resourceGroupName,
+                            containerImageDTO
                     );
                 })
                 .collect(Collectors.toList());

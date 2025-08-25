@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.dto.response;
 
+import DGU_AI_LAB.admin_be.domain.containerImage.dto.response.ContainerImageResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -25,18 +26,21 @@ public record UserServerResponseDTO(
         Integer memoryGB,
         @Schema(description = "할당된 리소스 그룹명 (GPU 스펙 묶음)", example = "RTX 3090 D6 24GB 그룹")
         String resourceGroupName,
+        @Schema(description = "컨테이너 이미지 정보")
+        ContainerImageResponseDTO containerImage,
         @Schema(description = "서버 신청 상태", example = "FULFILLED", allowableValues = {"PENDING", "FULFILLED", "DENIED", "MODIFICATION_REQUESTED", "MODIFICATION_APPROVED", "MODIFICATION_REJECTED"})
         Status status
 ) {
-    public static UserServerResponseDTO fromEntity(Request request, String serverAddress, Integer cpuCoreCount, Integer memoryGB, String resourceGroupName) {
+    public static UserServerResponseDTO fromEntity(Request request, String serverAddress, Integer cpuCoreCount, Integer memoryGB, String resourceGroupName, ContainerImageResponseDTO containerImage) {
         return UserServerResponseDTO.builder()
                 .requestId(request.getRequestId())
                 .serverAddress(serverAddress)
                 .expiresAt(request.getExpiresAt())
-                .volumeSizeGiB(request.getVolumeSizeGiB() / (1024L * 1024 * 1024))
+                .volumeSizeGiB(request.getVolumeSizeGiB())
                 .cpuCoreCount(cpuCoreCount)
                 .memoryGB(memoryGB)
                 .resourceGroupName(resourceGroupName)
+                .containerImage(containerImage)
                 .status(request.getStatus())
                 .build();
     }

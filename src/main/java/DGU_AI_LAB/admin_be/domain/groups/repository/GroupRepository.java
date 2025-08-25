@@ -10,4 +10,5 @@ import java.util.Set;
 @Repository
 public interface GroupRepository extends JpaRepository<Group, Long> {
     List<Group> findAllByUbuntuGidIn(Set<Long> ubuntuGids);
+    boolean existsByUbuntuGid(Long ubuntuGid);
 }
