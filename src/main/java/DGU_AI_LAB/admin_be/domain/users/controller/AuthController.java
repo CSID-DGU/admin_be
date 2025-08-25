@@ -43,7 +43,7 @@ public class AuthController implements AuthApi {
     }
 
     /** ssh 로그인 */
-    @PostMapping("/users")
+    @PostMapping("/users/password")
     public ResponseEntity<UserAuthResponseDTO> userAuth(@RequestBody @Valid UserAuthRequestDTO dto) {
         return ResponseEntity.ok(userService.userAuth(dto));
     }
