@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.dashboard.controller;
 
 import DGU_AI_LAB.admin_be.domain.dashboard.controller.docs.DashBoardApi;
 import DGU_AI_LAB.admin_be.domain.dashboard.service.DashboardService;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.UserServerResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
@@ -25,15 +26,11 @@ public class DashboardController implements DashBoardApi {
 
     private final DashboardService dashboardService;
 
-
     /**
-     * 사용자 신청 현황 서버 목록 조회 API (대시보드 전용)
-     * GET /api/dashboard/me/servers
+     * 사용자 신청 현황 서버 목록 조회 API
      *
      * @param principal 현재 로그인한 사용자의 인증 정보 (CustomUserDetails)
      * @param status    조회할 서버 요청의 상태 (필수 값: PENDING, FULFILLED, DENIED, ALL)
-     * 사용자의 승인받은 서버 목록 또는 승인 대기중인 신청 목록을 필터링하여 반환합니다.
-     * 'ALL' 상태를 사용하면 모든 상태의 요청을 반환합니다.
      */
     @GetMapping("/me/servers")
     public ResponseEntity<SuccessResponse<?>> getUserServers(
@@ -42,5 +39,20 @@ public class DashboardController implements DashBoardApi {
     ) {
         List<UserServerResponseDTO> userServers = dashboardService.getUserServers(principal.getUserId(), status);
         return SuccessResponse.ok(userServers);
+    }
+
+    /**
+     * 사용자의 변경 요청 목록 조회 API
+     *
+     * @param principal 현재 로그인한 사용자의 인증 정보 (CustomUserDetails)
+     * @param status    조회할 변경 요청의 상태 (PENDING, APPROVED, DENIED)
+     */
+    @GetMapping("/me/change-requests")
+    public ResponseEntity<SuccessResponse<?>> getMyChangeRequests(
+            @AuthenticationPrincipal CustomUserDetails principal,
+            @RequestParam(name = "status") Status status
+    ) {
+        List<ChangeRequestResponseDTO> changeRequests = dashboardService.getMyChangeRequests(principal.getUserId(), status);
+        return SuccessResponse.ok(changeRequests);
     }
 }

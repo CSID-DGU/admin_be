@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.PvcRequest;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
@@ -32,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -183,4 +185,20 @@ public class AdminRequestService {
         // 6. ChangeRequest 상태를 FULFILLED로 변경하고 관리자 정보 기록
         changeRequest.approve(admin, dto.adminComment());
     }
+
+    // 신규 신청 목록 조회 메서드 추가 (기존 getAllRequests 변경)
+    public List<SaveRequestResponseDTO> getNewRequests() {
+        return requestRepository.findAllByStatus(Status.PENDING).stream()
+                .map(SaveRequestResponseDTO::fromEntity)
+                .collect(Collectors.toList());
+    }
+
+    // 변경 요청 목록 조회 메서드 추가
+    public List<ChangeRequestResponseDTO> getChangeRequests() {
+        return changeRequestRepository.findAllByStatus(Status.PENDING).stream()
+                .map(ChangeRequestResponseDTO::fromEntity)
+                .collect(Collectors.toList());
+    }
+
+
 }
