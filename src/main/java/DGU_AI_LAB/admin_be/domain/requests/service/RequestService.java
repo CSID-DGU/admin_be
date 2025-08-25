@@ -39,6 +39,7 @@ import org.springframework.web.client.RestTemplate;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -245,13 +246,35 @@ public class RequestService {
 
     /** config server용 acceptinfo */
     public AcceptInfoResponseDTO getAcceptInfo(String username) {
+        log.info("사용자 승인 정보 조회를 시작합니다. username: {}", username);
+
+        // 사용자 요청 정보 조회
         Request request = requestRepository.findByUbuntuUsername(username)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_APPROVAL_NOT_FOUND));
+                .orElseThrow(() -> {
+                    log.warn("사용자 '{}'에 대한 승인 정보가 존재하지 않습니다.", username);
+                    return new BusinessException(ErrorCode.USER_APPROVAL_NOT_FOUND);
+                });
 
+        log.debug("사용자 '{}'의 요청 정보를 성공적으로 찾았습니다. 요청 ID: {}", username, request.getRequestId());
+
+        // 리소스 그룹 및 노드 정보 조회
         ResourceGroup group = request.getResourceGroup();
-        List<Node> nodes = nodeRepository.findAllByResourceGroup(group);
+        log.info("사용자 '{}'의 리소스 그룹 ID: {}", username, group.getRsgroupId());
 
-        return AcceptInfoResponseDTO.fromEntity(request, nodes);
+        List<Node> nodes = nodeRepository.findAllByResourceGroup(group);
+        log.debug("리소스 그룹 '{}'에 속한 노드 {}개를 조회했습니다.", group.getRsgroupId(), nodes.size());
+
+        // 조회된 노드 이름 목록을 로그에 기록
+        List<String> nodeNames = nodes.stream()
+                .map(Node::getNodeId)
+                .collect(Collectors.toList());
+        log.debug("조회된 노드 목록: {}", nodeNames);
+
+        // 응답 DTO 생성 및 반환
+        AcceptInfoResponseDTO response = AcceptInfoResponseDTO.fromEntity(request, nodes);
+        log.info("사용자 '{}'에 대한 AcceptInfoResponseDTO 생성을 완료했습니다.", username);
+
+        return response;
     }
 
     /** 변경 요청 */
