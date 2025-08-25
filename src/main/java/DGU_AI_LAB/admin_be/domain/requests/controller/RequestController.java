@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller;
 
 import DGU_AI_LAB.admin_be.domain.requests.controller.docs.RequestApi;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.ModifyRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestService;
@@ -29,6 +30,16 @@ public class RequestController implements RequestApi {
         return ResponseEntity.ok(body);
     }
 
+    @PostMapping("/{requestId}/change")
+    public ResponseEntity<Void> createChangeRequest(
+            @AuthenticationPrincipal(expression = "userId") Long userId,
+            @PathVariable Long requestId,
+            @RequestBody @Valid ModifyRequestDTO dto
+    ) {
+        requestService.createModificationRequest(userId, requestId, dto);
+        return ResponseEntity.ok().build();
+    }
+
     @GetMapping("/my")
     public ResponseEntity<List<SaveRequestResponseDTO>> getMyRequests(
             @AuthenticationPrincipal CustomUserDetails user
@@ -36,19 +47,4 @@ public class RequestController implements RequestApi {
         return ResponseEntity.ok(requestService.getRequestsByUserId(user.getUserId()));
     }
 
-    @GetMapping("/check-username")
-    public ResponseEntity<?> checkUbuntuUsername(@RequestParam String username) {
-        boolean available = requestService.isUbuntuUsernameAvailable(username);
-        return ResponseEntity.ok().body(
-                java.util.Map.of(
-                        "available", available
-                )
-        );
-    }
-
-    /*@PostMapping("/modify")
-    public ResponseEntity<Void> requestModification(@RequestBody ModifyRequestDTO dto) {
-        requestService.requestModification(dto);
-        return ResponseEntity.ok().build();
-    }*/
 }
