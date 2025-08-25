@@ -6,8 +6,6 @@ import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ModifyRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
-import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
-import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
@@ -28,13 +26,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.Set;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class RequestService {
+@Transactional
+public class RequestCommandService {
 
     private final ObjectMapper objectMapper;
     private final RequestRepository requestRepository;
@@ -43,62 +41,6 @@ public class RequestService {
     private final GroupRepository groupRepository;
     private final ResourceGroupRepository resourceGroupRepository;
     private final ChangeRequestRepository changeRequestRepository;
-
-    /** 신청 생성 */
-    @Transactional
-    public SaveRequestResponseDTO createRequest(Long userId, SaveRequestRequestDTO dto) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-
-        ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-
-        if (requestRepository.existsByUbuntuUsername(dto.ubuntuUsername())) {
-            throw new BusinessException(ErrorCode.DUPLICATE_USERNAME);
-        }
-
-        ContainerImage img = containerImageRepository.findById(dto.imageId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-
-        String ubuntuPassword = PasswordUtil.encodePassword(dto.ubuntuPassword());
-
-        Request req = dto.toEntity(
-                user,
-                rg,
-                img,
-                java.util.Collections.emptySet(),
-                ubuntuPassword
-        );
-
-        req = requestRepository.save(req);
-        requestRepository.flush();
-
-        if (dto.ubuntuGids() != null && !dto.ubuntuGids().isEmpty()) {
-            Set<Group> found = new java.util.HashSet<>(groupRepository.findAllByUbuntuGidIn(dto.ubuntuGids()));
-
-            if (found.size() != dto.ubuntuGids().size()) {
-                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
-            }
-
-            for (Group g : found) {
-                req.addGroup(g);
-            }
-        }
-        
-        return SaveRequestResponseDTO.fromEntity(req);
-    }
-
-
-    /** 내 신청 목록 */
-    @Transactional(readOnly = true)
-    public List<SaveRequestResponseDTO> getRequestsByUserId(Long userId) {
-        if (!userRepository.existsById(userId)) {
-            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
-        }
-        return requestRepository.findAllByUser_UserId(userId).stream()
-                .map(SaveRequestResponseDTO::fromEntity)
-                .toList();
-    }
 
     /**
      * 사용 신청 변경 요청
@@ -154,20 +96,49 @@ public class RequestService {
         }
     }
 
-    /** 승인 완료 자원 사용량 */
-    @Transactional(readOnly = true)
-    public List<ResourceUsageDTO> getAllFulfilledResourceUsage() {
-        return requestRepository.findAllByStatus(Status.FULFILLED).stream()
-                .map(ResourceUsageDTO::fromEntity)
-                .toList();
+    /** 신청 생성 */
+    @Transactional
+    public SaveRequestResponseDTO createRequest(Long userId, SaveRequestRequestDTO dto) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        if (requestRepository.existsByUbuntuUsername(dto.ubuntuUsername())) {
+            throw new BusinessException(ErrorCode.DUPLICATE_USERNAME);
+        }
+
+        ContainerImage img = containerImageRepository.findById(dto.imageId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        String ubuntuPassword = PasswordUtil.encodePassword(dto.ubuntuPassword());
+
+        Request req = dto.toEntity(
+                user,
+                rg,
+                img,
+                java.util.Collections.emptySet(),
+                ubuntuPassword
+        );
+
+        req = requestRepository.save(req);
+        requestRepository.flush();
+
+        if (dto.ubuntuGids() != null && !dto.ubuntuGids().isEmpty()) {
+            Set<Group> found = new java.util.HashSet<>(groupRepository.findAllByUbuntuGidIn(dto.ubuntuGids()));
+
+            if (found.size() != dto.ubuntuGids().size()) {
+                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+            }
+
+            for (Group g : found) {
+                req.addGroup(g);
+            }
+        }
+
+        return SaveRequestResponseDTO.fromEntity(req);
     }
 
-    /** 활성 컨테이너 */
-    @Transactional(readOnly = true)
-    public List<ContainerInfoDTO> getActiveContainers() {
-        return requestRepository.findAllByStatus(Status.FULFILLED).stream()
-                .map(ContainerInfoDTO::fromEntity)
-                .toList();
-    }
 
 }

@@ -4,7 +4,8 @@ import DGU_AI_LAB.admin_be.domain.requests.controller.docs.RequestApi;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ModifyRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
-import DGU_AI_LAB.admin_be.domain.requests.service.RequestService;
+import DGU_AI_LAB.admin_be.domain.requests.service.RequestCommandService;
+import DGU_AI_LAB.admin_be.domain.requests.service.RequestQueryService;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -19,14 +20,15 @@ import java.util.List;
 @RequestMapping("/api/requests")
 public class RequestController implements RequestApi {
 
-    private final RequestService requestService;
+    private final RequestQueryService requestService;
+    private final RequestCommandService requestCommandService;
 
     @PostMapping
     public ResponseEntity<SaveRequestResponseDTO> createRequest(
             @AuthenticationPrincipal(expression = "userId") Long userId,
             @RequestBody @Valid SaveRequestRequestDTO dto
     ) {
-        SaveRequestResponseDTO body = requestService.createRequest(userId, dto);
+        SaveRequestResponseDTO body = requestCommandService.createRequest(userId, dto);
         return ResponseEntity.ok(body);
     }
 
@@ -36,7 +38,7 @@ public class RequestController implements RequestApi {
             @PathVariable Long requestId,
             @RequestBody @Valid ModifyRequestDTO dto
     ) {
-        requestService.createModificationRequest(userId, requestId, dto);
+        requestCommandService.createModificationRequest(userId, requestId, dto);
         return ResponseEntity.ok().build();
     }
 
