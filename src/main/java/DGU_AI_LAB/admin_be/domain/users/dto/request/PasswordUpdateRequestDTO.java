@@ -1,7 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 
 public record PasswordUpdateRequestDTO(
         @NotBlank(message = "현재 비밀번호는 필수로 입력해야 합니다.")
