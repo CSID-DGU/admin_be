@@ -12,5 +12,6 @@ public class SecurityWhitelist {
             "/api/auth/email/**",
             "/auth/callback/**",
             "/actuator/health", "/actuator/info"
+            //"/api/groups/**"
     );
 }
