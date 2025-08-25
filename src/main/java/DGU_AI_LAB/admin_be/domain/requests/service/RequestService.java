@@ -68,6 +68,10 @@ public class RequestService {
         ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
+        if (requestRepository.existsByUbuntuUsername(dto.ubuntuUsername())) {
+            throw new BusinessException(ErrorCode.DUPLICATE_USERNAME);
+        }
+
         ContainerImage img = containerImageRepository.findById(dto.imageId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
