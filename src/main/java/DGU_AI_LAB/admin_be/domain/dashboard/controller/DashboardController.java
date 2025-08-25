@@ -41,18 +41,4 @@ public class DashboardController implements DashBoardApi {
         return SuccessResponse.ok(userServers);
     }
 
-    /**
-     * 사용자의 변경 요청 목록 조회 API
-     *
-     * @param principal 현재 로그인한 사용자의 인증 정보 (CustomUserDetails)
-     * @param status    조회할 변경 요청의 상태 (PENDING, APPROVED, DENIED)
-     */
-    @GetMapping("/me/change-requests")
-    public ResponseEntity<SuccessResponse<?>> getMyChangeRequests(
-            @AuthenticationPrincipal CustomUserDetails principal,
-            @RequestParam(name = "status") Status status
-    ) {
-        List<ChangeRequestResponseDTO> changeRequests = dashboardService.getMyChangeRequests(principal.getUserId(), status);
-        return SuccessResponse.ok(changeRequests);
-    }
 }

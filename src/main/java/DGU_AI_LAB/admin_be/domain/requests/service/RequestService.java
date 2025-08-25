@@ -25,7 +25,6 @@ import DGU_AI_LAB.admin_be.global.util.PasswordUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -97,7 +96,7 @@ public class RequestService {
             throw new BusinessException(ErrorCode.USER_NOT_FOUND);
         }
         return requestRepository.findAllByUser_UserId(userId).stream()
-                .map(this::validateAndConvertToDTO)
+                .map(SaveRequestResponseDTO::fromEntity)
                 .toList();
     }
 
@@ -169,21 +168,6 @@ public class RequestService {
         return requestRepository.findAllByStatus(Status.FULFILLED).stream()
                 .map(ContainerInfoDTO::fromEntity)
                 .toList();
-    }
-    
-    private SaveRequestResponseDTO validateAndConvertToDTO(Request request) {
-        // Validate required entities before DTO conversion
-        if (request.getResourceGroup() == null) {
-            throw new BusinessException(ErrorCode.RESOURCE_GROUP_NOT_FOUND);
-        }
-        if (request.getUser() == null) {
-            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
-        }
-        if (request.getContainerImage() == null) {
-            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
-        }
-        
-        return SaveRequestResponseDTO.fromEntity(request);
     }
 
 }
