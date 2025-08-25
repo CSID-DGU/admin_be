@@ -11,6 +11,9 @@ import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Builder;
 
 import java.time.LocalDateTime;
@@ -20,12 +23,18 @@ import java.util.Set;
 @Builder
 public record SaveRequestRequestDTO(
         @Schema(description = "자원 그룹 id", example = "1")
+        @NotNull(message = "Resource group ID cannot be null")
         Integer resourceGroupId,
 
         @Schema(description = "이미지 id", example = "1")
+        @NotNull(message = "Image ID cannot be null")
         Long imageId,
 
+        @NotBlank(message = "Ubuntu username cannot be blank")
+        @Size(min = 3, max = 50, message = "Username must be between 3 and 50 characters")
         String ubuntuUsername,
+
+        @NotBlank(message = "Ubuntu Password cannot be blank")
         String ubuntuPassword,
 
         @Schema(description = "볼륨 사이즈", example = "20")

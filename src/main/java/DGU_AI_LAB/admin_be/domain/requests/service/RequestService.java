@@ -101,17 +101,6 @@ public class RequestService {
             }
         }
         
-        // Validate required entities before DTO conversion
-        if (req.getResourceGroup() == null) {
-            throw new BusinessException(ErrorCode.RESOURCE_GROUP_NOT_FOUND);
-        }
-        if (req.getUser() == null) {
-            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
-        }
-        if (req.getContainerImage() == null) {
-            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
-        }
-        
         return SaveRequestResponseDTO.fromEntity(req);
     }
 
