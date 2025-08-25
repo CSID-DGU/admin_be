@@ -44,16 +44,16 @@ public class Request extends BaseTimeEntity {
     @Column(name = "form_answers", columnDefinition = "json", nullable = false)
     private String formAnswers;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    @Builder.Default
+    private Status status = Status.PENDING;
+
     /**
      * 허가받은 경우 값이 존재
      */
     @Column(name = "approved_at")
     private LocalDateTime approvedAt;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 20)
-    @Builder.Default
-    private Status status = Status.PENDING;
 
     /**
      * 거절 사유 등, status에 대한 설명
@@ -81,11 +81,27 @@ public class Request extends BaseTimeEntity {
     @Builder.Default
     private java.util.Set<RequestGroup> requestGroups = new java.util.LinkedHashSet<>();
 
-    // ==== 비즈니스 로직 ====
-    public void updateStatus(Status status, String comment, LocalDateTime approvedAt) {
-        this.status = status;
-        this.adminComment = comment;
-        this.approvedAt = approvedAt;
+
+    // ==== 비즈니스 메서드 ====
+
+    /**
+     * 변경 요청을 반영하여 엔티티의 속성을 업데이트합니다.
+     */
+    public void applyChange(ChangeType changeType, String newValue) {
+        if (this.status != Status.FULFILLED) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+        }
+
+        switch (changeType) {
+            case VOLUME_SIZE:
+                this.volumeSizeGiB = Long.parseLong(newValue);
+                break;
+            case EXPIRES_AT:
+                this.expiresAt = LocalDateTime.parse(newValue);
+                break;
+            default:
+                throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
+        }
     }
 
     public void approve(ContainerImage image, ResourceGroup resourceGroup, Long volumeSizeGiB, LocalDateTime expiresAt, String adminComment) {
@@ -106,29 +122,25 @@ public class Request extends BaseTimeEntity {
         this.adminComment = comment;
     }
 
-    /*public void requestModification(Long newVolumeSizeByte, LocalDateTime newExpiresAt, String reason) {
-        this.requestedVolumeSizeGi = newVolumeSizeByte;
-        this.requestedExpiresAt = newExpiresAt;
-        this.adminComment = "변경 요청: " + reason;
-    }*/
-
-    /*public void applyModification() {
-        if (this.requestedVolumeSizeGi != null) {
-            this.volumeSizeGiB = this.requestedVolumeSizeGi;
+    /**
+     * 사용자의 변경 요청을 엔티티에 반영합니다.
+     */
+    public void update(Long newVolumeSizeGiB, LocalDateTime newExpiresAt, String reason) {
+        // 변경 요청은 FULFILLED 상태에서만 가능
+        if (this.status != Status.FULFILLED) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
-        if (this.requestedExpiresAt != null) {
-            this.expiresAt = this.requestedExpiresAt;
+        // null이 아닐 때만 업데이트
+        if (newVolumeSizeGiB != null) {
+            this.volumeSizeGiB = newVolumeSizeGiB;
         }
-        this.requestedVolumeSizeGi = null;
-        this.requestedExpiresAt = null;
-        this.adminComment = "변경 완료됨";
-    }*/
+        if (newExpiresAt != null) {
+            this.expiresAt = newExpiresAt;
+        }
 
-    /*public void rejectModification(String reason) {
-        this.requestedVolumeSizeGi = null;
-        this.requestedExpiresAt = null;
-        this.adminComment = "변경 요청 거절: " + reason;
-    }*/
+        this.adminComment = "사용자 변경 요청: " + reason;
+
+    }
 
     public void assignUbuntuUid(UsedId uid) {
         this.ubuntuUid = uid;
@@ -149,8 +161,4 @@ public class Request extends BaseTimeEntity {
         this.requestGroups.add(rg);
     }
 
-
-    public void removeGroup(Long ubuntuGid) {
-        this.requestGroups.removeIf(rg -> rg.getGroup().getUbuntuGid().equals(ubuntuGid));
-    }
 }
