@@ -4,6 +4,8 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import com.fasterxml.jackson.annotation.JsonRawValue;
 import lombok.Builder;
 
@@ -32,7 +34,6 @@ public record SaveRequestResponseDTO(
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
-
     @Builder
     public record AdminResourceGroupInfo(
             Integer rsgroupId,
@@ -72,7 +73,19 @@ public record SaveRequestResponseDTO(
                     .build();
         }
     }
+
     public static SaveRequestResponseDTO fromEntity(Request request) {
+
+        if (request.getResourceGroup() == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_GROUP_NOT_FOUND);
+        }
+        if (request.getUser() == null) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+        if (request.getContainerImage() == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+
         return SaveRequestResponseDTO.builder()
                 .requestId(request.getRequestId())
                 .resourceGroupId(request.getResourceGroup().getRsgroupId())
