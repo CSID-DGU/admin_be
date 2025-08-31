@@ -11,8 +11,12 @@ public record UserSummaryDTO(
         String name,
         String email,
         String role,
+        String studentId,
+        String phone,
+        String department,
         Boolean isActive,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        LocalDateTime updatedAt
 ) {
     public static UserSummaryDTO fromEntity(User user) {
         return UserSummaryDTO.builder()
@@ -20,8 +24,12 @@ public record UserSummaryDTO(
                 .name(user.getName())
                 .email(user.getEmail())
                 .role(user.getRole().name())
+                .studentId(user.getStudentId())
+                .phone(user.getPhone())
+                .department(user.getDepartment())
                 .isActive(user.getIsActive())
                 .createdAt(user.getCreatedAt())
+                .updatedAt(user.getUpdatedAt())
                 .build();
     }
 }

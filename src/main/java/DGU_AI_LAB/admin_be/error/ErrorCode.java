@@ -120,7 +120,14 @@ public enum ErrorCode {
     /**
      * Request Error
      */
-    INVALID_REQUEST_STATUS(HttpStatus.CONFLICT, "이미 처리된 신청입니다.");
+    INVALID_REQUEST_STATUS(HttpStatus.CONFLICT, "이미 처리된 신청입니다."),
+    FORBIDDEN_REQUEST(HttpStatus.BAD_REQUEST, "본인의 신청만 변경 신청할 수 있습니다."),
+    UNSUPPORTED_CHANGE_TYPE(HttpStatus.BAD_REQUEST, "지원되지 않는 요청 타입(enum)입니다."),
+
+    /**
+     * PVC Error
+     */
+    PVC_API_FAILURE(HttpStatus.BAD_GATEWAY, "pvc 관련 API 요청에 실패했습니다.")
 
 
     ;
