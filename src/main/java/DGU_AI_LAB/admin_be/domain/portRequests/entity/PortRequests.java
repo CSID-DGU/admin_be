@@ -13,8 +13,11 @@ import lombok.*;
 @Builder
 public class PortRequests extends BaseTimeEntity {
 
-    @Id
-    @Column(name = "port_number", nullable = false)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id")
+    private Long id;
+
+    @Column(name = "port_number", nullable = false, unique = true)
     private Integer portNumber;
 
     @Column(name = "usage_purpose", nullable = false, length = 1000)
