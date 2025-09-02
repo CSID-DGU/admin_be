@@ -40,54 +40,6 @@ public class UserService {
     private static final long UID_BASE = 10000; // TODO: 이부분 시스템에 맞추어서 수정하기
 
     /**
-     * 단일 유저 조회
-     */
-    @Transactional(readOnly = true)
-    public UserResponseDTO getUserById(Long userId) {
-        log.debug("[getUserById] userId={}", userId);
-        return UserResponseDTO.fromEntity(userRepository.findById(userId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND)));
-    }
-
-    /**
-     * 전체 유저 조회
-     */
-    @Transactional(readOnly = true)
-    public List<UserSummaryDTO> getAllUsers() {
-        return userRepository.findAll().stream()
-                .map(UserSummaryDTO::fromEntity)
-                .toList();
-    }
-
-    /**
-     * 유저 삭제
-     */
-    public void deleteUser(Long userId) {
-        log.warn("[deleteUser] userId={} 삭제 시도", userId);
-        if (!userRepository.existsById(userId)) {
-            log.error("[deleteUser] userId={} 존재하지 않음", userId);
-            throw new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND);
-        }
-        userRepository.deleteById(userId);
-        log.info("[deleteUser] userId={} 삭제 완료", userId);
-    }
-
-    /**
-     * 유저 정보 수정
-     */
-    public UserResponseDTO updateUser(Long userId, UserUpdateRequestDTO request) {
-        log.info("[updateUser] userId={} 정보 수정 시작", userId);
-
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
-
-        user.updateUserInfo(request.password(), request.isActive());
-
-        log.info("[updateUser] userId={} 정보 수정 완료", userId);
-        return UserResponseDTO.fromEntity(user);
-    }
-
-    /**
      * 유저 단일 조회
      */
     @Transactional(readOnly = true)
@@ -95,6 +47,16 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
         return MyInfoResponseDTO.fromEntity(user);
+    }
+
+    /**
+     * 단일 유저 조회
+     */
+    @Transactional(readOnly = true)
+    public UserResponseDTO getUserById(Long userId) {
+        log.debug("[getUserById] userId={}", userId);
+        return UserResponseDTO.fromEntity(userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND)));
     }
 
     /** ssh 로그인 */
@@ -168,4 +130,6 @@ public class UserService {
         log.info("[updatePhone] userId={} 연락처 변경 완료", userId);
         return UserResponseDTO.fromEntity(user);
     }
+
+
 }
