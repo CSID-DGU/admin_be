@@ -127,7 +127,8 @@ public enum ErrorCode {
     /**
      * PVC Error
      */
-    PVC_API_FAILURE(HttpStatus.BAD_GATEWAY, "pvc 관련 API 요청에 실패했습니다.")
+    PVC_API_FAILURE(HttpStatus.BAD_GATEWAY, "pvc 관련 API 요청에 실패했습니다."),
+    UBUNTU_USER_DELETION_FAILED(HttpStatus.BAD_GATEWAY, "우분투 계정 삭제에 실패했습니다.")
 
 
     ;
