@@ -14,7 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-@Tag(name = "2. 사용자용 마이 정보 관리", description = "일반 사용자 본인 정보 관리 API")
+@Tag(name = "2. 사용자 정보 관리", description = "일반 사용자 본인 정보 관리 API")
 public interface UserApi {
 
     @Operation(summary = "사용자 정보 확인", description = "로그인된 사용자의 상세 정보를 조회합니다.")

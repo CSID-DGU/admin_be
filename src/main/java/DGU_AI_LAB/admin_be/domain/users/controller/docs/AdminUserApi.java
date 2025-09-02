@@ -9,7 +9,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-@Tag(name = "1. 관리자용 유저 관리", description = "관리자용 사용자 계정 관리 API")
+@Tag(name = "1. 관리자 유저 관리", description = "관리자용 사용자 계정 관리 API")
 public interface AdminUserApi {
 
     @Operation(summary = "사용자 단일 조회", description = "ID를 통해 특정 사용자의 상세 정보를 조회합니다.")
