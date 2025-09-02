@@ -13,7 +13,7 @@ import org.springframework.http.ResponseEntity;
 
 import java.util.List;
 
-@Tag(name = "관리자용 서버 사용 신청 관리", description = "관리자용 서버 사용 신청 관리 API")
+@Tag(name = "1. 관리자용 서버 사용 신청 관리", description = "관리자용 서버 사용 신청 관리 API")
 public interface AdminRequestApi {
 
     @Operation(

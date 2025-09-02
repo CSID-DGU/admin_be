@@ -9,7 +9,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 
-@Tag(name = "Config Server용 승인 정보 관리", description = "Ubuntu username별 승인 정보 조회 API")
+@Tag(name = "0. Config Server용 승인 정보 관리", description = "Ubuntu username별 승인 정보 조회 API")
 public interface AcceptInfoApi {
 
     @Operation(
