@@ -9,7 +9,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-// 관리자용 유저 컨트롤러
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/admin/users")
@@ -33,7 +32,7 @@ public class AdminUserController {
         return SuccessResponse.ok(adminUserService.updateUser(id, request));
     }
 
-    @DeleteMapping("/{id}") // TODO: soft delete로 수정하기
+    @DeleteMapping("/{id}")
     public ResponseEntity<SuccessResponse<?>> deleteUser(@PathVariable Long id) {
         adminUserService.deleteUser(id);
         return SuccessResponse.ok(null);
