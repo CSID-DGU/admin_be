@@ -21,6 +21,12 @@ public class AdminRequestQueryService {
     private final RequestRepository requestRepository;
     private final ChangeRequestRepository changeRequestRepository;
 
+    public List<SaveRequestResponseDTO> getAllRequests() {
+        return requestRepository.findAll().stream()
+                .map(SaveRequestResponseDTO::fromEntity)
+                .collect(Collectors.toList());
+    }
+
     public List<SaveRequestResponseDTO> getNewRequests() {
         return requestRepository.findAllByStatus(Status.PENDING).stream()
                 .map(SaveRequestResponseDTO::fromEntity)

@@ -45,6 +45,15 @@ public class AdminRequestController {
     }
 
     /**
+     * 모든 요청 목록 조회 (관리자용)
+     * 모든 상태의 Request 목록을 반환합니다.
+     */
+    @GetMapping
+    public ResponseEntity<List<SaveRequestResponseDTO>> getAllRequests() {
+        return ResponseEntity.ok(adminRequestQueryService.getAllRequests());
+    }
+
+    /**
      * 신규 신청 목록 조회 (관리자용)
      * PENDING 상태의 Request 목록을 반환합니다.
      */
