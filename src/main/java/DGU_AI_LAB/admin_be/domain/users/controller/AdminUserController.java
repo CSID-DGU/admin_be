@@ -27,7 +27,7 @@ public class AdminUserController {
         return SuccessResponse.ok(adminUserService.getAllUsers());
     }
 
-    @PutMapping("/{id}") // TODO: 관리자용 updateUser와 분리 필요
+    @PutMapping("/{id}") // TODO: 관리자용 updateUser는 사용 여부 논의 필요
     public ResponseEntity<SuccessResponse<?>> updateUser(@PathVariable Long id, @Valid @RequestBody UserUpdateRequestDTO request) {
         return SuccessResponse.ok(adminUserService.updateUser(id, request));
     }
