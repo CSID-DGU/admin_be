@@ -17,8 +17,8 @@ public class PortRequests extends BaseTimeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id")
-    private Long id;
+    @Column(name = "port_request_id")
+    private Long portRequestId;
 
     @Column(name = "port_number", nullable = false, unique = true)
     @Min(1)
