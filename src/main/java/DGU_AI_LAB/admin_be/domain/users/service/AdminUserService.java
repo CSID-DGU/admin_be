@@ -85,7 +85,7 @@ public class AdminUserService {
         try {
             log.info("Starting external API call to delete ubuntu account: {}", username);
 
-            userWebClient.delete()
+            userWebClient.post()
                     .uri("/accounts/deleteuser/{username}", username)
                     .retrieve()
                     .toBodilessEntity()
