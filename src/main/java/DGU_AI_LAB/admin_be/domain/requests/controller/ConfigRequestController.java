@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller;
 
+import DGU_AI_LAB.admin_be.domain.requests.controller.docs.ConfigRequestApi;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.AcceptInfoResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.service.ConfigRequestService;
 import lombok.RequiredArgsConstructor;
@@ -9,7 +10,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/requests/config")
-public class ConfigRequestController {
+public class ConfigRequestController implements ConfigRequestApi {
 
     private final ConfigRequestService configRequestService;
 
