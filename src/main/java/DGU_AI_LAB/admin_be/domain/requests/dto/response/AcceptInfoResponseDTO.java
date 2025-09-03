@@ -8,6 +8,7 @@ import java.util.List;
 
 @Builder
 public record AcceptInfoResponseDTO(
+
         String username,
         String image,
         Long uid,

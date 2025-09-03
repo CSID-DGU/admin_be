@@ -12,7 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 
-@Tag(name = "리소스 그룹 관리 API", description = "GPU 기종별 리소스 정보 조회 등 리소스 그룹 관련 API")
+@Tag(name = "2. 리소스 그룹 관리 API", description = "GPU 기종별 리소스 정보 조회 등 리소스 그룹 관련 API")
 @RequestMapping("/api/resources")
 public interface ResourceGroupApi {
 

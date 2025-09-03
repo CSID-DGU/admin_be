@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 
-@Tag(name = "사용자 대시보드 API", description = "대시보드용 API")
+@Tag(name = "2. 사용자 대시보드 API", description = "대시보드용 API")
 @RequestMapping("/api/dashboard")
 public interface DashBoardApi {
 

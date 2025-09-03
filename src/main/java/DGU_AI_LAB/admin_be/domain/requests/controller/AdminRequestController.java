@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller;
 
+import DGU_AI_LAB.admin_be.domain.requests.controller.docs.AdminRequestApi;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
@@ -20,7 +21,7 @@ import java.util.List;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/admin/requests")
-public class AdminRequestController {
+public class AdminRequestController implements AdminRequestApi {
 
     private final AdminRequestCommandService adminRequestCommandService;
     private final AdminRequestQueryService adminRequestQueryService;

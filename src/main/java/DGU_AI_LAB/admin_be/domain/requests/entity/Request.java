@@ -161,4 +161,14 @@ public class Request extends BaseTimeEntity {
         this.requestGroups.add(rg);
     }
 
+    /**
+     * Request의 상태를 DELETED로 변경합니다. (soft delete)
+     */
+    public void delete() {
+        if (this.status == Status.DELETED) {
+            throw new BusinessException("이미 삭제된 요청입니다.", ErrorCode.INVALID_REQUEST_STATUS);
+        }
+        this.status = Status.DELETED;
+    }
+
 }
