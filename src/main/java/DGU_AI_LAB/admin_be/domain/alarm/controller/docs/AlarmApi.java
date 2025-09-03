@@ -13,7 +13,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 
-@Tag(name = "Slack 및 E-mail", description = "Slack 및 Email 알림 API")
+@Tag(name = "0. Slack 및 E-mail", description = "Slack 및 Email 알림 API")
 public interface AlarmApi {
 
     @Operation(

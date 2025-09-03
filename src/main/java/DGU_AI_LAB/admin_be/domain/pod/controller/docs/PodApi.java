@@ -10,7 +10,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 
 import java.util.List;
 
-@Tag(name = "Kubernetes Pods", description = "쿠버네티스 Pod 조회 API")
+@Tag(name = "0. Kubernetes Pods", description = "쿠버네티스 Pod 조회 API")
 public interface PodApi {
 
     @Operation(

@@ -15,10 +15,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 import java.util.List;
 
-@Tag(name = "이미지 관리", description = "컨테이너 이미지 생성 및 조회 API")
+@Tag(name = "2. 이미지 관리", description = "컨테이너 이미지 조회 API")
 public interface ContainerImageApi {
 
-    @Operation(summary = "이미지 생성", description = "새로운 컨테이너 이미지를 등록합니다.")
+    @Operation(summary = "이미지 생성", description = "새로운 컨테이너 이미지를 등록합니다. -> 관리자용으로 만들어졌으니, 수정 필요합니다. ")
     @ApiResponse(responseCode = "200", description = "이미지 생성 성공",
             content = @Content(schema = @Schema(implementation = ContainerImageResponseDTO.class)))
     ResponseEntity<ContainerImageResponseDTO> createImage(
