@@ -12,7 +12,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 
-@Tag(name = "1. 관리자 - 서버 변경 요청 관리", description = "서버 설정 변경 요청 조회 및 승인/거절 API")
+@Tag(name = "1. 관리자 서버 변경 요청 관리", description = "서버 설정 변경 요청 조회 및 승인/거절 API")
 public interface AdminRequestChangeApi {
 
     @Operation(summary = "변경 요청 목록 조회", description = "PENDING 상태의 변경 요청 목록을 조회합니다.")
@@ -22,7 +22,7 @@ public interface AdminRequestChangeApi {
     })
     ResponseEntity<SuccessResponse<?>> getChangeRequests();
 
-    @Operation(summary = "변경 요청 승인", description = "PENDING 상태의 변경 요청을 승인하고 서버 설정을 업데이트합니다.")
+    @Operation(summary = "변경 요청 승인", description = "PENDING 상태의 변경 요청을 승인하고 설정을 업데이트합니다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "성공",
                     content = @Content(schema = @Schema(implementation = SuccessResponse.class))),

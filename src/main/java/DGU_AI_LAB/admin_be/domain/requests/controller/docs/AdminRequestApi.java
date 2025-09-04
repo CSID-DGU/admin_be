@@ -13,7 +13,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 
-@Tag(name = "1. 관리자 - 서버 사용 신청 관리", description = "신규 신청 조회 및 승인/거절 API")
+@Tag(name = "1. 관리자 서버 사용 신청 관리", description = "서버 신규 신청 조회 및 승인/거절 API")
 public interface AdminRequestApi {
 
     @Operation(summary = "모든 요청 목록 조회", description = "모든 상태의 서버 사용 신청 목록을 조회합니다.")
