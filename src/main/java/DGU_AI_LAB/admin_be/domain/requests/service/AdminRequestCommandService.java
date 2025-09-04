@@ -2,6 +2,8 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
+import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
+import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.*;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
@@ -16,6 +18,8 @@ import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -27,7 +31,10 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
+import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -41,6 +48,8 @@ public class AdminRequestCommandService {
     private final ResourceGroupRepository resourceGroupRepository;
     private final IdAllocationService idAllocationService;
     private final ChangeRequestRepository changeRequestRepository;
+    private final GroupRepository groupRepository;
+    private final ObjectMapper objectMapper;
 
     private final @Qualifier("pvcWebClient") WebClient pvcWebClient;
     private final @Qualifier("pvcWebClient") WebClient userCreationWebClient;
@@ -155,16 +164,61 @@ public class AdminRequestCommandService {
     public void approveModification(Long adminId, ApproveModificationDTO dto) {
         ChangeRequest changeRequest = changeRequestRepository.findById(dto.changeRequestId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
         if (changeRequest.getStatus() != Status.PENDING) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
         User admin = userRepository.findById(adminId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
         Request originalRequest = changeRequest.getRequest();
         if (originalRequest == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
-        originalRequest.applyChange(changeRequest.getChangeType(), changeRequest.getNewValue());
+
+        try {
+            switch (changeRequest.getChangeType()) {
+                case VOLUME_SIZE:
+                    Long newVolumeSize = objectMapper.readValue(changeRequest.getNewValue(), Long.class);
+                    originalRequest.updateVolumeSize(newVolumeSize);
+                    break;
+                case EXPIRES_AT:
+                    LocalDateTime newExpiresAt = LocalDateTime.parse(objectMapper.readValue(changeRequest.getNewValue(), String.class));
+                    originalRequest.updateExpiresAt(newExpiresAt);
+                    break;
+                case GROUP:
+                    // 그룹 변경은 복잡하기 때문에, 엔티티가 아닌 서비스 레이어에서 처리합니다.
+                    originalRequest.getRequestGroups().clear();
+                    Set<Long> newGroupIds = objectMapper.readValue(changeRequest.getNewValue(), Set.class);
+                    Set<Group> newGroups = newGroupIds.stream()
+                            .map(gid -> groupRepository.findByUbuntuGid(gid)
+                                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)))
+                            .collect(Collectors.toSet());
+
+                    for (Group g : newGroups) {
+                        originalRequest.addGroup(g);
+                    }
+                    break;
+                case RESOURCE_GROUP:
+                    Integer newResourceGroupId = objectMapper.readValue(changeRequest.getNewValue(), Integer.class);
+                    ResourceGroup newResourceGroup = resourceGroupRepository.findById(newResourceGroupId)
+                            .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                    originalRequest.updateResourceGroup(newResourceGroup);
+                    break;
+                case CONTAINER_IMAGE:
+                    Long newImageId = objectMapper.readValue(changeRequest.getNewValue(), Long.class);
+                    ContainerImage newContainerImage = containerImageRepository.findById(newImageId)
+                            .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                    originalRequest.updateContainerImage(newContainerImage);
+                    break;
+                default:
+                    throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
+            }
+        } catch (JsonProcessingException e) {
+            log.error("Failed to parse change request value: {}", e.getMessage());
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
+        }
+
         changeRequest.approve(admin, dto.adminComment());
     }
 }
