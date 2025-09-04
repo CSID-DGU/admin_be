@@ -160,6 +160,22 @@ public class AdminRequestCommandService {
         return SaveRequestResponseDTO.fromEntity(request);
     }
 
+
+    @Transactional
+    public void rejectModification(Long adminId, RejectModificationDTO dto) {
+        ChangeRequest changeRequest = changeRequestRepository.findById(dto.changeRequestId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        if (changeRequest.getStatus() != Status.PENDING) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+        }
+
+        User admin = userRepository.findById(adminId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        changeRequest.deny(admin, dto.adminComment());
+    }
+
     @Transactional
     public void approveModification(Long adminId, ApproveModificationDTO dto) {
         ChangeRequest changeRequest = changeRequestRepository.findById(dto.changeRequestId())
