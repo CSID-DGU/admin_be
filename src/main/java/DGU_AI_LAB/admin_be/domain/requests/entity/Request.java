@@ -87,20 +87,28 @@ public class Request extends BaseTimeEntity {
     /**
      * 변경 요청을 반영하여 엔티티의 속성을 업데이트합니다.
      */
-    public void applyChange(ChangeType changeType, String newValue) {
-        if (this.status != Status.FULFILLED) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
-        }
 
-        switch (changeType) {
-            case VOLUME_SIZE:
-                this.volumeSizeGiB = Long.parseLong(newValue);
-                break;
-            case EXPIRES_AT:
-                this.expiresAt = LocalDateTime.parse(newValue);
-                break;
-            default:
-                throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
+    public void updateVolumeSize(Long newVolumeSize) {
+        if (newVolumeSize != null) {
+            this.volumeSizeGiB = newVolumeSize;
+        }
+    }
+
+    public void updateExpiresAt(LocalDateTime newExpiresAt) {
+        if (newExpiresAt != null) {
+            this.expiresAt = newExpiresAt;
+        }
+    }
+
+    public void updateResourceGroup(ResourceGroup newResourceGroup) {
+        if (newResourceGroup != null) {
+            this.resourceGroup = newResourceGroup;
+        }
+    }
+
+    public void updateContainerImage(ContainerImage newImage) {
+        if (newImage != null) {
+            this.containerImage = newImage;
         }
     }
 

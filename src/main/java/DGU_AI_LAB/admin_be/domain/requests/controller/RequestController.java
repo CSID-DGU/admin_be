@@ -23,6 +23,9 @@ public class RequestController implements RequestApi {
     private final RequestQueryService requestService;
     private final RequestCommandService requestCommandService;
 
+    /**
+     * 사용 신청 생성
+     */
     @PostMapping
     public ResponseEntity<SaveRequestResponseDTO> createRequest(
             @AuthenticationPrincipal(expression = "userId") Long userId,
@@ -32,6 +35,9 @@ public class RequestController implements RequestApi {
         return ResponseEntity.ok(body);
     }
 
+    /**
+     * 사용 신청 변경 (저장공간 크기, 만료기한, 사용자가 속한 그룹, 리소스 그룹, 도커 이미지)
+     */
     @PostMapping("/{requestId}/change")
     public ResponseEntity<Void> createChangeRequest(
             @AuthenticationPrincipal(expression = "userId") Long userId,
@@ -42,6 +48,9 @@ public class RequestController implements RequestApi {
         return ResponseEntity.ok().build();
     }
 
+    /**
+     * 나의 사용 신청 조회
+     */
     @GetMapping("/my")
     public ResponseEntity<List<SaveRequestResponseDTO>> getMyRequests(
             @AuthenticationPrincipal CustomUserDetails user
