@@ -67,7 +67,7 @@ public enum ErrorCode {
      * 502 Bad Gateway
      */
     SLACK_DM_CHANNEL_FAILED(HttpStatus.BAD_GATEWAY, "Slack DM 채널 열기를 실패하였습니다."),
-    EXTERNAL_API_FAILED(HttpStatus.BAD_GATEWAY, "외부 API 호출에 실패했습니다."),
+    EXTERNAL_API_ERROR(HttpStatus.BAD_GATEWAY, "외부 API 호출에 실패했습니다."),
 
     /**
      * 503 Service Unavailable
@@ -98,7 +98,11 @@ public enum ErrorCode {
      * Group Error
      */
     NO_AVAILABLE_GROUPS(HttpStatus.NOT_FOUND, "존재하는 그룹 정보가 없습니다."),
-    DUPLICATE_GROUP_ID(HttpStatus.CONFLICT, "중복된 그룹 ID를 할당할 수 없습니다."),
+    DUPLICATE_GROUP_ID(HttpStatus.CONFLICT, "외부 API: 그룹명 또는 GID 충돌"),
+    DUPLICATE_GROUP_NAME(HttpStatus.CONFLICT, "중복된 그룹 이름입니다."),
+    GROUP_CREATION_FAILED(HttpStatus.BAD_GATEWAY, "외부 API: 필수 필드 누락 또는 형식 오류 "),
+    GID_ALLOCATION_FAILED(HttpStatus.BAD_GATEWAY, "IdAllocationService에서 GID 할당에 실패했습니다. "),
+    FORBIDDEN_REQUEST(HttpStatus.BAD_REQUEST, "요청된 우분투 사용자 이름은 로그인한 사용자의 계정이 아닙니다."),
 
 
     /**
@@ -121,7 +125,7 @@ public enum ErrorCode {
      * Request Error
      */
     INVALID_REQUEST_STATUS(HttpStatus.CONFLICT, "이미 처리된 신청입니다."),
-    FORBIDDEN_REQUEST(HttpStatus.BAD_REQUEST, "본인의 신청만 변경 신청할 수 있습니다."),
+    //FORBIDDEN_REQUEST(HttpStatus.BAD_REQUEST, "본인의 신청만 변경 신청할 수 있습니다."),
     UNSUPPORTED_CHANGE_TYPE(HttpStatus.BAD_REQUEST, "지원되지 않는 요청 타입(enum)입니다."),
 
     /**
