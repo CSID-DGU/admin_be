@@ -13,4 +13,5 @@ public interface GroupRepository extends JpaRepository<Group, Long> {
     List<Group> findAllByUbuntuGidIn(Set<Long> ubuntuGids);
     boolean existsByUbuntuGid(Long ubuntuGid);
     Optional<Group> findByUbuntuGid(Long ubuntuGid);
+    boolean existsByGroupName(String groupName);
 }
