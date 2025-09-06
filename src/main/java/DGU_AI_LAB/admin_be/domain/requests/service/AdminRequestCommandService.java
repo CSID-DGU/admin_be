@@ -51,8 +51,8 @@ public class AdminRequestCommandService {
     private final GroupRepository groupRepository;
     private final ObjectMapper objectMapper;
 
-    private final @Qualifier("pvcWebClient") WebClient pvcWebClient;
-    private final @Qualifier("pvcWebClient") WebClient userCreationWebClient;
+    private final @Qualifier("configWebClient") WebClient pvcWebClient;
+    private final @Qualifier("configWebClient") WebClient userCreationWebClient;
 
     @Transactional
     public SaveRequestResponseDTO approveRequest(ApproveRequestDTO dto) {
