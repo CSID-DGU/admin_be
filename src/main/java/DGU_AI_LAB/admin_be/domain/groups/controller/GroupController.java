@@ -4,11 +4,13 @@ import DGU_AI_LAB.admin_be.domain.groups.controller.docs.GroupApi;
 import DGU_AI_LAB.admin_be.domain.groups.dto.request.CreateGroupRequestDTO;
 import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupResponseDTO;
 import DGU_AI_LAB.admin_be.domain.groups.service.GroupService;
+import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -37,9 +39,12 @@ public class GroupController implements GroupApi {
      * POST /api/groups
      */
     @PostMapping
-    public ResponseEntity<SuccessResponse<?>> createGroup(@RequestBody @Valid CreateGroupRequestDTO dto) {
-        log.info("[createGroup] 새로운 그룹 생성 요청 접수: {}", dto.groupName());
-        GroupResponseDTO response = groupService.createGroup(dto);
+    public ResponseEntity<SuccessResponse<?>> createGroup(
+            @RequestBody @Valid CreateGroupRequestDTO dto,
+            @AuthenticationPrincipal CustomUserDetails principal
+    ) {
+        log.info("[createGroup] 새로운 그룹 생성 요청 접수: groupName={}, ubuntuUsername={}", dto.groupName(), dto.ubuntuUsername());
+        GroupResponseDTO response = groupService.createGroup(dto, principal.getUserId());
         return SuccessResponse.created(response);
     }
 }

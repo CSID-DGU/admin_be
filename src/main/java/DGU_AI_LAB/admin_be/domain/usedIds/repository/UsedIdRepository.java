@@ -9,4 +9,7 @@ import java.util.Optional;
 public interface UsedIdRepository extends JpaRepository<UsedId, Long> {
     @Query("SELECT MAX(u.idValue) FROM UsedId u")
     Optional<Long> findMaxIdValue();
+
+    @Query("SELECT MAX(u.idValue) FROM UsedId u WHERE u.idValue >= :startRange AND u.idValue <= :endRange")
+    Optional<Long> findMaxIdValueInRange(Long startRange, Long endRange);
 }

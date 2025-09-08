@@ -4,7 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
-@Schema(description = "1. 관리자용 요청 거절 요청 DTO")
+@Schema(description = "관리자용 요청 거절 요청 DTO")
 public record RejectRequestDTO(
 
         @Schema(description = "거절할 요청 ID", example = "3")

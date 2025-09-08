@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -55,7 +56,7 @@ public class RequestCommandService {
             throw new BusinessException(ErrorCode.FORBIDDEN_REQUEST);
         }
 
-        // FULFILLED 상태에서만 변경 요청 가능.
+        // FULFILLED 상태에서만 변경 요청 가능
         if (originalRequest.getStatus() != Status.FULFILLED) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
@@ -63,36 +64,70 @@ public class RequestCommandService {
         User requestedBy = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
+        // 저장공간 크기 변경
         if (dto.requestedVolumeSizeGiB() != null) {
-            try {
-                ChangeRequest changeRequest = ChangeRequest.builder()
-                        .request(originalRequest)
-                        .changeType(ChangeType.VOLUME_SIZE)
-                        .oldValue(objectMapper.writeValueAsString(originalRequest.getVolumeSizeGiB()))
-                        .newValue(objectMapper.writeValueAsString(dto.requestedVolumeSizeGiB()))
-                        .reason(dto.reason())
-                        .requestedBy(requestedBy)
-                        .build();
-                changeRequestRepository.save(changeRequest);
-            } catch (Exception e) {
-                throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
-            }
+            createAndSaveChangeRequest(originalRequest, requestedBy, ChangeType.VOLUME_SIZE,
+                    originalRequest.getVolumeSizeGiB(), dto.requestedVolumeSizeGiB(), dto.reason());
         }
 
+        // 만료 기한 변경
         if (dto.requestedExpiresAt() != null) {
-            try {
-                ChangeRequest changeRequest = ChangeRequest.builder()
-                        .request(originalRequest)
-                        .changeType(ChangeType.EXPIRES_AT)
-                        .oldValue(objectMapper.writeValueAsString(originalRequest.getExpiresAt().toString()))
-                        .newValue(objectMapper.writeValueAsString(dto.requestedExpiresAt().toString()))
-                        .reason(dto.reason())
-                        .requestedBy(requestedBy)
-                        .build();
-                changeRequestRepository.save(changeRequest);
-            } catch (Exception e) {
-                throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
+            createAndSaveChangeRequest(originalRequest, requestedBy, ChangeType.EXPIRES_AT,
+                    originalRequest.getExpiresAt().toString(), dto.requestedExpiresAt().toString(), dto.reason());
+        }
+
+        // 그룹 변경
+        if (dto.requestedGroupIds() != null && !dto.requestedGroupIds().isEmpty()) {
+            // 변경 전 그룹 목록 조회
+            Set<Long> oldGroupIds = originalRequest.getRequestGroups().stream()
+                    .map(requestGroup -> requestGroup.getGroup().getUbuntuGid())
+                    .collect(Collectors.toSet());
+
+            // 변경 후 그룹 존재 여부 확인
+            if (groupRepository.findAllByUbuntuGidIn(dto.requestedGroupIds()).size() != dto.requestedGroupIds().size()) {
+                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
             }
+
+            createAndSaveChangeRequest(originalRequest, requestedBy, ChangeType.GROUP,
+                    oldGroupIds, dto.requestedGroupIds(), dto.reason());
+        }
+
+        // 리소스 그룹 변경
+        if (dto.requestedResourceGroupId() != null) {
+            ResourceGroup newResourceGroup = resourceGroupRepository.findById(dto.requestedResourceGroupId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+            createAndSaveChangeRequest(originalRequest, requestedBy, ChangeType.RESOURCE_GROUP,
+                    originalRequest.getResourceGroup().getRsgroupId(), dto.requestedResourceGroupId(), dto.reason());
+        }
+
+        // 도커 이미지 변경
+        if (dto.requestedContainerImageId() != null) {
+            ContainerImage newImage = containerImageRepository.findById(dto.requestedContainerImageId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+            createAndSaveChangeRequest(originalRequest, requestedBy, ChangeType.CONTAINER_IMAGE,
+                    originalRequest.getContainerImage().getImageId(), dto.requestedContainerImageId(), dto.reason());
+        }
+    }
+
+
+    // 중복 코드 방지를 위한 헬퍼 메서드
+    private <T> void createAndSaveChangeRequest(Request originalRequest, User requestedBy,
+                                                ChangeType changeType, T oldValue, T newValue, String reason) {
+        try {
+            ChangeRequest changeRequest = ChangeRequest.builder()
+                    .request(originalRequest)
+                    .changeType(changeType)
+                    .oldValue(objectMapper.writeValueAsString(oldValue))
+                    .newValue(objectMapper.writeValueAsString(newValue))
+                    .reason(reason)
+                    .requestedBy(requestedBy)
+                    .build();
+            changeRequestRepository.save(changeRequest);
+        } catch (Exception e) {
+            log.error("Failed to create change request for type {}: {}", changeType, e.getMessage());
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
     }
 
