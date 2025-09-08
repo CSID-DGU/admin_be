@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
@@ -24,6 +25,7 @@ import reactor.core.publisher.Mono;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -34,10 +36,8 @@ public class GroupService {
     private final GroupRepository groupRepository;
     private final UsedIdRepository usedIdRepository;
     private final RequestRepository requestRepository;
-    private final ObjectMapper objectMapper;
     private final IdAllocationService idAllocationService;
     private final @Qualifier("configWebClient") WebClient groupCreationWebClient;
-
 
     /**
      * 모든 그룹 정보를 조회하는 API
@@ -70,9 +70,11 @@ public class GroupService {
 
         log.info("[createGroup] 그룹 생성 요청 시작: groupName={}, ubuntuUsername={}", dto.groupName(), dto.ubuntuUsername());
 
-        // 1. 요청된 ubuntuUsername이 로그인한 사용자의 계정인지 확인하는 유효성 검사
-        if (!requestRepository.existsByUbuntuUsernameAndUser_UserId(dto.ubuntuUsername(), userId)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN_REQUEST);
+        // 1. ubuntuUsername이 제공된 경우에만 유효성 검사 (필수 X)
+        if (StringUtils.hasText(dto.ubuntuUsername())) {
+            if (!requestRepository.existsByUbuntuUsernameAndUser_UserId(dto.ubuntuUsername(), userId)) {
+                throw new BusinessException(ErrorCode.FORBIDDEN_REQUEST);
+            }
         }
 
         // 2. DB에서 그룹명 중복을 먼저 확인합니다.
@@ -85,36 +87,30 @@ public class GroupService {
         Long assignedGid = idAllocationService.allocateNewGid();
         log.info("[createGroup] 새로운 GID 할당 완료: {}", assignedGid);
 
-        // 4. GID가 int 타입으로 변환 가능한지 확인 (오버플로우 방지)
         if (assignedGid > Integer.MAX_VALUE || assignedGid < Integer.MIN_VALUE) {
             log.error("[createGroup] 할당된 GID가 int 범위를 벗어납니다: {}", assignedGid);
             throw new BusinessException(ErrorCode.GID_ALLOCATION_FAILED);
         }
 
+        // 4. 외부 API 호출을 위한 ubuntuUser 멤버 리스트를 구성합니다.
+        List<String> members = Optional.ofNullable(dto.ubuntuUsername())
+                .filter(StringUtils::hasText)
+                .map(List::of)
+                .orElse(Collections.emptyList());
 
-        // 5. 외부 API 호출을 위한 DTO를 준비하고 호출합니다.
-        Map<String, Object> apiDto = Map.of(
-                "name", dto.groupName(),
-                "gid", assignedGid.intValue(),
-                "members", List.of(dto.ubuntuUsername())
+        ConfigServerGroupRequest apiDto = new ConfigServerGroupRequest(
+                dto.groupName(),
+                assignedGid.intValue(),
+                members
         );
 
         try {
-            log.info("[createGroup] 외부 그룹 생성 API 호출 시작: name={}, gid={}, members={}", apiDto.get("name"), apiDto.get("gid"), apiDto.get("members"));
+            log.info("[createGroup] 외부 그룹 생성 API 호출 시작: {}", apiDto);
 
             groupCreationWebClient.post()
                     .uri("/accounts/addgroup")
                     .bodyValue(apiDto)
                     .retrieve()
-                    .onStatus(HttpStatus.BAD_REQUEST::equals, clientResponse ->
-                            Mono.error(new BusinessException(ErrorCode.GROUP_CREATION_FAILED))
-                    )
-                    .onStatus(HttpStatus.CONFLICT::equals, clientResponse ->
-                            Mono.error(new BusinessException(ErrorCode.DUPLICATE_GROUP_ID))
-                    )
-                    .onStatus(HttpStatus.INTERNAL_SERVER_ERROR::equals, clientResponse ->
-                            Mono.error(new BusinessException(ErrorCode.EXTERNAL_API_ERROR))
-                    )
                     .bodyToMono(Map.class)
                     .block();
 
@@ -122,13 +118,30 @@ public class GroupService {
 
         } catch (WebClientResponseException e) {
             log.error("[createGroup] 외부 API 호출 실패: 상태 코드={}, 응답={}", e.getStatusCode(), e.getResponseBodyAsString(), e);
+            String responseBody = e.getResponseBodyAsString();
+
+            if (e.getStatusCode() == HttpStatus.BAD_REQUEST) {
+                if (responseBody.contains("invalid members")) {
+                    throw new BusinessException(ErrorCode.INVALID_GROUP_MEMBER);
+                }
+                throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+            } else if (e.getStatusCode() == HttpStatus.CONFLICT) {
+                if (responseBody.contains("group already exists")) {
+                    throw new BusinessException(ErrorCode.DUPLICATE_GROUP_NAME);
+                }
+                throw new BusinessException(ErrorCode.DUPLICATE_GROUP_ID);
+            } else if (e.getStatusCode() == HttpStatus.INTERNAL_SERVER_ERROR) {
+                throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+            }
+
             throw new BusinessException(ErrorCode.GROUP_CREATION_FAILED);
+
         } catch (Exception e) {
             log.error("[createGroup] 외부 API 호출 중 예상치 못한 오류 발생", e);
             throw new BusinessException(ErrorCode.GROUP_CREATION_FAILED);
         }
 
-        // 4. API 호출이 성공한 후에만 로컬 DB에 그룹을 저장합니다.
+        // 5. API 호출이 성공한 후에만 로컬 DB에 그룹을 저장합니다.
         UsedId usedId = usedIdRepository.findById(assignedGid)
                 .orElseGet(() -> usedIdRepository.saveAndFlush(UsedId.builder().idValue(assignedGid).build()));
 
@@ -143,4 +156,11 @@ public class GroupService {
 
         return GroupResponseDTO.fromEntity(group);
     }
+
+    // Group Service 내부적으로만 사용하는 DTO입니다.
+    private record ConfigServerGroupRequest(
+            String name,
+            int gid,
+            List<String> members
+    ) {}
 }
