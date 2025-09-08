@@ -2,8 +2,6 @@ package DGU_AI_LAB.admin_be.domain.groups.dto.request;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import lombok.Builder;
 
 @Schema(description = "그룹 생성 요청 DTO")

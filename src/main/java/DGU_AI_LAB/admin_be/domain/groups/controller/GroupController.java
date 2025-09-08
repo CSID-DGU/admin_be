@@ -1,6 +1,5 @@
 package DGU_AI_LAB.admin_be.domain.groups.controller;
 
-import DGU_AI_LAB.admin_be.domain.groups.controller.docs.GroupApi;
 import DGU_AI_LAB.admin_be.domain.groups.dto.request.CreateGroupRequestDTO;
 import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupResponseDTO;
 import DGU_AI_LAB.admin_be.domain.groups.service.GroupService;

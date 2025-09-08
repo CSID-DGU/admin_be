@@ -1,8 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.requests.dto.request;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 @Schema(description = "관리자용 변경 요청 거절 DTO")
 public record RejectModificationDTO(
