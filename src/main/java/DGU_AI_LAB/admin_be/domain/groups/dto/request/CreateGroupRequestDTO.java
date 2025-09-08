@@ -14,8 +14,7 @@ public record CreateGroupRequestDTO(
         @NotBlank(message = "그룹명은 필수입니다.")
         String groupName,
 
-        @Schema(description = "그룹에 추가할 우분투 사용자 이름", example = "user1")
-        @NotBlank(message = "우분투 사용자 이름은 필수입니다.")
+        @Schema(description = "그룹에 추가할 우분투 사용자 이름", example = "user1", required = false)
         String ubuntuUsername
 ) {
 }
