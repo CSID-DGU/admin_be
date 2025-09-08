@@ -10,7 +10,8 @@ public class SecurityWhitelist {
             "/api/auth/token/**", "/api/auth/users/password/**", "/api/auth/login", "/api/auth/register", "/api/auth/reissue",
             "/api/auth/email/**",
             "/auth/callback/**",
-            "/actuator/health", "/actuator/info"
+            "/actuator/health", "/actuator/info",
+            "/api/requests/config/**" // 개발 완료 이후 IP 제한 필요
             //"/api/groups/**"
     );
 }
