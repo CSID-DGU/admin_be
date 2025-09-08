@@ -23,6 +23,8 @@ public class IdAllocationService {
 
     private static final long UID_BASE = 10_000L;
     private static final int MAX_RETRY = 5;
+    private static final long GID_BASE = 2_000L;
+    private static final long GID_MAX_VALUE = 65535L;
 
     private final UsedIdRepository usedIdRepository;
     private final GroupRepository groupRepository;
@@ -65,6 +67,31 @@ public class IdAllocationService {
         }
         throw new BusinessException(ErrorCode.UID_ALLOCATION_FAILED);
     }
+
+    /**
+     * 새로운 GID를 할당하고 UsedId 테이블에 저장합니다.
+     */
+    @Transactional
+    public Long allocateNewGid() {
+        for (int i = 0; i < MAX_RETRY; i++) {
+            // GID 범위 내에서 최대값을 찾습니다.
+            Long currentMax = usedIdRepository.findMaxIdValueInRange(GID_BASE, GID_MAX_VALUE)
+                    .orElse(GID_BASE - 1L);
+
+            long candidate = Math.max(GID_BASE, currentMax + 1);
+
+            if (candidate > GID_MAX_VALUE) {
+                throw new BusinessException(ErrorCode.GID_ALLOCATION_FAILED);
+            }
+
+            try {
+                usedIdRepository.saveAndFlush(UsedId.builder().idValue(candidate).build());
+                return candidate;
+            } catch (DataIntegrityViolationException ignore) {}
+        }
+        throw new BusinessException(ErrorCode.GID_ALLOCATION_FAILED);
+    }
+
 
     private Group createGroupWithSameId(String username, long uidValue) {
         Optional<Group> existing = groupRepository.findById(uidValue);

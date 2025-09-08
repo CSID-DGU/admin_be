@@ -7,14 +7,15 @@ import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.resources.ConnectionProvider;
+
 import java.time.Duration;
 
 @Configuration
 public class WebClientConfig {
 
     @Bean
-    public WebClient pvcWebClient(@Value("${pvc.base-url}") String baseUrl,
-                                  @Value("${pvc.timeout-seconds}") int timeout) {
+    public WebClient configWebClient(@Value("${config.base-url}") String baseUrl,
+                                     @Value("${config.timeout-seconds}") int timeout) {
 
         /**
          * 연결 풀 설정: HTTP 연결을 효율적으로 재사용하도록 한다.
@@ -32,4 +33,6 @@ public class WebClientConfig {
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .build();
     }
+
+
 }

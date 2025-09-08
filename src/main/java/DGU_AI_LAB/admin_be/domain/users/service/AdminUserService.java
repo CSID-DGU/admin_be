@@ -30,7 +30,7 @@ public class AdminUserService {
 
     private final UserRepository userRepository;
     private final RequestRepository requestRepository;
-    private final @Qualifier("pvcWebClient") WebClient userWebClient;
+    private final @Qualifier("configWebClient") WebClient userWebClient;
 
     /**
      * 전체 유저 조회

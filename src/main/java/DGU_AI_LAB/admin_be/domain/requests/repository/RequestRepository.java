@@ -20,5 +20,6 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     Optional<Request> findTopByUbuntuUsernameAndUbuntuUidIsNotNullOrderByApprovedAtDesc(String ubuntuUsername);
     boolean existsByUbuntuUsername(String ubuntuUsername);
     List<Request> findAllByUser_UserIdAndStatus(Long userId, Status status);
+    boolean existsByUbuntuUsernameAndUser_UserId(String ubuntuUsername, Long userId);
 
 }

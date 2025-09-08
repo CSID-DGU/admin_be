@@ -2,7 +2,6 @@ package DGU_AI_LAB.admin_be.domain.dashboard.controller;
 
 import DGU_AI_LAB.admin_be.domain.dashboard.controller.docs.DashBoardApi;
 import DGU_AI_LAB.admin_be.domain.dashboard.service.DashboardService;
-import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.UserServerResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
