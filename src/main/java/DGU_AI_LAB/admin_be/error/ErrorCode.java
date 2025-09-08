@@ -103,6 +103,7 @@ public enum ErrorCode {
     GROUP_CREATION_FAILED(HttpStatus.BAD_GATEWAY, "외부 API: 필수 필드 누락 또는 형식 오류 "),
     GID_ALLOCATION_FAILED(HttpStatus.BAD_GATEWAY, "IdAllocationService에서 GID 할당에 실패했습니다. "),
     FORBIDDEN_REQUEST(HttpStatus.BAD_REQUEST, "요청된 우분투 사용자 이름은 로그인한 사용자의 계정이 아닙니다."),
+    INVALID_GROUP_MEMBER(HttpStatus.BAD_REQUEST, "존재하지 않는 사용자입니다."),
 
 
     /**
