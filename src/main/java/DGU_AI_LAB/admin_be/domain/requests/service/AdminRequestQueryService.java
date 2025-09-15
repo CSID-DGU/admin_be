@@ -1,9 +1,12 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.PortMappingDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -21,17 +24,27 @@ public class AdminRequestQueryService {
 
     private final RequestRepository requestRepository;
     private final ChangeRequestRepository changeRequestRepository;
+    private final PortRequestService portRequestService;
 
     public List<SaveRequestResponseDTO> getAllRequests() {
         return requestRepository.findAll().stream()
-                .map(SaveRequestResponseDTO::fromEntity)
+                .map(this::createResponseDTOWithPortMappings)
                 .collect(Collectors.toList());
     }
 
     public List<SaveRequestResponseDTO> getNewRequests() {
         return requestRepository.findAllByStatus(Status.PENDING).stream()
-                .map(SaveRequestResponseDTO::fromEntity)
+                .map(this::createResponseDTOWithPortMappings)
                 .collect(Collectors.toList());
+    }
+
+    private SaveRequestResponseDTO createResponseDTOWithPortMappings(Request request) {
+        List<PortMappingDTO> portMappings = portRequestService.getPortRequestsByRequestId(request.getRequestId())
+                .stream()
+                .map(PortMappingDTO::fromEntity)
+                .toList();
+
+        return SaveRequestResponseDTO.fromEntityWithPortMappings(request, portMappings);
     }
 
     public List<ResourceUsageDTO> getAllFulfilledResourceUsage() {

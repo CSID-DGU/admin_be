@@ -135,7 +135,13 @@ public enum ErrorCode {
     PVC_API_FAILURE(HttpStatus.BAD_GATEWAY, "pvc 관련 API 요청에 실패했습니다."),
     UBUNTU_USER_DELETION_FAILED(HttpStatus.BAD_GATEWAY, "우분투 계정 삭제에 실패했습니다."),
     USER_CREATION_FAILED(HttpStatus.BAD_GATEWAY, "사용자 계정 생성에 실패했습니다."),
-    INVALID_USERNAME_FORMAT(HttpStatus.BAD_REQUEST, "잘못된 사용자명 형식입니다.")
+    INVALID_USERNAME_FORMAT(HttpStatus.BAD_REQUEST, "잘못된 사용자명 형식입니다."),
+
+    /**
+     * Port Request Error
+     */
+    DUPLICATE_PORT_NUMBER(HttpStatus.CONFLICT, "이미 사용 중인 포트 번호입니다."),
+    NO_AVAILABLE_PORT(HttpStatus.CONFLICT, "사용 가능한 포트가 없습니다. (10000-20000 범위)")
 
     ;
     private final HttpStatus httpStatus;

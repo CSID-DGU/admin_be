@@ -28,12 +28,17 @@ public class PortRequests extends BaseTimeEntity {
     @Max(65535)
     private Integer portNumber;
 
+    @Column(name = "internal_port", nullable = false)
+    @Min(1)
+    @Max(65535)
+    private Integer internalPort;
+
     @Column(name = "usage_purpose", nullable = false, length = 1000)
     private String usagePurpose;
 
     @Column(name = "is_active", nullable = false)
     @Builder.Default
-    private Boolean isActive = true;
+    private Boolean isActive = false;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "request_id", nullable = false)
