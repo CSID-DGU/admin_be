@@ -29,7 +29,6 @@ public class RequestQueryService {
     private final PortRequestService portRequestService;
 
     /** 내 신청 목록 */
-    @Transactional(readOnly = true)
     public List<SaveRequestResponseDTO> getRequestsByUserId(Long userId) {
         if (!userRepository.existsById(userId)) {
             throw new BusinessException(ErrorCode.USER_NOT_FOUND);
@@ -49,7 +48,6 @@ public class RequestQueryService {
     }
 
     /** 승인 완료 자원 사용량 */
-    @Transactional(readOnly = true)
     public List<ResourceUsageDTO> getAllFulfilledResourceUsage() {
         return requestRepository.findAllByStatus(Status.FULFILLED).stream()
                 .map(ResourceUsageDTO::fromEntity)
@@ -57,11 +55,18 @@ public class RequestQueryService {
     }
 
     /** 활성 컨테이너 */
-    @Transactional(readOnly = true)
     public List<ContainerInfoDTO> getActiveContainers() {
         return requestRepository.findAllByStatus(Status.FULFILLED).stream()
                 .map(ContainerInfoDTO::fromEntity)
                 .toList();
+    }
+
+
+    /**
+     * 승인 완료(FULFILLED)된 모든 요청의 ubuntuUsername 목록을 조회합니다.
+     */
+    public List<String> getAllFulfilledUsernames() {
+        return requestRepository.findUbuntuUsernamesByStatus(Status.FULFILLED);
     }
 
 }
