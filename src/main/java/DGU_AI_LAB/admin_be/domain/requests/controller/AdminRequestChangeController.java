@@ -30,7 +30,7 @@ public class AdminRequestChangeController implements AdminRequestChangeApi {
     @GetMapping("/change")
     public ResponseEntity<SuccessResponse<?>> getChangeRequests() {
         List<ChangeRequestResponseDTO> changeRequests = adminRequestQueryService.getChangeRequests();
-        return ResponseEntity.ok((SuccessResponse<?>) changeRequests);
+        return SuccessResponse.ok(changeRequests);
     }
 
     @PatchMapping("/change/approve")
