@@ -17,6 +17,7 @@ import jakarta.validation.constraints.Size;
 import lombok.Builder;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -46,7 +47,10 @@ public record SaveRequestRequestDTO(
         Map<String, Object> formAnswers,
 
         LocalDateTime expiresAt,
-        Set<Long> ubuntuGids
+        Set<Long> ubuntuGids,
+
+        @Schema(description = "포트 요청 목록")
+        List<PortRequestDTO> portRequests
 ) {
     public Request toEntity(
             User user,

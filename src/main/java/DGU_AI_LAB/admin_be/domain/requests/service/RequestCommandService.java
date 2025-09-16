@@ -17,6 +17,7 @@ import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
+import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.util.PasswordUtil;
@@ -42,6 +43,7 @@ public class RequestCommandService {
     private final GroupRepository groupRepository;
     private final ResourceGroupRepository resourceGroupRepository;
     private final ChangeRequestRepository changeRequestRepository;
+    private final PortRequestService portRequestService;
 
     /**
      * 사용 신청 변경 요청
@@ -169,6 +171,18 @@ public class RequestCommandService {
 
             for (Group g : found) {
                 req.addGroup(g);
+            }
+        }
+
+        // Create port requests if provided
+        if (dto.portRequests() != null && !dto.portRequests().isEmpty()) {
+            for (var portRequestDTO : dto.portRequests()) {
+                portRequestService.createPortRequest(
+                        req,
+                        rg,
+                        portRequestDTO.internalPort(),
+                        portRequestDTO.usagePurpose()
+                );
             }
         }
 

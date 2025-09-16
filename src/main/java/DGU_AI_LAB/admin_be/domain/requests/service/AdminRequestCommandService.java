@@ -143,7 +143,7 @@ public class AdminRequestCommandService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
         ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        request.approve(image, rg, dto.volumeSizeGiB(), dto.expiresAt(), dto.adminComment());
+        request.approve(image, rg, dto.volumeSizeGiB(), dto.adminComment());
         requestRepository.flush();
 
         return SaveRequestResponseDTO.fromEntity(request);
