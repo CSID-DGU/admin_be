@@ -21,7 +21,13 @@ public interface RequestApi {
 
     @Operation(
             summary = "서버 사용 신청 생성",
-            description = "로그인된 사용자의 인증 정보를 바탕으로 서버 사용 신청을 생성합니다."
+            description = "로그인된 사용자의 인증 정보를 바탕으로 서버 사용 신청을 생성합니다." +
+                    "신청하면서 저장할 때 사용자가 평문으로 입력하고 그걸 클라이언트에서 Base64로 인코딩해서 API 요청 (POST 서버 사용 신청 생성)\n" +
+                    "평문 -> Base64 [클라이언트]\n" +
+                    "Base64 -> sha-512 [서버]\n" +
+                    "이렇게 해서 [인프라] -> /api/auth/users/password (ssh 로그인) -> [서버]\n" +
+                    "평문 -> Base64 [인프라]\n" +
+                    "Base64 -> [서버] 인증 (sha-512) -> OK!"
     )
     @ApiResponse(
             responseCode = "200",
