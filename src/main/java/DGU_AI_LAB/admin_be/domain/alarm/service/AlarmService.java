@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.alarm.service;
 
+import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,11 @@ public class AlarmService {
 
     @Value("${slack-webhook-url.monitoring}")
     private String defaultWebhookUrl;
+    @Value("${slack-webhook-url.farm-admin}")
+    private String farmAdminWebhookUrl;
+    @Value("${slack-webhook-url.lab-admin}")
+    private String labAdminWebhookUrl;
+
 
     @Value("${slack.bot-token}")
     private String botToken;
@@ -168,4 +174,45 @@ public class AlarmService {
         sendDMAlert(username, email, message);
         sendMailAlert(email, subject, message);
     }
+
+    public void sendNewRequestNotification(Request request) {
+        String serverName = request.getResourceGroup().getServerName();
+        String targetWebhookUrl;
+
+        // serverName에 따라 사용할 다른 채널로 전송
+        if ("FARM".equalsIgnoreCase(serverName)) {
+            targetWebhookUrl = farmAdminWebhookUrl;
+        } else if ("LAB".equalsIgnoreCase(serverName)) {
+            targetWebhookUrl = labAdminWebhookUrl;
+        } else {
+            // FARM이나 LAB이 아닌 잘못된 입력값이 있을 경우, 기본 모니터링 채널로 전송
+            log.warn("알 수 없는 serverName '{}'에 대한 요청 알림입니다. 기본 채널로 전송합니다.", serverName);
+            targetWebhookUrl = defaultWebhookUrl;
+        }
+
+        // 슬랙 메시지 내용을 생성합니다.
+        String message = String.format(
+                "🔔 새로운 서버 사용 신청이 도착했습니다! 🔔\n" +
+                        "------------------------------------------\n" +
+                        "▶ 신청자: %s (%s)\n" +
+                        "▶ 신청 서버: %s\n" +
+                        "▶ Ubuntu 사용자 이름: %s\n" +
+                        "▶ 요청 이미지: %s:%s\n" +
+                        "▶ 요청 볼륨: %dGiB\n" +
+                        "------------------------------------------\n" +
+                        "관리자 페이지에서 확인 후 승인해 주세요.",
+                request.getUser().getName(),
+                request.getUser().getStudentId(),
+                serverName,
+                request.getUbuntuUsername(),
+                request.getContainerImage().getImageName(),
+                request.getContainerImage().getImageVersion(),
+                request.getVolumeSizeGiB()
+        );
+
+        sendSlackAlert(message, targetWebhookUrl);
+    }
+
+
+
 }
