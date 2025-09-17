@@ -8,8 +8,6 @@ import lombok.*;
 @Table(name = "`groups`")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor
-@Builder
 @EqualsAndHashCode(of = "groupId")
 public class Group {
 
@@ -27,4 +25,10 @@ public class Group {
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ubuntu_gid", referencedColumnName = "id_value", insertable = false, updatable = false)
     private UsedId usedId;
+
+    @Builder
+    public Group(String groupName, Long ubuntuGid) {
+        this.groupName = groupName;
+        this.ubuntuGid = ubuntuGid;
+    }
 }

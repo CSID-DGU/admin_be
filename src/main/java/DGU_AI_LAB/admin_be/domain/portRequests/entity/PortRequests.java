@@ -10,12 +10,10 @@ import lombok.*;
 
 @Entity
 @Table(name = "port_requests", uniqueConstraints = {
-    @UniqueConstraint(columnNames = {"port_number", "rsgroup_id"})
+        @UniqueConstraint(columnNames = {"port_number", "rsgroup_id"})
 })
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor
-@Builder
 public class PortRequests extends BaseTimeEntity {
 
     @Id
@@ -37,7 +35,6 @@ public class PortRequests extends BaseTimeEntity {
     private String usagePurpose;
 
     @Column(name = "is_active", nullable = false)
-    @Builder.Default
     private Boolean isActive = false;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -47,5 +44,14 @@ public class PortRequests extends BaseTimeEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "rsgroup_id", nullable = false)
     private ResourceGroup resourceGroup;
+
+    @Builder
+    public PortRequests(Integer portNumber, Integer internalPort, String usagePurpose, Request request, ResourceGroup resourceGroup) {
+        this.portNumber = portNumber;
+        this.internalPort = internalPort;
+        this.usagePurpose = usagePurpose;
+        this.request = request;
+        this.resourceGroup = resourceGroup;
+    }
 
 }

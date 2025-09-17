@@ -11,9 +11,7 @@ import lombok.*;
 @Access(AccessType.FIELD)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor
-@Builder
-@EqualsAndHashCode(of = "id")
+@EqualsAndHashCode(of = "id", callSuper = false)
 public class ResourceGroupImage extends BaseTimeEntity {
 
     @EmbeddedId
@@ -28,6 +26,12 @@ public class ResourceGroupImage extends BaseTimeEntity {
     @MapsId("imageId")
     @JoinColumn(name = "image_id", nullable = false)
     private ContainerImage containerImage;
+
+    @Builder
+    public ResourceGroupImage(ResourceGroup resourceGroup, ContainerImage containerImage) {
+        this.resourceGroup = resourceGroup;
+        this.containerImage = containerImage;
+    }
 
     @PrePersist
     void onCreate() {

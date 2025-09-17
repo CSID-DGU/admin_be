@@ -105,7 +105,6 @@ public class IdAllocationService {
         Group group = Group.builder()
                 .groupName(username)
                 .ubuntuGid(uidValue)
-                .usedId(gidUsedId)
                 .build();
 
         return groupRepository.saveAndFlush(group);

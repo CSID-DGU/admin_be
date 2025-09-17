@@ -12,8 +12,6 @@ import java.util.Set;
 @Table(name = "nodes")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor
-@Builder
 @EqualsAndHashCode(of = "nodeId")
 public class Node {
 
@@ -35,8 +33,15 @@ public class Node {
     private Integer cpuCoreCount;
 
     @OneToMany(mappedBy = "node", fetch = FetchType.LAZY)
-    @Builder.Default
     private Set<Gpu> gpus = new LinkedHashSet<>();
+
+    @Builder
+    public Node(String nodeId, ResourceGroup resourceGroup, Integer memorySizeGB, Integer cpuCoreCount) {
+        this.nodeId = nodeId;
+        this.resourceGroup = resourceGroup;
+        this.memorySizeGB = memorySizeGB;
+        this.cpuCoreCount = cpuCoreCount;
+    }
 
     public int getNumberGpu() {
         return gpus == null ? 0 : gpus.size();

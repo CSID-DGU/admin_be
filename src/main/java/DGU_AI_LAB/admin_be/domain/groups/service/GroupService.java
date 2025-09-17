@@ -146,7 +146,6 @@ public class GroupService {
         Group group = Group.builder()
                 .groupName(dto.groupName())
                 .ubuntuGid(assignedGid)
-                .usedId(usedId)
                 .build();
 
         group = groupRepository.save(group);

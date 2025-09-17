@@ -12,13 +12,13 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "requests")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor
-@Builder
 public class Request extends BaseTimeEntity {
 
     @Id
@@ -46,7 +46,6 @@ public class Request extends BaseTimeEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
-    @Builder.Default
     private Status status = Status.PENDING;
 
     /**
@@ -78,9 +77,20 @@ public class Request extends BaseTimeEntity {
     private ContainerImage containerImage;
 
     @OneToMany(mappedBy = "request", cascade = CascadeType.ALL, orphanRemoval = true)
-    @Builder.Default
-    private java.util.Set<RequestGroup> requestGroups = new java.util.LinkedHashSet<>();
+    private Set<RequestGroup> requestGroups = new LinkedHashSet<>();
 
+    @Builder
+    public Request(String ubuntuUsername, String ubuntuPassword, Long volumeSizeGiB, LocalDateTime expiresAt, String usagePurpose, String formAnswers, User user, ResourceGroup resourceGroup, ContainerImage containerImage) {
+        this.ubuntuUsername = ubuntuUsername;
+        this.ubuntuPassword = ubuntuPassword;
+        this.volumeSizeGiB = volumeSizeGiB;
+        this.expiresAt = expiresAt;
+        this.usagePurpose = usagePurpose;
+        this.formAnswers = formAnswers;
+        this.user = user;
+        this.resourceGroup = resourceGroup;
+        this.containerImage = containerImage;
+    }
 
     // ==== 비즈니스 메서드 ====
 
@@ -160,7 +170,6 @@ public class Request extends BaseTimeEntity {
         }
 
         RequestGroup rg = RequestGroup.builder()
-                .id(new RequestGroupId(rid, group.getUbuntuGid()))
                 .request(this)
                 .group(group)
                 .build();
