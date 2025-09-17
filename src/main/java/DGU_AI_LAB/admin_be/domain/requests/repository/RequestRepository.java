@@ -4,6 +4,8 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -21,5 +23,8 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     boolean existsByUbuntuUsername(String ubuntuUsername);
     List<Request> findAllByUser_UserIdAndStatus(Long userId, Status status);
     boolean existsByUbuntuUsernameAndUser_UserId(String ubuntuUsername, Long userId);
+
+    @Query("SELECT r.ubuntuUsername FROM Request r WHERE r.status = :status")
+    List<String> findUbuntuUsernamesByStatus(@Param("status") Status status);
 
 }
