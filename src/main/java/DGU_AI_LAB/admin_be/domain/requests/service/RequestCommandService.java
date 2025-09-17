@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageReposi
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ModifyRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.SingleChangeRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
@@ -115,6 +116,32 @@ public class RequestCommandService {
         }
     }
 
+    /**
+     * 단일 변경 요청 생성 - DTO가 모든 검증을 담당하므로 서비스는 단순히 처리만 함
+     */
+    @Transactional
+    public void createSingleChangeRequest(Long userId, Long requestId, SingleChangeRequestDTO dto) {
+        Request originalRequest = requestRepository.findById(requestId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        // 요청자가 원본 요청의 소유자인지 확인
+        if (!originalRequest.getUser().getUserId().equals(userId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN_REQUEST);
+        }
+
+        // FULFILLED 상태에서만 변경 요청 가능
+        if (originalRequest.getStatus() != Status.FULFILLED) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+        }
+
+        User requestedBy = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        // DTO 팩토리 메서드를 사용하여 검증된 ChangeRequest 생성 및 저장
+        ChangeRequest changeRequest = SingleChangeRequestDTO.createValidatedChangeRequest(
+                dto, originalRequest, requestedBy, objectMapper);
+        changeRequestRepository.save(changeRequest);
+    }
 
     // 중복 코드 방지를 위한 헬퍼 메서드
     private <T> void createAndSaveChangeRequest(Request originalRequest, User requestedBy,
