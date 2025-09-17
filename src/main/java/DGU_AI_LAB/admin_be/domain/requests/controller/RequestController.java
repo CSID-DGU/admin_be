@@ -58,6 +58,15 @@ public class RequestController implements RequestApi {
     }
 
     /**
+     * 나의 승인 완료된 사용 신청 조회
+     */
+    @GetMapping("/my/approved")
+    public ResponseEntity<SuccessResponse<?>> getMyApprovedRequests(@AuthenticationPrincipal CustomUserDetails user) {
+        List<SaveRequestResponseDTO> body = requestQueryService.getApprovedRequestsByUserId(user.getUserId());
+        return SuccessResponse.ok(body);
+    }
+
+    /**
      * 나의 사용 신청에 대한 모든 ubuntu_username 조회
      */
     @GetMapping("/fulfilled-usernames")
