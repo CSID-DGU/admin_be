@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
@@ -44,6 +45,7 @@ public class RequestCommandService {
     private final ResourceGroupRepository resourceGroupRepository;
     private final ChangeRequestRepository changeRequestRepository;
     private final PortRequestService portRequestService;
+    private final AlarmService alarmService;
 
     /**
      * 사용 신청 변경 요청
@@ -174,7 +176,7 @@ public class RequestCommandService {
             }
         }
 
-        // Create port requests if provided
+        // === 포트 추가 신청 ===
         if (dto.portRequests() != null && !dto.portRequests().isEmpty()) {
             for (var portRequestDTO : dto.portRequests()) {
                 portRequestService.createPortRequest(
@@ -185,6 +187,16 @@ public class RequestCommandService {
                 );
             }
         }
+
+        // === 관리자 채널에 슬랙 알림 전송 ===
+        try {
+            log.info("새로운 사용 신청에 대한 슬랙 알림을 전송합니다. 요청 ID: {}", req.getRequestId());
+            alarmService.sendNewRequestNotification(req);
+        } catch (Exception e) {
+            // 사용자는 신청을 성공적으로 생성했지만, 관리자에게 알림만 가지 않은 상황입니다.
+            log.error("슬랙 알림 전송에 실패했습니다. (요청 ID: {}). 하지만 사용 신청은 정상적으로 처리되었습니다.", req.getRequestId(), e);
+        }
+
 
         return SaveRequestResponseDTO.fromEntity(req);
     }
