@@ -54,6 +54,37 @@ public class AdminRequestCommandService {
     private final @Qualifier("configWebClient") WebClient pvcWebClient;
     private final @Qualifier("configWebClient") WebClient userCreationWebClient;
 
+    /**
+     * 사용 신청, 변경 신청에서 공통으로 사용되는 PVC API 호출 메서드
+     * @param username
+     * @param volumeSizeGiB
+     */
+    private void callPvcApi(String username, Long volumeSizeGiB) {
+        PvcRequestDTO pvcDto = new PvcRequestDTO(username, volumeSizeGiB);
+
+        try {
+            log.info("PVC API 요청 시작: 사용자: {}, 용량: {}Gi",
+                    pvcDto.ubuntuUsername(), pvcDto.volumeSizeGiB());
+
+            pvcWebClient.post()
+                    .uri("/pvc")
+                    .bodyValue(pvcDto)
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .block();
+
+            log.info("PVC API 요청 성공: 사용자: {}", username);
+
+        } catch (WebClientResponseException e) {
+            log.error("PVC API 호출 실패: 상태 코드: {}, 응답 본문: {}",
+                    e.getStatusCode(), e.getResponseBodyAsString(), e);
+            throw new BusinessException(ErrorCode.PVC_API_FAILURE);
+        } catch (Exception e) {
+            log.error("PVC API 호출 중 예기치 않은 오류 발생.", e);
+            throw new BusinessException(ErrorCode.PVC_API_FAILURE);
+        }
+    }
+
     @Transactional
     public SaveRequestResponseDTO approveRequest(ApproveRequestDTO dto) {
         Request request = requestRepository.findById(dto.requestId())
@@ -107,30 +138,7 @@ public class AdminRequestCommandService {
         }
 
         // 2. PVC 생성 API 호출
-        PvcRequestDTO pvcDto = new PvcRequestDTO(request.getUbuntuUsername(), request.getVolumeSizeGiB());
-
-        try {
-            log.info("PVC 생성 요청 시작: {} 사용자, 용량: {}Gi",
-                    pvcDto.ubuntuUsername(), pvcDto.volumeSizeGiB());
-
-            Mono<Map> pvcResponseMono = pvcWebClient.post()
-                    .uri("/pvc")
-                    .bodyValue(pvcDto)
-                    .retrieve()
-                    .bodyToMono(Map.class);
-
-            Map response = pvcResponseMono.block();
-
-            log.info("PVC 생성 성공: {}", response);
-
-        } catch (WebClientResponseException e) {
-            log.error("PVC API 호출 실패: 상태 코드: {}, 응답 본문: {}",
-                    e.getStatusCode(), e.getResponseBodyAsString(), e);
-            throw new BusinessException(ErrorCode.PVC_API_FAILURE);
-        } catch (Exception e) {
-            log.error("PVC API 호출 중 예기치 않은 오류 발생.", e);
-            throw new BusinessException(ErrorCode.PVC_API_FAILURE);
-        }
+        callPvcApi(request.getUbuntuUsername(), request.getVolumeSizeGiB());
 
         // 3. API 호출이 모두 성공한 후에 DB 업데이트
         request.assignUbuntuUid(allocation.getUid());
@@ -143,7 +151,7 @@ public class AdminRequestCommandService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
         ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        request.approve(image, rg, dto.volumeSizeGiB(), dto.expiresAt(), dto.adminComment());
+        request.approve(image, rg, dto.volumeSizeGiB(), dto.adminComment());
         requestRepository.flush();
 
         return SaveRequestResponseDTO.fromEntity(request);
@@ -196,6 +204,11 @@ public class AdminRequestCommandService {
             switch (changeRequest.getChangeType()) {
                 case VOLUME_SIZE:
                     Long newVolumeSize = objectMapper.readValue(changeRequest.getNewValue(), Long.class);
+
+                    log.info("PVC 크기 변경 API 호출. 사용자: {}, 새로운 크기: {}Gi",
+                            originalRequest.getUbuntuUsername(), newVolumeSize);
+                    callPvcApi(originalRequest.getUbuntuUsername(), newVolumeSize);
+
                     originalRequest.updateVolumeSize(newVolumeSize);
                     break;
                 case EXPIRES_AT:
