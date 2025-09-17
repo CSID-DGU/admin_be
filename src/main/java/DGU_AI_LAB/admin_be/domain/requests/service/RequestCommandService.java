@@ -139,7 +139,7 @@ public class RequestCommandService {
 
         // DTO 팩토리 메서드를 사용하여 검증된 ChangeRequest 생성 및 저장
         ChangeRequest changeRequest = SingleChangeRequestDTO.createValidatedChangeRequest(
-                dto, originalRequest, requestedBy, objectMapper);
+                dto, originalRequest, requestedBy, objectMapper, portRequestService);
         changeRequestRepository.save(changeRequest);
     }
 
