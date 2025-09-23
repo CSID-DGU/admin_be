@@ -53,6 +53,21 @@ public interface RequestApi {
             @Parameter(hidden = true, description = "인증된 사용자")
             CustomUserDetails user
     );
+
+    @Operation(
+            summary = "내 승인 완료된 신청 목록 조회",
+            description = "로그인된 사용자의 승인 완료(FULFILLED) 상태인 신청 내역만 조회합니다."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "조회 성공",
+            content = @Content(array = @ArraySchema(schema = @Schema(implementation = SaveRequestResponseDTO.class)))
+    )
+    ResponseEntity<SuccessResponse<?>> getMyApprovedRequests(
+            @Parameter(hidden = true, description = "인증된 사용자")
+            CustomUserDetails user
+    );
+
     @Operation(
             summary = "승인 완료된 모든 Ubuntu 사용자 이름 조회",
             description = "[그룹 생성 시 사용] 현재 시스템에서 사용 승인(FULFILLED)이 완료된 모든 요청의 Ubuntu 사용자 이름 목록을 조회합니다."

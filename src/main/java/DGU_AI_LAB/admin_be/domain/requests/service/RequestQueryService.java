@@ -69,4 +69,14 @@ public class RequestQueryService {
         return requestRepository.findUbuntuUsernamesByStatus(Status.FULFILLED);
     }
 
+    /** 내 신청 목록 중 승인 완료(FULFILLED) 상태만 조회 */
+    public List<SaveRequestResponseDTO> getApprovedRequestsByUserId(Long userId) {
+        if (!userRepository.existsById(userId)) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+        return requestRepository.findAllByUser_UserIdAndStatus(userId, Status.FULFILLED).stream()
+                .map(this::createResponseDTOWithPortMappings)
+                .toList();
+    }
+
 }
