@@ -10,8 +10,6 @@ import lombok.*;
 @Table(name = "resource_groups")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor
-@Builder
 @EqualsAndHashCode(of = "rsgroupId")
 public class ResourceGroup {
 
@@ -27,4 +25,12 @@ public class ResourceGroup {
 
     @Column(name = "server_name", length = 300)
     private String serverName; // ex. FARM, LAB
+
+    @Builder
+    public ResourceGroup(Integer rsgroupId, String resourceGroupName, String description, String serverName) {
+        this.rsgroupId = rsgroupId;
+        this.resourceGroupName = resourceGroupName;
+        this.description = description;
+        this.serverName = serverName;
+    }
 }

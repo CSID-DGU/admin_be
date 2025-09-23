@@ -8,8 +8,6 @@ import lombok.*;
 @Table(name = "gpus")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor
-@Builder
 @EqualsAndHashCode(of = "gpuId")
 public class Gpu {
 
@@ -30,4 +28,11 @@ public class Gpu {
 
     @Column(name = "RAM_GB", nullable = false)
     private Integer ramGb;
+
+    @Builder
+    public Gpu(Node node, String gpuModel, Integer ramGb) {
+        this.node = node;
+        this.gpuModel = gpuModel;
+        this.ramGb = ramGb;
+    }
 }

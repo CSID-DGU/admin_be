@@ -10,12 +10,15 @@ import lombok.*;
 @Table(name = "used_ids")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor
-@Builder
 @EqualsAndHashCode(of = "idValue")
 public class UsedId {
 
     @Id
     @Column(name = "id_value", nullable = false)
     private Long idValue;
+
+    @Builder
+    public UsedId(Long idValue) {
+        this.idValue = idValue;
+    }
 }

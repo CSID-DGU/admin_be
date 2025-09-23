@@ -8,8 +8,6 @@ import lombok.*;
 @Table(name = "container_image")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor
-@Builder
 public class ContainerImage extends BaseTimeEntity  {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -27,4 +25,12 @@ public class ContainerImage extends BaseTimeEntity  {
 
     @Column(name = "description", length = 500, nullable = false)
     private String description;
+
+    @Builder
+    public ContainerImage(String imageName, String imageVersion, String cudaVersion, String description) {
+        this.imageName = imageName;
+        this.imageVersion = imageVersion;
+        this.cudaVersion = cudaVersion;
+        this.description = description;
+    }
 }

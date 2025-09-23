@@ -10,8 +10,6 @@ import java.time.LocalDateTime;
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor
-@Builder
 public class ChangeRequest extends BaseTimeEntity {
 
     @Id
@@ -38,7 +36,6 @@ public class ChangeRequest extends BaseTimeEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
-    @Builder.Default
     private Status status = Status.PENDING;
 
     @Column(name = "admin_comment", length = 500)
@@ -54,6 +51,16 @@ public class ChangeRequest extends BaseTimeEntity {
 
     @Column(name = "reviewed_at")
     private LocalDateTime reviewedAt;
+
+    @Builder
+    public ChangeRequest(Request request, ChangeType changeType, String oldValue, String newValue, String reason, User requestedBy) {
+        this.request = request;
+        this.changeType = changeType;
+        this.oldValue = oldValue;
+        this.newValue = newValue;
+        this.reason = reason;
+        this.requestedBy = requestedBy;
+    }
 
     // ==== 비즈니스 메서드 ====
 
