@@ -66,7 +66,6 @@ public record SaveRequestRequestDTO(
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
 
-        // 1) 본체 먼저 생성
         Request req = Request.builder()
                 .user(user)
                 .resourceGroup(resourceGroup)
@@ -77,7 +76,6 @@ public record SaveRequestRequestDTO(
                 .usagePurpose(usagePurpose)
                 .formAnswers(formAnswersJson)
                 .expiresAt(expiresAt)
-                .status(Status.PENDING)
                 .build();
 
         return req;

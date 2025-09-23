@@ -41,7 +41,6 @@ public class PortRequestService {
                 .portNumber(assignedPortNumber)
                 .internalPort(internalPort)
                 .usagePurpose(usagePurpose)
-                .isActive(false) // Initially inactive until approved
                 .build();
 
         return portRequestRepository.save(portRequest);

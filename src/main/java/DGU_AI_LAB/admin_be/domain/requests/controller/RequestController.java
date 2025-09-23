@@ -1,7 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller;
 
 import DGU_AI_LAB.admin_be.domain.requests.controller.docs.RequestApi;
-import DGU_AI_LAB.admin_be.domain.requests.dto.request.ModifyRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.SingleChangeRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestCommandService;
@@ -36,14 +36,14 @@ public class RequestController implements RequestApi {
     }
 
     /**
-     * 사용 신청 변경 (저장공간 크기, 만료기한, 사용자가 속한 그룹, 리소스 그룹, 도커 이미지)
+     * 사용 신청 변경 (단일 변경 요청)
      */
     @PostMapping("/{requestId}/change")
     public ResponseEntity<SuccessResponse<?>> createChangeRequest(@AuthenticationPrincipal(expression = "userId") Long userId,
                                                                    @PathVariable Long requestId,
-                                                                   @RequestBody @Valid ModifyRequestDTO dto
+                                                                   @RequestBody @Valid SingleChangeRequestDTO dto
     ) {
-        requestCommandService.createModificationRequest(userId, requestId, dto);
+        requestCommandService.createSingleChangeRequest(userId, requestId, dto);
         return SuccessResponse.ok(null);
     }
 
@@ -54,6 +54,15 @@ public class RequestController implements RequestApi {
     public ResponseEntity<SuccessResponse<?>> getMyRequests(@AuthenticationPrincipal CustomUserDetails user
     ) {
         List<SaveRequestResponseDTO> body = requestQueryService.getRequestsByUserId(user.getUserId());
+        return SuccessResponse.ok(body);
+    }
+
+    /**
+     * 나의 승인 완료된 사용 신청 조회
+     */
+    @GetMapping("/my/approved")
+    public ResponseEntity<SuccessResponse<?>> getMyApprovedRequests(@AuthenticationPrincipal CustomUserDetails user) {
+        List<SaveRequestResponseDTO> body = requestQueryService.getApprovedRequestsByUserId(user.getUserId());
         return SuccessResponse.ok(body);
     }
 

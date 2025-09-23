@@ -8,8 +8,6 @@ import lombok.*;
 @Table(name = "users")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor
-@Builder
 public class User extends BaseTimeEntity {
 
     @Id
@@ -28,7 +26,6 @@ public class User extends BaseTimeEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 20)
-    @Builder.Default
     private Role role = Role.USER;
 
     @Column(name = "student_id", nullable = false, length = 100)
@@ -41,8 +38,19 @@ public class User extends BaseTimeEntity {
     private String department;
 
     @Column(name = "is_active", nullable = false)
-    @Builder.Default
     private Boolean isActive = true;
+
+    @Builder
+    public User(String email, String password, String name, String studentId, String phone, String department) {
+        this.email = email;
+        this.password = password;
+        this.name = name;
+        this.studentId = studentId;
+        this.phone = phone;
+        this.department = department;
+    }
+
+    // ===== 비즈니스 메서드 =====
 
     public void updateUserInfo(String encodedPassword, Boolean isActive) {
         if (encodedPassword != null) this.password = encodedPassword;
