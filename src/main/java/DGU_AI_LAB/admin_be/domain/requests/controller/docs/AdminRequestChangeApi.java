@@ -22,6 +22,13 @@ public interface AdminRequestChangeApi {
     })
     ResponseEntity<SuccessResponse<?>> getChangeRequests();
 
+    @Operation(summary = "모든 변경 요청 목록 조회", description = "모든 상태의 변경 요청 목록을 조회합니다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "성공",
+                    content = @Content(schema = @Schema(implementation = SuccessResponse.class)))
+    })
+    ResponseEntity<SuccessResponse<?>> getAllChangeRequests();
+
     @Operation(summary = "변경 요청 승인", description = "PENDING 상태의 변경 요청을 승인하고 설정을 업데이트합니다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "성공",

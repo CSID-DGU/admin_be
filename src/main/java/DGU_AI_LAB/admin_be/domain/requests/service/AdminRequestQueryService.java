@@ -64,4 +64,10 @@ public class AdminRequestQueryService {
                 .map(ChangeRequestResponseDTO::fromEntity)
                 .collect(Collectors.toList());
     }
+
+    public List<ChangeRequestResponseDTO> getAllChangeRequests() {
+        return changeRequestRepository.findAll().stream()
+                .map(ChangeRequestResponseDTO::fromEntity)
+                .collect(Collectors.toList());
+    }
 }
