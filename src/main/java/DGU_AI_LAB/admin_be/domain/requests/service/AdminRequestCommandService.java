@@ -155,7 +155,7 @@ public class AdminRequestCommandService {
         ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
         request.approve(image, rg, dto.volumeSizeGiB(), dto.adminComment());
-        requestRepository.flush();
+        // requestRepository.flush();
 
         // 4. 사용자에게 승인 알림 발송
         try {

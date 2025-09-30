@@ -8,7 +8,6 @@ import lombok.*;
 @Table(name = "gpus")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@EqualsAndHashCode(of = "gpuId")
 public class Gpu {
 
     @Id
