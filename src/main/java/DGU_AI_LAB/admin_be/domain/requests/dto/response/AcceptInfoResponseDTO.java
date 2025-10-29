@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.dto.response;
 
 import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
+import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import lombok.Builder;
 
@@ -17,7 +18,8 @@ public record AcceptInfoResponseDTO(
         Boolean gpu_required,
         String gpu_group,
         String server_type,
-        List<NodeDTO> gpu_nodes
+        List<NodeDTO> gpu_nodes,
+        List<ExtraPortDTO> extra_ports
 ) {
     @Builder
     public record NodeDTO(
@@ -27,7 +29,14 @@ public record AcceptInfoResponseDTO(
             Integer num_gpu
     ) {}
 
-    public static AcceptInfoResponseDTO fromEntity(Request request, List<Node> nodes) {
+    @Builder
+    public record ExtraPortDTO(
+            Integer internal_port,
+            Integer external_port,
+            String usage_purpose
+    ) {}
+
+    public static AcceptInfoResponseDTO fromEntity(Request request, List<Node> nodes, List<PortRequests> portRequests) {
         var image = request.getContainerImage();
         var group = request.getResourceGroup();
 
@@ -37,6 +46,14 @@ public record AcceptInfoResponseDTO(
                         .cpu_limit(node.getCpuCoreCount() * 1000 + "m")
                         .memory_limit(node.getMemorySizeGB() * 1024 + "Mi")
                         .num_gpu(node.getNumberGpu())
+                        .build()
+                ).toList();
+
+        List<ExtraPortDTO> extraPortDTOList = portRequests.stream()
+                .map(portRequest -> ExtraPortDTO.builder()
+                        .internal_port(portRequest.getInternalPort())
+                        .external_port(portRequest.getPortNumber())
+                        .usage_purpose(portRequest.getUsagePurpose())
                         .build()
                 ).toList();
 
@@ -54,6 +71,7 @@ public record AcceptInfoResponseDTO(
                 .gpu_group(group.getDescription())
                 .server_type(group.getServerName())
                 .gpu_nodes(nodeDTOList)
+                .extra_ports(extraPortDTOList)
                 .build();
     }
 }
