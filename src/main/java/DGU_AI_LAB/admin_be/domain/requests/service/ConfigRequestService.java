@@ -2,6 +2,8 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
 import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
+import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
+import DGU_AI_LAB.admin_be.domain.portRequests.repository.PortRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.AcceptInfoResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -23,6 +25,7 @@ public class ConfigRequestService {
 
     private final RequestRepository requestRepository;
     private final NodeRepository nodeRepository;
+    private final PortRequestRepository portRequestRepository;
 
     /** ubuntu username 중복 검사 */
     @Transactional(readOnly = true)
@@ -56,8 +59,12 @@ public class ConfigRequestService {
                 .collect(Collectors.toList());
         log.debug("조회된 노드 목록: {}", nodeNames);
 
+        // 포트 요청 정보 조회
+        List<PortRequests> portRequests = portRequestRepository.findByRequestRequestId(request.getRequestId());
+        log.debug("요청 '{}'에 속한 포트 요청 {}개를 조회했습니다.", request.getRequestId(), portRequests.size());
+
         // 응답 DTO 생성 및 반환
-        AcceptInfoResponseDTO response = AcceptInfoResponseDTO.fromEntity(request, nodes);
+        AcceptInfoResponseDTO response = AcceptInfoResponseDTO.fromEntity(request, nodes, portRequests);
         log.info("사용자 '{}'에 대한 AcceptInfoResponseDTO 생성을 완료했습니다.", username);
 
         return response;
