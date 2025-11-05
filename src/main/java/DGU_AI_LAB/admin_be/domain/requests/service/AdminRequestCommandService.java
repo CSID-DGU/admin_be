@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
@@ -41,6 +42,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Transactional
 public class AdminRequestCommandService {
+
+    private final AlarmService alarmService;
 
     private final RequestRepository requestRepository;
     private final UserRepository userRepository;
@@ -152,8 +155,16 @@ public class AdminRequestCommandService {
         ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
         request.approve(image, rg, dto.volumeSizeGiB(), dto.adminComment());
-        requestRepository.flush();
+        // requestRepository.flush();
 
+        // 4. 사용자에게 승인 알림 발송
+        try {
+            alarmService.sendApprovalNotification(request);
+            log.info("사용자 '{}'에게 승인 알림을 성공적으로 발송했습니다.", request.getUser().getName());
+        } catch (Exception e) {
+            log.warn("사용자 '{}'에게 승인 알림을 보내는 데 실패했습니다. (RequestId: {})",
+                    request.getUser().getName(), request.getRequestId(), e);
+        }
         return SaveRequestResponseDTO.fromEntity(request);
     }
 

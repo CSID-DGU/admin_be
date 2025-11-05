@@ -8,7 +8,7 @@ import lombok.*;
 @Table(name = "`groups`")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@EqualsAndHashCode(of = "groupId")
+@EqualsAndHashCode(of = "ubuntuGid")
 public class Group {
 
     @Id
