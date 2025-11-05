@@ -35,7 +35,8 @@ public class RequestSchedulerService {
     /**
      * 매일 오전 10시에 실행되는 주 스케줄러 메서드
      */
-    @Scheduled(cron = "0 0 10 * * ?")
+    //@Scheduled(cron = "0 0 10 * * ?")
+    @Scheduled(cron = "0 55 15 * * ?")
     public void checkAndProcessExpiredRequests() {
         log.info("만료 계정 확인 스케줄러 시작...");
 
