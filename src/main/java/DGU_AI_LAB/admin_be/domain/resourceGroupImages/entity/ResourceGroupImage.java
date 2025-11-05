@@ -18,19 +18,20 @@ public class ResourceGroupImage extends BaseTimeEntity {
     private ResourceGroupImageId id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @MapsId("rsgroupId")
-    @JoinColumn(name = "rsgroup_id", nullable = false)
+    @JoinColumn(name = "rsgroup_id", nullable = false, insertable = false, updatable = false)
     private ResourceGroup resourceGroup;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @MapsId("imageId")
-    @JoinColumn(name = "image_id", nullable = false)
+    @JoinColumn(name = "image_id", nullable = false, insertable = false, updatable = false)
     private ContainerImage containerImage;
 
     @Builder
     public ResourceGroupImage(ResourceGroup resourceGroup, ContainerImage containerImage) {
         this.resourceGroup = resourceGroup;
         this.containerImage = containerImage;
+        if (resourceGroup != null && containerImage != null) {
+            this.id = new ResourceGroupImageId(resourceGroup.getRsgroupId(), containerImage.getImageId());
+        }
     }
 
     @PrePersist
