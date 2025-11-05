@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller.docs;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
@@ -78,4 +79,18 @@ public interface RequestApi {
             content = @Content(schema = @Schema(implementation = SuccessResponse.class))
     )
     ResponseEntity<SuccessResponse<?>> getAllFulfilledUsernames();
+
+    @Operation(
+            summary = "내 변경 요청 목록 조회",
+            description = "로그인된 사용자가 제출한 모든 변경 요청 내역을 조회합니다. 모든 상태(PENDING, FULFILLED, DENIED)의 변경 요청이 포함됩니다."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "조회 성공",
+            content = @Content(array = @ArraySchema(schema = @Schema(implementation = ChangeRequestResponseDTO.class)))
+    )
+    ResponseEntity<SuccessResponse<?>> getMyChangeRequests(
+            @Parameter(hidden = true, description = "인증된 사용자")
+            CustomUserDetails user
+    );
 }
