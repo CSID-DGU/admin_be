@@ -111,8 +111,8 @@ public class AdminRequestCommandService {
         try {
             log.info("사용자 생성 API 호출 시작: {}", userCreationDto.username());
 
-            Map userResponse = userCreationWebClient.post()
-                    .uri("/accounts/adduser")
+            Map userResponse = userCreationWebClient.put()
+                    .uri("/accounts/users")
                     .bodyValue(userCreationDto)
                     .retrieve()
                     .onStatus(HttpStatus.BAD_REQUEST::equals, clientResponse ->

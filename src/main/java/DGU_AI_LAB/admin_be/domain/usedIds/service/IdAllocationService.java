@@ -11,12 +11,15 @@ import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class IdAllocationService {
@@ -108,5 +111,26 @@ public class IdAllocationService {
                 .build();
 
         return groupRepository.saveAndFlush(group);
+    }
+
+    /**
+     * 사용 완료된 UsedId를 DB에서 삭제하여 반환합니다.
+     * 스케줄러의 트랜잭션에 참여합니다.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void releaseId(UsedId usedId) {
+        if (usedId == null) {
+            log.warn("반환할 UsedId가 null입니다. 작업을 건너뜁니다.");
+            return;
+        }
+
+        // Request와의 연관관계는 스케줄러에서 (request.assignUbuntuUid(null)) 해제합니다.
+        try {
+            usedIdRepository.delete(usedId);
+            log.info("UsedId 반환 (삭제) 성공: {}", usedId.getIdValue());
+        } catch (Exception e) {
+            log.error("UsedId 반환 (삭제) 실패: {}", usedId.getIdValue(), e);
+            throw new BusinessException("UsedId 반환 실패", ErrorCode.USED_ID_RELEASE_FAILED);
+        }
     }
 }

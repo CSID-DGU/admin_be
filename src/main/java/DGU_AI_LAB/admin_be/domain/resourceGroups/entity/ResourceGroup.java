@@ -1,9 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.resourceGroups.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
@@ -14,6 +11,7 @@ import lombok.*;
 public class ResourceGroup {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "rsgroup_id", nullable = false)
     private Integer rsgroupId;
 

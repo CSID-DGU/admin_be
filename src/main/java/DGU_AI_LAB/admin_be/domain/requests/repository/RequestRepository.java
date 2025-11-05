@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -23,8 +24,8 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     boolean existsByUbuntuUsername(String ubuntuUsername);
     List<Request> findAllByUser_UserIdAndStatus(Long userId, Status status);
     boolean existsByUbuntuUsernameAndUser_UserId(String ubuntuUsername, Long userId);
-
     @Query("SELECT r.ubuntuUsername FROM Request r WHERE r.status = :status")
     List<String> findUbuntuUsernamesByStatus(@Param("status") Status status);
-
+    List<Request> findAllByExpiresAtBetweenAndStatus(LocalDateTime start, LocalDateTime end, Status status);
+    List<Request> findAllByExpiresAtBeforeAndStatus(LocalDateTime before, Status status);
 }
