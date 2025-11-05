@@ -1,12 +1,14 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.PortMappingDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -25,6 +27,7 @@ import java.util.List;
 public class RequestQueryService {
 
     private final RequestRepository requestRepository;
+    private final ChangeRequestRepository changeRequestRepository;
     private final UserRepository userRepository;
     private final PortRequestService portRequestService;
 
@@ -76,6 +79,16 @@ public class RequestQueryService {
         }
         return requestRepository.findAllByUser_UserIdAndStatus(userId, Status.FULFILLED).stream()
                 .map(this::createResponseDTOWithPortMappings)
+                .toList();
+    }
+
+    /** 내 변경 요청 목록 조회 */
+    public List<ChangeRequestResponseDTO> getMyChangeRequests(Long userId) {
+        if (!userRepository.existsById(userId)) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+        return changeRequestRepository.findAllByRequestedBy_UserId(userId).stream()
+                .map(ChangeRequestResponseDTO::fromEntity)
                 .toList();
     }
 

@@ -18,6 +18,7 @@ public record ChangeRequestResponseDTO(
         @JsonRawValue String newValue,
         String reason,
         Status status,
+        String adminComment,
         AdminUserInfo requestedBy,
         LocalDateTime createdAt
 ) {
@@ -30,6 +31,7 @@ public record ChangeRequestResponseDTO(
                 .newValue(changeRequest.getNewValue())
                 .reason(changeRequest.getReason())
                 .status(changeRequest.getStatus())
+                .adminComment(changeRequest.getAdminComment())
                 .requestedBy(AdminUserInfo.fromEntity(changeRequest.getRequestedBy()))
                 .createdAt(changeRequest.getCreatedAt())
                 .build();

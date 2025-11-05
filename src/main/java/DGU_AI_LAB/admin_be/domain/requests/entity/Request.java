@@ -19,6 +19,7 @@ import java.util.Set;
 @Table(name = "requests")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@EqualsAndHashCode(of = "ubuntuUsername", callSuper = false)
 public class Request extends BaseTimeEntity {
 
     @Id

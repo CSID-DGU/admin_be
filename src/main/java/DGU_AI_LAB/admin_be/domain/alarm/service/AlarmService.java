@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.alarm.service;
 
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
@@ -213,6 +214,38 @@ public class AlarmService {
         sendSlackAlert(message, targetWebhookUrl);
     }
 
+    /**
+     * 사용자에게 서버 사용 신청 승인 알림을 보냅니다.
+     * @param request 승인된 Request 엔티티
+     */
+    public void sendApprovalNotification(Request request) {
+        User user = request.getUser();
+        String subject = "[DGU AI LAB] 서버 사용 신청이 승인되었습니다.";
+        String message = String.format(
+                """
+                🎉 %s님의 서버 사용 신청이 성공적으로 승인되었습니다! 🎉
+                
+                아래 정보를 사용하여 서버에 접속해 주세요.
+                -------------------------------------
+                - Ubuntu 사용자 이름: %s
+                - 할당된 서버: %s
+                - 컨테이너 이미지: %s:%s
+                - 할당된 볼륨 크기: %d GiB
+                - 만료일: %s
+                -------------------------------------
+                
+                궁금한 점이 있다면 관리자에게 문의해 주세요.
+                """,
+                user.getName(),
+                request.getUbuntuUsername(),
+                request.getResourceGroup().getServerName(),
+                request.getContainerImage().getImageName(),
+                request.getContainerImage().getImageVersion(),
+                request.getVolumeSizeGiB(),
+                request.getExpiresAt().toLocalDate().toString()
+        );
 
+        sendAllAlerts(user.getName(), user.getEmail(), subject, message);
+    }
 
 }

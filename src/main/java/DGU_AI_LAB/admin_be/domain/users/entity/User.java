@@ -8,6 +8,7 @@ import lombok.*;
 @Table(name = "users")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@EqualsAndHashCode(of = "email", callSuper = false)
 public class User extends BaseTimeEntity {
 
     @Id
