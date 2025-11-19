@@ -105,6 +105,11 @@ public enum ErrorCode {
     FORBIDDEN_REQUEST(HttpStatus.BAD_REQUEST, "요청된 우분투 사용자 이름은 로그인한 사용자의 계정이 아닙니다."),
     INVALID_GROUP_MEMBER(HttpStatus.BAD_REQUEST, "존재하지 않는 사용자입니다."),
 
+    /**
+     * ID Error
+     */
+    USED_ID_RELEASE_FAILED(HttpStatus.BAD_GATEWAY, "스케줄러에서 usedId 삭제에 실패했습니다."),
+
 
     /**
      * Approval Error
@@ -142,6 +147,7 @@ public enum ErrorCode {
      */
     DUPLICATE_PORT_NUMBER(HttpStatus.CONFLICT, "이미 사용 중인 포트 번호입니다."),
     NO_AVAILABLE_PORT(HttpStatus.CONFLICT, "사용 가능한 포트가 없습니다. (10000-20000 범위)")
+
 
     ;
     private final HttpStatus httpStatus;
