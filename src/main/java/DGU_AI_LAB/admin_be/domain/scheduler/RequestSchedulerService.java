@@ -66,34 +66,102 @@ public class RequestSchedulerService {
 
         // 4. 만료된 계정 개별 삭제 처리 (개별 트랜잭션)
         for (Request request : expiredRequests) {
-            try {
-                // 개별 Request에 대해 별도의 트랜잭션으로 처리
-                self.processSingleExpiredRequest(request.getRequestId());
-            } catch (Exception e) {
-                // 개별 처리 실패. 로깅하고 다음 대상으로 넘어가기
-                log.error("만료 계정 삭제 처리 실패. Request ID: {}. 원인: {}", request.getRequestId(), e.getMessage(), e);
+            // ⭐️ 중요: 에러 발생 시(catch 블록) 사용하기 위해 필요한 정보를 미리 문자열로 추출
+            // 세션이 닫혀도 문제 없도록 미리 get 해둡니다.
+            Long requestId = request.getRequestId();
+            String username = request.getUbuntuUsername();
+            String userEmail = request.getUser().getEmail();
+            String userName = request.getUser().getName();
+            String serverName = "Unknown Server";
+            String expireDate = request.getExpiresAt().toLocalDate().toString();
 
-                // 관리자에게 실패 알림
-                try {
-                    alarmService.sendAdminSlackNotification(
-                            request.getResourceGroup().getServerName(),
-                            String.format(
-                                    "❌ 계정 삭제 실패 ❌\n" +
-                                            "▶ 계정: %s (Request ID: %d)\n" +
-                                            "▶ 서버: %s\n" +
-                                            "▶ 오류: %s\n" +
-                                            "▶ 수동 확인이 필요합니다.",
-                                    request.getUbuntuUsername(), request.getRequestId(),
-                                    request.getResourceGroup().getServerName(),
-                                    e.getMessage()
-                            )
-                    );
-                } catch (Exception slackEx) {
-                    log.error("삭제 실패 알림 전송조차 실패. Request ID: {}", request.getRequestId(), slackEx);
-                }
+            try {
+                // ResourceGroup 접근 시 Lazy Loading 에러 방지용 try-catch
+                serverName = request.getResourceGroup().getServerName();
+            } catch (Exception ignored) {
+                log.warn("서버 이름 조회 실패 (Lazy Loading Issue Possibility)");
+            }
+
+            try {
+                // 1) 트랜잭션 작업: DB 및 외부 서버 계정 삭제만 수행 (알림 X)
+                self.deleteAccountTransaction(requestId);
+
+                // 2) 트랜잭션 커밋 후: 성공 알림 발송 (여기서 에러 나도 DB 롤백 안 됨)
+                sendSuccessNotification(userName, userEmail, username, serverName, expireDate);
+
+            } catch (Exception e) {
+                // 3) 실패 처리: 트랜잭션은 이미 롤백됨. 관리자 알림 발송
+                log.error("만료 계정 삭제 처리 실패. Request ID: {}. 원인: {}", requestId, e.getMessage(), e);
+                sendFailureNotification(username, requestId, serverName, e.getMessage());
             }
         }
         log.info("만료 계정 확인 스케줄러 종료.");
+    }
+
+    /**
+     * 알림 로직을 여기서 제거하여, 알림 실패가 DB 롤백을 유발하지 않도록 합니다.
+     */
+    @Transactional
+    public void deleteAccountTransaction(Long requestId) {
+        Request request = requestRepository.findById(requestId)
+                .orElseThrow(() -> new BusinessException("Request not found", ErrorCode.RESOURCE_NOT_FOUND));
+
+        if (request.getStatus() != Status.FULFILLED) {
+            return; // 이미 처리됨
+        }
+
+        // 1. 외부 서버 계정 삭제
+        ubuntuAccountService.deleteUbuntuAccount(request.getUbuntuUsername());
+
+        // 2. UsedId 반환
+        UsedId usedId = request.getUbuntuUid();
+        if (usedId != null) {
+            request.assignUbuntuUid(null);
+            idAllocationService.releaseId(usedId);
+        }
+
+        // 3. 상태 변경 (Soft Delete)
+        request.delete();
+
+        // 트랜잭션 종료 -> Commit 발생
+    }
+
+    /**
+     * 성공 알림 (트랜잭션 밖에서 실행)
+     */
+
+    private void sendSuccessNotification(String name, String email, String username, String serverName, String expireDate) {
+        try {
+            String subject = "[DGU AI LAB] 서버 사용 기간 만료 및 계정 삭제 안내";
+            String message = String.format(
+                    """
+                    %s님의 서버 사용 기간(%s)이 만료되어 계정이 삭제되었습니다.
+                    ... (생략) ...
+                    """, name, expireDate, username, serverName);
+
+            alarmService.sendAllAlerts(name, email, subject, message);
+
+            String adminMessage = String.format("✅ 계정 삭제 완료: %s (%s)", username, serverName);
+            alarmService.sendAdminSlackNotification(serverName, adminMessage);
+
+        } catch (Exception e) {
+            log.error("삭제 성공했으나 알림 전송 실패: {}", username, e);
+            // 알림 실패해도 DB 삭제는 유지됨!
+        }
+    }
+
+    /**
+     * 실패 알림 (트랜잭션 밖에서 실행, 변수로 받아온 값을 사용해 Lazy Loading 에러 방지)
+     */
+    private void sendFailureNotification(String username, Long requestId, String serverName, String errorMsg) {
+        try {
+            alarmService.sendAdminSlackNotification(
+                    serverName,
+                    String.format("❌ 계정 삭제 실패: %s (ID: %d)\n오류: %s", username, requestId, errorMsg)
+            );
+        } catch (Exception slackEx) {
+            log.error("삭제 실패 알림 전송 실패", slackEx);
+        }
     }
 
     /**
