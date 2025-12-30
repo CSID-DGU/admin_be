@@ -3,6 +3,7 @@ name: CI/CD to On-Prem Kubernetes with Helm
 on:
   push:
     branches: [ "main" ]
+  workflow_dispatch: #
 
 jobs:
   build-and-deploy:
