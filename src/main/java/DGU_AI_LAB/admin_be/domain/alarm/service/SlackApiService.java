@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.alarm.service;
 
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
@@ -48,16 +49,20 @@ public class SlackApiService {
     // =========================================================================
     // 2. DM 전송 (사용자 알림용)
     // =========================================================================
+    public void sendDM(User user) {
+        String message = String.format("안녕하세요 %s님, 요청하신 GPU 서버 사용 기간이 만료되어 리소스가 정리되었습니다.", user.getName());
+        this.sendDM(user.getName(), user.getEmail(), message);
+    }
+
     public void sendDM(String username, String email, String message) {
         String userId = getSlackUser(username, email, botToken);
         if (userId == null) {
-            log.warn("Slack DM 전송 실패: 사용자 없음 ({}, {})", username, email);
+            // 여기서 throw하면 Worker나 Listener에서 잡힘
             throw new BusinessException(ErrorCode.SLACK_USER_NOT_FOUND);
         }
 
         String channelId = openDMChannel(userId, botToken);
         if (channelId == null) {
-            log.warn("Slack DM 채널 오픈 실패 (ID: {})", userId);
             throw new BusinessException(ErrorCode.SLACK_DM_CHANNEL_FAILED);
         }
 

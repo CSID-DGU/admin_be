@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.dto.SlackMessageDto;
 import DGU_AI_LAB.admin_be.domain.alarm.service.SlackApiService;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException; // Import 확인
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,8 +38,11 @@ public class SlackNotificationWorker {
                 log.info("Slack DM 전송 성공 (Queue): {}", dto.getUsername());
             }
 
+        } catch (BusinessException e) {
+            log.warn("Slack 알림 처리 실패 (Business): {}", e.getMessage());
+
         } catch (Exception e) {
-            log.error("Slack 큐 처리 중 오류 (재시도 필요 시 큐 복귀 고려)", e);
+            log.error("Slack 큐 처리 중 시스템 오류 (재시도 필요 시 큐 복귀 고려)", e);
         }
     }
 }
