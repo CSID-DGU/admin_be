@@ -36,7 +36,8 @@ public class RequestSchedulerService {
      * 매일 오전 10시에 실행되는 주 스케줄러 메서드
      */
     //@Scheduled(cron = "0 0 10 * * ?", zone = "Asia/Seoul")
-    @Scheduled(cron = "0 45 16 * * ?", zone = "Asia/Seoul")
+    @Scheduled(cron = "0 05 22 * * ?", zone = "Asia/Seoul")
+    @Transactional
     public void checkAndProcessExpiredRequests() {
         log.info("만료 계정 확인 스케줄러 시작...");
 
@@ -46,6 +47,9 @@ public class RequestSchedulerService {
         try {
             // 1. 만료 7일 전 알림 (읽기 전용 트랜잭션)
             self.processPreExpiryNotifications(now.plusDays(7), "7일");
+
+            // 2. 만료 3일 전 알림 (읽기 전용 트랜잭션)
+            self.processPreExpiryNotifications(now.plusDays(3), "3일");
 
             // 2. 만료 1일 전 알림 (읽기 전용 트랜잭션)
             self.processPreExpiryNotifications(now.plusDays(1), "1일");
@@ -123,13 +127,11 @@ public class RequestSchedulerService {
         // 3. 상태 변경 (Soft Delete)
         request.delete();
 
-        // 트랜잭션 종료 -> Commit 발생
     }
 
     /**
      * 성공 알림 (트랜잭션 밖에서 실행)
      */
-
     private void sendSuccessNotification(String name, String email, String username, String serverName, String expireDate) {
         try {
             String subject = "[DGU AI LAB] 서버 사용 기간 만료 및 계정 삭제 안내";
