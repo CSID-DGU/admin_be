@@ -1,8 +1,12 @@
 package DGU_AI_LAB.admin_be.domain.groups.entity;
 
+import DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup; // 임포트 추가
 import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
 import jakarta.persistence.*;
 import lombok.*;
+
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "`groups`")
@@ -25,6 +29,9 @@ public class Group {
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ubuntu_gid", referencedColumnName = "id_value", insertable = false, updatable = false)
     private UsedId usedId;
+
+    @OneToMany(mappedBy = "group", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<RequestGroup> requestGroups = new HashSet<>();
 
     @Builder
     public Group(String groupName, Long ubuntuGid) {

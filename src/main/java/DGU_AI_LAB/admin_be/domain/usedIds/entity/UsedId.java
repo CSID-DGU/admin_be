@@ -1,9 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.usedIds.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import DGU_AI_LAB.admin_be.domain.groups.entity.Group; // Group 임포트 필수
+import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
@@ -16,6 +14,9 @@ public class UsedId {
     @Id
     @Column(name = "id_value", nullable = false)
     private Long idValue;
+
+    @OneToOne(mappedBy = "usedId", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Group group;
 
     @Builder
     public UsedId(Long idValue) {
