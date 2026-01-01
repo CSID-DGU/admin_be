@@ -30,91 +30,84 @@ public class RequestSchedulerService {
     private final UbuntuAccountService ubuntuAccountService;
     private final IdAllocationService idAllocationService;
     private final ApplicationEventPublisher eventPublisher;
-    private final ApplicationContext applicationContext; // Self-Invocation 문제 해결용
+    private final ApplicationContext applicationContext;
 
-    /**
-     * 메인 스케줄러 cron = "초 분 시 * * ?"
-     */
-    @Scheduled(cron = "0 36 22 * * ?", zone = "Asia/Seoul")
+    @Scheduled(cron = "0 46 22 * * ?", zone = "Asia/Seoul")
     public void runScheduler() {
-        log.info("🗓️ [스케줄러 시작] 만료 계정 관리 작업을 시작합니다...");
+        log.info("🗓️ [스케줄러 시작] 만료 계정 관리 작업");
         LocalDateTime now = LocalDateTime.now();
 
-        // 1. 만료 임박 알림 (7, 3, 1일 전) - 읽기 전용 트랜잭션 사용
+        // 1. 만료 예고 (삭제 예정 알림)
         sendPreExpiryNotification(now.plusDays(7), "7일");
         sendPreExpiryNotification(now.plusDays(3), "3일");
         sendPreExpiryNotification(now.plusDays(1), "1일");
 
-        // 2. 만료된 계정 삭제 처리
+        // 2. 만료 처리 (삭제 및 결과 알림)
         processExpiredRequests(now);
 
-        log.info("🗓️ [스케줄러 종료] 작업 완료.");
+        log.info("🗓️ [스케줄러 종료]");
     }
 
-    /**
-     * 만료된 요청 목록을 조회하고, 개별적으로 트랜잭션을 걸어 삭제를 진행합니다.
-     */
     public void processExpiredRequests(LocalDateTime now) {
-        // Repository에 findAllWithUserByExpiredDateBefore 메서드가 구현되어 있어야 합니다 (Fetch Join 권장)
         List<Request> expiredRequests = requestRepository.findAllWithUserByExpiredDateBefore(now);
-
-        if (expiredRequests.isEmpty()) {
-            return;
-        }
-
-        log.info("총 {}건의 만료된 계정을 발견했습니다. 삭제 처리를 시작합니다.", expiredRequests.size());
+        if (expiredRequests.isEmpty()) return;
 
         RequestSchedulerService self = applicationContext.getBean(RequestSchedulerService.class);
 
         for (Request request : expiredRequests) {
+            String serverName = "Unknown";
+            String username = request.getUbuntuUsername();
+
             try {
+                // 에러 발생 시 알림을 위해 미리 정보 추출
+                if (request.getResourceGroup() != null) {
+                    serverName = request.getResourceGroup().getServerName();
+                }
+
+                // 트랜잭션 메서드 호출
                 self.deleteExpiredRequest(request.getRequestId());
+
             } catch (Exception e) {
-                log.error("계정 삭제 실패 (ID: {}). 다음 항목으로 넘어갑니다. 원인: {}", request.getRequestId(), e.getMessage());
+                log.error("계정 삭제 실패 (ID: {}): {}", request.getRequestId(), e.getMessage());
+
+                // [요구사항 3] 리소스 삭제 실패 시 관리자 채널에만 알림
+                sendFailureAlertToAdmin(serverName, username, e.getMessage());
             }
         }
     }
 
-    /**
-     * 핵심 로직: DB 삭제, 외부 연동 해제, 이벤트 발행
-     * ★ 반드시 트랜잭션 내에서 실행되어야 하며, 성공 시에만 커밋됩니다.
-     */
     @Transactional
     public void deleteExpiredRequest(Long requestId) {
-        // 1. 트랜잭션 안에서 엔티티 재조회
         Request request = requestRepository.findById(requestId)
-                .orElseThrow(() -> new IllegalArgumentException("Request not found with ID: " + requestId));
+                .orElseThrow(() -> new IllegalArgumentException("Request not found"));
 
-        // 2. 중복 처리 방지
-        if (request.getStatus() != Status.FULFILLED) {
-            log.warn("이미 처리된 요청입니다. (ID: {}, Status: {})", requestId, request.getStatus());
-            return;
-        }
+        if (request.getStatus() != Status.FULFILLED) return;
 
-        log.info("삭제 프로세스 진행 중: {}", request.getUbuntuUsername());
+        // 이벤트 발행을 위해 정보 미리 저장
+        String serverName = request.getResourceGroup().getServerName();
+        String ubuntuUsername = request.getUbuntuUsername();
+        User user = request.getUser();
 
-        // 3. 외부 우분투 서버 계정 삭제 (실패 시 예외 발생 -> 전체 롤백)
-        ubuntuAccountService.deleteUbuntuAccount(request.getUbuntuUsername());
+        // 1. 외부 계정 삭제
+        ubuntuAccountService.deleteUbuntuAccount(ubuntuUsername);
 
-        // 4. UsedId(UID/GID) 반환 및 연관된 Group 자동 삭제
+        // 2. UID 반환
         UsedId usedId = request.getUbuntuUid();
         if (usedId != null) {
-            request.assignUbuntuUid(null); // 외래키 관계 끊기
-            idAllocationService.releaseId(usedId); // ID 반환 (Group 삭제 포함)
+            request.assignUbuntuUid(null);
+            idAllocationService.releaseId(usedId);
         }
 
-        // 5. Request 상태 변경 (Soft Delete)
+        // 3. DB Soft Delete
         request.delete();
 
-        // 6. 이벤트 발행
-        eventPublisher.publishEvent(new RequestExpiredEvent(request.getUser()));
+        // 4. 이벤트 발행 (트랜잭션 커밋 후 리스너 실행)
+        // 성공 시 알림은 리스너에게 위임
+        eventPublisher.publishEvent(new RequestExpiredEvent(user, ubuntuUsername, serverName));
 
-        log.info("계정 삭제 트랜잭션 커밋 대기: {}", request.getUbuntuUsername());
+        log.info("삭제 트랜잭션 성공: {}", ubuntuUsername);
     }
 
-    /**
-     * 만료 임박 알림 전송 (읽기 전용)
-     */
     @Transactional(readOnly = true)
     public void sendPreExpiryNotification(LocalDateTime targetDate, String dayLabel) {
         LocalDateTime start = targetDate.toLocalDate().atStartOfDay();
@@ -122,40 +115,55 @@ public class RequestSchedulerService {
 
         List<Request> requests = requestRepository.findAllByExpiresAtBetweenAndStatus(start, end, Status.FULFILLED);
 
-        if (!requests.isEmpty()) {
-            log.info("[{}] 후 만료 예정인 계정 {}건 알림 전송 시작.", dayLabel, requests.size());
-        }
-
         for (Request request : requests) {
             try {
                 User user = request.getUser();
-                String serverName = "Unknown Server";
+                String serverName = request.getResourceGroup().getServerName();
+                String expireDate = request.getExpiresAt().toLocalDate().toString();
 
-                if(request.getResourceGroup() != null) {
-                    serverName = request.getResourceGroup().getServerName();
-                }
-
-                String subject = String.format("[DGU AI LAB] 서버 사용 만료 %s 전 안내", dayLabel);
+                // 삭제 예정임을 명시
+                String subject = String.format("[DGU AI LAB] 서버 계정 삭제 예정 안내 (%s 전)", dayLabel);
                 String message = String.format(
                         """
-                        %s님의 서버 사용 기간이 %s 후 (%s) 만료될 예정입니다.
+                        안녕하세요, %s님.
                         
-                        - 계정: %s
+                        사용 중인 GPU 서버 계정이 %s 후 (%s)에 만료되어 삭제될 예정입니다.
+                        
                         - 서버: %s
+                        - 계정: %s
                         
-                        기간 연장이 필요하신 경우 관리자에게 문의 바랍니다.
-                        별도 조치가 없을 시 계정은 자동 삭제됩니다.
+                        삭제된 데이터는 복구할 수 없으니, 중요한 데이터는 미리 백업해 주시기 바랍니다.
+                        연장이 필요하시면 관리자에게 문의하세요.
                         """,
-                        user.getName(), dayLabel, request.getExpiresAt().toLocalDate().toString(),
-                        request.getUbuntuUsername(), serverName
+                        user.getName(), dayLabel, expireDate, serverName, request.getUbuntuUsername()
                 );
 
+                // 사용자에게만 전송 (이메일 + DM)
                 alarmService.sendAllAlerts(user.getName(), user.getEmail(), subject, message);
 
-
             } catch (Exception e) {
-                log.warn("{} 전 알림 전송 중 오류 발생 (ID: {}): {}", dayLabel, request.getRequestId(), e.getMessage());
+                log.warn("{} 전 알림 실패: {}", dayLabel, e.getMessage());
             }
         }
+    }
+
+    private void sendFailureAlertToAdmin(String serverName, String username, String errorMsg) {
+        try {
+            // 관리자에게 Lab/Farm 구분하여 실패 알림
+            String type = getServerType(serverName);
+            String msg = String.format("🚨 [%s] 리소스 삭제 실패!\n- 서버: %s\n- 계정: %s\n- 원인: %s",
+                    type, serverName, username, errorMsg);
+
+            alarmService.sendAdminSlackNotification(serverName, msg);
+        } catch (Exception ignored) {}
+    }
+
+    // Lab/Farm 구분 헬퍼 메서드
+    private String getServerType(String serverName) {
+        if (serverName == null) return "UNKNOWN";
+        String lower = serverName.toLowerCase();
+        if (lower.contains("farm")) return "FARM";
+        if (lower.contains("lab") || lower.contains("dgx")) return "LAB";
+        return "SERVER";
     }
 }
