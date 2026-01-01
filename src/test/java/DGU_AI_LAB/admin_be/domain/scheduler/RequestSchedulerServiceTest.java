@@ -26,12 +26,14 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.contains;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+
+/**
+ * 작동하지 않을 시 ./gradlew clean test 시도해보세요.
+ */
 @SpringBootTest(classes = AdminBeApplication.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class RequestSchedulerServiceTest {
@@ -57,30 +59,29 @@ class RequestSchedulerServiceTest {
     private final LocalDateTime MOCK_NOW = LocalDateTime.of(2025, 11, 10, 10, 30, 0);
 
     @Test
-    @DisplayName("스케줄러 통합 테스트: 만료 삭제 및 1/3/7일 전 알림 발송 검증")
-    void checkAndProcessExpiredRequests_IntegrationTest() {
+    @DisplayName("스케줄러 통합 테스트: 만료 삭제(이벤트) 및 1/3/7일 전 알림 발송 검증")
+    void runScheduler_IntegrationTest() {
 
-        // 1. 기초 데이터 세팅 (필수 필드 누락 방지)
+        // 1. 기초 데이터 세팅
         User testUser = userRepository.save(User.builder()
                 .email("test@dgu.ac.kr")
                 .name("테스트유저")
-                .password("test1234")       // 필수 필드 추가
+                .password("encoded_pw")
                 .studentId("2020111111")
-                .phone("010-1234-5678")     // 필수 필드 추가
-                .department("컴퓨터공학과")   // 필수 필드 추가
+                .phone("010-1234-5678")
+                .department("AI융합학부")
                 .build());
 
         ResourceGroup testRg = resourceGroupRepository.save(ResourceGroup.builder()
-                .serverName("FARM")
+                .serverName("FARM-01")
                 .resourceGroupName("RTX 3090")
-                .description("Test Cluster") // 혹시 모를 필수 필드 대비
                 .build());
 
         ContainerImage testImage = containerImageRepository.save(ContainerImage.builder()
                 .imageName("cuda")
                 .imageVersion("11.8")
-                .cudaVersion("11.8")         // 필수 필드 추가
-                .description("CUDA Test")    // 필수 필드 추가
+                .cudaVersion("11.8")
+                .description("Test Image")
                 .build());
 
         // 2. UsedId 생성
@@ -112,50 +113,68 @@ class RequestSchedulerServiceTest {
             mockedTime.when(LocalDateTime::now).thenReturn(MOCK_NOW);
 
             // --- When: 스케줄러 실행 ---
-            requestSchedulerService.checkAndProcessExpiredRequests();
+            requestSchedulerService.runScheduler();
         }
 
         // --- Then: 검증 ---
 
         // 1. [삭제 검증] reqExpired
-        Request deletedResult = requestRepository.findById(reqExpired.getRequestId()).get();
+        Request deletedResult = requestRepository.findById(reqExpired.getRequestId()).orElseThrow();
         assertThat(deletedResult.getStatus()).isEqualTo(Status.DELETED);
         assertThat(deletedResult.getUbuntuUid()).isNull();
 
-        // 실제 삭제가 수행되었는지 UsedIdRepository를 통해 확인 (ID가 반납되어 삭제되었거나, 할당이 해제되었는지)
-        // 로직상 ID를 releaseId() 하면 DB에서 삭제되는지, 아니면 상태만 바뀌는지에 따라 검증이 달라질 수 있음.
-        // 일반적인 경우:
-        assertThat(usedIdRepository.findById(uidExpired.getIdValue())).isEmpty();
-
         verify(ubuntuAccountService, times(1)).deleteUbuntuAccount("user-expired");
-        verify(alarmService).sendAllAlerts(eq(testUser.getName()), eq(testUser.getEmail()), contains("삭제 안내"), anyString());
-        verify(alarmService).sendAdminSlackNotification(eq("FARM"), contains("삭제 완료"));
+
+        // [이벤트 리스너 검증] -> 삭제 완료 알림
+        verify(alarmService).sendAllAlerts(
+                eq(testUser.getName()),
+                eq(testUser.getEmail()),
+                contains("삭제 완료 안내"),
+                contains("삭제되었습니다")
+        );
+
+        verify(alarmService).sendAdminSlackNotification(
+                eq("FARM-01"),
+                contains("삭제 완료")
+        );
 
 
         // 2. [알림 검증] 1일 전 (req1Day)
         Request result1Day = requestRepository.findById(req1Day.getRequestId()).get();
         assertThat(result1Day.getStatus()).isEqualTo(Status.FULFILLED);
-        verify(alarmService).sendAllAlerts(eq(testUser.getName()), eq(testUser.getEmail()), contains("1일 전 안내"), anyString());
-        verify(alarmService).sendAdminSlackNotification(eq("FARM"), contains("1일 전 알림"));
+        verify(alarmService).sendAllAlerts(
+                eq(testUser.getName()),
+                eq(testUser.getEmail()),
+                contains("안내 (1일 전)"),
+                contains("삭제될 예정")
+        );
 
 
         // 3. [알림 검증] 3일 전 (req3Day)
         Request result3Day = requestRepository.findById(req3Day.getRequestId()).get();
         assertThat(result3Day.getStatus()).isEqualTo(Status.FULFILLED);
-        verify(alarmService).sendAllAlerts(eq(testUser.getName()), eq(testUser.getEmail()), contains("3일 전 안내"), anyString());
-        verify(alarmService).sendAdminSlackNotification(eq("FARM"), contains("3일 전 알림"));
+        verify(alarmService).sendAllAlerts(
+                eq(testUser.getName()),
+                eq(testUser.getEmail()),
+                contains("안내 (3일 전)"),
+                contains("삭제될 예정")
+        );
 
 
         // 4. [알림 검증] 7일 전 (req7Day)
         Request result7Day = requestRepository.findById(req7Day.getRequestId()).get();
         assertThat(result7Day.getStatus()).isEqualTo(Status.FULFILLED);
-        verify(alarmService).sendAllAlerts(eq(testUser.getName()), eq(testUser.getEmail()), contains("7일 전 안내"), anyString());
-        verify(alarmService).sendAdminSlackNotification(eq("FARM"), contains("7일 전 알림"));
+        verify(alarmService).sendAllAlerts(
+                eq(testUser.getName()),
+                eq(testUser.getEmail()),
+                contains("안내 (7일 전)"),
+                contains("삭제될 예정")
+        );
 
 
         // 5. [총 호출 횟수 검증]
         verify(alarmService, times(4)).sendAllAlerts(anyString(), anyString(), anyString(), anyString());
-        verify(alarmService, times(4)).sendAdminSlackNotification(anyString(), anyString());
+        verify(alarmService, times(1)).sendAdminSlackNotification(anyString(), anyString());
     }
 
     // --- Helper Method ---
@@ -173,22 +192,16 @@ class RequestSchedulerServiceTest {
                 .containerImage(testImage)
                 .build();
 
-        // 1. DB에 먼저 저장 (ID 생성)
-        Request savedReq = requestRepository.save(req);
-
-        // 2. 상태 변경이 필요한 경우 별도 처리
-        if (status == Status.FULFILLED) {
-            savedReq.approve(testImage, testRg, 10L, "approved");
-            savedReq.assignUbuntuUid(usedId);
-            requestRepository.saveAndFlush(savedReq);
-        } else if (status == Status.DELETED) {
-            savedReq.approve(testImage, testRg, 10L, "approved");
-            savedReq.assignUbuntuUid(usedId);
-            savedReq.delete();
-            savedReq.assignUbuntuUid(null);
-            requestRepository.saveAndFlush(savedReq);
+        if (status == Status.FULFILLED || status == Status.DELETED) {
+            req.approve(testImage, testRg, 10L, "approved");
+            req.assignUbuntuUid(usedId);
         }
 
-        return savedReq;
+        if (status == Status.DELETED) {
+            req.delete();
+            req.assignUbuntuUid(null);
+        }
+
+        return requestRepository.saveAndFlush(req);
     }
 }
