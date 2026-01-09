@@ -62,8 +62,7 @@ public class ChangeRequest extends BaseTimeEntity {
         this.requestedBy = requestedBy;
     }
 
-    // ==== 비즈니스 메서드 ====
-
+    // ==== 비즈니스 메서드. ====
     public void approve(User admin, String comment) {
         this.status = Status.FULFILLED;
         this.reviewedBy = admin;
