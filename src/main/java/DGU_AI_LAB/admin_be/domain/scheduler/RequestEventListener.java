@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.scheduler;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.event.RequestExpiredEvent;
+import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -15,6 +16,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 public class RequestEventListener {
 
     private final AlarmService alarmService;
+    private final MessageUtils messageUtils;
 
     // DB 커밋이 완료된 후에만 실행됨
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -23,33 +25,24 @@ public class RequestEventListener {
         String serverName = event.serverName();
         String username = event.ubuntuUsername();
 
-        // 사용자 삭제 알림
+        // 1. 사용자 삭제 알림
         try {
-            String subject = "[DGU AI LAB] 서버 계정 삭제 완료 안내";
-            String message = String.format(
-                    """
-                    안녕하세요, %s님.
-                    
-                    기간 만료로 인해 아래 서버 리소스가 삭제되었습니다.
-                    
-                    - 서버: %s
-                    - 계정: %s
-                    
-                    이용해 주셔서 감사합니다.
-                    """,
-                    user.getName(), serverName, username
-            );
-            // 이메일 + 개인 DM 전송
+            String subject = messageUtils.get("notification.expired.detail.subject");
+            String message = messageUtils.get("notification.expired.detail.body",
+                    user.getName(), serverName, username);
+
             alarmService.sendAllAlerts(user.getName(), user.getEmail(), subject, message);
         } catch (Exception e) {
             log.warn("사용자 삭제 알림 전송 실패: {}", e.getMessage());
         }
 
-        // 2. [요구사항 1] 관리자 알림: Lab/Farm 구분하여 간단히 보고
+        // 2. 관리자 알림
         try {
             String type = getServerType(serverName);
-            // 간단 명료한 메시지
-            String adminMsg = String.format("🗑️ [%s] 리소스 삭제 완료: %s (%s)", type, username, serverName);
+
+            // properties: notification.admin.delete.success ({0}타입, {1}계정, {2}서버)
+            String adminMsg = messageUtils.get("notification.admin.delete.success",
+                    type, username, serverName);
 
             alarmService.sendAdminSlackNotification(serverName, adminMsg);
         } catch (Exception e) {

@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.alarm.service;
 import DGU_AI_LAB.admin_be.domain.alarm.dto.SlackMessageDto;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,6 +17,11 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class AlarmService {
 
+    /**
+     * 모든 클래스에서 알림에 들어갈 메시지는 MessageUtil에서 관리하고 있어요.
+     * 알림 문구를 수정하려면, resources/messages.properties에서 수정해주세요.
+     */
+
     @Value("${slack-webhook-url.monitoring}")
     private String defaultWebhookUrl;
     @Value("${slack-webhook-url.farm-admin}")
@@ -28,11 +34,11 @@ public class AlarmService {
     private final JavaMailSender mailSender;
     private final SlackApiService slackApiService;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final MessageUtils messageUtils;
 
     private static final String SLACK_QUEUE_KEY = "slack:notification:queue";
 
     // --- Public Methods ---
-
     public void sendSlackAlert(String message, String webhookUrl) {
         String urlToUse = (webhookUrl != null && !webhookUrl.isEmpty()) ? webhookUrl : defaultWebhookUrl;
         SlackMessageDto dto = SlackMessageDto.builder()
@@ -72,7 +78,6 @@ public class AlarmService {
     }
 
     // --- Helper / Formatting Methods ---
-
     private String getAdminWebhookUrl(String serverName) {
         if ("FARM".equalsIgnoreCase(serverName)) return farmAdminWebhookUrl;
         else if ("LAB".equalsIgnoreCase(serverName)) return labAdminWebhookUrl;
@@ -81,16 +86,17 @@ public class AlarmService {
 
     public void sendNewRequestNotification(Request request) {
         String serverName = request.getResourceGroup().getServerName();
-        String message = String.format(
-                "🔔 새로운 서버 사용 신청! 🔔\n▶ 신청자: %s\n▶ 서버: %s\n(관리자 페이지 확인 요망)",
+        String message = messageUtils.get("notification.admin.new-request",
                 request.getUser().getName(), serverName);
+
         sendSlackAlert(message, getAdminWebhookUrl(serverName));
     }
 
     public void sendApprovalNotification(Request request) {
         User user = request.getUser();
-        String subject = "[DGU AI LAB] 서버 사용 신청 승인";
-        String message = String.format("🎉 %s님의 신청이 승인되었습니다.", user.getName());
+        String subject = messageUtils.get("notification.approval.subject");
+        String message = messageUtils.get("notification.approval.body", user.getName());
+
         sendAllAlerts(user.getName(), user.getEmail(), subject, message);
     }
 
@@ -99,7 +105,6 @@ public class AlarmService {
     }
 
     // --- Private Queue Logic with Fallback ---
-
     private void pushToQueue(SlackMessageDto dto) {
         try {
             redisTemplate.opsForList().rightPush(SLACK_QUEUE_KEY, dto);
@@ -111,12 +116,11 @@ public class AlarmService {
     }
 
     private void handleFallbackDirectSend(SlackMessageDto dto) {
-        String notice = "\n[⚠️ Redis 장애로 직접 발송됨]";
+        String notice = messageUtils.get("notification.error.redis-fallback");
         String fullMessage = dto.getMessage() + notice;
 
         try {
             if (dto.getType() == SlackMessageDto.MessageType.WEBHOOK) {
-                // 이제 SlackApiService를 사용하여 Fallback 처리 -> 코드 중복 제거됨
                 slackApiService.sendWebhook(dto.getWebhookUrl(), fullMessage);
             } else {
                 slackApiService.sendDM(dto.getUsername(), dto.getEmail(), fullMessage);

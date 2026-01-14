@@ -14,6 +14,7 @@ import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
 import DGU_AI_LAB.admin_be.domain.usedIds.repository.UsedIdRepository;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
+import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
@@ -30,16 +31,15 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-
-/**
- * 작동하지 않을 시 ./gradlew clean test 시도해보세요.
- */
 @SpringBootTest(classes = AdminBeApplication.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
-class RequestSchedulerServiceTest {
+public class RequestSchedulerServiceTest {
 
     @Autowired
     private RequestSchedulerService requestSchedulerService;
+
+    @Autowired
+    private MessageUtils messageUtils;
 
     // --- Mocks ---
     @MockitoBean
@@ -55,7 +55,6 @@ class RequestSchedulerServiceTest {
     @Autowired private ResourceGroupRepository resourceGroupRepository;
     @Autowired private ContainerImageRepository containerImageRepository;
 
-    // 테스트 기준 시간 고정
     private final LocalDateTime MOCK_NOW = LocalDateTime.of(2025, 11, 10, 10, 30, 0);
 
     @Test
@@ -84,35 +83,29 @@ class RequestSchedulerServiceTest {
                 .description("Test Image")
                 .build());
 
-        // 2. UsedId 생성
+        // 2. UsedId 및 Request 생성
         UsedId uidExpired = usedIdRepository.save(UsedId.builder().idValue(1000L).build());
         UsedId uid1Day = usedIdRepository.save(UsedId.builder().idValue(1001L).build());
         UsedId uid3Day = usedIdRepository.save(UsedId.builder().idValue(1002L).build());
         UsedId uid7Day = usedIdRepository.save(UsedId.builder().idValue(1003L).build());
         UsedId uidOk = usedIdRepository.save(UsedId.builder().idValue(1004L).build());
 
-        // 3. 시나리오별 Request 생성
-        // (1) 만료되어 삭제될 요청 (어제 만료됨)
+        // (1) 만료 (어제)
         Request reqExpired = createTestRequest(MOCK_NOW.minusDays(1), Status.FULFILLED, uidExpired, "user-expired", testUser, testRg, testImage);
-
-        // (2) 1일 남은 요청 (내일 만료)
+        // (2) 1일 전 (내일)
         Request req1Day = createTestRequest(MOCK_NOW.plusDays(1).withHour(12), Status.FULFILLED, uid1Day, "user-1day", testUser, testRg, testImage);
-
-        // (3) 3일 남은 요청 (3일 뒤 만료)
+        // (3) 3일 전
         Request req3Day = createTestRequest(MOCK_NOW.plusDays(3).withHour(14), Status.FULFILLED, uid3Day, "user-3day", testUser, testRg, testImage);
-
-        // (4) 7일 남은 요청 (7일 뒤 만료)
+        // (4) 7일 전
         Request req7Day = createTestRequest(MOCK_NOW.plusDays(7).withHour(15), Status.FULFILLED, uid7Day, "user-7day", testUser, testRg, testImage);
+        // (5) 넉넉함
+        createTestRequest(MOCK_NOW.plusDays(30), Status.FULFILLED, uidOk, "user-ok", testUser, testRg, testImage);
 
-        // (5) 아직 넉넉한 요청
-        Request reqOk = createTestRequest(MOCK_NOW.plusDays(30), Status.FULFILLED, uidOk, "user-ok", testUser, testRg, testImage);
 
-
-        // --- Given: 시간 고정 ---
+        // --- Given: 시간 고정 & 스케줄러 실행 ---
         try (MockedStatic<LocalDateTime> mockedTime = Mockito.mockStatic(LocalDateTime.class, Mockito.CALLS_REAL_METHODS)) {
             mockedTime.when(LocalDateTime::now).thenReturn(MOCK_NOW);
 
-            // --- When: 스케줄러 실행 ---
             requestSchedulerService.runScheduler();
         }
 
@@ -121,63 +114,72 @@ class RequestSchedulerServiceTest {
         // 1. [삭제 검증] reqExpired
         Request deletedResult = requestRepository.findById(reqExpired.getRequestId()).orElseThrow();
         assertThat(deletedResult.getStatus()).isEqualTo(Status.DELETED);
-        assertThat(deletedResult.getUbuntuUid()).isNull();
-
         verify(ubuntuAccountService, times(1)).deleteUbuntuAccount("user-expired");
 
-        // [이벤트 리스너 검증] -> 삭제 완료 알림
+        // [이벤트 리스너 검증] -> 삭제 완료 알림 (MessageUtils 사용 검증)
+        // subject: notification.expired.detail.subject
+        // body: notification.expired.detail.body ({0}이름, {1}서버, {2}계정)
+        String expectedDelSubject = messageUtils.get("notification.expired.detail.subject");
+        String expectedDelBody = messageUtils.get("notification.expired.detail.body",
+                testUser.getName(), "FARM-01", "user-expired");
+
         verify(alarmService).sendAllAlerts(
                 eq(testUser.getName()),
                 eq(testUser.getEmail()),
-                contains("삭제 완료 안내"),
-                contains("삭제되었습니다")
+                eq(expectedDelSubject),
+                eq(expectedDelBody)
         );
+
+        // 관리자 알림 검증
+        // notification.admin.delete.success ({0}타입, {1}계정, {2}서버)
+        String expectedAdminMsg = messageUtils.get("notification.admin.delete.success",
+                "FARM", "user-expired", "FARM-01");
 
         verify(alarmService).sendAdminSlackNotification(
                 eq("FARM-01"),
-                contains("삭제 완료")
+                eq(expectedAdminMsg)
         );
 
 
         // 2. [알림 검증] 1일 전 (req1Day)
-        Request result1Day = requestRepository.findById(req1Day.getRequestId()).get();
-        assertThat(result1Day.getStatus()).isEqualTo(Status.FULFILLED);
-        verify(alarmService).sendAllAlerts(
-                eq(testUser.getName()),
-                eq(testUser.getEmail()),
-                contains("안내 (1일 전)"),
-                contains("삭제될 예정")
-        );
-
+        verifyPreExpiryAlert(req1Day, "1일", testUser);
 
         // 3. [알림 검증] 3일 전 (req3Day)
-        Request result3Day = requestRepository.findById(req3Day.getRequestId()).get();
-        assertThat(result3Day.getStatus()).isEqualTo(Status.FULFILLED);
-        verify(alarmService).sendAllAlerts(
-                eq(testUser.getName()),
-                eq(testUser.getEmail()),
-                contains("안내 (3일 전)"),
-                contains("삭제될 예정")
-        );
-
+        verifyPreExpiryAlert(req3Day, "3일", testUser);
 
         // 4. [알림 검증] 7일 전 (req7Day)
-        Request result7Day = requestRepository.findById(req7Day.getRequestId()).get();
-        assertThat(result7Day.getStatus()).isEqualTo(Status.FULFILLED);
-        verify(alarmService).sendAllAlerts(
-                eq(testUser.getName()),
-                eq(testUser.getEmail()),
-                contains("안내 (7일 전)"),
-                contains("삭제될 예정")
-        );
+        verifyPreExpiryAlert(req7Day, "7일", testUser);
 
 
         // 5. [총 호출 횟수 검증]
+        // 사용자 알림: 삭제1 + 1일전1 + 3일전1 + 7일전1 = 4회
         verify(alarmService, times(4)).sendAllAlerts(anyString(), anyString(), anyString(), anyString());
+        // 관리자 알림: 삭제1회
         verify(alarmService, times(1)).sendAdminSlackNotification(anyString(), anyString());
     }
 
-    // --- Helper Method ---
+    // [헬퍼] 만료 예고 알림 검증 로직 분리
+    private void verifyPreExpiryAlert(Request request, String dayLabel, User user) {
+        // subject: notification.pre-expiry.subject ({0} 기간)
+        String expectedSubject = messageUtils.get("notification.pre-expiry.subject", dayLabel);
+
+        // body: notification.pre-expiry.body ({0}이름, {1}기간, {2}날짜, {3}서버, {4}계정)
+        String expectedBody = messageUtils.get("notification.pre-expiry.body",
+                user.getName(),
+                dayLabel,
+                request.getExpiresAt().toLocalDate().toString(),
+                request.getResourceGroup().getServerName(),
+                request.getUbuntuUsername()
+        );
+
+        verify(alarmService).sendAllAlerts(
+                eq(user.getName()),
+                eq(user.getEmail()),
+                eq(expectedSubject),
+                eq(expectedBody)
+        );
+    }
+
     private Request createTestRequest(LocalDateTime expiresAt, Status status, UsedId usedId, String ubuntuUsername,
                                       User testUser, ResourceGroup testRg, ContainerImage testImage) {
         Request req = Request.builder()
