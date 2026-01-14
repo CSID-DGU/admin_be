@@ -60,9 +60,19 @@ public class UserLoginService {
         User user = userRepository.findByEmail(request.email())
                 .orElseThrow(() -> new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO));
 
+        if (!user.getIsActive()) {
+            throw new UnauthorizedException(ErrorCode.ACCOUNT_DISABLED);
+        }
+
         if (!passwordEncoder.matches(request.password(), user.getPassword())) {
             throw new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO);
         }
+
+        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
+            throw new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO);
+        }
+
+        user.recordLogin();
 
         String accessToken = jwtProvider.getIssueToken(user.getUserId(), true);
         String refreshToken = jwtProvider.getIssueToken(user.getUserId(), false);
