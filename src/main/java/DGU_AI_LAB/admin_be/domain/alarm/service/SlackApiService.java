@@ -1,145 +1,201 @@
 package DGU_AI_LAB.admin_be.domain.alarm.service;
 
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.log4j.Log4j2;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/**
- * Slack Bot Token을 사용하여 Slack API와 직접 통신하는 서비스
- * (DM 전송 등)
- */
 @Service
 @RequiredArgsConstructor
-@Log4j2
+@Slf4j
 public class SlackApiService {
+
+    /**
+     * 모든 클래스에서 알림에 들어갈 메시지는 MessageUtil에서 관리하고 있어요.
+     * 알림 문구를 수정하려면, resources/messages.properties에서 수정해주세요.
+     */
 
     @Value("${slack.bot-token}")
     private String botToken;
-    private final RestTemplate restTemplate = new RestTemplate();
 
-    /**
-     * 사용자에게 Slack DM을 전송합니다.
-     */
+    private final RestTemplate restTemplate = new RestTemplate();
+    private final RedisTemplate<String, Object> redisTemplate;
+    private final MessageUtils messageUtils;
+
+    private static final String SLACK_USERS_CACHE_KEY = "slack:cache:users:list";
+    private static final long CACHE_TTL_HOURS = 1; // 캐시 유지 시간 (1시간)
+
+    // =========================================================================
+    // 1. Webhook 전송 (관리자 알림용)
+    // =========================================================================
+    public void sendWebhook(String webhookUrl, String message) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        Map<String, String> payload = Map.of("text", message);
+        HttpEntity<Map<String, String>> request = new HttpEntity<>(payload, headers);
+
+        try {
+            ResponseEntity<String> response = restTemplate.postForEntity(webhookUrl, request, String.class);
+            if (!response.getStatusCode().is2xxSuccessful()) {
+                log.warn("Slack Webhook 전송 응답 이상: {}", response.getStatusCode());
+                throw new BusinessException(ErrorCode.SLACK_SEND_FAILED);
+            }
+        } catch (Exception e) {
+            log.error("Slack Webhook 전송 실패 (URL: {}): {}", webhookUrl, e.getMessage());
+            throw new BusinessException(ErrorCode.SLACK_SEND_FAILED);
+        }
+    }
+
+    // =========================================================================
+    // 2. DM 전송 (사용자 알림용)
+    // =========================================================================
+    public void sendExpiredDM(User user) {
+        String message = messageUtils.get("notification.expired.dm", user.getName());
+        this.sendDM(user.getName(), user.getEmail(), message);
+    }
+
     public void sendDM(String username, String email, String message) {
-        String userId = getSlackUser(username, email, botToken);
+        String userId = getSlackUserId(username, email);
+
         if (userId == null) {
-            log.warn("Slack DM 전송 실패: 사용자를 찾을 수 없습니다. (이름: {}, 이메일: {})", username, email);
             throw new BusinessException(ErrorCode.SLACK_USER_NOT_FOUND);
         }
 
         String channelId = openDMChannel(userId, botToken);
         if (channelId == null) {
-            log.warn("Slack DM 채널 오픈 실패: (사용자 ID: {})", userId);
             throw new BusinessException(ErrorCode.SLACK_DM_CHANNEL_FAILED);
         }
+        sendMessageToSlackChannel(channelId, message, botToken);
+    }
+
+    // --- Private Helper Methods ---
+    /**
+     * Redis 캐싱을 적용하여 Slack User 목록 조회
+     * 1. Redis 조회 -> 2. 없으면 API 호출 -> 3. Redis 저장
+     */
+    private List<Map<String, Object>> getSlackMembersWithCache() {
+        try {
+            // 1. Redis 캐시 조회
+            Object cachedData = redisTemplate.opsForValue().get(SLACK_USERS_CACHE_KEY);
+            if (cachedData != null) {
+                log.debug("Slack User List: Redis 캐시 히트 (API 호출 생략)");
+                return (List<Map<String, Object>>) cachedData;
+            }
+        } catch (Exception e) {
+            log.warn("Redis 조회 실패, API 직접 호출 진행: {}", e.getMessage());
+        }
+
+        // 2. 캐시가 없으면 API 호출
+        log.info("Slack User List: API 직접 호출 (Refresh)");
+        String url = "https://slack.com/api/users.list";
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(botToken);
+        HttpEntity<Void> request = new HttpEntity<>(headers);
 
         try {
-            sendMessageToSlackChannel(channelId, message, botToken);
+            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, request, Map.class);
+            if (!Boolean.TRUE.equals(response.getBody().get("ok"))) {
+                throw new BusinessException(ErrorCode.SLACK_USER_NOT_FOUND);
+            }
+
+            List<Map<String, Object>> members = (List<Map<String, Object>>) response.getBody().get("members");
+
+            // 3. Redis에 저장 (1시간 유지)
+            try {
+                redisTemplate.opsForValue().set(SLACK_USERS_CACHE_KEY, members, Duration.ofHours(CACHE_TTL_HOURS));
+            } catch (Exception e) {
+                log.error("Redis 저장 실패 (기능은 계속 수행됨): {}", e.getMessage());
+            }
+
+            return members;
+
         } catch (Exception e) {
-            log.error("Slack DM 전송 중 오류 발생", e);
-            throw new BusinessException(ErrorCode.SLACK_SEND_FAILED);
+            log.error("Slack users.list API 호출 실패", e);
+            throw new BusinessException(ErrorCode.SLACK_USER_NOT_FOUND);
         }
     }
 
     /**
-     * 이름과 이메일로 Slack 사용자 ID를 찾습니다.
+     * 캐시된 목록에서 이름/이메일로 사용자 ID 매칭
      */
-    private String getSlackUser(String username, String email, String token) {
-        String url = "https://slack.com/api/users.list";
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(token);
-        HttpEntity<Void> request = new HttpEntity<>(headers);
+    private String getSlackUserId(String username, String email) {
+        // 캐시 적용된 목록 가져오기
+        List<Map<String, Object>> members = getSlackMembersWithCache();
 
-        ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, request, Map.class);
-        if (!Boolean.TRUE.equals(response.getBody().get("ok"))) {
-            throw new BusinessException(ErrorCode.SLACK_USER_NOT_FOUND);
-        }
-
-        List<Map<String, Object>> members = (List<Map<String, Object>>) response.getBody().get("members");
-
-        // 이름이 일치하는 사용자 목록 필터링
+        // 1차: 이름 매칭
         List<Map<String, Object>> matchedUsers = members.stream()
                 .filter(user -> {
                     Map<String, Object> profile = (Map<String, Object>) user.get("profile");
+                    if (profile == null) return false;
+
                     String displayName = (String) profile.get("display_name");
                     String realName = (String) profile.get("real_name");
                     String name = (String) user.get("name");
 
-                    // 하나라도 null이 아닌 이름 필드가 username과 일치하는지 확인
                     return (displayName != null && displayName.equals(username)) ||
                             (realName != null && realName.equals(username)) ||
                             (name != null && name.equals(username));
-                })
-                .collect(Collectors.toList());
+                }).collect(Collectors.toList());
 
-        if (matchedUsers.isEmpty()) {
-            throw new BusinessException(ErrorCode.SLACK_USER_NOT_FOUND);
-        }
+        if (matchedUsers.isEmpty()) return null; // 상위에서 Exception 처리
+        if (matchedUsers.size() == 1) return (String) matchedUsers.get(0).get("id");
 
-        if (matchedUsers.size() == 1) {
-            return (String) matchedUsers.get(0).get("id");
-        }
-
-        // 이름이 중복될 경우, 이메일로 재검색
+        // 2차: 이메일 매칭 (동명이인 또는 사용자가 이름을 잘못 저장했을 경우 처리)
         Map<String, Object> selectedUser = matchedUsers.stream()
                 .filter(user -> {
                     Map<String, Object> profile = (Map<String, Object>) user.get("profile");
                     String userEmail = (String) profile.get("email");
                     return userEmail != null && userEmail.equalsIgnoreCase(email);
-                })
-                .findFirst()
-                .orElseThrow(() -> new BusinessException(ErrorCode.SLACK_USER_EMAIL_NOT_MATCH));
+                }).findFirst().orElse(null);
 
-        return (String) selectedUser.get("id");
+        return selectedUser != null ? (String) selectedUser.get("id") : null;
     }
 
-    /**
-     * 사용자 ID로 DM 채널 ID를 엽니다.
-     */
     private String openDMChannel(String userId, String token) {
         String url = "https://slack.com/api/conversations.open";
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(token);
         headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(Map.of("users", userId), headers);
 
-        Map<String, Object> body = Map.of("users", userId);
-        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
-
-        ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
-        if (Boolean.TRUE.equals(response.getBody().get("ok"))) {
-            Map channel = (Map) response.getBody().get("channel");
-            return (String) channel.get("id");
+        try {
+            ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
+            if (Boolean.TRUE.equals(response.getBody().get("ok"))) {
+                Map channel = (Map) response.getBody().get("channel");
+                return (String) channel.get("id");
+            }
+        } catch (Exception e) {
+            log.error("DM 채널 오픈 API 오류", e);
         }
         return null;
     }
 
-    /**
-     * 채널 ID로 메시지를 전송합니다. (DM, 공개채널 공용)
-     */
     private void sendMessageToSlackChannel(String channelId, String message, String token) {
         String url = "https://slack.com/api/chat.postMessage";
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(token);
         headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(Map.of("channel", channelId, "text", message), headers);
 
-        Map<String, Object> body = Map.of(
-                "channel", channelId,
-                "text", message
-        );
-        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
-
-        ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
-        if (!Boolean.TRUE.equals(response.getBody().get("ok"))) {
-            log.error("Slack 메시지 전송 실패 (채널 ID: {}): {}", channelId, response.getBody().get("error"));
+        try {
+            ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
+            if (!Boolean.TRUE.equals(response.getBody().get("ok"))) {
+                log.error("Slack 메시지 전송 실패: {}", response.getBody().get("error"));
+                throw new BusinessException(ErrorCode.SLACK_SEND_FAILED);
+            }
+        } catch (Exception e) {
             throw new BusinessException(ErrorCode.SLACK_SEND_FAILED);
         }
     }
