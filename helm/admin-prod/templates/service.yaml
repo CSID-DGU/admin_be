@@ -1,0 +1,15 @@
+# ~/admin_be/helm/admin-prod/templates/service.yaml
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-prod
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app: admin-prod
+  ports:
+    - protocol: TCP
+      port: 80                     # 클러스터 내부용 포트
+      targetPort: {{ .Values.service.port }}  # 컨테이너 내부 포트
+      nodePort: {{ .Values.service.nodePort }}  # 외부 포트

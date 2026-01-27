@@ -1,0 +1,8 @@
+# ~/admin_be/helm/admin-prod/Chart.yaml
+
+apiVersion: v2
+name: admin-prod
+description: A Helm chart for deploying Spring Boot app
+type: application
+version: 0.1.0
+appVersion: "1.0"
