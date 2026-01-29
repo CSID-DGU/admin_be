@@ -33,22 +33,40 @@ jobs:
           docker push ${{ secrets.DOCKER_USERNAME }}/admin-prod:latest
           docker logout
 
+      # 깃에 커밋된 Helm 차트 폴더를 서버의 deploy-temp 폴더로 복사
+      - name: 🚚 Helm 차트 서버로 전송 (SCP)
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.K8S_HOST }}
+          port: ${{ secrets.K8S_PORT }}
+          username: ${{ secrets.K8S_USERNAME }}
+          key: ${{ secrets.K8S_PRIVATE_KEY }}
+          source: "helm/admin-prod" # 깃 레포 내 Helm 경로
+          target: "~/deploy-temp"
+          strip_components: 0
+
+      # 서버 접속 후 Helm 배포 실행
       - name: 🚀 Helm을 통한 쿠버네티스 배포
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.K8S_HOST }}
-          port: 8080
-          username: toni
+          port: ${{ secrets.K8S_PORT }}
+          username: ${{ secrets.K8S_USERNAME }}
           key: ${{ secrets.K8S_PRIVATE_KEY }}
           script: |
-            set -e # 실패 시 즉시 중단
-            export KUBECONFIG=/home/toni/.kube/config
+            set -e
+            
+            # 1. 쿠버네티스 설정 로드 (이미 설정되어 있으므로 경로만 명시)
+            export KUBECONFIG=$HOME/.kube/config
 
             echo "✅ 쿠버네티스 연결 테스트"
             kubectl get nodes
 
-            echo "📦 Helm 차트 배포 (절대 경로 사용)"
-            helm upgrade --install admin-prod /home/toni/admin_be/helm/admin-prod \
+            echo "📦 Helm 차트 배포 시작"
+            # SCP로 보낸 차트 위치: ~/deploy-temp/helm/admin-prod
+            CHART_PATH="$HOME/deploy-temp/helm/admin-prod"
+
+            helm upgrade --install admin-prod $CHART_PATH \
               --namespace default \
               --create-namespace \
               --set image.repository=${{ secrets.DOCKER_USERNAME }}/admin-prod \
@@ -57,4 +75,4 @@ jobs:
               --set args[0]="--spring.profiles.active=prod" \
               --set forceReload=$(date +%s)
 
-            echo "🎉 배포 완료"
+            echo "🎉 배포 완료!"
