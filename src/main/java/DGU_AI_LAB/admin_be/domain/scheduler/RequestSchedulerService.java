@@ -8,6 +8,8 @@ import DGU_AI_LAB.admin_be.domain.requests.service.UbuntuAccountService;
 import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
 import DGU_AI_LAB.admin_be.domain.usedIds.service.IdAllocationService;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import DGU_AI_LAB.admin_be.global.event.RequestExpiredEvent;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +23,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * Business Trigger
+ * 사용자의 상태를 주기적으로 검사해서 알림을 Trigger하는 Main Business Logic입니다.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -34,7 +40,7 @@ public class RequestSchedulerService {
     private final ApplicationContext applicationContext;
     private final MessageUtils messageUtils;
 
-    @Scheduled(cron = "0 46 22 * * ?", zone = "Asia/Seoul")
+    @Scheduled(cron = "0 00 08 * * ?", zone = "Asia/Seoul")
     public void runScheduler() {
         log.info("🗓️ [스케줄러 시작] 만료 계정 관리 작업");
         LocalDateTime now = LocalDateTime.now();
@@ -74,7 +80,7 @@ public class RequestSchedulerService {
     @Transactional
     public void deleteExpiredRequest(Long requestId) {
         Request request = requestRepository.findById(requestId)
-                .orElseThrow(() -> new IllegalArgumentException("Request not found"));
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
 
         if (request.getStatus() != Status.FULFILLED) return;
 
@@ -119,13 +125,19 @@ public class RequestSchedulerService {
         }
     }
 
+    /**
+     * 1. 비즈니스 관리자 (Farm/Lab) 채널 알림
+     * 2. 시스템 에러 (Error Log) 채널 알림
+     */
     private void sendFailureAlertToAdmin(String serverName, String username, String errorMsg) {
         try {
             String type = getServerType(serverName);
             String msg = messageUtils.get("notification.admin.delete.fail",
                     type, serverName, username, errorMsg);
-
             alarmService.sendAdminSlackNotification(serverName, msg);
+            // AlarmService.sendSlackAlert에서 url이 null이면 기본값(error-log)으로 전송합니다.
+            alarmService.sendSlackAlert(msg, null);
+
         } catch (Exception ignored) {}
     }
 

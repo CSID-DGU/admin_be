@@ -10,6 +10,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+/**
+ * Event Listner
+ * 특정 이벤트가 발생했을 때, 이를 감지하고 후속 작업을 처리하는 Observer입니다.
+ */
 @Component
 @RequiredArgsConstructor
 @Slf4j
