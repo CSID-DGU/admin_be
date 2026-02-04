@@ -12,6 +12,10 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
+/**
+ * [알림 통합 관리 서비스]
+ * 시스템 내 모든 알림(Slack, Email) 발송 요청의 진입점 역할을 합니다.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
