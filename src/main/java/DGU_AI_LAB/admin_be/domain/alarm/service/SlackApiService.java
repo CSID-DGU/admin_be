@@ -1,9 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.alarm.service;
 
-import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
-import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,28 +15,27 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * 실제 Slack API와 통신하는 transport 담당입니다.
+ * 관심 있음: 어떻게 보내는지, 누구인지
+ * 관심 없음: 누구한테 왜 보냈는지
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class SlackApiService {
-
-    /**
-     * 모든 클래스에서 알림에 들어갈 메시지는 MessageUtil에서 관리하고 있어요.
-     * 알림 문구를 수정하려면, resources/messages.properties에서 수정해주세요.
-     */
 
     @Value("${slack.bot-token}")
     private String botToken;
 
     private final RestTemplate restTemplate = new RestTemplate();
     private final RedisTemplate<String, Object> redisTemplate;
-    private final MessageUtils messageUtils;
 
     private static final String SLACK_USERS_CACHE_KEY = "slack:cache:users:list";
-    private static final long CACHE_TTL_HOURS = 1; // 캐시 유지 시간 (1시간)
+    private static final long CACHE_TTL_HOURS = 1;
 
     // =========================================================================
-    // 1. Webhook 전송 (관리자 알림용)
+    // 1. Webhook 전송
     // =========================================================================
     public void sendWebhook(String webhookUrl, String message) {
         HttpHeaders headers = new HttpHeaders();
@@ -59,17 +56,14 @@ public class SlackApiService {
     }
 
     // =========================================================================
-    // 2. DM 전송 (사용자 알림용)
+    // 2. DM 전송
     // =========================================================================
-    public void sendExpiredDM(User user) {
-        String message = messageUtils.get("notification.expired.dm", user.getName());
-        this.sendDM(user.getName(), user.getEmail(), message);
-    }
 
     public void sendDM(String username, String email, String message) {
         String userId = getSlackUserId(username, email);
 
         if (userId == null) {
+            log.warn("Slack User Not Found: username={}, email={}", username, email);
             throw new BusinessException(ErrorCode.SLACK_USER_NOT_FOUND);
         }
 
@@ -77,29 +71,37 @@ public class SlackApiService {
         if (channelId == null) {
             throw new BusinessException(ErrorCode.SLACK_DM_CHANNEL_FAILED);
         }
+
         sendMessageToSlackChannel(channelId, message, botToken);
     }
 
-    // --- Private Helper Methods ---
     /**
-     * Redis 캐싱을 적용하여 Slack User 목록 조회
-     * 1. Redis 조회 -> 2. 없으면 API 호출 -> 3. Redis 저장
+     * 관리자용: Slack 사용자 캐시 강제 새로고침
+     * (신규 사용자 발생 시 Admin API 등을 통해 호출)
      */
+    public void refreshSlackUserCache() {
+        redisTemplate.delete(SLACK_USERS_CACHE_KEY);
+        getSlackMembersWithCache(); // 즉시 재호출하여 캐시 워밍
+        log.info("Slack User Cache 강제 초기화 완료");
+    }
+
+    // --- Private Helper Methods ---
+
+    @SuppressWarnings("unchecked") // IDE에서 Redis 캐스팅 경고를 억제하기 위해서 추가 (깔끔함용)
     private List<Map<String, Object>> getSlackMembersWithCache() {
         try {
-            // 1. Redis 캐시 조회
             Object cachedData = redisTemplate.opsForValue().get(SLACK_USERS_CACHE_KEY);
             if (cachedData != null) {
-                log.debug("Slack User List: Redis 캐시 히트 (API 호출 생략)");
+                log.debug("Slack User List: Redis 캐시 히트");
                 return (List<Map<String, Object>>) cachedData;
             }
         } catch (Exception e) {
             log.warn("Redis 조회 실패, API 직접 호출 진행: {}", e.getMessage());
         }
 
-        // 2. 캐시가 없으면 API 호출
         log.info("Slack User List: API 직접 호출 (Refresh)");
-        String url = "https://slack.com/api/users.list";
+        String url = "https://slack.com/api/users.list?limit=1000";
+
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(botToken);
         HttpEntity<Void> request = new HttpEntity<>(headers);
@@ -112,11 +114,11 @@ public class SlackApiService {
 
             List<Map<String, Object>> members = (List<Map<String, Object>>) response.getBody().get("members");
 
-            // 3. Redis에 저장 (1시간 유지)
+            // Redis 저장
             try {
                 redisTemplate.opsForValue().set(SLACK_USERS_CACHE_KEY, members, Duration.ofHours(CACHE_TTL_HOURS));
             } catch (Exception e) {
-                log.error("Redis 저장 실패 (기능은 계속 수행됨): {}", e.getMessage());
+                log.error("Redis 저장 실패: {}", e.getMessage());
             }
 
             return members;
@@ -127,11 +129,7 @@ public class SlackApiService {
         }
     }
 
-    /**
-     * 캐시된 목록에서 이름/이메일로 사용자 ID 매칭
-     */
     private String getSlackUserId(String username, String email) {
-        // 캐시 적용된 목록 가져오기
         List<Map<String, Object>> members = getSlackMembersWithCache();
 
         // 1차: 이름 매칭
@@ -149,10 +147,10 @@ public class SlackApiService {
                             (name != null && name.equals(username));
                 }).collect(Collectors.toList());
 
-        if (matchedUsers.isEmpty()) return null; // 상위에서 Exception 처리
+        if (matchedUsers.isEmpty()) return null;
         if (matchedUsers.size() == 1) return (String) matchedUsers.get(0).get("id");
 
-        // 2차: 이메일 매칭 (동명이인 또는 사용자가 이름을 잘못 저장했을 경우 처리)
+        // 2차: 이메일 매칭
         Map<String, Object> selectedUser = matchedUsers.stream()
                 .filter(user -> {
                     Map<String, Object> profile = (Map<String, Object>) user.get("profile");
