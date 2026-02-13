@@ -12,6 +12,10 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
+/**
+ * [알림 통합 관리 서비스]
+ * 시스템 내 모든 알림(Slack, Email) 발송 요청의 진입점 역할을 합니다.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -22,12 +26,18 @@ public class AlarmService {
      * 알림 문구를 수정하려면, resources/messages.properties에서 수정해주세요.
      */
 
-    @Value("${slack-webhook-url.monitoring}")
-    private String defaultWebhookUrl;
+    @Value("${slack-webhook-url.noti}") // 사용자 알림 로그용
+    private String notiLogWebhookUrl;
+
+    @Value("${slack-webhook-url.error-log}")
+    private String errorLogWebhookUrl; // 중요한 에러 로그용
+
+    // 관리자 승인 채널 (farm & lab)
     @Value("${slack-webhook-url.farm-admin}")
     private String farmAdminWebhookUrl;
     @Value("${slack-webhook-url.lab-admin}")
     private String labAdminWebhookUrl;
+
     @Value("${spring.mail.username}")
     private String from;
 
@@ -40,7 +50,8 @@ public class AlarmService {
 
     // --- Public Methods ---
     public void sendSlackAlert(String message, String webhookUrl) {
-        String urlToUse = (webhookUrl != null && !webhookUrl.isEmpty()) ? webhookUrl : defaultWebhookUrl;
+        String urlToUse = (webhookUrl != null && !webhookUrl.isEmpty()) ? webhookUrl : errorLogWebhookUrl;
+
         SlackMessageDto dto = SlackMessageDto.builder()
                 .type(SlackMessageDto.MessageType.WEBHOOK)
                 .webhookUrl(urlToUse)
@@ -69,19 +80,44 @@ public class AlarmService {
             mailSender.send(message);
         } catch (Exception e) {
             log.error("메일 전송 실패: 수신자={}", to, e);
+            sendSlackAlert("🚨 메일 전송 실패! 수신자: " + to, errorLogWebhookUrl);
         }
     }
 
+    /**
+     * [사용자 알림 + 관리자 로그]
+     * 사용자에게는 실제 알림을, 관리자 'noti' 채널에는 로그를 남깁니다.
+     */
     public void sendAllAlerts(String username, String email, String subject, String message) {
+        // 1. 사용자 발송
         sendMailAlert(email, subject, message);
         sendDMAlert(username, email, message);
+
+        // 2. 관리자 로그 채널(noti)에 기록
+        sendMonitoringLog(username, email, subject);
     }
 
     // --- Helper / Formatting Methods ---
+    /**
+     * noti 채널에 짧은 로그(영수증)를 남기는 메서드
+     */
+    private void sendMonitoringLog(String username, String email, String subject) {
+        try {
+            // properties: notification.monitor.log
+            String logMessage = messageUtils.get("notification.monitor.log", username, email, subject);
+
+            // 명시적으로 'noti' 채널 URL 사용
+            sendSlackAlert(logMessage, notiLogWebhookUrl);
+        } catch (Exception e) {
+            log.warn("로그 전송 실패", e);
+        }
+    }
+
     private String getAdminWebhookUrl(String serverName) {
         if ("FARM".equalsIgnoreCase(serverName)) return farmAdminWebhookUrl;
         else if ("LAB".equalsIgnoreCase(serverName)) return labAdminWebhookUrl;
-        else return defaultWebhookUrl;
+            // 알 수 없는 서버라면 에러 채널로 보내서 관리자가 확인하게 합니다.
+        else return errorLogWebhookUrl;
     }
 
     public void sendNewRequestNotification(Request request) {
@@ -104,7 +140,7 @@ public class AlarmService {
         sendSlackAlert(message, getAdminWebhookUrl(serverName));
     }
 
-    // --- Private Queue Logic with Fallback ---
+    // --- Fallback Logic ---
     private void pushToQueue(SlackMessageDto dto) {
         try {
             redisTemplate.opsForList().rightPush(SLACK_QUEUE_KEY, dto);
@@ -125,9 +161,15 @@ public class AlarmService {
             } else {
                 slackApiService.sendDM(dto.getUsername(), dto.getEmail(), fullMessage);
             }
+
+            // Fallback이 작동했다는 건 시스템이 불안정하다는 뜻이므로 에러 로그 채널에 알립니다.
+            if (!dto.getWebhookUrl().equals(errorLogWebhookUrl)) {
+                slackApiService.sendWebhook(errorLogWebhookUrl, "⚠️ Redis 장애 발생 (Direct Send 작동됨)");
+            }
+
             log.info("✅ Fallback 직접 전송 성공");
         } catch (Exception ex) {
-            log.error("❌ Fallback 실패 (전송 불가)", ex);
+            log.error("❌ Fallback 실패", ex);
         }
     }
 }

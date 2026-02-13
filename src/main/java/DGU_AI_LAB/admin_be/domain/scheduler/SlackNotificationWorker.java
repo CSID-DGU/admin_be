@@ -10,6 +10,10 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+/**
+ * Consumer / Worker
+ * Redis 큐에 쌓인 알림 요청을 하나씩 꺼내서 실제로 처리하는 Consumer입니다.
+ */
 @Component
 @RequiredArgsConstructor
 @Slf4j

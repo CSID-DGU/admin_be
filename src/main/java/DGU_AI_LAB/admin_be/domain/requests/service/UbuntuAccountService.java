@@ -18,6 +18,10 @@ import reactor.core.publisher.Mono;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Ubuntu 서버 계정 관리 서비스
+ * WebClient를 사용해 인프라 서버의 Ubuntu 계정 및 PVC를 제어합니다.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
