@@ -34,7 +34,7 @@ public class RequestSchedulerService {
     private final ApplicationContext applicationContext;
     private final MessageUtils messageUtils;
 
-    @Scheduled(cron = "0 46 22 * * ?", zone = "Asia/Seoul")
+    @Scheduled(cron = "0 0 9 * * ?", zone = "Asia/Seoul")
     public void runScheduler() {
         log.info("🗓️ [스케줄러 시작] 만료 계정 관리 작업");
         LocalDateTime now = LocalDateTime.now();
