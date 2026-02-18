@@ -15,13 +15,95 @@ jobs:
       - name: ☕️ JDK 17 설정
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
-          distribution: 'temurin'
+          java-version: "17"
+          distribution: "temurin"
 
       - name: 🛠 application.yml 생성
         run: |
           mkdir -p ./src/main/resources
           echo "${{ secrets.APPLICATION }}" > ./src/main/resources/application.yml
+
+      - name: Generate messages.properties from Notion (ISO-8859-1)
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          KEY_PROP: Key
+          VALUE_PROP: Value
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update -y
+          sudo apt-get install -y jq python3
+
+          RESP=$(curl -sS -X POST "https://api.notion.com/v1/databases/${NOTION_DATABASE_ID}/query" \
+            -H "Authorization: Bearer ${NOTION_TOKEN}" \
+            -H "Notion-Version: 2022-06-28" \
+            -H "Content-Type: application/json" \
+            --data '{}')
+
+          OUT_UTF8=./src/main/resources/messages.utf8.properties
+          echo "# generated from Notion at $(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$OUT_UTF8"
+
+          echo "$RESP" | jq -r --arg k "$KEY_PROP" --arg v "$VALUE_PROP" '
+            .results[]
+            | {
+                key: (.properties[$k].title[0].plain_text // ""),
+                val: (.properties[$v].rich_text[0].plain_text // "")
+              }
+            | select(.key != "" and .val != "")
+            | "\(.key)=\(.val)"
+          ' >> "$OUT_UTF8"
+
+          # ---------- 검증 ----------
+          if [ "$(wc -l < "$OUT_UTF8")" -le 1 ]; then
+            echo "No templates generated"
+            exit 1
+          fi
+
+          KEYS=$(tail -n +2 "$OUT_UTF8" | cut -d'=' -f1)
+          if [ "$(echo "$KEYS" | sort | uniq -d | wc -l)" -gt 0 ]; then
+            echo "Duplicate keys detected"
+            echo "$KEYS" | sort | uniq -d
+            exit 1
+          fi
+
+          # ---------- ISO-8859-1 변환 ----------
+          python3 << 'PY'
+          import pathlib
+
+          src = pathlib.Path("./src/main/resources/messages.utf8.properties")
+          dst = pathlib.Path("./src/main/resources/messages.properties")
+
+          def esc(s: str) -> str:
+              out = []
+              for ch in s:
+                  code = ord(ch)
+                  if ch in "\n\r\t\f":
+                      out.append({"\\n":"\\n","\\r":"\\r","\\t":"\\t","\\f":"\\f"}[repr(ch)[1:-1]])
+                  elif 0x20 <= code <= 0x7E:
+                      out.append(ch)
+                  elif code <= 0xFF:
+                      out.append(ch)
+                  else:
+                      out.append("\\u%04X" % code)
+              return "".join(out)
+
+          lines = src.read_text(encoding="utf-8").splitlines(True)
+
+          with dst.open("w", encoding="iso-8859-1", newline="") as f:
+              for line in lines:
+                  if line.startswith("#") or line.strip() == "":
+                      f.write(line)
+                      continue
+
+                  if "=" in line:
+                      k, v = line.split("=", 1)
+                      f.write(esc(k) + "=" + esc(v.rstrip("\n")) + "\n")
+                  else:
+                      f.write(esc(line))
+          PY
+
+          rm -f "$OUT_UTF8"
 
       - name: ⚡ Gradle Build (테스트 제외)
         run: ./gradlew build -x test
@@ -41,7 +123,7 @@ jobs:
           username: toni
           key: ${{ secrets.K8S_PRIVATE_KEY }}
           script: |
-            set -e # 실패 시 즉시 중단
+            set -e
             export KUBECONFIG=/home/toni/.kube/config
 
             echo "✅ 쿠버네티스 연결 테스트"
