@@ -29,6 +29,7 @@ public class RequestGroup {
 
     @Builder
     public RequestGroup(Request request, Group group) {
+        this.id = new RequestGroupId();
         this.request = request;
         this.group = group;
     }
