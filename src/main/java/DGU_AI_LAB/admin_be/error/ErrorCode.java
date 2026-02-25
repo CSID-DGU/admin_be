@@ -144,6 +144,11 @@ public enum ErrorCode {
     INVALID_USERNAME_FORMAT(HttpStatus.BAD_REQUEST, "잘못된 사용자명 형식입니다."),
 
     /**
+     * Pod Error
+     */
+    POD_CREATION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 생성 API 요청에 실패했습니다."),
+
+    /**
      * Port Request Error
      */
     DUPLICATE_PORT_NUMBER(HttpStatus.CONFLICT, "이미 사용 중인 포트 번호입니다."),
