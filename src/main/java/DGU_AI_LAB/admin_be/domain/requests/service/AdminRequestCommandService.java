@@ -55,6 +55,7 @@ public class AdminRequestCommandService {
     private final ChangeRequestRepository changeRequestRepository;
     private final GroupRepository groupRepository;
     private final PortRequestService portRequestService;
+    private final PodService podService;
     private final ObjectMapper objectMapper;
 
     private final @Qualifier("configWebClient") WebClient pvcWebClient;
@@ -88,38 +89,6 @@ public class AdminRequestCommandService {
         } catch (Exception e) {
             log.error("PVC API 호출 중 예기치 않은 오류 발생.", e);
             throw new BusinessException(ErrorCode.PVC_API_FAILURE);
-        }
-    }
-
-    private CreatePodResponseDTO callCreatePodApi(String username) {
-        CreatePodRequestDTO podDto = new CreatePodRequestDTO(username);
-
-        try {
-            log.info("Pod 생성 API 요청 시작: 사용자: {}", username);
-
-            CreatePodResponseDTO response = pvcWebClient.post()
-                    .uri("/create-pod")
-                    .bodyValue(podDto)
-                    .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
-                            clientResponse.bodyToMono(String.class)
-                                    .flatMap(body -> Mono.error(new BusinessException("Pod 생성 실패: " + body, ErrorCode.POD_CREATION_FAILED)))
-                    )
-                    .onStatus(HttpStatusCode::is5xxServerError, clientResponse ->
-                            clientResponse.bodyToMono(String.class)
-                                    .flatMap(body -> Mono.error(new BusinessException("Pod 생성 실패: " + body, ErrorCode.POD_CREATION_FAILED)))
-                    )
-                    .bodyToMono(CreatePodResponseDTO.class)
-                    .block();
-
-            log.info("Pod 생성 API 요청 성공: 사용자: {}, pod: {}", username, response != null ? response.podName() : "null");
-            return response;
-
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Pod 생성 API 호출 중 예기치 않은 오류 발생.", e);
-            throw new BusinessException(ErrorCode.POD_CREATION_FAILED);
         }
     }
 
@@ -179,7 +148,7 @@ public class AdminRequestCommandService {
         callPvcApi(request.getUbuntuUsername(), request.getVolumeSizeGiB());
 
         // 3. Pod 생성 API 호출
-        CreatePodResponseDTO podResponse = callCreatePodApi(request.getUbuntuUsername());
+        CreatePodResponseDTO podResponse = podService.createPod(request.getUbuntuUsername());
 
         // 4. API 호출이 모두 성공한 후에 DB 업데이트
         request.assignUbuntuUid(allocation.getUid());

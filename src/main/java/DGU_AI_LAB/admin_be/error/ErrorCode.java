@@ -147,6 +147,7 @@ public enum ErrorCode {
      * Pod Error
      */
     POD_CREATION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 생성 API 요청에 실패했습니다."),
+    POD_DELETION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 삭제 API 요청에 실패했습니다."),
 
     /**
      * Port Request Error
