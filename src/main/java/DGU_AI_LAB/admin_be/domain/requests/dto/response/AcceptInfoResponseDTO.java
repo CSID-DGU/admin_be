@@ -19,7 +19,7 @@ public record AcceptInfoResponseDTO(
         String gpu_group,
         String server_type,
         List<NodeDTO> gpu_nodes,
-        List<ExtraPortDTO> extra_ports
+        List<AdditionalPortDTO> additional_ports
 ) {
     @Builder
     public record NodeDTO(
@@ -30,9 +30,8 @@ public record AcceptInfoResponseDTO(
     ) {}
 
     @Builder
-    public record ExtraPortDTO(
+    public record AdditionalPortDTO(
             Integer internal_port,
-            Integer external_port,
             String usage_purpose
     ) {}
 
@@ -49,10 +48,9 @@ public record AcceptInfoResponseDTO(
                         .build()
                 ).toList();
 
-        List<ExtraPortDTO> extraPortDTOList = portRequests.stream()
-                .map(portRequest -> ExtraPortDTO.builder()
+        List<AdditionalPortDTO> additionalPortDTOList = portRequests.stream()
+                .map(portRequest -> AdditionalPortDTO.builder()
                         .internal_port(portRequest.getInternalPort())
-                        .external_port(portRequest.getPortNumber())
                         .usage_purpose(portRequest.getUsagePurpose())
                         .build()
                 ).toList();
@@ -71,7 +69,7 @@ public record AcceptInfoResponseDTO(
                 .gpu_group(group.getDescription())
                 .server_type(group.getServerName())
                 .gpu_nodes(nodeDTOList)
-                .extra_ports(extraPortDTOList)
+                .additional_ports(additionalPortDTOList)
                 .build();
     }
 }
