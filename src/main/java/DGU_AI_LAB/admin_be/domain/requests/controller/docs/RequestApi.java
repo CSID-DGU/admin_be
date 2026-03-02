@@ -33,7 +33,7 @@ public interface RequestApi {
                     "Base64 -> [서버] 인증 (sha-512) -> OK!"
     )
     @ApiResponse(
-            responseCode = "200",
+            responseCode = "201",
             description = "신청 생성 성공",
             content = @Content(schema = @Schema(implementation = SaveRequestResponseDTO.class))
     )
