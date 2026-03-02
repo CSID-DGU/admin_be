@@ -5,7 +5,8 @@ import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
-import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
+import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
+import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.*;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
@@ -54,7 +55,7 @@ public class AdminRequestCommandService {
     private final IdAllocationService idAllocationService;
     private final ChangeRequestRepository changeRequestRepository;
     private final GroupRepository groupRepository;
-    private final PortRequestService portRequestService;
+    private final PodExternalPortRepository podExternalPortRepository;
     private final PodService podService;
     private final ObjectMapper objectMapper;
 
@@ -164,7 +165,12 @@ public class AdminRequestCommandService {
         request.approve(image, rg, dto.volumeSizeGiB(), dto.adminComment());
         request.assignPodInfo(podResponse.podName(), podResponse.node());
         for (CreatePodResponseDTO.PortInfo port : podResponse.ports()) {
-            portRequestService.savePort(request, rg, port.internalPort(), port.externalPort(), port.usagePurpose());
+            podExternalPortRepository.save(PodExternalPort.builder()
+                    .request(request)
+                    .internalPort(port.internalPort())
+                    .externalPort(port.externalPort())
+                    .usagePurpose(port.usagePurpose())
+                    .build());
         }
         // requestRepository.flush();
 
