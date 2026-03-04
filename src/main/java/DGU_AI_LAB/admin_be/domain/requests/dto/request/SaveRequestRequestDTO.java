@@ -31,22 +31,27 @@ public record SaveRequestRequestDTO(
         @NotNull(message = "Image ID cannot be null")
         Long imageId,
 
+        @Schema(description = "Ubuntu 사용자명 (3~50자)", example = "test2014")
         @NotBlank(message = "Ubuntu username cannot be blank")
         @Size(min = 3, max = 50, message = "Username must be between 3 and 50 characters")
         String ubuntuUsername,
 
+        @Schema(description = "Ubuntu 비밀번호", example = "strongPassword123!")
         @NotBlank(message = "Ubuntu Password cannot be blank")
         String ubuntuPassword,
 
-        @Schema(description = "볼륨 사이즈", example = "20")
+        @Schema(description = "볼륨 사이즈 (GiB)", example = "20")
         Long volumeSizeGiB,
 
+        @Schema(description = "사용 목적", example = "딥러닝 모델 학습")
         String usagePurpose,
 
         @Schema(description = "폼 응답", example = "{\"question\": \"answer\"}")
         Map<String, Object> formAnswers,
 
+        @Schema(description = "서버 만료 일시", example = "2026-12-31T23:59:59")
         LocalDateTime expiresAt,
+        @Schema(description = "Ubuntu GID 목록", example = "[1005, 1006]")
         Set<Long> ubuntuGids,
 
         @Schema(description = "포트 요청 목록")
