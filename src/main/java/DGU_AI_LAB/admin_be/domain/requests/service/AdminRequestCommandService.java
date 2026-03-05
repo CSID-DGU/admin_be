@@ -5,7 +5,10 @@ import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
+import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
+import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.*;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
@@ -52,6 +55,8 @@ public class AdminRequestCommandService {
     private final IdAllocationService idAllocationService;
     private final ChangeRequestRepository changeRequestRepository;
     private final GroupRepository groupRepository;
+    private final PodExternalPortRepository podExternalPortRepository;
+    private final PodService podService;
     private final ObjectMapper objectMapper;
 
     private final @Qualifier("configWebClient") WebClient pvcWebClient;
@@ -143,7 +148,10 @@ public class AdminRequestCommandService {
         // 2. PVC 생성 API 호출
         callPvcApi(request.getUbuntuUsername(), request.getVolumeSizeGiB());
 
-        // 3. API 호출이 모두 성공한 후에 DB 업데이트
+        // 3. Pod 생성 API 호출
+        CreatePodResponseDTO podResponse = podService.createPod(request.getUbuntuUsername());
+
+        // 4. API 호출이 모두 성공한 후에 DB 업데이트
         request.assignUbuntuUid(allocation.getUid());
         boolean alreadyLinked = request.getRequestGroups().stream()
                 .anyMatch(rg -> rg.getGroup().getUbuntuGid().equals(allocation.getPrimaryGroup().getUbuntuGid()));
@@ -155,9 +163,18 @@ public class AdminRequestCommandService {
         ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
         request.approve(image, rg, dto.volumeSizeGiB(), dto.adminComment());
+        request.assignPodInfo(podResponse.podName(), podResponse.node());
+        for (CreatePodResponseDTO.PortInfo port : podResponse.ports()) {
+            podExternalPortRepository.save(PodExternalPort.builder()
+                    .request(request)
+                    .internalPort(port.internalPort())
+                    .externalPort(port.externalPort())
+                    .usagePurpose(port.usagePurpose())
+                    .build());
+        }
         // requestRepository.flush();
 
-        // 4. 사용자에게 승인 알림 발송
+        // 5. 사용자에게 승인 알림 발송
         try {
             alarmService.sendApprovalNotification(request);
             log.info("사용자 '{}'에게 승인 알림을 성공적으로 발송했습니다.", request.getUser().getName());

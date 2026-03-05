@@ -9,16 +9,26 @@ import java.util.List;
 
 @Schema(description = "활성 컨테이너 정보 응답 DTO")
 @Builder
+@Schema(description = "컨테이너 정보 응답 DTO")
 public record ContainerInfoDTO(
-        @Schema(description = "사용자 ID") Long userId,
-        @Schema(description = "사용자 이름") String userName,
-        @Schema(description = "우분투 계정명") String ubuntuUsername,
-        @Schema(description = "우분투 UID") Long ubuntuUid,
-        @Schema(description = "우분투 GID 목록") List<Long> ubuntuGids,
-        @Schema(description = "리소스 그룹 ID") Integer resourceGroupId,
-        @Schema(description = "이미지 이름") String imageName,
-        @Schema(description = "이미지 버전") String imageVersion,
-        @Schema(description = "컨테이너 만료 일시") LocalDateTime expiresAt
+        @Schema(description = "사용자 고유 ID", example = "1")
+        Long userId,
+        @Schema(description = "사용자 이름", example = "이수아")
+        String userName,
+        @Schema(description = "Ubuntu 사용자명", example = "test2014")
+        String ubuntuUsername,
+        @Schema(description = "Ubuntu UID", example = "10001")
+        Long ubuntuUid,
+        @Schema(description = "Ubuntu GID 목록", example = "[1005, 1006]")
+        List<Long> ubuntuGids,
+        @Schema(description = "리소스 그룹 ID", example = "1")
+        Integer resourceGroupId,
+        @Schema(description = "컨테이너 이미지 이름", example = "cuda")
+        String imageName,
+        @Schema(description = "컨테이너 이미지 버전", example = "11.8")
+        String imageVersion,
+        @Schema(description = "서버 만료 일시", example = "2026-03-02T06:17:29")
+        LocalDateTime expiresAt
 ) {
     public static ContainerInfoDTO fromEntity(Request request) {
         return ContainerInfoDTO.builder()

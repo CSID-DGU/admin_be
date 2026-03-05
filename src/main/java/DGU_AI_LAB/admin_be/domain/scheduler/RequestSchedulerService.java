@@ -4,6 +4,7 @@ import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.requests.service.PodService;
 import DGU_AI_LAB.admin_be.domain.requests.service.UbuntuAccountService;
 import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
 import DGU_AI_LAB.admin_be.domain.usedIds.service.IdAllocationService;
@@ -35,6 +36,7 @@ public class RequestSchedulerService {
     private final RequestRepository requestRepository;
     private final AlarmService alarmService;
     private final UbuntuAccountService ubuntuAccountService;
+    private final PodService podService;
     private final IdAllocationService idAllocationService;
     private final ApplicationEventPublisher eventPublisher;
     private final ApplicationContext applicationContext;
@@ -88,6 +90,7 @@ public class RequestSchedulerService {
         String ubuntuUsername = request.getUbuntuUsername();
         User user = request.getUser();
 
+        podService.deletePod(request.getPodName());
         ubuntuAccountService.deleteUbuntuAccount(ubuntuUsername);
 
         UsedId usedId = request.getUbuntuUid();

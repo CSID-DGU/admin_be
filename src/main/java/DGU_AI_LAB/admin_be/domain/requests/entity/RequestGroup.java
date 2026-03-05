@@ -32,6 +32,7 @@ public class RequestGroup {
         this.id = new RequestGroupId();
         this.request = request;
         this.group = group;
+        this.id = new RequestGroupId(); // Hibernate 6.x @MapsId: flush 전 id 객체가 non-null이어야 함
     }
 
     @PrePersist
