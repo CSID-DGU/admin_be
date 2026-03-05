@@ -13,6 +13,7 @@ import lombok.Builder;
 import java.time.LocalDateTime;
 import java.util.List;
 
+@Schema(description = "서버 사용 신청 상세 응답 DTO")
 @Builder
 @Schema(description = "서버 신청 상세 응답 DTO")
 public record SaveRequestResponseDTO(
@@ -57,6 +58,7 @@ public record SaveRequestResponseDTO(
         @Schema(description = "신청 수정 일시", example = "2026-03-02T15:36:29")
         LocalDateTime updatedAt
 ) {
+    @Schema(description = "리소스 그룹 요약 정보")
     @Builder
     @Schema(description = "리소스 그룹 정보")
     public record AdminResourceGroupInfo(
@@ -79,6 +81,7 @@ public record SaveRequestResponseDTO(
         }
     }
 
+    @Schema(description = "신청자 요약 정보")
     @Builder
     @Schema(description = "신청자 정보")
     public record AdminUserInfo(

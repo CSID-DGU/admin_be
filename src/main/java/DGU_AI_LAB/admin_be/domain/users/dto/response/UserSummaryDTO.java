@@ -6,6 +6,7 @@ import lombok.Builder;
 
 import java.time.LocalDateTime;
 
+@Schema(description = "사용자 목록 조회 응답 DTO")
 @Builder
 @Schema(description = "사용자 요약 응답 DTO")
 public record UserSummaryDTO(

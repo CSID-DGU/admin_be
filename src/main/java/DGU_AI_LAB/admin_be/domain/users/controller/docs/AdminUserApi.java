@@ -23,6 +23,9 @@ public interface AdminUserApi {
     ResponseEntity<SuccessResponse<?>> getUser(@PathVariable @Parameter(description = "사용자 ID") Long id);
 
     @Operation(summary = "전체 사용자 목록 조회", description = "등록된 모든 사용자의 요약 정보를 조회합니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "성공")
+    })
     @GetMapping
     ResponseEntity<SuccessResponse<?>> getAllUsers();
 

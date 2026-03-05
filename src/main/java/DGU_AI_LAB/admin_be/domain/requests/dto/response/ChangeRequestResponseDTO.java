@@ -10,6 +10,7 @@ import lombok.Builder;
 
 import java.time.LocalDateTime;
 
+@Schema(description = "변경 요청 조회 응답 DTO")
 @Builder
 @Schema(description = "변경 요청 응답 DTO")
 public record ChangeRequestResponseDTO(
@@ -49,6 +50,7 @@ public record ChangeRequestResponseDTO(
                 .build();
     }
 
+    @Schema(description = "요청자 요약 정보")
     @Builder
     @Schema(description = "변경 요청자 정보")
     public record AdminUserInfo(

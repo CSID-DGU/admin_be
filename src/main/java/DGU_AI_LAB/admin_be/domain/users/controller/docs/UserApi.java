@@ -20,6 +20,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 public interface UserApi {
 
     @Operation(summary = "사용자 정보 확인", description = "로그인된 사용자의 상세 정보를 조회합니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "성공"),
+            @ApiResponse(responseCode = "401", description = "인증 실패")
+    })
     @GetMapping("/me")
     ResponseEntity<SuccessResponse<?>> getMyInfo(
             @AuthenticationPrincipal CustomUserDetails principal

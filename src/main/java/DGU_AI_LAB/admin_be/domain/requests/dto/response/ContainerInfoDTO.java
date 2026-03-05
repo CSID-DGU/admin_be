@@ -7,6 +7,7 @@ import lombok.Builder;
 import java.time.LocalDateTime;
 import java.util.List;
 
+@Schema(description = "활성 컨테이너 정보 응답 DTO")
 @Builder
 @Schema(description = "컨테이너 정보 응답 DTO")
 public record ContainerInfoDTO(
