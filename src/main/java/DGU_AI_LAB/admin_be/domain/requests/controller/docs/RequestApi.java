@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller.docs;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.SingleChangeRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
@@ -15,6 +16,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 
 @Tag(name = "2. 서버 사용 신청", description = "서버 사용 신청 API")
 public interface RequestApi {
@@ -30,7 +33,7 @@ public interface RequestApi {
                     "Base64 -> [서버] 인증 (sha-512) -> OK!"
     )
     @ApiResponse(
-            responseCode = "200",
+            responseCode = "201",
             description = "신청 생성 성공",
             content = @Content(schema = @Schema(implementation = SaveRequestResponseDTO.class))
     )
@@ -39,6 +42,18 @@ public interface RequestApi {
             Long userId,
             @RequestBody(description = "서버 사용 신청 DTO", required = true)
             @Valid SaveRequestRequestDTO dto
+    );
+
+    @Operation(
+            summary = "서버 사용 변경 요청 생성",
+            description = "특정 신청에 대한 변경 요청(기간 연장, 포트 변경 등)을 생성합니다."
+    )
+    @ApiResponse(responseCode = "200", description = "변경 요청 생성 성공")
+    @PostMapping("/{requestId}/change")
+    ResponseEntity<SuccessResponse<?>> createChangeRequest(
+            @Parameter(hidden = true) Long userId,
+            @PathVariable @Parameter(description = "변경 대상 신청 ID") Long requestId,
+            @RequestBody(description = "변경 요청 DTO", required = true) @Valid SingleChangeRequestDTO dto
     );
 
     @Operation(

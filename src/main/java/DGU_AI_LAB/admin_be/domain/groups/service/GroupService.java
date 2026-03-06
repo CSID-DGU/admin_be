@@ -105,8 +105,9 @@ public class GroupService {
         try {
             log.info("[createGroup] 외부 그룹 생성 API 호출 시작: {}", apiDto);
 
-            groupCreationWebClient.post()
-                    .uri("/accounts/addgroup")
+            groupCreationWebClient
+                    .put()
+                    .uri("/accounts/groups")
                     .bodyValue(apiDto)
                     .retrieve()
                     .bodyToMono(Map.class)

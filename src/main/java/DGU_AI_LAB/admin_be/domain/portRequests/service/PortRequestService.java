@@ -70,6 +70,19 @@ public class PortRequestService {
     }
 
     @Transactional
+    public PortRequests savePort(Request request, ResourceGroup resourceGroup,
+                                 Integer internalPort, Integer externalPort, String usagePurpose) {
+        PortRequests portRequest = PortRequests.builder()
+                .request(request)
+                .resourceGroup(resourceGroup)
+                .portNumber(externalPort)
+                .internalPort(internalPort)
+                .usagePurpose(usagePurpose)
+                .build();
+        return portRequestRepository.save(portRequest);
+    }
+
+    @Transactional
     public void activatePortRequest(Long portRequestId) {
         PortRequests portRequest = portRequestRepository.findById(portRequestId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
