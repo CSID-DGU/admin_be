@@ -27,6 +27,7 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -50,7 +51,6 @@ public class RequestSchedulerServiceTest {
     @MockitoBean
     private UbuntuAccountService ubuntuAccountService;
 
-    // --- Repositories ---
     @Autowired private RequestRepository requestRepository;
     @Autowired private UserRepository userRepository;
     @Autowired private UsedIdRepository usedIdRepository;
@@ -72,6 +72,8 @@ public class RequestSchedulerServiceTest {
     private void deleteTestUser() {
         userRepository.findByEmail("test@dgu.ac.kr").ifPresent(user -> {
             requestRepository.deleteAllInBatch(requestRepository.findAllByUser(user));
+            List<UsedId> testUsedIds = usedIdRepository.findAllById(List.of(1000L, 1001L, 1002L, 1003L, 1004L));
+            usedIdRepository.deleteAll(testUsedIds);
             userRepository.deleteById(user.getUserId());
         });
     }

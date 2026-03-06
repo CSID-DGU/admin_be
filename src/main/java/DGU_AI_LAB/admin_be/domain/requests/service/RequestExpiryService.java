@@ -36,13 +36,12 @@ public class RequestExpiryService {
         String ubuntuUsername = request.getUbuntuUsername();
         User user = request.getUser();
 
-        ubuntuAccountService.deleteUbuntuAccount(ubuntuUsername);
-
         UsedId usedId = request.getUbuntuUid();
         if (usedId != null) {
             request.assignUbuntuUid(null);
             idAllocationService.releaseId(usedId);
         }
+        ubuntuAccountService.deleteUbuntuAccount(ubuntuUsername);
 
         request.delete();
         eventPublisher.publishEvent(new RequestExpiredEvent(user, ubuntuUsername, serverName));
