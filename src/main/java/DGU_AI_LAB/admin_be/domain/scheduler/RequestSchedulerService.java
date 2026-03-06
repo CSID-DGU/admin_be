@@ -4,19 +4,11 @@ import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
-import DGU_AI_LAB.admin_be.domain.requests.service.PodService;
-import DGU_AI_LAB.admin_be.domain.requests.service.UbuntuAccountService;
-import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
-import DGU_AI_LAB.admin_be.domain.usedIds.service.IdAllocationService;
+import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
-import DGU_AI_LAB.admin_be.error.ErrorCode;
-import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
-import DGU_AI_LAB.admin_be.global.event.RequestExpiredEvent;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationContext;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,11 +27,7 @@ public class RequestSchedulerService {
 
     private final RequestRepository requestRepository;
     private final AlarmService alarmService;
-    private final UbuntuAccountService ubuntuAccountService;
-    private final PodService podService;
-    private final IdAllocationService idAllocationService;
-    private final ApplicationEventPublisher eventPublisher;
-    private final ApplicationContext applicationContext;
+    private final RequestExpiryService requestExpiryService;
     private final MessageUtils messageUtils;
 
     @Scheduled(cron = "0 00 08 * * ?", zone = "Asia/Seoul")
@@ -60,8 +48,6 @@ public class RequestSchedulerService {
         List<Request> expiredRequests = requestRepository.findAllWithUserByExpiredDateBefore(now);
         if (expiredRequests.isEmpty()) return;
 
-        RequestSchedulerService self = applicationContext.getBean(RequestSchedulerService.class);
-
         for (Request request : expiredRequests) {
             String serverName = "Unknown";
             String username = request.getUbuntuUsername();
@@ -70,38 +56,13 @@ public class RequestSchedulerService {
                 if (request.getResourceGroup() != null) {
                     serverName = request.getResourceGroup().getServerName();
                 }
-                self.deleteExpiredRequest(request.getRequestId());
+                requestExpiryService.deleteExpiredRequest(request.getRequestId());
 
             } catch (Exception e) {
                 log.error("계정 삭제 실패 (ID: {}): {}", request.getRequestId(), e.getMessage());
                 sendFailureAlertToAdmin(serverName, username, e.getMessage());
             }
         }
-    }
-
-    @Transactional
-    public void deleteExpiredRequest(Long requestId) {
-        Request request = requestRepository.findById(requestId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
-
-        if (request.getStatus() != Status.FULFILLED) return;
-
-        String serverName = request.getResourceGroup().getServerName();
-        String ubuntuUsername = request.getUbuntuUsername();
-        User user = request.getUser();
-
-        podService.deletePod(request.getPodName());
-        ubuntuAccountService.deleteUbuntuAccount(ubuntuUsername);
-
-        UsedId usedId = request.getUbuntuUid();
-        if (usedId != null) {
-            request.assignUbuntuUid(null);
-            idAllocationService.releaseId(usedId);
-        }
-
-        request.delete();
-        eventPublisher.publishEvent(new RequestExpiredEvent(user, ubuntuUsername, serverName));
-        log.info("삭제 트랜잭션 성공: {}", ubuntuUsername);
     }
 
     @Transactional(readOnly = true)
@@ -152,6 +113,3 @@ public class RequestSchedulerService {
         return "SERVER";
     }
 }
-
-
-

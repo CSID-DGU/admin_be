@@ -15,6 +15,8 @@ import DGU_AI_LAB.admin_be.domain.usedIds.repository.UsedIdRepository;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
@@ -25,6 +27,7 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -48,7 +51,6 @@ public class RequestSchedulerServiceTest {
     @MockitoBean
     private UbuntuAccountService ubuntuAccountService;
 
-    // --- Repositories ---
     @Autowired private RequestRepository requestRepository;
     @Autowired private UserRepository userRepository;
     @Autowired private UsedIdRepository usedIdRepository;
@@ -56,6 +58,25 @@ public class RequestSchedulerServiceTest {
     @Autowired private ContainerImageRepository containerImageRepository;
 
     private final LocalDateTime MOCK_NOW = LocalDateTime.of(2025, 11, 10, 10, 30, 0);
+
+    @BeforeEach
+    void cleanUpTestData() {
+        deleteTestUser();
+    }
+
+    @AfterEach
+    void tearDown() {
+        deleteTestUser();
+    }
+
+    private void deleteTestUser() {
+        userRepository.findByEmail("test@dgu.ac.kr").ifPresent(user -> {
+            requestRepository.deleteAllInBatch(requestRepository.findAllByUser(user));
+            List<UsedId> testUsedIds = usedIdRepository.findAllById(List.of(1000L, 1001L, 1002L, 1003L, 1004L));
+            usedIdRepository.deleteAll(testUsedIds);
+            userRepository.deleteById(user.getUserId());
+        });
+    }
 
     @Test
     @DisplayName("스케줄러 통합 테스트: 만료 삭제(이벤트) 및 1/3/7일 전 알림 발송 검증")
