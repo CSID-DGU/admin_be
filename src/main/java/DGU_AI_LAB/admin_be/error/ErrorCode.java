@@ -87,6 +87,7 @@ public enum ErrorCode {
     GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "지정된 그룹을 찾을 수 없습니다."),
     UID_ALLOCATION_FAILED(HttpStatus.BAD_REQUEST, "UID를 할당에 실패했습니다."),
     DUPLICATE_USERNAME(HttpStatus.CONFLICT, "이미 사용하고 있는 username입니다. 같은 사용자이더라도 다른 username을 입력해주세요."),
+    ACCOUNT_DISABLED(HttpStatus.NOT_FOUND,"비활성화된 유저입니다. 관리자에게 문의하세요."),
 
     SLACK_USER_NOT_FOUND(HttpStatus.NOT_FOUND, "Slack 사용자를 찾을 수 없습니다."),
     SLACK_USER_EMAIL_NOT_MATCH(HttpStatus.NOT_FOUND, "이메일이 일치하는 Slack 사용자를 찾을 수 없습니다."),
@@ -141,6 +142,12 @@ public enum ErrorCode {
     UBUNTU_USER_DELETION_FAILED(HttpStatus.BAD_GATEWAY, "우분투 계정 삭제에 실패했습니다."),
     USER_CREATION_FAILED(HttpStatus.BAD_GATEWAY, "사용자 계정 생성에 실패했습니다."),
     INVALID_USERNAME_FORMAT(HttpStatus.BAD_REQUEST, "잘못된 사용자명 형식입니다."),
+
+    /**
+     * Pod Error
+     */
+    POD_CREATION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 생성 API 요청에 실패했습니다."),
+    POD_DELETION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 삭제 API 요청에 실패했습니다."),
 
     /**
      * Port Request Error

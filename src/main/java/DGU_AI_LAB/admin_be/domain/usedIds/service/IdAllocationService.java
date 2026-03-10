@@ -4,7 +4,10 @@ import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.usedIds.entity.CounterKey;
+import DGU_AI_LAB.admin_be.domain.usedIds.entity.IdCounter;
 import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
+import DGU_AI_LAB.admin_be.domain.usedIds.repository.IdCounterRepository;
 import DGU_AI_LAB.admin_be.domain.usedIds.repository.UsedIdRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -22,14 +25,11 @@ import java.util.Optional;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class IdAllocationService {
 
-    private static final long UID_BASE = 10_000L;
-    private static final int MAX_RETRY = 5;
-    private static final long GID_BASE = 2_000L;
-    private static final long GID_MAX_VALUE = 65535L;
-
     private final UsedIdRepository usedIdRepository;
+    private final IdCounterRepository idCounterRepository;
     private final GroupRepository groupRepository;
     private final RequestRepository requestRepository;
 
@@ -48,7 +48,7 @@ public class IdAllocationService {
                 .orElseGet(this::allocateNewUid);
 
         Group primaryGroup = groupRepository.findById(uid.getIdValue())
-                .orElseGet(() -> createGroupWithSameId(username, uid.getIdValue()));
+                .orElseGet(() -> createPrimaryGroup(username, uid.getIdValue()));
 
         return new AllocationResult(uid, primaryGroup);
     }
@@ -59,58 +59,42 @@ public class IdAllocationService {
                 .map(Request::getUbuntuUid);
     }
 
-    // 새 UID 생성
     private UsedId allocateNewUid() {
-        for (int i = 0; i < MAX_RETRY; i++) {
-            long currentMax = usedIdRepository.findMaxIdValue().orElse(UID_BASE - 1L);
-            long candidate = Math.max(UID_BASE, currentMax + 1);
-            try {
-                return usedIdRepository.saveAndFlush(UsedId.builder().idValue(candidate).build());
-            } catch (DataIntegrityViolationException ignore) {}
-        }
-        throw new BusinessException(ErrorCode.UID_ALLOCATION_FAILED);
+        IdCounter counter = idCounterRepository.findByKey(CounterKey.UID)
+                .orElseThrow(() -> new BusinessException(ErrorCode.UID_ALLOCATION_FAILED));
+        long uid = counter.allocateOne();
+        idCounterRepository.saveAndFlush(counter);
+        return usedIdRepository.saveAndFlush(UsedId.builder().idValue(uid).build());
     }
 
     /**
      * 새로운 GID를 할당하고 UsedId 테이블에 저장합니다.
+     * IdCounter에 비관적 락을 적용하여 동시성을 보장합니다.
      */
     @Transactional
     public Long allocateNewGid() {
-        for (int i = 0; i < MAX_RETRY; i++) {
-            // GID 범위 내에서 최대값을 찾습니다.
-            Long currentMax = usedIdRepository.findMaxIdValueInRange(GID_BASE, GID_MAX_VALUE)
-                    .orElse(GID_BASE - 1L);
+        IdCounter counter = idCounterRepository.findByKey(CounterKey.SHARED_GID)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GID_ALLOCATION_FAILED));
 
-            long candidate = Math.max(GID_BASE, currentMax + 1);
+        long gid = counter.allocateOne(); // 범위 초과 시 NO_AVAILABLE_RESOURCES 예외 발생
+        idCounterRepository.saveAndFlush(counter);
 
-            if (candidate > GID_MAX_VALUE) {
-                throw new BusinessException(ErrorCode.GID_ALLOCATION_FAILED);
-            }
-
-            try {
-                usedIdRepository.saveAndFlush(UsedId.builder().idValue(candidate).build());
-                return candidate;
-            } catch (DataIntegrityViolationException ignore) {}
+        try {
+            usedIdRepository.saveAndFlush(UsedId.builder().idValue(gid).build());
+        } catch (DataIntegrityViolationException e) {
+            throw new BusinessException(ErrorCode.GID_ALLOCATION_FAILED);
         }
-        throw new BusinessException(ErrorCode.GID_ALLOCATION_FAILED);
+
+        return gid;
     }
 
-
-    private Group createGroupWithSameId(String username, long uidValue) {
-        Optional<Group> existing = groupRepository.findById(uidValue);
-        if (existing.isPresent()) return existing.get();
-
-        UsedId gidUsedId = usedIdRepository.findById(uidValue)
-                .orElseGet(() -> usedIdRepository.saveAndFlush(
-                        UsedId.builder().idValue(uidValue).build()
-                ));
-
-        Group group = Group.builder()
-                .groupName(username)
-                .ubuntuGid(uidValue)
-                .build();
-
-        return groupRepository.saveAndFlush(group);
+    private Group createPrimaryGroup(String username, long uidValue) {
+        return groupRepository.saveAndFlush(
+                Group.builder()
+                        .groupName(username)
+                        .ubuntuGid(uidValue)
+                        .build()
+        );
     }
 
     /**
@@ -124,7 +108,6 @@ public class IdAllocationService {
             return;
         }
 
-        // Request와의 연관관계는 스케줄러에서 (request.assignUbuntuUid(null)) 해제합니다.
         try {
             usedIdRepository.delete(usedId);
             log.info("UsedId 반환 (삭제) 성공: {}", usedId.getIdValue());

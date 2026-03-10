@@ -65,9 +65,15 @@ public class Request extends BaseTimeEntity {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY, cascade = CascadeType.REMOVE)
     @JoinColumn(name = "ubuntuUid", referencedColumnName = "id_value", nullable = true)
     private UsedId ubuntuUid;
+
+    @Column(name = "pod_name", length = 255)
+    private String podName;
+
+    @Column(name = "node_name", length = 100)
+    private String nodeName;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "rsgroup_id", nullable = false)
@@ -162,6 +168,11 @@ public class Request extends BaseTimeEntity {
 
     public void assignUbuntuUid(UsedId uid) {
         this.ubuntuUid = uid;
+    }
+
+    public void assignPodInfo(String podName, String nodeName) {
+        this.podName = podName;
+        this.nodeName = nodeName;
     }
 
     public void addGroup(Group group) {

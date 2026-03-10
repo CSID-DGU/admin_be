@@ -1,69 +1,75 @@
 package DGU_AI_LAB.admin_be.domain.alarm.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.dto.SlackMessageDto;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.log4j.Log4j2;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.*;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
-
-import java.util.Map;
 
 /**
- * 사용자(이메일, DM) 및 관리자(Slack 채널)에게 알림을 전송하는 서비스
+ * [알림 통합 관리 서비스]
+ * 시스템 내 모든 알림(Slack, Email) 발송 요청의 진입점 역할을 합니다.
  */
 @Service
 @RequiredArgsConstructor
-@Log4j2
+@Slf4j
 public class AlarmService {
 
-    // --- Slack Webhook (관리자 채널) ---
-    @Value("${slack-webhook-url.monitoring}")
-    private String defaultWebhookUrl;
+    /**
+     * 모든 클래스에서 알림에 들어갈 메시지는 MessageUtil에서 관리하고 있어요.
+     * 알림 문구를 수정하려면, resources/messages.properties에서 수정해주세요.
+     */
+
+    @Value("${slack-webhook-url.noti}") // 사용자 알림 로그용
+    private String notiLogWebhookUrl;
+
+    @Value("${slack-webhook-url.error-log}")
+    private String errorLogWebhookUrl; // 중요한 에러 로그용
+
+    // 관리자 승인 채널 (farm & lab)
     @Value("${slack-webhook-url.farm-admin}")
     private String farmAdminWebhookUrl;
     @Value("${slack-webhook-url.lab-admin}")
     private String labAdminWebhookUrl;
 
-    // --- 외부 서비스 의존성 ---
-    private final JavaMailSender mailSender;
-    private final SlackApiService slackApiService;
-    private final RestTemplate restTemplate = new RestTemplate();
-
     @Value("${spring.mail.username}")
     private String from;
 
-    /**
-     * Slack Webhook을 사용하여 특정 채널에 메시지를 전송합니다.
-     */
+    private final JavaMailSender mailSender;
+    private final SlackApiService slackApiService;
+    private final RedisTemplate<String, Object> redisTemplate;
+    private final MessageUtils messageUtils;
+
+    private static final String SLACK_QUEUE_KEY = "slack:notification:queue";
+
+    // --- Public Methods ---
     public void sendSlackAlert(String message, String webhookUrl) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
+        String urlToUse = (webhookUrl != null && !webhookUrl.isEmpty()) ? webhookUrl : errorLogWebhookUrl;
 
-        Map<String, String> payload = Map.of("text", message);
-        HttpEntity<Map<String, String>> request = new HttpEntity<>(payload, headers);
-
-        String urlToUse = (webhookUrl != null && !webhookUrl.isEmpty()) ? webhookUrl : defaultWebhookUrl;
-
-        try {
-            ResponseEntity<String> response = restTemplate.postForEntity(urlToUse, request, String.class);
-            if (!response.getStatusCode().is2xxSuccessful()) {
-                log.warn("Slack 알림 전송 실패: {}", response.getStatusCode());
-            } else {
-                log.debug("Slack 알림 전송 성공");
-            }
-        } catch (Exception e) {
-            log.error("Slack 알림 전송 중 예외 발생: (URL: {})", urlToUse, e);
-        }
+        SlackMessageDto dto = SlackMessageDto.builder()
+                .type(SlackMessageDto.MessageType.WEBHOOK)
+                .webhookUrl(urlToUse)
+                .message(message)
+                .build();
+        pushToQueue(dto);
     }
 
-    /**
-     * 사용자에게 이메일을 전송합니다.
-     */
+    public void sendDMAlert(String username, String email, String message) {
+        SlackMessageDto dto = SlackMessageDto.builder()
+                .type(SlackMessageDto.MessageType.DM)
+                .username(username)
+                .email(email)
+                .message(message)
+                .build();
+        pushToQueue(dto);
+    }
+
     public void sendMailAlert(String to, String subject, String body) {
         try {
             SimpleMailMessage message = new SimpleMailMessage();
@@ -72,121 +78,98 @@ public class AlarmService {
             message.setSubject(subject);
             message.setText(body);
             mailSender.send(message);
-            log.info("메일 전송 성공: 수신자={}, 제목={}", to, subject);
         } catch (Exception e) {
             log.error("메일 전송 실패: 수신자={}", to, e);
+            sendSlackAlert("🚨 메일 전송 실패! 수신자: " + to, errorLogWebhookUrl);
         }
     }
 
     /**
-     * 사용자에게 Slack DM을 전송합니다.
-     */
-    public void sendDMAlert(String username, String email, String message) {
-        slackApiService.sendDM(username, email, message);
-    }
-
-    /**
-     * 사용자에게 DM과 메일을 모두 전송합니다. (주로 사용자 대상 알림)
+     * [사용자 알림 + 관리자 로그]
+     * 사용자에게는 실제 알림을, 관리자 'noti' 채널에는 로그를 남깁니다.
      */
     public void sendAllAlerts(String username, String email, String subject, String message) {
-        try {
-            sendMailAlert(email, subject, message);
-        } catch (Exception e) {
-            log.error("sendAllAlerts 중 메일 전송 실패: {}", email, e);
-        }
+        // 1. 사용자 발송
+        sendMailAlert(email, subject, message);
+        sendDMAlert(username, email, message);
 
+        // 2. 관리자 로그 채널(noti)에 기록
+        sendMonitoringLog(username, email, subject);
+    }
+
+    // --- Helper / Formatting Methods ---
+    /**
+     * noti 채널에 짧은 로그(영수증)를 남기는 메서드
+     */
+    private void sendMonitoringLog(String username, String email, String subject) {
         try {
-            sendDMAlert(username, email, message);
+            // properties: notification.monitor.log
+            String logMessage = messageUtils.get("notification.monitor.log", username, email, subject);
+
+            // 명시적으로 'noti' 채널 URL 사용
+            sendSlackAlert(logMessage, notiLogWebhookUrl);
         } catch (Exception e) {
-            log.error("sendAllAlerts 중 DM 전송 실패: {}", username, e);
+            log.warn("로그 전송 실패", e);
         }
     }
 
-    /**
-     * serverName에 따라 적절한 Webhook URL을 반환합니다.
-     */
     private String getAdminWebhookUrl(String serverName) {
-        if ("FARM".equalsIgnoreCase(serverName)) {
-            return farmAdminWebhookUrl;
-        } else if ("LAB".equalsIgnoreCase(serverName)) {
-            return labAdminWebhookUrl;
-        } else {
-            // FARM이나 LAB이 아닌 잘못된 입력값이 있을 경우, 기본 모니토링 채널로 전송
-            log.warn("알 수 없는 serverName '{}'에 대한 요청 알림입니다. 기본 채널로 전송합니다.", serverName);
-            return defaultWebhookUrl;
-        }
+        if ("FARM".equalsIgnoreCase(serverName)) return farmAdminWebhookUrl;
+        else if ("LAB".equalsIgnoreCase(serverName)) return labAdminWebhookUrl;
+            // 알 수 없는 서버라면 에러 채널로 보내서 관리자가 확인하게 합니다.
+        else return errorLogWebhookUrl;
     }
 
-    /**
-     * 관리자 채널(FARM/LAB)로 신규 신청 알림을 보냅니다.
-     */
     public void sendNewRequestNotification(Request request) {
         String serverName = request.getResourceGroup().getServerName();
-        String targetWebhookUrl = getAdminWebhookUrl(serverName); // 중복 로직 제거
+        String message = messageUtils.get("notification.admin.new-request",
+                request.getUser().getName(), serverName);
 
-        // 슬랙 메시지 내용을 생성합니다.
-        String message = String.format(
-                "🔔 새로운 서버 사용 신청이 도착했습니다! 🔔\n" +
-                        "------------------------------------------\n" +
-                        "▶ 신청자: %s (%s)\n" +
-                        "▶ 신청 서버: %s\n" +
-                        "▶ Ubuntu 사용자 이름: %s\n" +
-                        "▶ 요청 이미지: %s:%s\n" +
-                        "▶ 요청 볼륨: %dGiB\n" +
-                        "------------------------------------------\n" +
-                        "관리자 페이지에서 확인 후 승인해 주세요.",
-                request.getUser().getName(),
-                request.getUser().getStudentId(),
-                serverName,
-                request.getUbuntuUsername(),
-                request.getContainerImage().getImageName(),
-                request.getContainerImage().getImageVersion(),
-                request.getVolumeSizeGiB()
-        );
-
-        sendSlackAlert(message, targetWebhookUrl);
+        sendSlackAlert(message, getAdminWebhookUrl(serverName));
     }
 
-    /**
-     * 사용자에게 서버 사용 신청 승인 알림을 보냅니다. (DM + Email)
-     */
     public void sendApprovalNotification(Request request) {
         User user = request.getUser();
-        String subject = "[DGU AI LAB] 서버 사용 신청이 승인되었습니다.";
-        String message = String.format(
-                """
-                🎉 %s님의 서버 사용 신청이 성공적으로 승인되었습니다! 🎉
-                
-                아래 정보를 사용하여 서버에 접속해 주세요.
-                -------------------------------------
-                - Ubuntu 사용자 이름: %s
-                - 할당된 서버: %s
-                - 컨테이너 이미지: %s:%s
-                - 할당된 볼륨 크기: %d GiB
-                - 만료일: %s
-                -------------------------------------
-                
-                궁금한 점이 있다면 관리자에게 문의해 주세요.
-                """,
-                user.getName(),
-                request.getUbuntuUsername(),
-                request.getResourceGroup().getServerName(),
-                request.getContainerImage().getImageName(),
-                request.getContainerImage().getImageVersion(),
-                request.getVolumeSizeGiB(),
-                request.getExpiresAt().toLocalDate().toString()
-        );
+        String subject = messageUtils.get("notification.approval.subject");
+        String message = messageUtils.get("notification.approval.body", user.getName());
 
         sendAllAlerts(user.getName(), user.getEmail(), subject, message);
     }
 
-    /**
-     * 서버 이름에 따라 적절한 관리자 채널로 메시지를 보냅니다.
-     * @param serverName "FARM", "LAB" 등
-     * @param message 보낼 메시지
-     */
     public void sendAdminSlackNotification(String serverName, String message) {
-        String targetWebhookUrl = getAdminWebhookUrl(serverName);
-        sendSlackAlert(message, targetWebhookUrl);
+        sendSlackAlert(message, getAdminWebhookUrl(serverName));
+    }
+
+    // --- Fallback Logic ---
+    private void pushToQueue(SlackMessageDto dto) {
+        try {
+            redisTemplate.opsForList().rightPush(SLACK_QUEUE_KEY, dto);
+            log.debug("Slack 큐 적재: {}", dto.getType());
+        } catch (Exception e) {
+            log.error("⚠️ Redis 장애! 직접 전송 시도. ({})", e.getMessage());
+            handleFallbackDirectSend(dto);
+        }
+    }
+
+    private void handleFallbackDirectSend(SlackMessageDto dto) {
+        String notice = messageUtils.get("notification.error.redis-fallback");
+        String fullMessage = dto.getMessage() + notice;
+
+        try {
+            if (dto.getType() == SlackMessageDto.MessageType.WEBHOOK) {
+                slackApiService.sendWebhook(dto.getWebhookUrl(), fullMessage);
+            } else {
+                slackApiService.sendDM(dto.getUsername(), dto.getEmail(), fullMessage);
+            }
+
+            // Fallback이 작동했다는 건 시스템이 불안정하다는 뜻이므로 에러 로그 채널에 알립니다.
+            if (!dto.getWebhookUrl().equals(errorLogWebhookUrl)) {
+                slackApiService.sendWebhook(errorLogWebhookUrl, "⚠️ Redis 장애 발생 (Direct Send 작동됨)");
+            }
+
+            log.info("✅ Fallback 직접 전송 성공");
+        } catch (Exception ex) {
+            log.error("❌ Fallback 실패", ex);
+        }
     }
 }

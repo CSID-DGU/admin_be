@@ -1,8 +1,13 @@
 package DGU_AI_LAB.admin_be.domain.users.entity;
 
+import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
 import jakarta.persistence.*;
 import lombok.*;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "users")
@@ -41,6 +46,15 @@ public class User extends BaseTimeEntity {
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
 
+    @Column(name = "last_login_at")
+    private LocalDateTime lastLoginAt;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    @OneToMany(mappedBy = "user", cascade = CascadeType.REMOVE, orphanRemoval = true)
+    private List<Request> requests = new ArrayList<>();
+
     @Builder
     public User(String email, String password, String name, String studentId, String phone, String department) {
         this.email = email;
@@ -49,6 +63,7 @@ public class User extends BaseTimeEntity {
         this.studentId = studentId;
         this.phone = phone;
         this.department = department;
+        this.lastLoginAt = LocalDateTime.now();
     }
 
     // ===== 비즈니스 메서드 =====
@@ -64,5 +79,14 @@ public class User extends BaseTimeEntity {
 
     public void updatePhone(String newPhone) {
         this.phone = newPhone;
+    }
+
+    public void recordLogin() {
+        this.lastLoginAt = LocalDateTime.now();
+    }
+
+    public void withdraw() {
+        this.isActive = false;
+        this.deletedAt = LocalDateTime.now();
     }
 }

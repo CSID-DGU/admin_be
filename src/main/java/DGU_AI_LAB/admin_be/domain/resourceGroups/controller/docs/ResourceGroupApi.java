@@ -1,9 +1,11 @@
 package DGU_AI_LAB.admin_be.domain.resourceGroups.controller.docs;
 
 import DGU_AI_LAB.admin_be.domain.gpus.dto.response.GpuTypeResponseDTO;
+import DGU_AI_LAB.admin_be.domain.resourceGroups.dto.response.ResourceGroupResponseDTO;
 import DGU_AI_LAB.admin_be.error.dto.ErrorResponse;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -40,4 +42,18 @@ public interface ResourceGroupApi {
     )
     @GetMapping("/gpu-types")
     ResponseEntity<SuccessResponse<?>> getGpuTypeResources();
+
+    @Operation(
+            summary = "리소스 그룹 목록 조회",
+            description = "서버 신청 시 선택 가능한 모든 리소스 그룹 목록을 조회합니다.",
+            responses = {
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "성공적으로 리소스 그룹 목록을 조회했습니다.",
+                            content = @Content(array = @ArraySchema(schema = @Schema(implementation = ResourceGroupResponseDTO.class)))
+                    )
+            }
+    )
+    @GetMapping("/groups")
+    ResponseEntity<SuccessResponse<?>> getAvailableResourceGroups();
 }
