@@ -4,9 +4,8 @@ import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 
-@Schema(description = "리소스 그룹 조회 응답 DTO")
-@Builder
 @Schema(description = "리소스 그룹 응답 DTO")
+@Builder
 public record ResourceGroupResponseDTO(
         @Schema(description = "리소스 그룹 ID", example = "1")
         Integer rsgroupId,

@@ -8,9 +8,8 @@ import lombok.Builder;
 
 import java.util.List;
 
-@Schema(description = "Config Server용 신청 승인 정보 응답 DTO")
-@Builder
 @Schema(description = "인프라 요청 승인 정보 응답 DTO")
+@Builder
 public record AcceptInfoResponseDTO(
 
         @Schema(description = "Ubuntu 사용자명", example = "test2014")
@@ -36,7 +35,6 @@ public record AcceptInfoResponseDTO(
 ) {
     @Schema(description = "GPU 노드 정보")
     @Builder
-    @Schema(description = "GPU 노드 정보")
     public record NodeDTO(
             @Schema(description = "노드 ID", example = "FARM1")
             String node_name,
@@ -50,7 +48,6 @@ public record AcceptInfoResponseDTO(
 
     @Schema(description = "추가 포트 정보")
     @Builder
-    @Schema(description = "추가 포트 정보")
     public record AdditionalPortDTO(
             @Schema(description = "내부 포트 번호", example = "8888")
             Integer internal_port,
