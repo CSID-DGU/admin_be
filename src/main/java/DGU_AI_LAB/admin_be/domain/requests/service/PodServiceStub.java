@@ -17,7 +17,7 @@ import java.util.List;
 @Slf4j
 @Service
 @Primary
-@Profile("local")
+@Profile({"local", "stub"})
 public class PodServiceStub extends PodService {
 
     public PodServiceStub(@Qualifier("configWebClient") WebClient webClient) {
