@@ -6,9 +6,8 @@ import lombok.Builder;
 
 import java.time.LocalDateTime;
 
-@Schema(description = "사용자 목록 조회 응답 DTO")
-@Builder
 @Schema(description = "사용자 요약 응답 DTO")
+@Builder
 public record UserSummaryDTO(
         @Schema(description = "사용자 고유 ID", example = "1")
         Long userId,
