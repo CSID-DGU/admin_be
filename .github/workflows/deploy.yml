@@ -54,7 +54,7 @@ jobs:
               --set image.repository=${{ secrets.DOCKER_USERNAME }}/admin-prod \
               --set image.tag=latest \
               --set env.application="$(echo "${{ secrets.APPLICATION }}" | base64 -w 0)" \
-              --set args[0]="--spring.profiles.active=prod,stub" \
+              --set args[0]="--spring.profiles.active=prod\,stub" \
               --set forceReload=$(date +%s)
 
             echo "🎉 배포 완료"
