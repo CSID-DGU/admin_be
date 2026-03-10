@@ -10,9 +10,8 @@ import lombok.Builder;
 
 import java.time.LocalDateTime;
 
-@Schema(description = "변경 요청 조회 응답 DTO")
-@Builder
 @Schema(description = "변경 요청 응답 DTO")
+@Builder
 public record ChangeRequestResponseDTO(
         @Schema(description = "변경 요청 고유 ID", example = "1")
         Long changeRequestId,
@@ -50,9 +49,8 @@ public record ChangeRequestResponseDTO(
                 .build();
     }
 
-    @Schema(description = "요청자 요약 정보")
-    @Builder
     @Schema(description = "변경 요청자 정보")
+    @Builder
     public record AdminUserInfo(
             @Schema(description = "사용자 고유 ID", example = "1")
             Long userId,

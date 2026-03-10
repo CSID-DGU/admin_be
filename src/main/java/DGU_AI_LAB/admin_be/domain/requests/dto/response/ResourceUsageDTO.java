@@ -4,9 +4,8 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 
-@Schema(description = "리소스 사용량 조회 응답 DTO")
-@Builder
 @Schema(description = "리소스 사용량 응답 DTO")
+@Builder
 public record ResourceUsageDTO(
         @Schema(description = "사용자 고유 ID", example = "1")
         Long userId,

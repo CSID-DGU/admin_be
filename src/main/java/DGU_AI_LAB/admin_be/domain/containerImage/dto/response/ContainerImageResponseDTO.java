@@ -6,9 +6,8 @@ import lombok.Builder;
 
 import java.time.LocalDateTime;
 
-@Schema(description = "컨테이너 이미지 조회 응답 DTO")
-@Builder
 @Schema(description = "컨테이너 이미지 응답 DTO")
+@Builder
 public record ContainerImageResponseDTO(
         @Schema(description = "이미지 고유 ID", example = "1")
         Long imageId,
