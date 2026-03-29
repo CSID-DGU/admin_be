@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -75,12 +76,14 @@ class UserRepositoryTest {
         @Test
         @DisplayName("마지막 로그인이 기준일 이전인 활성 유저를 조회한다")
         void findInactiveUsers_returnsUsersInactiveBeforeThreshold() {
-            // 3개월+1일 전에 마지막 로그인한 유저 설정 (reflection 사용)
-            LocalDateTime thresholdDate = LocalDateTime.now().minusMonths(3);
+            ReflectionTestUtils.setField(user1, "lastLoginAt", LocalDateTime.now().minusMonths(4));
+            userRepository.save(user1);
+            userRepository.flush();
 
+            LocalDateTime thresholdDate = LocalDateTime.now().minusMonths(3);
             List<User> result = userRepository.findInactiveUsers(thresholdDate);
-            // 새로 가입한 유저들은 현재 시간으로 lastLoginAt이 설정되어 있어 비활성 대상 아님
-            assertThat(result).isEmpty();
+
+            assertThat(result).extracting(User::getEmail).contains("active@dgu.ac.kr");
         }
     }
 
@@ -89,32 +92,26 @@ class UserRepositoryTest {
     class FindUsersForHardDelete {
 
         @Test
-        @DisplayName("Soft delete된 지 1년이 지난 유저를 조회한다")
-        void findUsersForHardDelete_returnsUsersForHardDelete() {
-            // Soft delete 처리
+        @DisplayName("Soft delete 후 1년이 지나지 않은 유저는 Hard delete 대상이 아니다")
+        void findUsersForHardDelete_returnsEmpty_whenDeletedWithinOneYear() {
             user1.withdraw();
             userRepository.save(user1);
             userRepository.flush();
 
-            // 1년 후 기준으로 조회 - 아직 1년이 안 됐으므로 조회 안 됨
-            List<User> result = userRepository.findUsersForHardDelete(
-                    LocalDateTime.now().minusDays(1)  // deletedAt < 어제 = 아직 조회 안 됨
-            );
+            List<User> result = userRepository.findUsersForHardDelete(LocalDateTime.now().minusYears(1));
 
             assertThat(result).isEmpty();
         }
 
         @Test
-        @DisplayName("Soft delete 날짜가 기준일 이전인 유저는 Hard delete 대상이다")
-        void findUsersForHardDelete_returnsUser_whenDeletedBeforeThreshold() {
+        @DisplayName("Soft delete된 지 1년이 지난 유저를 Hard delete 대상으로 조회한다")
+        void findUsersForHardDelete_returnsUser_whenDeletedBeforeOneYearThreshold() {
             user1.withdraw();
+            ReflectionTestUtils.setField(user1, "deletedAt", LocalDateTime.now().minusYears(2));
             userRepository.save(user1);
             userRepository.flush();
 
-            // 기준일을 내일로 설정 -> deletedAt < 내일 = 조회됨
-            List<User> result = userRepository.findUsersForHardDelete(
-                    LocalDateTime.now().plusDays(1)
-            );
+            List<User> result = userRepository.findUsersForHardDelete(LocalDateTime.now().minusYears(1));
 
             assertThat(result).hasSize(1);
             assertThat(result.get(0).getEmail()).isEqualTo("active@dgu.ac.kr");
