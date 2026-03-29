@@ -51,7 +51,7 @@
 
 - **목적**: HTTP 요청/응답(상태 코드, JSON 포맷, validation, 예외 → HTTP 매핑)을 빠르게 검증
 - **특징**
-  - 서비스는 `@MockBean`으로 대체
+  - 서비스는 `@MockitoBean`으로 대체
   - Security는 `excludeAutoConfiguration = {SecurityAutoConfiguration.class}`로 비활성화하는 패턴 사용
 
 ### B. 서비스 테스트 (Mockito 단위 테스트)
