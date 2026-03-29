@@ -35,3 +35,4 @@ out/
 
 application.yml
 /.gradle
+.DS_Store
