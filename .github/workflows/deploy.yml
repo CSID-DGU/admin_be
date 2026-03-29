@@ -42,7 +42,7 @@ jobs:
           key: ${{ secrets.K8S_PRIVATE_KEY }}
           script: |
             set -e # 실패 시 즉시 중단
-            export KUBECONFIG=/etc/kubernetes/admin.conf
+            export KUBECONFIG=/etc/kubernetes/ci-deployer.conf
 
             echo "✅ 쿠버네티스 연결 테스트"
             kubectl get nodes
