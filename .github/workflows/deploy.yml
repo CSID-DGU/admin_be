@@ -38,17 +38,17 @@ jobs:
         with:
           host: ${{ secrets.K8S_HOST }}
           port: 8088
-          username: toni
+          username: ${{ secrets.K8S_USERNAME }}
           key: ${{ secrets.K8S_PRIVATE_KEY }}
           script: |
             set -e # 실패 시 즉시 중단
-            export KUBECONFIG=/home/toni/.kube/config
+            export KUBECONFIG=/etc/kubernetes/admin.conf
 
             echo "✅ 쿠버네티스 연결 테스트"
             kubectl get nodes
 
             echo "📦 Helm 차트 배포 (절대 경로 사용)"
-            helm upgrade --install admin-prod /home/toni/admin_be/helm/admin-prod \
+            helm upgrade --install admin-prod /opt/admin_be/helm/admin-prod \
               --namespace default \
               --create-namespace \
               --set image.repository=${{ secrets.DOCKER_USERNAME }}/admin-prod \
