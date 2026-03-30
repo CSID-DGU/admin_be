@@ -34,7 +34,7 @@ jobs:
           docker logout
 
       - name: 🚀 Helm을 통한 쿠버네티스 배포
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.K8S_HOST }}
           port: 8088
