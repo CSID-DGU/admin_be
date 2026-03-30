@@ -1,0 +1,13 @@
+# ~/admin_be/helm/admin-prod/values.yaml
+
+image:
+  repository: dguailab/admin-prod
+  tag: latest
+  pullPolicy: Always #IfNotPresent로 설정 시, 변경사항을 인식하지 못해서 배포 내용 반영이 되지 않음.
+
+service:
+  type: NodePort
+  port: 8080 # Spring Boot용 Port
+  nodePort: 30083 # 외부 접속용 Port
+
+forceReload: "" # CI/CD에서 동적으로 넣어주는 값

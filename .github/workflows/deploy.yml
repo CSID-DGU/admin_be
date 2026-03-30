@@ -62,4 +62,4 @@ jobs:
               --set args[0]="--spring.profiles.active=prod\,stub" \
               --set forceReload=$(date +%s)
 
-            echo "🎉 배포 완료"
+            echo "🎉 배포 완료!"
