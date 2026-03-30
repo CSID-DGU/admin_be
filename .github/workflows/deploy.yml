@@ -42,7 +42,7 @@ jobs:
         uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.K8S_HOST }}
-          port: 8088
+          port: ${{ secrets.K8S_PORT }}
           username: ${{ secrets.K8S_USERNAME }}
           key: ${{ secrets.K8S_PRIVATE_KEY }}
           script: |
