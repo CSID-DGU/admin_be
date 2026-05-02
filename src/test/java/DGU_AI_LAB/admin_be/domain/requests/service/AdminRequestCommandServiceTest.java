@@ -15,8 +15,6 @@ import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
-import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
-import DGU_AI_LAB.admin_be.domain.usedIds.service.IdAllocationService;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -51,7 +49,6 @@ class AdminRequestCommandServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private ContainerImageRepository containerImageRepository;
     @Mock private ResourceGroupRepository resourceGroupRepository;
-    @Mock private IdAllocationService idAllocationService;
     @Mock private ChangeRequestRepository changeRequestRepository;
     @Mock private GroupRepository groupRepository;
     @Mock private PodExternalPortRepository podExternalPortRepository;
@@ -81,7 +78,7 @@ class AdminRequestCommandServiceTest {
         // @RequiredArgsConstructor 생성자 필드 선언 순서대로 주입
         service = new AdminRequestCommandService(
                 alarmService, requestRepository, userRepository, containerImageRepository,
-                resourceGroupRepository, idAllocationService, changeRequestRepository,
+                resourceGroupRepository, changeRequestRepository,
                 groupRepository, podExternalPortRepository, podService, new ObjectMapper(),
                 mockWebClient, mockWebClient
         );
@@ -128,24 +125,12 @@ class AdminRequestCommandServiceTest {
         return request;
     }
 
-    /** 공통 IdAllocation mock 설정 */
-    private void stubIdAllocation(Request request, long uidValue) {
-        UsedId uid = mock(UsedId.class);
-        when(uid.getIdValue()).thenReturn(uidValue);
-        Group primaryGroup = mock(Group.class);
-        when(primaryGroup.getUbuntuGid()).thenReturn(uidValue);
-        when(primaryGroup.getGroupName()).thenReturn("testuser");
-        when(idAllocationService.allocateFor(request))
-                .thenReturn(new IdAllocationService.AllocationResult(uid, primaryGroup));
-    }
-
     @Test
     @DisplayName("승인 시 Pod 응답의 external ports가 PodExternalPortRepository에 올바르게 저장된다")
     void approveRequest_savesPodExternalPortsToNewTable() {
         // Given
         Long requestId = 1L;
         Request request = buildMockedRequest(requestId);
-        stubIdAllocation(request, 10000L);
         stubWebClientPut();
         stubWebClientPost();
 
@@ -191,7 +176,6 @@ class AdminRequestCommandServiceTest {
         // Given
         Long requestId = 2L;
         Request request = buildMockedRequest(requestId);
-        stubIdAllocation(request, 10001L);
         stubWebClientPut();
         stubWebClientPost();
 
@@ -218,7 +202,6 @@ class AdminRequestCommandServiceTest {
         // Given
         Long requestId = 3L;
         Request request = buildMockedRequest(requestId);
-        stubIdAllocation(request, 10002L);
         stubWebClientPut();
         stubWebClientPost();
 

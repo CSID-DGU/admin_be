@@ -9,7 +9,6 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.response.AcceptInfoResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
-import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -45,9 +44,6 @@ class ConfigRequestServiceTest {
         // Given
         String username = "testuser";
 
-        UsedId uid = mock(UsedId.class);
-        when(uid.getIdValue()).thenReturn(10000L);
-
         ContainerImage image = mock(ContainerImage.class);
         when(image.getImageName()).thenReturn("containerssh-guest");
         when(image.getImageVersion()).thenReturn("ubuntu22.04");
@@ -59,7 +55,6 @@ class ConfigRequestServiceTest {
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(1L);
         when(request.getUbuntuUsername()).thenReturn(username);
-        when(request.getUbuntuUid()).thenReturn(uid);
         when(request.getContainerImage()).thenReturn(image);
         when(request.getResourceGroup()).thenReturn(rg);
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
@@ -102,9 +97,6 @@ class ConfigRequestServiceTest {
         // Given
         String username = "testuser2";
 
-        UsedId uid = mock(UsedId.class);
-        when(uid.getIdValue()).thenReturn(10001L);
-
         ContainerImage image = mock(ContainerImage.class);
         when(image.getImageName()).thenReturn("cuda");
         when(image.getImageVersion()).thenReturn("11.8");
@@ -116,7 +108,6 @@ class ConfigRequestServiceTest {
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(2L);
         when(request.getUbuntuUsername()).thenReturn(username);
-        when(request.getUbuntuUid()).thenReturn(uid);
         when(request.getContainerImage()).thenReturn(image);
         when(request.getResourceGroup()).thenReturn(rg);
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
@@ -150,9 +141,6 @@ class ConfigRequestServiceTest {
         // Given
         String username = "testuser3";
 
-        UsedId uid = mock(UsedId.class);
-        when(uid.getIdValue()).thenReturn(10002L);
-
         ContainerImage image = mock(ContainerImage.class);
         when(image.getImageName()).thenReturn("cuda");
         when(image.getImageVersion()).thenReturn("11.8");
@@ -164,7 +152,6 @@ class ConfigRequestServiceTest {
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(3L);
         when(request.getUbuntuUsername()).thenReturn(username);
-        when(request.getUbuntuUid()).thenReturn(uid);
         when(request.getContainerImage()).thenReturn(image);
         when(request.getResourceGroup()).thenReturn(rg);
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
@@ -187,9 +174,6 @@ class ConfigRequestServiceTest {
         // Given
         String username = "testuser4";
 
-        UsedId uid = mock(UsedId.class);
-        when(uid.getIdValue()).thenReturn(10003L);
-
         ContainerImage image = mock(ContainerImage.class);
         when(image.getImageName()).thenReturn("cuda");
         when(image.getImageVersion()).thenReturn("11.8");
@@ -201,7 +185,6 @@ class ConfigRequestServiceTest {
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(4L);
         when(request.getUbuntuUsername()).thenReturn(username);
-        when(request.getUbuntuUid()).thenReturn(uid);
         when(request.getContainerImage()).thenReturn(image);
         when(request.getResourceGroup()).thenReturn(rg);
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());

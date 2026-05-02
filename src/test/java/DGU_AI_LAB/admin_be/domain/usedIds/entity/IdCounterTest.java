@@ -13,7 +13,7 @@ class IdCounterTest {
     @DisplayName("allocateOne: nextValue를 반환하고 1 증가시킨다")
     void allocateOne_returnsCurrentAndIncrements() {
         IdCounter counter = IdCounter.builder()
-                .key(CounterKey.UID)
+                .key(CounterKey.SHARED_GID)
                 .nextValue(10000L)
                 .minValue(10000L)
                 .maxValue(99999L)
@@ -78,7 +78,7 @@ class IdCounterTest {
     @DisplayName("allocateOne: 연속 호출 시 순차적으로 증가한다")
     void allocateOne_sequential_incrementsCorrectly() {
         IdCounter counter = IdCounter.builder()
-                .key(CounterKey.UID)
+                .key(CounterKey.SHARED_GID)
                 .nextValue(10000L)
                 .minValue(10000L)
                 .maxValue(99999L)
