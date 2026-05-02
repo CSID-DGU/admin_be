@@ -1,7 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.groups.entity;
 
-import DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup; // 임포트 추가
-import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
+import DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -25,10 +24,6 @@ public class Group {
 
     @Column(name = "ubuntu_gid", unique = true, nullable = false)
     private Long ubuntuGid;
-
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "ubuntu_gid", referencedColumnName = "id_value", insertable = false, updatable = false)
-    private UsedId usedId;
 
     @OneToMany(mappedBy = "group", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<RequestGroup> requestGroups = new HashSet<>();

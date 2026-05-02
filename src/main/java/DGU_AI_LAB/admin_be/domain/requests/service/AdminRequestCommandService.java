@@ -3,8 +3,6 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
-import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
-import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.*;
@@ -17,7 +15,6 @@ import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
-import DGU_AI_LAB.admin_be.domain.usedIds.service.IdAllocationService;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -52,7 +49,6 @@ public class AdminRequestCommandService {
     private final UserRepository userRepository;
     private final ContainerImageRepository containerImageRepository;
     private final ResourceGroupRepository resourceGroupRepository;
-    private final IdAllocationService idAllocationService;
     private final ChangeRequestRepository changeRequestRepository;
     private final GroupRepository groupRepository;
     private final PodExternalPortRepository podExternalPortRepository;
@@ -100,17 +96,13 @@ public class AdminRequestCommandService {
         if (request.getStatus() != Status.PENDING) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
-        var allocation = idAllocationService.allocateFor(request);
-
         // 1. 사용자 생성 API 호출
         UserCreationRequestDTO userCreationDto = new UserCreationRequestDTO(
                 request.getUbuntuUsername(),
-                allocation.getUid().getIdValue().intValue(),
-                allocation.getPrimaryGroup().getUbuntuGid().intValue(),
                 request.getUbuntuPassword(),
                 request.getUser().getName(),
-                allocation.getPrimaryGroup().getGroupName(),
-                false // sudo 권한은 기본값으로 false를 설정
+                request.getUbuntuUsername(), // primary_group_name = username (Linux 관례)
+                false
         );
 
         try {
@@ -152,12 +144,6 @@ public class AdminRequestCommandService {
         CreatePodResponseDTO podResponse = podService.createPod(request.getUbuntuUsername());
 
         // 4. API 호출이 모두 성공한 후에 DB 업데이트
-        request.assignUbuntuUid(allocation.getUid());
-        boolean alreadyLinked = request.getRequestGroups().stream()
-                .anyMatch(rg -> rg.getGroup().getUbuntuGid().equals(allocation.getPrimaryGroup().getUbuntuGid()));
-        if (!alreadyLinked) {
-            request.addGroup(allocation.getPrimaryGroup());
-        }
         ContainerImage image = containerImageRepository.findById(dto.imageId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
         ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())

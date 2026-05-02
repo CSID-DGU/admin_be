@@ -16,8 +16,6 @@ public record AcceptInfoResponseDTO(
         String username,
         @Schema(description = "컨테이너 이미지 (이름:버전)", example = "cuda:11.8")
         String image,
-        @Schema(description = "Ubuntu UID", example = "10001")
-        Long uid,
         @Schema(description = "Ubuntu GID 목록", example = "[1005, 1006]")
         List<Long> gid,
         @Schema(description = "볼륨 크기 (GiB)", example = "20")
@@ -78,7 +76,6 @@ public record AcceptInfoResponseDTO(
         return AcceptInfoResponseDTO.builder()
                 .username(request.getUbuntuUsername())
                 .image(image.getImageName() + ":" + image.getImageVersion())
-                .uid(request.getUbuntuUid().getIdValue())
                 .gid(
                         request.getRequestGroups().stream()
                                 .map(rg -> rg.getGroup().getUbuntuGid())

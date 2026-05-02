@@ -3,7 +3,6 @@ package DGU_AI_LAB.admin_be.domain.requests.entity;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
-import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -64,10 +63,6 @@ public class Request extends BaseTimeEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
-
-    @ManyToOne(fetch = FetchType.LAZY, cascade = CascadeType.REMOVE)
-    @JoinColumn(name = "ubuntuUid", referencedColumnName = "id_value", nullable = true)
-    private UsedId ubuntuUid;
 
     @Column(name = "pod_name", length = 255)
     private String podName;
@@ -164,10 +159,6 @@ public class Request extends BaseTimeEntity {
 
         this.adminComment = "사용자 변경 요청: " + reason;
 
-    }
-
-    public void assignUbuntuUid(UsedId uid) {
-        this.ubuntuUid = uid;
     }
 
     public void assignPodInfo(String podName, String nodeName) {
