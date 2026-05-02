@@ -7,8 +7,8 @@ public record UserCreationRequestDTO(
         String username,
         int uid,
         int gid,
-        @JsonProperty("passwd_sha512")
-        String passwordSha512,
+        @JsonProperty("passwd_base64")
+        String passwordBase64,
         String gecos,
         @JsonProperty("primary_group_name")
         String primaryGroupName,
