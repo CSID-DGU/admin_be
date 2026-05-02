@@ -16,8 +16,6 @@ public record ContainerInfoDTO(
         String userName,
         @Schema(description = "Ubuntu 사용자명", example = "test2014")
         String ubuntuUsername,
-        @Schema(description = "Ubuntu UID", example = "10001")
-        Long ubuntuUid,
         @Schema(description = "Ubuntu GID 목록", example = "[1005, 1006]")
         List<Long> ubuntuGids,
         @Schema(description = "리소스 그룹 ID", example = "1")
@@ -34,7 +32,6 @@ public record ContainerInfoDTO(
                 .userId(request.getUser().getUserId())
                 .userName(request.getUser().getName())
                 .ubuntuUsername(request.getUbuntuUsername())
-                //.ubuntuUid(request.getUbuntuUid())
                 .ubuntuGids(
                         request.getRequestGroups().stream()
                                 .map(rg -> rg.getGroup().getUbuntuGid())
