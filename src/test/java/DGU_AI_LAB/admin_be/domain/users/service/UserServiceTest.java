@@ -193,13 +193,11 @@ class UserServiceTest {
         @DisplayName("올바른 username과 password로 인증하면 성공 응답을 반환한다")
         void userAuth_success() {
             String passwordBase64 = "dGVzdA==";
-            // PasswordUtil.encodePassword는 SHA-512 해싱을 적용
-            String encodedPassword = DGU_AI_LAB.admin_be.global.util.PasswordUtil.encodePassword(passwordBase64);
 
             Request request = mock(Request.class);
             when(request.getUbuntuUsername()).thenReturn("testuser");
-            when(request.getUbuntuPassword()).thenReturn(encodedPassword);
-            when(requestRepository.findByUbuntuUsernameAndUbuntuPassword("testuser", encodedPassword))
+            when(request.getUbuntuPassword()).thenReturn(passwordBase64);
+            when(requestRepository.findByUbuntuUsernameAndUbuntuPassword("testuser", passwordBase64))
                     .thenReturn(Optional.of(request));
 
             UserAuthRequestDTO dto = new UserAuthRequestDTO("testuser", passwordBase64);

@@ -15,7 +15,6 @@ import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
-import DGU_AI_LAB.admin_be.global.util.PasswordUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -61,9 +60,9 @@ public class UserService {
         // 1. 로그인 인증 처리 시작 로그
         log.info("사용자 인증을 시작합니다. username: {}", dto.username());
 
-        // 2. 비밀번호 암호화
-        String encodedPassword = PasswordUtil.encodePassword(dto.passwordBase64());
-        log.debug("입력된 비밀번호가 성공적으로 암호화되었습니다. username: {}", dto.username());
+        // 2. 비밀번호 확인
+        String encodedPassword = dto.passwordBase64();
+        log.debug("비밀번호를 확인합니다. username: {}", dto.username());
 
         // 3. 사용자 및 비밀번호 일치 여부 확인
         Request request = requestRepository.findByUbuntuUsernameAndUbuntuPassword(dto.username(), encodedPassword)

@@ -22,7 +22,6 @@ import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
-import DGU_AI_LAB.admin_be.global.util.PasswordUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -178,7 +177,7 @@ public class RequestCommandService {
         ContainerImage img = containerImageRepository.findById(dto.imageId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        String ubuntuPassword = PasswordUtil.encodePassword(dto.ubuntuPassword());
+        String ubuntuPassword = dto.ubuntuPassword();
 
         Request req = dto.toEntity(
                 user,

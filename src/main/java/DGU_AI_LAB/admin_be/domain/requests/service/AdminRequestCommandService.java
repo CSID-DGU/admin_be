@@ -57,6 +57,7 @@ public class AdminRequestCommandService {
     private final GroupRepository groupRepository;
     private final PodExternalPortRepository podExternalPortRepository;
     private final PodService podService;
+    private final UbuntuAccountService ubuntuAccountService;
     private final ObjectMapper objectMapper;
 
     private final @Qualifier("configWebClient") WebClient pvcWebClient;
@@ -145,32 +146,53 @@ public class AdminRequestCommandService {
             throw new BusinessException(ErrorCode.USER_CREATION_FAILED);
         }
 
+        String username = request.getUbuntuUsername();
+
         // 2. PVC 생성 API 호출
-        callPvcApi(request.getUbuntuUsername(), request.getVolumeSizeGiB());
+        try {
+            callPvcApi(username, request.getVolumeSizeGiB());
+        } catch (BusinessException e) {
+            log.warn("[보상 트랜잭션] PVC 생성 실패 → 계정 삭제 시작: {}", username);
+            tryCompensateDeleteUser(username);
+            throw e;
+        }
 
         // 3. Pod 생성 API 호출
-        CreatePodResponseDTO podResponse = podService.createPod(request.getUbuntuUsername());
+        CreatePodResponseDTO podResponse;
+        try {
+            podResponse = podService.createPod(username);
+        } catch (BusinessException e) {
+            log.warn("[보상 트랜잭션] Pod 생성 실패 → 계정/PVC 삭제 시작: {}", username);
+            tryCompensateDeleteUserAndPvc(username);
+            throw e;
+        }
 
         // 4. API 호출이 모두 성공한 후에 DB 업데이트
-        request.assignUbuntuUid(allocation.getUid());
-        boolean alreadyLinked = request.getRequestGroups().stream()
-                .anyMatch(rg -> rg.getGroup().getUbuntuGid().equals(allocation.getPrimaryGroup().getUbuntuGid()));
-        if (!alreadyLinked) {
-            request.addGroup(allocation.getPrimaryGroup());
-        }
-        ContainerImage image = containerImageRepository.findById(dto.imageId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        request.approve(image, rg, dto.volumeSizeGiB(), dto.adminComment());
-        request.assignPodInfo(podResponse.podName(), podResponse.node());
-        for (CreatePodResponseDTO.PortInfo port : podResponse.ports()) {
-            podExternalPortRepository.save(PodExternalPort.builder()
-                    .request(request)
-                    .internalPort(port.internalPort())
-                    .externalPort(port.externalPort())
-                    .usagePurpose(port.usagePurpose())
-                    .build());
+        try {
+            request.assignUbuntuUid(allocation.getUid());
+            boolean alreadyLinked = request.getRequestGroups().stream()
+                    .anyMatch(rg -> rg.getGroup().getUbuntuGid().equals(allocation.getPrimaryGroup().getUbuntuGid()));
+            if (!alreadyLinked) {
+                request.addGroup(allocation.getPrimaryGroup());
+            }
+            ContainerImage image = containerImageRepository.findById(dto.imageId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+            ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+            request.approve(image, rg, dto.volumeSizeGiB(), dto.adminComment());
+            request.assignPodInfo(podResponse.podName(), podResponse.node());
+            for (CreatePodResponseDTO.PortInfo port : podResponse.ports()) {
+                podExternalPortRepository.save(PodExternalPort.builder()
+                        .request(request)
+                        .internalPort(port.internalPort())
+                        .externalPort(port.externalPort())
+                        .usagePurpose(port.usagePurpose())
+                        .build());
+            }
+        } catch (Exception e) {
+            log.error("[보상 트랜잭션] DB 업데이트 실패 → 전체 infra 리소스 삭제 시작: {}", username, e);
+            tryCompensateAll(username, podResponse.podName());
+            throw e;
         }
         // requestRepository.flush();
 
@@ -277,5 +299,36 @@ public class AdminRequestCommandService {
         }
 
         changeRequest.approve(admin, dto.adminComment());
+    }
+
+    // ── 보상 트랜잭션 헬퍼 ──────────────────────────────────────────────
+
+    private void tryCompensateDeleteUser(String username) {
+        try {
+            ubuntuAccountService.deleteUbuntuAccount(username);
+            log.info("[보상 트랜잭션 완료] 계정 삭제: {}", username);
+        } catch (Exception e) {
+            log.error("[보상 트랜잭션 실패] 계정 삭제 실패 - 수동 정리 필요: {}", username, e);
+        }
+    }
+
+    private void tryCompensateDeleteUserAndPvc(String username) {
+        // deleteUbuntuAccount 내부에서 PVC → 계정 순으로 삭제하며, PVC 404는 무시함
+        try {
+            ubuntuAccountService.deleteUbuntuAccount(username);
+            log.info("[보상 트랜잭션 완료] 계정/PVC 삭제: {}", username);
+        } catch (Exception e) {
+            log.error("[보상 트랜잭션 실패] 계정/PVC 삭제 실패 - 수동 정리 필요: {}", username, e);
+        }
+    }
+
+    private void tryCompensateAll(String username, String podName) {
+        try {
+            podService.deletePod(podName);
+            log.info("[보상 트랜잭션 완료] Pod 삭제: {}", podName);
+        } catch (Exception e) {
+            log.error("[보상 트랜잭션 실패] Pod 삭제 실패 - 수동 정리 필요: {}", podName, e);
+        }
+        tryCompensateDeleteUserAndPvc(username);
     }
 }
