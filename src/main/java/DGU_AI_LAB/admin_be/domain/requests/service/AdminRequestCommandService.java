@@ -101,7 +101,7 @@ public class AdminRequestCommandService {
         // 1. 사용자 생성 API 호출
         UserCreationRequestDTO userCreationDto = new UserCreationRequestDTO(
                 request.getUbuntuUsername(),
-                request.getUbuntuPassword(),
+                request.getUbuntuPasswordBase64(),
                 request.getUser().getName(),
                 request.getUbuntuUsername(), // primary_group_name = username (Linux 관례)
                 false

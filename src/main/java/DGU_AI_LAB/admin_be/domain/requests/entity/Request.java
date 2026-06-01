@@ -32,6 +32,9 @@ public class Request extends BaseTimeEntity {
     @Column(name = "ubuntu_password", nullable = false)
     private String ubuntuPassword;
 
+    @Column(name = "ubuntu_password_base64", nullable = false)
+    private String ubuntuPasswordBase64;
+
     @Column(name = "volume_size_GiB", nullable = false)
     private Long volumeSizeGiB;
 
@@ -82,9 +85,10 @@ public class Request extends BaseTimeEntity {
     private Set<RequestGroup> requestGroups = new LinkedHashSet<>();
 
     @Builder
-    public Request(String ubuntuUsername, String ubuntuPassword, Long volumeSizeGiB, LocalDateTime expiresAt, String usagePurpose, String formAnswers, User user, ResourceGroup resourceGroup, ContainerImage containerImage) {
+    public Request(String ubuntuUsername, String ubuntuPassword, String ubuntuPasswordBase64, Long volumeSizeGiB, LocalDateTime expiresAt, String usagePurpose, String formAnswers, User user, ResourceGroup resourceGroup, ContainerImage containerImage) {
         this.ubuntuUsername = ubuntuUsername;
         this.ubuntuPassword = ubuntuPassword;
+        this.ubuntuPasswordBase64 = ubuntuPasswordBase64;
         this.volumeSizeGiB = volumeSizeGiB;
         this.expiresAt = expiresAt;
         this.usagePurpose = usagePurpose;

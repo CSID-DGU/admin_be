@@ -62,7 +62,7 @@ public record SaveRequestRequestDTO(
             ResourceGroup resourceGroup,
             ContainerImage image,
             Set<Group> groups,
-            String ubuntuPassword
+            String encodedUbuntuPassword
     ) {
         String formAnswersJson;
         try {
@@ -76,7 +76,8 @@ public record SaveRequestRequestDTO(
                 .resourceGroup(resourceGroup)
                 .containerImage(image)
                 .ubuntuUsername(ubuntuUsername)
-                .ubuntuPassword(ubuntuPassword)
+                .ubuntuPassword(encodedUbuntuPassword)
+                .ubuntuPasswordBase64(ubuntuPassword)
                 .volumeSizeGiB(volumeSizeGiB)
                 .usagePurpose(usagePurpose)
                 .formAnswers(formAnswersJson)
