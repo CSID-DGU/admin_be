@@ -8,6 +8,7 @@ import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.UserCreationRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
@@ -117,6 +118,7 @@ class AdminRequestCommandServiceTest {
         when(request.getStatus()).thenReturn(Status.PENDING);
         when(request.getUbuntuUsername()).thenReturn("testuser");
         when(request.getUbuntuPassword()).thenReturn("encoded_pw");
+        when(request.getUbuntuPasswordBase64()).thenReturn("cGxhaW5fdGV4dF9wdw==");
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
         when(request.getUser()).thenReturn(mockUser);
         when(request.getResourceGroup()).thenReturn(mockRg);
@@ -168,6 +170,15 @@ class AdminRequestCommandServiceTest {
         assertThat(jupyterPort.getUsagePurpose()).isEqualTo("jupyter");
         assertThat(jupyterPort.getInternalPort()).isEqualTo(8888);
         assertThat(jupyterPort.getExternalPort()).isEqualTo(30888);
+
+        ArgumentCaptor<UserCreationRequestDTO> userCreationCaptor = ArgumentCaptor.forClass(UserCreationRequestDTO.class);
+        verify(putBodySpec).bodyValue(userCreationCaptor.capture());
+        UserCreationRequestDTO userCreationRequest = userCreationCaptor.getValue();
+        assertThat(userCreationRequest.username()).isEqualTo("testuser");
+        assertThat(userCreationRequest.passwordBase64()).isEqualTo("cGxhaW5fdGV4dF9wdw==");
+        assertThat(userCreationRequest.gecos()).isEqualTo("테스트유저");
+        assertThat(userCreationRequest.primaryGroupName()).isEqualTo("testuser");
+        assertThat(userCreationRequest.enableSudo()).isFalse();
     }
 
     @Test

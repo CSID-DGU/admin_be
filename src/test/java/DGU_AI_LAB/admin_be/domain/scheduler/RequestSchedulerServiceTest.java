@@ -195,6 +195,7 @@ public class RequestSchedulerServiceTest {
         Request req = Request.builder()
                 .ubuntuUsername(ubuntuUsername)
                 .ubuntuPassword("password")
+                .ubuntuPasswordBase64("passwordBase64")
                 .volumeSizeGiB(10L)
                 .expiresAt(expiresAt)
                 .usagePurpose("test")
