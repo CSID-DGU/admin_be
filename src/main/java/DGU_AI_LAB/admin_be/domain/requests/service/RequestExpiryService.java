@@ -3,8 +3,6 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
-import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
-import DGU_AI_LAB.admin_be.domain.usedIds.service.IdAllocationService;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
@@ -22,7 +20,6 @@ public class RequestExpiryService {
 
     private final RequestRepository requestRepository;
     private final UbuntuAccountService ubuntuAccountService;
-    private final IdAllocationService idAllocationService;
     private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
@@ -36,11 +33,6 @@ public class RequestExpiryService {
         String ubuntuUsername = request.getUbuntuUsername();
         User user = request.getUser();
 
-        UsedId usedId = request.getUbuntuUid();
-        if (usedId != null) {
-            request.assignUbuntuUid(null);
-            idAllocationService.releaseId(usedId);
-        }
         ubuntuAccountService.deleteUbuntuAccount(ubuntuUsername);
 
         request.delete();

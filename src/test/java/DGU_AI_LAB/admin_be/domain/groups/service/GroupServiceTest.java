@@ -5,8 +5,6 @@ import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupResponseDTO;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
-import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
-import DGU_AI_LAB.admin_be.domain.usedIds.repository.UsedIdRepository;
 import DGU_AI_LAB.admin_be.domain.usedIds.service.IdAllocationService;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.junit.jupiter.api.DisplayName;
@@ -21,7 +19,6 @@ import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -37,9 +34,6 @@ class GroupServiceTest {
 
     @Mock
     private GroupRepository groupRepository;
-
-    @Mock
-    private UsedIdRepository usedIdRepository;
 
     @Mock
     private RequestRepository requestRepository;
@@ -98,9 +92,6 @@ class GroupServiceTest {
             doReturn(bodySpec).when(bodySpec).bodyValue(any());
             doReturn(responseSpec).when(bodySpec).retrieve();
             doReturn(Mono.just(Map.of("result", "ok"))).when(responseSpec).bodyToMono(Map.class);
-
-            UsedId usedId = UsedId.builder().idValue(2000L).build();
-            when(usedIdRepository.findById(2000L)).thenReturn(Optional.of(usedId));
 
             Group savedGroup = Group.builder().groupName("developers").ubuntuGid(2000L).build();
             when(groupRepository.save(any(Group.class))).thenReturn(savedGroup);

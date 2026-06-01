@@ -10,8 +10,6 @@ import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.service.UbuntuAccountService;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
-import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
-import DGU_AI_LAB.admin_be.domain.usedIds.repository.UsedIdRepository;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
@@ -53,7 +51,6 @@ public class RequestSchedulerServiceTest {
 
     @Autowired private RequestRepository requestRepository;
     @Autowired private UserRepository userRepository;
-    @Autowired private UsedIdRepository usedIdRepository;
     @Autowired private ResourceGroupRepository resourceGroupRepository;
     @Autowired private ContainerImageRepository containerImageRepository;
 
@@ -72,8 +69,6 @@ public class RequestSchedulerServiceTest {
     private void deleteTestUser() {
         userRepository.findByEmail("test@dgu.ac.kr").ifPresent(user -> {
             requestRepository.deleteAllInBatch(requestRepository.findAllByUser(user));
-            List<UsedId> testUsedIds = usedIdRepository.findAllById(List.of(1000L, 1001L, 1002L, 1003L, 1004L));
-            usedIdRepository.deleteAll(testUsedIds);
             userRepository.deleteById(user.getUserId());
         });
     }
@@ -104,23 +99,17 @@ public class RequestSchedulerServiceTest {
                 .description("Test Image")
                 .build());
 
-        // 2. UsedId 및 Request 생성
-        UsedId uidExpired = usedIdRepository.save(UsedId.builder().idValue(1000L).build());
-        UsedId uid1Day = usedIdRepository.save(UsedId.builder().idValue(1001L).build());
-        UsedId uid3Day = usedIdRepository.save(UsedId.builder().idValue(1002L).build());
-        UsedId uid7Day = usedIdRepository.save(UsedId.builder().idValue(1003L).build());
-        UsedId uidOk = usedIdRepository.save(UsedId.builder().idValue(1004L).build());
-
+        // 2. Request 생성
         // (1) 만료 (어제)
-        Request reqExpired = createTestRequest(MOCK_NOW.minusDays(1), Status.FULFILLED, uidExpired, "user-expired", testUser, testRg, testImage);
+        Request reqExpired = createTestRequest(MOCK_NOW.minusDays(1), Status.FULFILLED, "user-expired", testUser, testRg, testImage);
         // (2) 1일 전 (내일)
-        Request req1Day = createTestRequest(MOCK_NOW.plusDays(1).withHour(12), Status.FULFILLED, uid1Day, "user-1day", testUser, testRg, testImage);
+        Request req1Day = createTestRequest(MOCK_NOW.plusDays(1).withHour(12), Status.FULFILLED, "user-1day", testUser, testRg, testImage);
         // (3) 3일 전
-        Request req3Day = createTestRequest(MOCK_NOW.plusDays(3).withHour(14), Status.FULFILLED, uid3Day, "user-3day", testUser, testRg, testImage);
+        Request req3Day = createTestRequest(MOCK_NOW.plusDays(3).withHour(14), Status.FULFILLED, "user-3day", testUser, testRg, testImage);
         // (4) 7일 전
-        Request req7Day = createTestRequest(MOCK_NOW.plusDays(7).withHour(15), Status.FULFILLED, uid7Day, "user-7day", testUser, testRg, testImage);
+        Request req7Day = createTestRequest(MOCK_NOW.plusDays(7).withHour(15), Status.FULFILLED, "user-7day", testUser, testRg, testImage);
         // (5) 넉넉함
-        createTestRequest(MOCK_NOW.plusDays(30), Status.FULFILLED, uidOk, "user-ok", testUser, testRg, testImage);
+        createTestRequest(MOCK_NOW.plusDays(30), Status.FULFILLED, "user-ok", testUser, testRg, testImage);
 
 
         // --- Given: 시간 고정 & 스케줄러 실행 ---
@@ -201,11 +190,12 @@ public class RequestSchedulerServiceTest {
         );
     }
 
-    private Request createTestRequest(LocalDateTime expiresAt, Status status, UsedId usedId, String ubuntuUsername,
+    private Request createTestRequest(LocalDateTime expiresAt, Status status, String ubuntuUsername,
                                       User testUser, ResourceGroup testRg, ContainerImage testImage) {
         Request req = Request.builder()
                 .ubuntuUsername(ubuntuUsername)
                 .ubuntuPassword("password")
+                .ubuntuPasswordBase64("passwordBase64")
                 .volumeSizeGiB(10L)
                 .expiresAt(expiresAt)
                 .usagePurpose("test")
@@ -217,12 +207,10 @@ public class RequestSchedulerServiceTest {
 
         if (status == Status.FULFILLED || status == Status.DELETED) {
             req.approve(testImage, testRg, 10L, "approved");
-            req.assignUbuntuUid(usedId);
         }
 
         if (status == Status.DELETED) {
             req.delete();
-            req.assignUbuntuUid(null);
         }
 
         return requestRepository.saveAndFlush(req);

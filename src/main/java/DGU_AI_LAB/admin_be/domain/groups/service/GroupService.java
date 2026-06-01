@@ -5,8 +5,6 @@ import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupResponseDTO;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
-import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
-import DGU_AI_LAB.admin_be.domain.usedIds.repository.UsedIdRepository;
 import DGU_AI_LAB.admin_be.domain.usedIds.service.IdAllocationService;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -32,7 +30,6 @@ import java.util.Optional;
 public class GroupService {
 
     private final GroupRepository groupRepository;
-    private final UsedIdRepository usedIdRepository;
     private final RequestRepository requestRepository;
     private final IdAllocationService idAllocationService;
     private final @Qualifier("configWebClient") WebClient groupCreationWebClient;
@@ -141,9 +138,6 @@ public class GroupService {
         }
 
         // 5. API 호출이 성공한 후에만 로컬 DB에 그룹을 저장합니다.
-        UsedId usedId = usedIdRepository.findById(assignedGid)
-                .orElseGet(() -> usedIdRepository.saveAndFlush(UsedId.builder().idValue(assignedGid).build()));
-
         Group group = Group.builder()
                 .groupName(dto.groupName())
                 .ubuntuGid(assignedGid)
