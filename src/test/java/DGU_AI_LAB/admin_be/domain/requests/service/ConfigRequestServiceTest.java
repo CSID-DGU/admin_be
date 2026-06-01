@@ -1,14 +1,11 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
-import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
-import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
 import DGU_AI_LAB.admin_be.domain.portRequests.repository.PortRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.AcceptInfoResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
-import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,14 +25,13 @@ import static org.mockito.Mockito.when;
 class ConfigRequestServiceTest {
 
     @Mock private RequestRepository requestRepository;
-    @Mock private NodeRepository nodeRepository;
     @Mock private PortRequestRepository portRequestRepository;
 
     private ConfigRequestService service;
 
     @BeforeEach
     void setUp() {
-        service = new ConfigRequestService(requestRepository, nodeRepository, portRequestRepository);
+        service = new ConfigRequestService(requestRepository, portRequestRepository);
     }
 
     @Test
@@ -48,20 +44,14 @@ class ConfigRequestServiceTest {
         when(image.getImageName()).thenReturn("containerssh-guest");
         when(image.getImageVersion()).thenReturn("ubuntu22.04");
 
-        ResourceGroup rg = mock(ResourceGroup.class);
-        when(rg.getDescription()).thenReturn("GPU Group");
-        when(rg.getServerName()).thenReturn("FARM-01");
-
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(1L);
         when(request.getUbuntuUsername()).thenReturn(username);
         when(request.getContainerImage()).thenReturn(image);
-        when(request.getResourceGroup()).thenReturn(rg);
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
         when(request.getVolumeSizeGiB()).thenReturn(20L);
 
         when(requestRepository.findByUbuntuUsername(username)).thenReturn(Optional.of(request));
-        when(nodeRepository.findAllByResourceGroup(rg)).thenReturn(List.of());
 
         // additional ports: 사용자가 신청한 포트 (tensorboard, 포트 번호는 시스템 할당)
         PortRequests tensorboard = mock(PortRequests.class);
@@ -101,20 +91,14 @@ class ConfigRequestServiceTest {
         when(image.getImageName()).thenReturn("cuda");
         when(image.getImageVersion()).thenReturn("11.8");
 
-        ResourceGroup rg = mock(ResourceGroup.class);
-        when(rg.getDescription()).thenReturn("GPU Group");
-        when(rg.getServerName()).thenReturn("FARM-02");
-
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(2L);
         when(request.getUbuntuUsername()).thenReturn(username);
         when(request.getContainerImage()).thenReturn(image);
-        when(request.getResourceGroup()).thenReturn(rg);
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
         when(request.getVolumeSizeGiB()).thenReturn(10L);
 
         when(requestRepository.findByUbuntuUsername(username)).thenReturn(Optional.of(request));
-        when(nodeRepository.findAllByResourceGroup(rg)).thenReturn(List.of());
 
         PortRequests portReq = mock(PortRequests.class);
         when(portReq.getInternalPort()).thenReturn(6006);
@@ -145,20 +129,14 @@ class ConfigRequestServiceTest {
         when(image.getImageName()).thenReturn("cuda");
         when(image.getImageVersion()).thenReturn("11.8");
 
-        ResourceGroup rg = mock(ResourceGroup.class);
-        when(rg.getDescription()).thenReturn("GPU Group");
-        when(rg.getServerName()).thenReturn("FARM-03");
-
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(3L);
         when(request.getUbuntuUsername()).thenReturn(username);
         when(request.getContainerImage()).thenReturn(image);
-        when(request.getResourceGroup()).thenReturn(rg);
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
         when(request.getVolumeSizeGiB()).thenReturn(10L);
 
         when(requestRepository.findByUbuntuUsername(username)).thenReturn(Optional.of(request));
-        when(nodeRepository.findAllByResourceGroup(rg)).thenReturn(List.of());
         when(portRequestRepository.findByRequestRequestId(3L)).thenReturn(List.of());
 
         // When
@@ -168,47 +146,4 @@ class ConfigRequestServiceTest {
         assertThat(result.additional_ports()).isEmpty();
     }
 
-    @Test
-    @DisplayName("gpu_nodes가 Node 정보로부터 올바르게 변환된다")
-    void getAcceptInfo_convertsNodeInfoToGpuNodes() {
-        // Given
-        String username = "testuser4";
-
-        ContainerImage image = mock(ContainerImage.class);
-        when(image.getImageName()).thenReturn("cuda");
-        when(image.getImageVersion()).thenReturn("11.8");
-
-        ResourceGroup rg = mock(ResourceGroup.class);
-        when(rg.getDescription()).thenReturn("GPU Group");
-        when(rg.getServerName()).thenReturn("FARM-01");
-
-        Request request = mock(Request.class);
-        when(request.getRequestId()).thenReturn(4L);
-        when(request.getUbuntuUsername()).thenReturn(username);
-        when(request.getContainerImage()).thenReturn(image);
-        when(request.getResourceGroup()).thenReturn(rg);
-        when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
-        when(request.getVolumeSizeGiB()).thenReturn(10L);
-
-        Node node = mock(Node.class);
-        when(node.getNodeId()).thenReturn("farm1");
-        when(node.getCpuCoreCount()).thenReturn(4);
-        when(node.getMemorySizeGB()).thenReturn(10);
-        when(node.getNumberGpu()).thenReturn(2);
-
-        when(requestRepository.findByUbuntuUsername(username)).thenReturn(Optional.of(request));
-        when(nodeRepository.findAllByResourceGroup(rg)).thenReturn(List.of(node));
-        when(portRequestRepository.findByRequestRequestId(4L)).thenReturn(List.of());
-
-        // When
-        AcceptInfoResponseDTO result = service.getAcceptInfo(username);
-
-        // Then
-        assertThat(result.gpu_nodes()).hasSize(1);
-        AcceptInfoResponseDTO.NodeDTO nodeDTO = result.gpu_nodes().get(0);
-        assertThat(nodeDTO.node_name()).isEqualTo("farm1");
-        assertThat(nodeDTO.cpu_limit()).isEqualTo("4000m");
-        assertThat(nodeDTO.memory_limit()).isEqualTo("10240Mi");
-        assertThat(nodeDTO.num_gpu()).isEqualTo(2);
-    }
 }

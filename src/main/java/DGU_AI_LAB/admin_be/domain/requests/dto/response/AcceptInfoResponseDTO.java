@@ -1,6 +1,5 @@
 package DGU_AI_LAB.admin_be.domain.requests.dto.response;
 
-import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
 import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -22,28 +21,9 @@ public record AcceptInfoResponseDTO(
         Long volume_size,
         @Schema(description = "GPU 필요 여부", example = "true")
         Boolean gpu_required,
-        @Schema(description = "GPU 그룹 설명", example = "High-performance GPU cluster with RTX 4090 cards")
-        String gpu_group,
-        @Schema(description = "서버 타입명", example = "LAB")
-        String server_type,
-        @Schema(description = "GPU 노드 목록")
-        List<NodeDTO> gpu_nodes,
         @Schema(description = "추가 포트 목록")
         List<AdditionalPortDTO> additional_ports
 ) {
-    @Schema(description = "GPU 노드 정보")
-    @Builder
-    public record NodeDTO(
-            @Schema(description = "노드 ID", example = "FARM1")
-            String node_name,
-            @Schema(description = "CPU 한도", example = "32000m")
-            String cpu_limit,
-            @Schema(description = "메모리 한도", example = "131072Mi")
-            String memory_limit,
-            @Schema(description = "GPU 수", example = "4")
-            Integer num_gpu
-    ) {}
-
     @Schema(description = "추가 포트 정보")
     @Builder
     public record AdditionalPortDTO(
@@ -53,18 +33,8 @@ public record AcceptInfoResponseDTO(
             String usage_purpose
     ) {}
 
-    public static AcceptInfoResponseDTO fromEntity(Request request, List<Node> nodes, List<PortRequests> portRequests) {
+    public static AcceptInfoResponseDTO fromEntity(Request request, List<PortRequests> portRequests) {
         var image = request.getContainerImage();
-        var group = request.getResourceGroup();
-
-        List<NodeDTO> nodeDTOList = nodes.stream()
-                .map(node -> NodeDTO.builder()
-                        .node_name(node.getNodeId())
-                        .cpu_limit(node.getCpuCoreCount() * 1000 + "m")
-                        .memory_limit(node.getMemorySizeGB() * 1024 + "Mi")
-                        .num_gpu(node.getNumberGpu())
-                        .build()
-                ).toList();
 
         List<AdditionalPortDTO> additionalPortDTOList = portRequests.stream()
                 .map(portRequest -> AdditionalPortDTO.builder()
@@ -83,9 +53,6 @@ public record AcceptInfoResponseDTO(
                 )
                 .volume_size(request.getVolumeSizeGiB())
                 .gpu_required(true)
-                .gpu_group(group.getDescription())
-                .server_type(group.getServerName())
-                .gpu_nodes(nodeDTOList)
                 .additional_ports(additionalPortDTOList)
                 .build();
     }

@@ -54,6 +54,7 @@ class AdminRequestCommandServiceTest {
     @Mock private GroupRepository groupRepository;
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private PodService podService;
+    @Mock private UbuntuAccountService ubuntuAccountService;
     @Mock private WebClient mockWebClient;
 
     // WebClient 체이닝 mock
@@ -80,7 +81,7 @@ class AdminRequestCommandServiceTest {
         service = new AdminRequestCommandService(
                 alarmService, requestRepository, userRepository, containerImageRepository,
                 resourceGroupRepository, changeRequestRepository,
-                groupRepository, podExternalPortRepository, podService, new ObjectMapper(),
+                groupRepository, podExternalPortRepository, podService, ubuntuAccountService, new ObjectMapper(),
                 mockWebClient, mockWebClient
         );
         // 공유 엔티티 기본 설정
