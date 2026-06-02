@@ -77,7 +77,7 @@ public record SaveRequestRequestDTO(
                 .containerImage(image)
                 .ubuntuUsername(ubuntuUsername)
                 .ubuntuPassword(ubuntuPasswordBase64)
-                .ubuntuPasswordBase64(ubuntuPassword)
+                .ubuntuPasswordBase64(ubuntuPasswordBase64)
                 .volumeSizeGiB(volumeSizeGiB)
                 .usagePurpose(usagePurpose)
                 .formAnswers(formAnswersJson)
