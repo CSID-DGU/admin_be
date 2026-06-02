@@ -5,8 +5,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public record UserCreationRequestDTO(
         @JsonProperty("name")
         String username,
-        int uid,
-        int gid,
         @JsonProperty("passwd_base64")
         String passwordBase64,
         String gecos,

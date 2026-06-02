@@ -196,8 +196,8 @@ class UserServiceTest {
 
             Request request = mock(Request.class);
             when(request.getUbuntuUsername()).thenReturn("testuser");
-            when(request.getUbuntuPassword()).thenReturn(passwordBase64);
-            when(requestRepository.findByUbuntuUsernameAndUbuntuPassword("testuser", passwordBase64))
+            when(request.getUbuntuPasswordBase64()).thenReturn(passwordBase64);
+            when(requestRepository.findByUbuntuUsernameAndUbuntuPasswordBase64("testuser", passwordBase64))
                     .thenReturn(Optional.of(request));
 
             UserAuthRequestDTO dto = new UserAuthRequestDTO("testuser", passwordBase64);
@@ -210,7 +210,7 @@ class UserServiceTest {
         @Test
         @DisplayName("존재하지 않는 username으로 인증하면 UnauthorizedException을 던진다")
         void userAuth_throwsException_whenUsernameNotFound() {
-            when(requestRepository.findByUbuntuUsernameAndUbuntuPassword(anyString(), anyString()))
+            when(requestRepository.findByUbuntuUsernameAndUbuntuPasswordBase64(anyString(), anyString()))
                     .thenReturn(Optional.empty());
 
             UserAuthRequestDTO dto = new UserAuthRequestDTO("unknownuser", "dGVzdA==");

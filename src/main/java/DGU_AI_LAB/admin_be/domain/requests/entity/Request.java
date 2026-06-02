@@ -3,7 +3,6 @@ package DGU_AI_LAB.admin_be.domain.requests.entity;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
-import DGU_AI_LAB.admin_be.domain.usedIds.entity.UsedId;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -32,6 +31,9 @@ public class Request extends BaseTimeEntity {
 
     @Column(name = "ubuntu_password", nullable = false)
     private String ubuntuPassword;
+
+    @Column(name = "ubuntu_password_base64", nullable = false)
+    private String ubuntuPasswordBase64;
 
     @Column(name = "volume_size_GiB", nullable = false)
     private Long volumeSizeGiB;
@@ -65,10 +67,6 @@ public class Request extends BaseTimeEntity {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @ManyToOne(fetch = FetchType.LAZY, cascade = CascadeType.REMOVE)
-    @JoinColumn(name = "ubuntuUid", referencedColumnName = "id_value", nullable = true)
-    private UsedId ubuntuUid;
-
     @Column(name = "pod_name", length = 255)
     private String podName;
 
@@ -87,9 +85,10 @@ public class Request extends BaseTimeEntity {
     private Set<RequestGroup> requestGroups = new LinkedHashSet<>();
 
     @Builder
-    public Request(String ubuntuUsername, String ubuntuPassword, Long volumeSizeGiB, LocalDateTime expiresAt, String usagePurpose, String formAnswers, User user, ResourceGroup resourceGroup, ContainerImage containerImage) {
+    public Request(String ubuntuUsername, String ubuntuPassword, String ubuntuPasswordBase64, Long volumeSizeGiB, LocalDateTime expiresAt, String usagePurpose, String formAnswers, User user, ResourceGroup resourceGroup, ContainerImage containerImage) {
         this.ubuntuUsername = ubuntuUsername;
         this.ubuntuPassword = ubuntuPassword;
+        this.ubuntuPasswordBase64 = ubuntuPasswordBase64;
         this.volumeSizeGiB = volumeSizeGiB;
         this.expiresAt = expiresAt;
         this.usagePurpose = usagePurpose;
@@ -164,10 +163,6 @@ public class Request extends BaseTimeEntity {
 
         this.adminComment = "사용자 변경 요청: " + reason;
 
-    }
-
-    public void assignUbuntuUid(UsedId uid) {
-        this.ubuntuUid = uid;
     }
 
     public void assignPodInfo(String podName, String nodeName) {

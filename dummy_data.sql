@@ -62,15 +62,7 @@ INSERT INTO gpus (node_id, gpu_model, RAM_GB) VALUES
 ('FARM9', 'RTX 3080', 10),
 ('FARM9', 'RTX 3080', 10);
 
--- 4. Used IDs for groups
-INSERT INTO used_ids (id_value) VALUES
-(1001),
-(1002),
-(1003),
-(1004),
-(1005);
-
--- 5. Groups
+-- 4. Groups
 INSERT INTO `groups` (ubuntu_gid, group_name) VALUES
 (1001, 'ml-researchers'),
 (1002, 'data-scientists'),
@@ -78,7 +70,7 @@ INSERT INTO `groups` (ubuntu_gid, group_name) VALUES
 (1004, 'gpu-users'),
 (1005, 'admin-team');
 
--- 6. Container Images (CUDA versions only)
+-- 5. Container Images (CUDA versions only)
 INSERT INTO container_image (image_name, image_version, cuda_version, description, created_at, updated_at) VALUES
 ('cuda', '11.8', '11.8', 'CUDA 11.8 development environment', NOW(), NOW()),
 ('cuda', '12.0', '12.0', 'CUDA 12.0 development environment', NOW(), NOW()),
