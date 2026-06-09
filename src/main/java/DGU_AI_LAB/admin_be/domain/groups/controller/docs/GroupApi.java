@@ -26,14 +26,14 @@ public interface GroupApi {
     @GetMapping
     ResponseEntity<SuccessResponse<?>> getGroups();
 
-    @Operation(summary = "새로운 그룹 생성", description = "새로운 그룹을 생성하고 MySQL DB에 저장합니다. 이후 Config Server에 그룹 생성 API를 호출합니다. 그룹명과 사용자 이름은 필수값이지만, 사용자 이름은 생략 가능하며 이 경우 멤버 없는 그룹이 생성됩니다. " +
+    @Operation(summary = "새로운 그룹 생성", description = "infra Server에 그룹 생성 API를 호출하고, 응답으로 확정된 GID를 MySQL DB에 저장합니다. 그룹명과 사용자 이름은 필수값이지만, 사용자 이름은 생략 가능하며 이 경우 멤버 없는 그룹이 생성됩니다. " +
             "사용 신청을 아직 생성하지 않았지만, 그룹을 먼저 생성해야 하는 경우를 고려했습니다.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "생성 성공"),
             @ApiResponse(responseCode = "400", description = "잘못된 요청: 필수 필드 누락(groupName) 또는 잘못된 형식"),
             @ApiResponse(responseCode = "403", description = "접근 금지: 요청한 ubuntuUsername이 로그인한 사용자와 일치하지 않음"),
             @ApiResponse(responseCode = "409", description = "데이터 충돌: 동일한 그룹명이 이미 존재함"),
-            @ApiResponse(responseCode = "500", description = "서버 오류: GID 할당 실패 또는 외부 API 호출 실패")
+            @ApiResponse(responseCode = "500", description = "서버 오류: 외부 API 응답의 GID 누락 또는 외부 API 호출 실패")
     })
     @PostMapping
     ResponseEntity<SuccessResponse<?>> createGroup(
