@@ -21,6 +21,8 @@ import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -108,10 +110,11 @@ public class AdminRequestCommandService {
                 false
         );
 
+        UserCreationResponse userResponse;
         try {
             log.info("사용자 생성 API 호출 시작: {}", userCreationDto.username());
 
-            Map userResponse = userCreationWebClient.put()
+            userResponse = userCreationWebClient.put()
                     .uri("/accounts/users")
                     .bodyValue(userCreationDto)
                     .retrieve()
@@ -129,10 +132,14 @@ public class AdminRequestCommandService {
                             clientResponse.bodyToMono(String.class)
                                     .flatMap(body -> Mono.error(new BusinessException("사용자 생성 실패: " + body, ErrorCode.USER_CREATION_FAILED)))
                     )
-                    .bodyToMono(Map.class)
+                    .bodyToMono(UserCreationResponse.class)
                     .block();
 
             log.info("사용자 생성 성공: {}", userResponse);
+            if (userResponse == null || userResponse.uid() == null || userResponse.gid() == null) {
+                log.error("사용자 생성 API 응답에 UID/GID가 없습니다: {}", userResponse);
+                throw new BusinessException(ErrorCode.UID_ALLOCATION_FAILED);
+            }
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
@@ -167,6 +174,7 @@ public class AdminRequestCommandService {
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
             ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+            request.assignUbuntuIds(userResponse.uid(), userResponse.gid());
             request.approve(image, rg, dto.volumeSizeGiB(), dto.adminComment());
             request.assignPodInfo(podResponse.podName(), podResponse.node());
             for (CreatePodResponseDTO.PortInfo port : podResponse.ports()) {
@@ -319,4 +327,13 @@ public class AdminRequestCommandService {
         }
         tryCompensateDeleteUserAndPvc(username);
     }
+
+    record UserCreationResponse(
+            @JsonProperty("uid")
+            @JsonAlias({"ubuntuUid", "ubuntu_uid"})
+            Long uid,
+            @JsonProperty("gid")
+            @JsonAlias({"ubuntuGid", "ubuntu_gid"})
+            Long gid
+    ) {}
 }
