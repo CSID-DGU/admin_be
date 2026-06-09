@@ -5,7 +5,6 @@ import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupResponseDTO;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
-import DGU_AI_LAB.admin_be.domain.usedIds.service.IdAllocationService;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -18,8 +17,6 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
-import java.util.Map;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -37,9 +34,6 @@ class GroupServiceTest {
 
     @Mock
     private RequestRepository requestRepository;
-
-    @Mock
-    private IdAllocationService idAllocationService;
 
     @Mock
     private WebClient groupCreationWebClient;
@@ -81,7 +75,7 @@ class GroupServiceTest {
         void createGroup_success() {
             // Arrange
             when(groupRepository.existsByGroupName("developers")).thenReturn(false);
-            when(idAllocationService.allocateNewGid()).thenReturn(2000L);
+            when(groupRepository.existsByUbuntuGid(2000L)).thenReturn(false);
 
             // Mock WebClient chain
             WebClient.RequestBodyUriSpec uriSpec = mock(WebClient.RequestBodyUriSpec.class);
@@ -91,7 +85,10 @@ class GroupServiceTest {
             doReturn(bodySpec).when(uriSpec).uri(anyString());
             doReturn(bodySpec).when(bodySpec).bodyValue(any());
             doReturn(responseSpec).when(bodySpec).retrieve();
-            doReturn(Mono.just(Map.of("result", "ok"))).when(responseSpec).bodyToMono(Map.class);
+            doReturn(Mono.just(new GroupService.ConfigServerGroupResponse(
+                    new GroupService.ConfigServerGroupInfo("developers", 2000L)
+            )))
+                    .when(responseSpec).bodyToMono(GroupService.ConfigServerGroupResponse.class);
 
             Group savedGroup = Group.builder().groupName("developers").ubuntuGid(2000L).build();
             when(groupRepository.save(any(Group.class))).thenReturn(savedGroup);
@@ -104,6 +101,7 @@ class GroupServiceTest {
             // Assert
             assertThat(result.groupName()).isEqualTo("developers");
             assertThat(result.ubuntuGid()).isEqualTo(2000L);
+            verify(bodySpec).bodyValue(new GroupService.ConfigServerGroupRequest("developers", List.of()));
         }
 
         @Test

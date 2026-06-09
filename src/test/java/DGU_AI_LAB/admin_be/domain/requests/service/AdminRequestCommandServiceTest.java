@@ -99,11 +99,12 @@ class AdminRequestCommandServiceTest {
         doReturn(putHeadersSpec).when(putBodySpec).bodyValue(any());
         when(putHeadersSpec.retrieve()).thenReturn(putResponseSpec);
         when(putResponseSpec.onStatus(any(), any())).thenReturn(putResponseSpec);
-        when(putResponseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("result", "ok")));
+        when(putResponseSpec.bodyToMono(AdminRequestCommandService.UserCreationResponse.class))
+                .thenReturn(Mono.just(new AdminRequestCommandService.UserCreationResponse(2001L, 2001L)));
     }
 
     /** PVC 생성 POST 요청 WebClient 모킹
-     *  체이닝: post() → postUriSpec → (uri) → postBodySpec → (bodyValue) → postHeadersSpec → (retrieve) → postResponseSpec */
+     *  체이닝: post() -> postUriSpec -> (uri) -> postBodySpec -> (bodyValue) -> postHeadersSpec -> (retrieve) -> postResponseSpec */
     @SuppressWarnings("unchecked")
     private void stubWebClientPost() {
         when(mockWebClient.post()).thenReturn(postUriSpec);
@@ -113,7 +114,7 @@ class AdminRequestCommandServiceTest {
         when(postResponseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of()));
     }
 
-    /** 공통 Request + IdAllocation mock 설정 */
+    /** 공통 Request mock 설정 */
     private Request buildMockedRequest(Long requestId) {
         Request request = mock(Request.class);
         when(request.getStatus()).thenReturn(Status.PENDING);
@@ -158,6 +159,7 @@ class AdminRequestCommandServiceTest {
         // Then - PodExternalPortRepository에 2개의 포트가 저장되어야 함
         ArgumentCaptor<PodExternalPort> captor = ArgumentCaptor.forClass(PodExternalPort.class);
         verify(podExternalPortRepository, times(2)).save(captor.capture());
+        verify(request).assignUbuntuIds(2001L, 2001L);
 
         List<PodExternalPort> saved = captor.getAllValues();
         assertThat(saved).hasSize(2);
