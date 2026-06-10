@@ -1,9 +1,12 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
+import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
+import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -41,6 +44,9 @@ class RequestQueryServiceTest {
     @Mock
     private PortRequestService portRequestService;
 
+    @Mock
+    private PodExternalPortRepository podExternalPortRepository;
+
     @Nested
     @DisplayName("getRequestsByUserId")
     class GetRequestsByUserId {
@@ -54,6 +60,31 @@ class RequestQueryServiceTest {
             List<SaveRequestResponseDTO> result = requestQueryService.getRequestsByUserId(1L);
 
             assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("요청 조회 시 pod_external_ports를 함께 반환한다")
+        void getRequestsByUserId_returnsPodExternalPorts() {
+            Request request = mockRequest(1L);
+            PodExternalPort podExternalPort = PodExternalPort.builder()
+                    .request(request)
+                    .internalPort(8888)
+                    .externalPort(30888)
+                    .usagePurpose("jupyter")
+                    .build();
+
+            when(userRepository.existsById(1L)).thenReturn(true);
+            when(requestRepository.findAllByUser_UserId(1L)).thenReturn(List.of(request));
+            when(portRequestService.getPortRequestsByRequestId(1L)).thenReturn(List.of());
+            when(podExternalPortRepository.findByRequestRequestId(1L)).thenReturn(List.of(podExternalPort));
+
+            List<SaveRequestResponseDTO> result = requestQueryService.getRequestsByUserId(1L);
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).podExternalPorts()).hasSize(1);
+            assertThat(result.get(0).podExternalPorts().get(0).internalPort()).isEqualTo(8888);
+            assertThat(result.get(0).podExternalPorts().get(0).externalPort()).isEqualTo(30888);
+            assertThat(result.get(0).podExternalPorts().get(0).usagePurpose()).isEqualTo("jupyter");
         }
 
         @Test
@@ -162,5 +193,37 @@ class RequestQueryServiceTest {
             assertThatThrownBy(() -> requestQueryService.getMyChangeRequests(99L))
                     .isInstanceOf(BusinessException.class);
         }
+    }
+
+    private Request mockRequest(Long requestId) {
+        Request request = mock(Request.class);
+        var resourceGroup = mock(DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup.class);
+        var user = mock(DGU_AI_LAB.admin_be.domain.users.entity.User.class);
+        var containerImage = mock(DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage.class);
+
+        when(request.getRequestId()).thenReturn(requestId);
+        when(request.getResourceGroup()).thenReturn(resourceGroup);
+        when(resourceGroup.getRsgroupId()).thenReturn(1);
+        when(resourceGroup.getResourceGroupName()).thenReturn("RTX 4090 Cluster");
+        when(resourceGroup.getDescription()).thenReturn("GPU cluster");
+        when(resourceGroup.getServerName()).thenReturn("LAB");
+        when(request.getUser()).thenReturn(user);
+        when(user.getUserId()).thenReturn(1L);
+        when(user.getEmail()).thenReturn("user@example.com");
+        when(user.getName()).thenReturn("테스트유저");
+        when(user.getStudentId()).thenReturn("2023000001");
+        when(user.getDepartment()).thenReturn("컴퓨터공학과");
+        when(user.getPhone()).thenReturn("010-0000-0000");
+        when(user.getIsActive()).thenReturn(true);
+        when(request.getContainerImage()).thenReturn(containerImage);
+        when(containerImage.getImageId()).thenReturn(1L);
+        when(containerImage.getImageName()).thenReturn("cuda");
+        when(containerImage.getImageVersion()).thenReturn("11.8");
+        when(request.getRequestGroups()).thenReturn(java.util.Set.of());
+        when(request.getVolumeSizeGiB()).thenReturn(20L);
+        when(request.getUsagePurpose()).thenReturn("학습");
+        when(request.getFormAnswers()).thenReturn("{}");
+        when(request.getStatus()).thenReturn(Status.FULFILLED);
+        return request;
     }
 }
