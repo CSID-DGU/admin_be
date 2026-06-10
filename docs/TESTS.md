@@ -96,7 +96,7 @@
   - **getAllGroups**: 빈 목록이면 예외
   - **createGroup**
     - 그룹명 중복이면 예외
-    - `IdAllocationService.allocateNewGid()` 기반 GID 할당
+    - infra 그룹 생성 응답의 GID를 로컬 DB에 저장
     - 외부 그룹 생성 API(WebClient 체인) 호출 흐름이 깨지지 않도록 모킹
     - `ubuntuUsername`이 주어진 경우 “해당 유저 소유 요청인지” 검증
 
@@ -149,6 +149,7 @@
 - **`AdminRequestQueryServiceTest`**
   - 전체/신규(PENDING)/변경요청(PENDING)/리소스 요약 조회 규칙
 - **`AdminRequestCommandServiceTest`**
+  - 승인 시 infra 사용자 생성 응답의 UID/GID를 Request에 저장
   - 승인 시 `PodService.createPod()` 호출 정책
   - Pod 응답의 external ports → `PodExternalPortRepository` 저장 정책(포트 없으면 저장 없음)
 - **`ConfigRequestServiceTest`**
@@ -172,15 +173,7 @@
   - 전체 조회는 빈 리스트 허용
   - GPU 요약 정보가 비어 있으면 예외(“현황이 없으면 오류” 정책)
 
-### G. Used IDs (`domain/usedIds`)
-
-- **`IdCounterTest`**
-  - `allocateOne()` 증가, min/max 경계, 초과 예외 정책
-- **`IdAllocationServiceTest`**
-  - GID/UID 할당 실패 조건(카운터 없음/범위 소진/중복키 충돌)과 재사용 정책
-  - releaseId의 null 처리/삭제 실패 예외 정책
-
-### H. Scheduler 통합 테스트 (`domain/scheduler`)
+### G. Scheduler 통합 테스트 (`domain/scheduler`)
 
 - **`RequestSchedulerServiceTest`**
   - 시간 고정 후 만료 요청의 삭제/알림/관리자 슬랙 알림 정책 검증
@@ -196,4 +189,3 @@
 - **“이 API는 어떤 상태 코드가 맞아?”** → 컨트롤러 테스트 항목을 보면 됩니다.
 - **“만료 삭제, D-7 알림 같은 정책이 요구사항이야?”** → 스케줄러 통합 테스트가 사실상 정책 스펙입니다.
 - **“키 네이밍/호출 횟수 같은 규칙은 어디서 보장돼?”** → Token/스케줄러/승인 서비스 테스트가 그 규칙을 고정합니다.
-

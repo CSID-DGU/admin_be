@@ -85,7 +85,7 @@ public enum ErrorCode {
     INVALID_LOGIN_INFO(HttpStatus.BAD_REQUEST, "잘못된 로그인 입력값입니다."),
     INVALID_AUTH_CODE(HttpStatus.BAD_REQUEST, "올바르지 않은 인증 코드입니다."),
     GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "지정된 그룹을 찾을 수 없습니다."),
-    UID_ALLOCATION_FAILED(HttpStatus.BAD_REQUEST, "UID를 할당에 실패했습니다."),
+    UID_ALLOCATION_FAILED(HttpStatus.BAD_GATEWAY, "외부 API 응답에서 UID/GID를 확인할 수 없습니다."),
     DUPLICATE_USERNAME(HttpStatus.CONFLICT, "이미 사용하고 있는 username입니다. 같은 사용자이더라도 다른 username을 입력해주세요."),
     ACCOUNT_DISABLED(HttpStatus.NOT_FOUND,"비활성화된 유저입니다. 관리자에게 문의하세요."),
 
@@ -102,15 +102,9 @@ public enum ErrorCode {
     DUPLICATE_GROUP_ID(HttpStatus.CONFLICT, "외부 API: 그룹명 또는 GID 충돌"),
     DUPLICATE_GROUP_NAME(HttpStatus.CONFLICT, "중복된 그룹 이름입니다."),
     GROUP_CREATION_FAILED(HttpStatus.BAD_GATEWAY, "외부 API: 필수 필드 누락 또는 형식 오류 "),
-    GID_ALLOCATION_FAILED(HttpStatus.BAD_GATEWAY, "IdAllocationService에서 GID 할당에 실패했습니다. "),
+    GID_ALLOCATION_FAILED(HttpStatus.BAD_GATEWAY, "외부 API 응답에서 GID를 확인할 수 없습니다."),
     FORBIDDEN_REQUEST(HttpStatus.BAD_REQUEST, "요청된 우분투 사용자 이름은 로그인한 사용자의 계정이 아닙니다."),
     INVALID_GROUP_MEMBER(HttpStatus.BAD_REQUEST, "존재하지 않는 사용자입니다."),
-
-    /**
-     * ID Error
-     */
-    USED_ID_RELEASE_FAILED(HttpStatus.BAD_GATEWAY, "스케줄러에서 usedId 삭제에 실패했습니다."),
-
 
     /**
      * Approval Error

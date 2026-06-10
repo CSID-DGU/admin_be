@@ -32,6 +32,10 @@ public record SaveRequestResponseDTO(
         String imageVersion,
         @Schema(description = "Ubuntu 사용자명", example = "test2014")
         String ubuntuUsername,
+        @Schema(description = "Ubuntu UID", example = "2001", nullable = true)
+        Long ubuntuUid,
+        @Schema(description = "Ubuntu primary GID", example = "2001", nullable = true)
+        Long ubuntuGid,
         @Schema(description = "Ubuntu GID 목록", example = "[1005, 1006]")
         List<Long> ubuntuGids,
         @Schema(description = "볼륨 크기 (GiB)", example = "20")
@@ -129,6 +133,8 @@ public record SaveRequestResponseDTO(
                 .imageName(request.getContainerImage().getImageName())
                 .imageVersion(request.getContainerImage().getImageVersion())
                 .ubuntuUsername(request.getUbuntuUsername())
+                .ubuntuUid(request.getUbuntuUid())
+                .ubuntuGid(request.getUbuntuGid())
                 .ubuntuGids(
                         request.getRequestGroups().stream()
                                 .map(rg -> rg.getGroup().getUbuntuGid())
@@ -167,6 +173,8 @@ public record SaveRequestResponseDTO(
                 .imageName(request.getContainerImage().getImageName())
                 .imageVersion(request.getContainerImage().getImageVersion())
                 .ubuntuUsername(request.getUbuntuUsername())
+                .ubuntuUid(request.getUbuntuUid())
+                .ubuntuGid(request.getUbuntuGid())
                 .ubuntuGids(
                         request.getRequestGroups().stream()
                                 .map(rg -> rg.getGroup().getUbuntuGid())

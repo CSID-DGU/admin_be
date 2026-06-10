@@ -29,6 +29,12 @@ public class Request extends BaseTimeEntity {
     @Column(name = "ubuntu_username", nullable = false, length = 100, unique = true)
     private String ubuntuUsername;
 
+    @Column(name = "ubuntu_uid", unique = true)
+    private Long ubuntuUid;
+
+    @Column(name = "ubuntu_gid")
+    private Long ubuntuGid;
+
     @Column(name = "ubuntu_password", nullable = false)
     private String ubuntuPassword;
 
@@ -168,6 +174,14 @@ public class Request extends BaseTimeEntity {
     public void assignPodInfo(String podName, String nodeName) {
         this.podName = podName;
         this.nodeName = nodeName;
+    }
+
+    public void assignUbuntuIds(Long ubuntuUid, Long ubuntuGid) {
+        if (ubuntuUid == null || ubuntuGid == null || ubuntuUid <= 0 || ubuntuGid <= 0) {
+            throw new BusinessException(ErrorCode.UID_ALLOCATION_FAILED);
+        }
+        this.ubuntuUid = ubuntuUid;
+        this.ubuntuGid = ubuntuGid;
     }
 
     public void addGroup(Group group) {
