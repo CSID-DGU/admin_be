@@ -33,7 +33,7 @@ public interface GroupApi {
             @ApiResponse(responseCode = "400", description = "잘못된 요청: 필수 필드 누락(groupName) 또는 잘못된 형식"),
             @ApiResponse(responseCode = "403", description = "접근 금지: 요청한 ubuntuUsername이 로그인한 사용자와 일치하지 않음"),
             @ApiResponse(responseCode = "409", description = "데이터 충돌: 동일한 그룹명이 이미 존재함"),
-            @ApiResponse(responseCode = "500", description = "서버 오류: 외부 API 응답의 GID 누락 또는 외부 API 호출 실패")
+            @ApiResponse(responseCode = "502", description = "외부 API 응답의 GID 누락 또는 외부 API 호출 실패")
     })
     @PostMapping
     ResponseEntity<SuccessResponse<?>> createGroup(
