@@ -5,9 +5,10 @@ import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupResponseDTO;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
-import DGU_AI_LAB.admin_be.domain.usedIds.service.IdAllocationService;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -20,7 +21,6 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 @Slf4j
@@ -31,7 +31,6 @@ public class GroupService {
 
     private final GroupRepository groupRepository;
     private final RequestRepository requestRepository;
-    private final IdAllocationService idAllocationService;
     private final @Qualifier("configWebClient") WebClient groupCreationWebClient;
 
     /**
@@ -78,16 +77,7 @@ public class GroupService {
             throw new BusinessException(ErrorCode.DUPLICATE_GROUP_NAME);
         }
 
-        // 3. 새로운 GID를 할당받습니다.
-        Long assignedGid = idAllocationService.allocateNewGid();
-        log.info("[createGroup] 새로운 GID 할당 완료: {}", assignedGid);
-
-        if (assignedGid > Integer.MAX_VALUE || assignedGid < Integer.MIN_VALUE) {
-            log.error("[createGroup] 할당된 GID가 int 범위를 벗어납니다: {}", assignedGid);
-            throw new BusinessException(ErrorCode.GID_ALLOCATION_FAILED);
-        }
-
-        // 4. 외부 API 호출을 위한 ubuntuUser 멤버 리스트를 구성합니다.
+        // 3. 외부 API 호출을 위한 ubuntuUser 멤버 리스트를 구성합니다.
         List<String> members = Optional.ofNullable(dto.ubuntuUsername())
                 .filter(StringUtils::hasText)
                 .map(List::of)
@@ -95,22 +85,22 @@ public class GroupService {
 
         ConfigServerGroupRequest apiDto = new ConfigServerGroupRequest(
                 dto.groupName(),
-                assignedGid.intValue(),
                 members
         );
 
+        ConfigServerGroupResponse apiResponse;
         try {
             log.info("[createGroup] 외부 그룹 생성 API 호출 시작: {}", apiDto);
 
-            groupCreationWebClient
+            apiResponse = groupCreationWebClient
                     .put()
                     .uri("/accounts/groups")
                     .bodyValue(apiDto)
                     .retrieve()
-                    .bodyToMono(Map.class)
+                    .bodyToMono(ConfigServerGroupResponse.class)
                     .block();
 
-            log.info("[createGroup] 외부 API 호출 성공");
+            log.info("[createGroup] 외부 API 호출 성공: {}", apiResponse);
 
         } catch (WebClientResponseException e) {
             log.error("[createGroup] 외부 API 호출 실패: 상태 코드={}, 응답={}", e.getStatusCode(), e.getResponseBodyAsString(), e);
@@ -137,7 +127,22 @@ public class GroupService {
             throw new BusinessException(ErrorCode.GROUP_CREATION_FAILED);
         }
 
-        // 5. API 호출이 성공한 후에만 로컬 DB에 그룹을 저장합니다.
+        Long assignedGid = Optional.ofNullable(apiResponse)
+                .map(ConfigServerGroupResponse::group)
+                .map(ConfigServerGroupInfo::gid)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GID_ALLOCATION_FAILED));
+
+        if (assignedGid <= 0) {
+            log.error("[createGroup] 외부 API에서 유효하지 않은 GID를 반환했습니다: {}", assignedGid);
+            throw new BusinessException(ErrorCode.GID_ALLOCATION_FAILED);
+        }
+
+        if (groupRepository.existsByUbuntuGid(assignedGid)) {
+            log.warn("[createGroup] DB에 이미 존재하는 GID입니다: {}", assignedGid);
+            throw new BusinessException(ErrorCode.DUPLICATE_GROUP_ID);
+        }
+
+        // 4. API 호출이 성공한 후에만 로컬 DB에 그룹을 저장합니다.
         Group group = Group.builder()
                 .groupName(dto.groupName())
                 .ubuntuGid(assignedGid)
@@ -149,10 +154,20 @@ public class GroupService {
         return GroupResponseDTO.fromEntity(group);
     }
 
-    // Group Service 내부적으로만 사용하는 DTO입니다.
-    private record ConfigServerGroupRequest(
+    // GroupService에서만 사용하는 infra API 요청/응답 DTO입니다. 테스트 검증을 위해 패키지 범위로 둡니다.
+    record ConfigServerGroupRequest(
             String name,
-            int gid,
             List<String> members
+    ) {}
+
+    record ConfigServerGroupResponse(
+            ConfigServerGroupInfo group
+    ) {}
+
+    record ConfigServerGroupInfo(
+            String name,
+            @JsonProperty("gid")
+            @JsonAlias({"ubuntuGid", "ubuntu_gid"})
+            Long gid
     ) {}
 }

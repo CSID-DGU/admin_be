@@ -153,4 +153,31 @@ class RequestTest {
             assertThat(request.getExpiresAt()).isEqualTo(newDate);
         }
     }
+
+    @Nested
+    @DisplayName("assignUbuntuIds")
+    class AssignUbuntuIds {
+
+        @Test
+        @DisplayName("양수 UID/GID를 저장한다")
+        void assignUbuntuIds_success() {
+            request.assignUbuntuIds(2001L, 2001L);
+
+            assertThat(request.getUbuntuUid()).isEqualTo(2001L);
+            assertThat(request.getUbuntuGid()).isEqualTo(2001L);
+        }
+
+        @Test
+        @DisplayName("UID/GID가 null 또는 양수가 아니면 BusinessException을 던진다")
+        void assignUbuntuIds_throwsException_whenInvalid() {
+            assertThatThrownBy(() -> request.assignUbuntuIds(null, 2001L))
+                    .isInstanceOf(BusinessException.class);
+            assertThatThrownBy(() -> request.assignUbuntuIds(2001L, null))
+                    .isInstanceOf(BusinessException.class);
+            assertThatThrownBy(() -> request.assignUbuntuIds(0L, 2001L))
+                    .isInstanceOf(BusinessException.class);
+            assertThatThrownBy(() -> request.assignUbuntuIds(2001L, -1L))
+                    .isInstanceOf(BusinessException.class);
+        }
+    }
 }
