@@ -1,8 +1,10 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
+import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.PodExternalPortResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.PortMappingDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
@@ -30,6 +32,7 @@ public class RequestQueryService {
     private final ChangeRequestRepository changeRequestRepository;
     private final UserRepository userRepository;
     private final PortRequestService portRequestService;
+    private final PodExternalPortRepository podExternalPortRepository;
 
     /** 내 신청 목록 */
     public List<SaveRequestResponseDTO> getRequestsByUserId(Long userId) {
@@ -46,8 +49,12 @@ public class RequestQueryService {
                 .stream()
                 .map(PortMappingDTO::fromEntity)
                 .toList();
+        List<PodExternalPortResponseDTO> podExternalPorts = podExternalPortRepository.findByRequestRequestId(request.getRequestId())
+                .stream()
+                .map(PodExternalPortResponseDTO::fromEntity)
+                .toList();
 
-        return SaveRequestResponseDTO.fromEntityWithPortMappings(request, portMappings);
+        return SaveRequestResponseDTO.fromEntityWithPorts(request, portMappings, podExternalPorts);
     }
 
     /** 승인 완료 자원 사용량 */
