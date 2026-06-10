@@ -125,5 +125,30 @@ class GroupServiceTest {
             assertThatThrownBy(() -> groupService.createGroup(dto, 1L))
                     .isInstanceOf(BusinessException.class);
         }
+
+        @Test
+        @DisplayName("infra가 유효하지 않은 GID를 반환하면 BusinessException을 던진다")
+        @SuppressWarnings("unchecked")
+        void createGroup_throwsException_whenInfraReturnsInvalidGid() {
+            when(groupRepository.existsByGroupName("developers")).thenReturn(false);
+
+            WebClient.RequestBodyUriSpec uriSpec = mock(WebClient.RequestBodyUriSpec.class);
+            WebClient.RequestBodySpec bodySpec = mock(WebClient.RequestBodySpec.class);
+            WebClient.ResponseSpec responseSpec = mock(WebClient.ResponseSpec.class);
+            doReturn(uriSpec).when(groupCreationWebClient).put();
+            doReturn(bodySpec).when(uriSpec).uri(anyString());
+            doReturn(bodySpec).when(bodySpec).bodyValue(any());
+            doReturn(responseSpec).when(bodySpec).retrieve();
+            doReturn(Mono.just(new GroupService.ConfigServerGroupResponse(
+                    new GroupService.ConfigServerGroupInfo("developers", 0L)
+            )))
+                    .when(responseSpec).bodyToMono(GroupService.ConfigServerGroupResponse.class);
+
+            CreateGroupRequestDTO dto = new CreateGroupRequestDTO("developers", null);
+
+            assertThatThrownBy(() -> groupService.createGroup(dto, 1L))
+                    .isInstanceOf(BusinessException.class);
+            verify(groupRepository, never()).save(any(Group.class));
+        }
     }
 }
