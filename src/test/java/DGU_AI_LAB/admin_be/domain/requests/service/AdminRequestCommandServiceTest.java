@@ -100,7 +100,10 @@ class AdminRequestCommandServiceTest {
         when(putHeadersSpec.retrieve()).thenReturn(putResponseSpec);
         when(putResponseSpec.onStatus(any(), any())).thenReturn(putResponseSpec);
         when(putResponseSpec.bodyToMono(AdminRequestCommandService.UserCreationResponse.class))
-                .thenReturn(Mono.just(new AdminRequestCommandService.UserCreationResponse(2001L, 2001L)));
+                .thenReturn(Mono.just(new AdminRequestCommandService.UserCreationResponse(
+                        "created",
+                        new AdminRequestCommandService.UserCreationResponse.UserInfo(2001L, 2001L)
+                )));
     }
 
     /** PVC 생성 POST 요청 WebClient 모킹
