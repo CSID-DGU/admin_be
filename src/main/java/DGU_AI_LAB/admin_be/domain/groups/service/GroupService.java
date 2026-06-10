@@ -132,6 +132,11 @@ public class GroupService {
                 .map(ConfigServerGroupInfo::gid)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GID_ALLOCATION_FAILED));
 
+        if (assignedGid <= 0) {
+            log.error("[createGroup] 외부 API에서 유효하지 않은 GID를 반환했습니다: {}", assignedGid);
+            throw new BusinessException(ErrorCode.GID_ALLOCATION_FAILED);
+        }
+
         if (groupRepository.existsByUbuntuGid(assignedGid)) {
             log.warn("[createGroup] DB에 이미 존재하는 GID입니다: {}", assignedGid);
             throw new BusinessException(ErrorCode.DUPLICATE_GROUP_ID);
@@ -149,7 +154,7 @@ public class GroupService {
         return GroupResponseDTO.fromEntity(group);
     }
 
-    // Group Service 내부적으로만 사용하는 DTO입니다.
+    // GroupService에서만 사용하는 infra API 요청/응답 DTO입니다. 테스트 검증을 위해 패키지 범위로 둡니다.
     record ConfigServerGroupRequest(
             String name,
             List<String> members
