@@ -26,7 +26,7 @@ public interface GroupApi {
     @GetMapping
     ResponseEntity<SuccessResponse<?>> getGroups();
 
-    @Operation(summary = "새로운 그룹 생성", description = "infra Server에 그룹 생성 API를 호출하고, 응답으로 확정된 GID를 MySQL DB에 저장합니다. 그룹명과 사용자 이름은 필수값이지만, 사용자 이름은 생략 가능하며 이 경우 멤버 없는 그룹이 생성됩니다. " +
+    @Operation(summary = "새로운 그룹 생성", description = "infra Server에 그룹 생성 API를 호출하고, 응답으로 확정된 GID를 MySQL DB에 저장합니다. 그룹명(groupName)은 필수값이며, 사용자 이름(ubuntuUsername)은 선택값입니다. 사용자 이름이 생략되면 멤버 없는 그룹이 생성됩니다. " +
             "사용 신청을 아직 생성하지 않았지만, 그룹을 먼저 생성해야 하는 경우를 고려했습니다.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "생성 성공"),
