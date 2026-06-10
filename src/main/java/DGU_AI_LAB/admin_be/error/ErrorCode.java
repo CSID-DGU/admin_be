@@ -147,7 +147,7 @@ public enum ErrorCode {
      * Port Request Error
      */
     DUPLICATE_PORT_NUMBER(HttpStatus.CONFLICT, "이미 사용 중인 포트 번호입니다."),
-    NO_AVAILABLE_PORT(HttpStatus.CONFLICT, "사용 가능한 포트가 없습니다. (10000-20000 범위)")
+    NO_AVAILABLE_PORT(HttpStatus.CONFLICT, "사용 가능한 포트가 없습니다. (30000-32767 범위)")
 
 
     ;
