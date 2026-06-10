@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonRawValue;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
@@ -54,6 +55,9 @@ public record SaveRequestResponseDTO(
         String comment,
         @Schema(description = "포트 매핑 목록")
         List<PortMappingDTO> portMappings,
+        @Schema(description = "Pod 외부 포트 목록")
+        @JsonProperty("pod_external_ports")
+        List<PodExternalPortResponseDTO> podExternalPorts,
         @Schema(description = "신청 생성 일시", example = "2026-03-02T15:36:29")
         LocalDateTime createdAt,
         @Schema(description = "신청 수정 일시", example = "2026-03-02T15:36:29")
@@ -148,12 +152,21 @@ public record SaveRequestResponseDTO(
                 .approvedAt(request.getApprovedAt())
                 .comment(request.getAdminComment())
                 .portMappings(List.of())
+                .podExternalPorts(List.of())
                 .createdAt(request.getCreatedAt())
                 .updatedAt(request.getUpdatedAt())
                 .build();
     }
 
     public static SaveRequestResponseDTO fromEntityWithPortMappings(Request request, List<PortMappingDTO> portMappings) {
+        return fromEntityWithPorts(request, portMappings, List.of());
+    }
+
+    public static SaveRequestResponseDTO fromEntityWithPorts(
+            Request request,
+            List<PortMappingDTO> portMappings,
+            List<PodExternalPortResponseDTO> podExternalPorts
+    ) {
         if (request.getResourceGroup() == null) {
             throw new BusinessException(ErrorCode.RESOURCE_GROUP_NOT_FOUND);
         }
@@ -188,6 +201,7 @@ public record SaveRequestResponseDTO(
                 .approvedAt(request.getApprovedAt())
                 .comment(request.getAdminComment())
                 .portMappings(portMappings)
+                .podExternalPorts(podExternalPorts)
                 .createdAt(request.getCreatedAt())
                 .updatedAt(request.getUpdatedAt())
                 .build();

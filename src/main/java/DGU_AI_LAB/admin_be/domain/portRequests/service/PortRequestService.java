@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -21,14 +22,14 @@ public class PortRequestService {
 
     private final PortRequestRepository portRequestRepository;
 
-    private static final int PORT_RANGE_START = 10000;
-    private static final int PORT_RANGE_END = 20000;
+    private static final int NODE_PORT_RANGE_START = 30000;
+    private static final int NODE_PORT_RANGE_END = 32767;
 
     @Transactional
     public PortRequests createPortRequest(Request request, ResourceGroup resourceGroup,
                                         Integer internalPort, String usagePurpose) {
 
-        // Auto-assign external port number from range 10000-20000
+        // Auto-assign external NodePort from the Kubernetes default range.
         Integer assignedPortNumber = findNextAvailablePort(resourceGroup.getRsgroupId());
 
         if (assignedPortNumber == null) {
@@ -49,15 +50,15 @@ public class PortRequestService {
     private Integer findNextAvailablePort(Integer resourceGroupId) {
         // Get all used port numbers in ascending order
         List<Integer> usedPorts = portRequestRepository.findPortNumbersByResourceGroupRsgroupIdOrderByPortNumberAsc(resourceGroupId);
+        Set<Integer> usedPortSet = Set.copyOf(usedPorts);
 
-        // Find the first available port in range 10000-20000
-        for (int port = PORT_RANGE_START; port <= PORT_RANGE_END; port++) {
-            if (!usedPorts.contains(port)) {
+        // Find the first available port in range 30000-32767.
+        for (int port = NODE_PORT_RANGE_START; port <= NODE_PORT_RANGE_END; port++) {
+            if (!usedPortSet.contains(port)) {
                 return port;
             }
         }
 
-        // No available ports in range
         return null;
     }
 
