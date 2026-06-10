@@ -177,7 +177,7 @@ public class Request extends BaseTimeEntity {
     }
 
     public void assignUbuntuIds(Long ubuntuUid, Long ubuntuGid) {
-        if (ubuntuUid == null || ubuntuGid == null) {
+        if (ubuntuUid == null || ubuntuGid == null || ubuntuUid <= 0 || ubuntuGid <= 0) {
             throw new BusinessException(ErrorCode.UID_ALLOCATION_FAILED);
         }
         this.ubuntuUid = ubuntuUid;
