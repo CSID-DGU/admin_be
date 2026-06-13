@@ -329,11 +329,19 @@ public class AdminRequestCommandService {
     }
 
     record UserCreationResponse(
-            @JsonProperty("uid")
-            @JsonAlias({"ubuntuUid", "ubuntu_uid"})
-            Long uid,
-            @JsonProperty("gid")
-            @JsonAlias({"ubuntuGid", "ubuntu_gid"})
-            Long gid
-    ) {}
+            String status,
+            UserInfo user
+    ) {
+        Long uid() { return user != null ? user.uid() : null; }
+        Long gid() { return user != null ? user.gid() : null; }
+
+        record UserInfo(
+                @JsonProperty("uid")
+                @JsonAlias({"ubuntuUid", "ubuntu_uid"})
+                Long uid,
+                @JsonProperty("gid")
+                @JsonAlias({"ubuntuGid", "ubuntu_gid"})
+                Long gid
+        ) {}
+    }
 }

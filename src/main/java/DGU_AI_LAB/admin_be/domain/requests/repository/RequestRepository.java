@@ -22,6 +22,7 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     Optional<Request> findByUbuntuUsernameAndUbuntuPasswordBase64(String username, String passwordBase64);
     List<Request> findByUserUserIdAndStatus(Long userId, Status status);
     boolean existsByUbuntuUsername(String ubuntuUsername);
+    boolean existsByUbuntuUsernameAndStatusIn(String ubuntuUsername, List<Status> statuses);
     List<Request> findAllByUser_UserIdAndStatus(Long userId, Status status);
     boolean existsByUbuntuUsernameAndUser_UserId(String ubuntuUsername, Long userId);
 

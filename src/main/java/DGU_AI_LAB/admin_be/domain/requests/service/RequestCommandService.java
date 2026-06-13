@@ -28,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -170,7 +171,8 @@ public class RequestCommandService {
         ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        if (requestRepository.existsByUbuntuUsername(dto.ubuntuUsername())) {
+        if (requestRepository.existsByUbuntuUsernameAndStatusIn(
+                dto.ubuntuUsername(), List.of(Status.PENDING, Status.FULFILLED))) {
             throw new BusinessException(ErrorCode.DUPLICATE_USERNAME);
         }
 
