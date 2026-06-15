@@ -8,8 +8,12 @@ import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.PvcRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.UserCreationRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.PvcResponseDTO;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
@@ -33,9 +37,9 @@ import reactor.core.publisher.Mono;
 
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -114,7 +118,13 @@ class AdminRequestCommandServiceTest {
         when(postUriSpec.uri(anyString())).thenReturn(postBodySpec);
         doReturn(postHeadersSpec).when(postBodySpec).bodyValue(any());
         when(postHeadersSpec.retrieve()).thenReturn(postResponseSpec);
-        when(postResponseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of()));
+        when(postResponseSpec.bodyToMono(PvcResponseDTO.class)).thenReturn(Mono.just(new PvcResponseDTO(
+                null,
+                null,
+                List.of(new PvcResponseDTO.PvcResult(
+                        "created", null, null, null, "testuser", "user", "pvc-testuser-share", "10Gi", null, null, null
+                ))
+        )));
     }
 
     /** 공통 Request mock 설정 */
@@ -124,6 +134,7 @@ class AdminRequestCommandServiceTest {
         when(request.getUbuntuUsername()).thenReturn("testuser");
         when(request.getUbuntuPassword()).thenReturn("encoded_pw");
         when(request.getUbuntuPasswordBase64()).thenReturn("cGxhaW5fdGV4dF9wdw==");
+        when(request.getVolumeSizeGiB()).thenReturn(10L);
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
         when(request.getUser()).thenReturn(mockUser);
         when(request.getResourceGroup()).thenReturn(mockRg);
@@ -185,6 +196,15 @@ class AdminRequestCommandServiceTest {
         assertThat(userCreationRequest.gecos()).isEqualTo("테스트유저");
         assertThat(userCreationRequest.primaryGroupName()).isEqualTo("testuser");
         assertThat(userCreationRequest.enableSudo()).isFalse();
+
+        ArgumentCaptor<PvcRequestDTO> pvcCaptor = ArgumentCaptor.forClass(PvcRequestDTO.class);
+        verify(postBodySpec).bodyValue(pvcCaptor.capture());
+        PvcRequestDTO pvcRequest = pvcCaptor.getValue();
+        assertThat(pvcRequest.pvcs()).hasSize(1);
+        assertThat(pvcRequest.pvcs().get(0).name()).isEqualTo("testuser");
+        assertThat(pvcRequest.pvcs().get(0).type()).isEqualTo("user");
+        assertThat(pvcRequest.pvcs().get(0).storage()).isEqualTo(10L);
+        assertThat(pvcRequest.pvcs().get(0).pvcName()).isNull();
     }
 
     @Test
@@ -236,5 +256,44 @@ class AdminRequestCommandServiceTest {
 
         // Then - PodService.createPod()가 username으로 정확히 1회 호출
         verify(podService, times(1)).createPod("testuser");
+    }
+
+    @Test
+    @DisplayName("PVC API가 HTTP 200 내부 results error를 반환하면 승인 처리가 실패한다")
+    void approveRequest_pvcResponseError_throwsBusinessException() {
+        // Given
+        Long requestId = 4L;
+        buildMockedRequest(requestId);
+        stubWebClientPut();
+        stubWebClientPost();
+        when(postResponseSpec.bodyToMono(PvcResponseDTO.class)).thenReturn(Mono.just(new PvcResponseDTO(
+                null,
+                null,
+                List.of(new PvcResponseDTO.PvcResult(
+                        null,
+                        "CREATE_PVC",
+                        "PVC_CREATE_FAILED",
+                        "Failed to process testuser: resize failed",
+                        "testuser",
+                        "user",
+                        null,
+                        null,
+                        null,
+                        500,
+                        "Internal Server Error"
+                ))
+        )));
+
+        ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, null);
+
+        // When & Then
+        assertThatThrownBy(() -> service.approveRequest(dto))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Failed to process testuser")
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.PVC_API_FAILURE);
+
+        verify(podService, never()).createPod(anyString());
+        verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
     }
 }

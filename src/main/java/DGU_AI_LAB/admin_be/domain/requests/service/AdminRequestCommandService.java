@@ -9,6 +9,7 @@ import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.*;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.PvcResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
@@ -21,6 +22,9 @@ import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.error.exception.InfraErrorParser;
+import DGU_AI_LAB.admin_be.error.exception.InfraOperationException;
+import DGU_AI_LAB.admin_be.error.exception.InfraOperationException.InfraStep;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -37,7 +41,7 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
-import java.util.Map;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -69,28 +73,94 @@ public class AdminRequestCommandService {
      * @param volumeSizeGiB
      */
     private void callPvcApi(String username, Long volumeSizeGiB) {
-        PvcRequestDTO pvcDto = new PvcRequestDTO(username, volumeSizeGiB);
+        PvcRequestDTO pvcDto = PvcRequestDTO.userPvc(username, volumeSizeGiB);
 
         try {
             log.info("PVC API 요청 시작: 사용자: {}, 용량: {}Gi",
-                    pvcDto.ubuntuUsername(), pvcDto.volumeSizeGiB());
+                    username, volumeSizeGiB);
 
-            pvcWebClient.post()
+            PvcResponseDTO response = pvcWebClient.post()
                     .uri("/pvc")
                     .bodyValue(pvcDto)
                     .retrieve()
-                    .bodyToMono(Map.class)
+                    .bodyToMono(PvcResponseDTO.class)
                     .block();
 
-            log.info("PVC API 요청 성공: 사용자: {}", username);
+            validatePvcResponse(username, response);
+            log.info("PVC API 요청 성공: 사용자: {}, 응답: {}", username, response);
 
         } catch (WebClientResponseException e) {
             log.error("PVC API 호출 실패: 상태 코드: {}, 응답 본문: {}",
                     e.getStatusCode(), e.getResponseBodyAsString(), e);
-            throw new BusinessException(ErrorCode.PVC_API_FAILURE);
+            throw toInfraOperationException(
+                    ErrorCode.PVC_API_FAILURE,
+                    InfraStep.CREATE_PVC,
+                    e.getStatusCode().value(),
+                    "PVC API 호출 실패",
+                    "HTTP_ERROR",
+                    e.getResponseBodyAsString()
+            );
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("PVC API 호출 중 예기치 않은 오류 발생.", e);
-            throw new BusinessException(ErrorCode.PVC_API_FAILURE);
+            throw new InfraOperationException(
+                    ErrorCode.PVC_API_FAILURE,
+                    "PVC API 호출 중 예기치 않은 오류 발생.",
+                    InfraStep.CREATE_PVC,
+                    null,
+                    "UNEXPECTED_ERROR",
+                    e.getMessage(),
+                    null,
+                    null
+            );
+        }
+    }
+
+    private void validatePvcResponse(String username, PvcResponseDTO response) {
+        if (response == null || response.results() == null || response.results().isEmpty()) {
+            log.error("PVC API 응답이 비어 있습니다. 사용자: {}, 응답: {}", username, response);
+            throw new InfraOperationException(
+                    ErrorCode.PVC_API_FAILURE,
+                    "PVC API 응답이 비어 있습니다.",
+                    InfraStep.CREATE_PVC,
+                    200,
+                    "EMPTY_RESPONSE",
+                    "PVC API 응답이 비어 있습니다.",
+                    null,
+                    null
+            );
+        }
+
+        List<PvcResponseDTO.PvcResult> failedResults = response.results().stream()
+                .filter(PvcResponseDTO.PvcResult::failed)
+                .toList();
+        if (!failedResults.isEmpty()) {
+            String message = failedResults.stream()
+                    .map(result -> firstNonBlank(result.detail(), result.error()))
+                    .collect(Collectors.joining("; "));
+            String infraError = failedResults.stream()
+                    .map(PvcResponseDTO.PvcResult::error)
+                    .filter(error -> error != null && !error.isBlank())
+                    .findFirst()
+                    .orElse("PVC_RESULT_ERROR");
+            String process = failedResults.stream()
+                    .map(PvcResponseDTO.PvcResult::process)
+                    .filter(processResult -> processResult != null && !processResult.isEmpty())
+                    .findFirst()
+                    .map(Object::toString)
+                    .orElse(null);
+            log.error("PVC API 처리 실패. 사용자: {}, 오류: {}", username, message);
+            throw new InfraOperationException(
+                    ErrorCode.PVC_API_FAILURE,
+                    "PVC API 처리 실패: " + message,
+                    InfraStep.CREATE_PVC,
+                    200,
+                    infraError,
+                    message,
+                    null,
+                    process
+            );
         }
     }
 
@@ -119,18 +189,48 @@ public class AdminRequestCommandService {
                     .bodyValue(userCreationDto)
                     .retrieve()
                     .onStatus(HttpStatus.BAD_REQUEST::equals, clientResponse ->
-                            Mono.error(new BusinessException(ErrorCode.INVALID_USERNAME_FORMAT))
+                            clientResponse.bodyToMono(String.class)
+                                    .flatMap(body -> Mono.error(toInfraOperationException(
+                                            ErrorCode.INVALID_USERNAME_FORMAT,
+                                            InfraStep.CREATE_ACCOUNT,
+                                            clientResponse.statusCode().value(),
+                                            ErrorCode.INVALID_USERNAME_FORMAT.getMessage(),
+                                            "HTTP_ERROR",
+                                            body
+                                    )))
                     )
                     .onStatus(HttpStatus.CONFLICT::equals, clientResponse ->
-                            Mono.error(new BusinessException(ErrorCode.USER_ALREADY_EXISTS))
+                            clientResponse.bodyToMono(String.class)
+                                    .flatMap(body -> Mono.error(toInfraOperationException(
+                                            ErrorCode.USER_ALREADY_EXISTS,
+                                            InfraStep.CREATE_ACCOUNT,
+                                            clientResponse.statusCode().value(),
+                                            ErrorCode.USER_ALREADY_EXISTS.getMessage(),
+                                            "HTTP_ERROR",
+                                            body
+                                    )))
                     )
                     .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
                             clientResponse.bodyToMono(String.class)
-                                    .flatMap(body -> Mono.error(new BusinessException("사용자 생성 실패: " + body, ErrorCode.USER_CREATION_FAILED)))
+                                    .flatMap(body -> Mono.error(toInfraOperationException(
+                                            ErrorCode.USER_CREATION_FAILED,
+                                            InfraStep.CREATE_ACCOUNT,
+                                            clientResponse.statusCode().value(),
+                                            "사용자 생성 실패",
+                                            "HTTP_ERROR",
+                                            body
+                                    )))
                     )
                     .onStatus(HttpStatusCode::is5xxServerError, clientResponse ->
                             clientResponse.bodyToMono(String.class)
-                                    .flatMap(body -> Mono.error(new BusinessException("사용자 생성 실패: " + body, ErrorCode.USER_CREATION_FAILED)))
+                                    .flatMap(body -> Mono.error(toInfraOperationException(
+                                            ErrorCode.USER_CREATION_FAILED,
+                                            InfraStep.CREATE_ACCOUNT,
+                                            clientResponse.statusCode().value(),
+                                            "사용자 생성 실패",
+                                            "HTTP_ERROR",
+                                            body
+                                    )))
                     )
                     .bodyToMono(UserCreationResponse.class)
                     .block();
@@ -144,7 +244,16 @@ public class AdminRequestCommandService {
             throw e;
         } catch (Exception e) {
             log.error("사용자 생성 API 호출 중 예기치 않은 오류 발생.", e);
-            throw new BusinessException(ErrorCode.USER_CREATION_FAILED);
+            throw new InfraOperationException(
+                    ErrorCode.USER_CREATION_FAILED,
+                    "사용자 생성 API 호출 중 예기치 않은 오류 발생.",
+                    InfraStep.CREATE_ACCOUNT,
+                    null,
+                    "UNEXPECTED_ERROR",
+                    e.getMessage(),
+                    null,
+                    null
+            );
         }
 
         String username = request.getUbuntuUsername();
@@ -343,5 +452,42 @@ public class AdminRequestCommandService {
                 @JsonAlias({"ubuntuGid", "ubuntu_gid"})
                 Long gid
         ) {}
+    }
+
+    private InfraOperationException toInfraOperationException(
+            ErrorCode errorCode,
+            InfraStep fallbackStep,
+            Integer infraStatus,
+            String fallbackMessage,
+            String fallbackInfraError,
+            String body
+    ) {
+        InfraErrorParser.ParsedInfraError infraErrorResponse = InfraErrorParser.parse(objectMapper, body);
+        InfraStep step = parseInfraStep(infraErrorResponse != null ? infraErrorResponse.step() : null, fallbackStep);
+        String message = firstNonBlank(infraErrorResponse != null ? infraErrorResponse.error() : null, fallbackMessage);
+        String detail = firstNonBlank(infraErrorResponse != null ? infraErrorResponse.detail() : null, body);
+        String infraError = firstNonBlank(infraErrorResponse != null ? infraErrorResponse.error() : null, fallbackInfraError);
+        String process = infraErrorResponse != null ? infraErrorResponse.process() : null;
+
+        if (infraErrorResponse == null && body != null && !body.isBlank()) {
+            message = fallbackMessage + ": " + body;
+        }
+
+        return new InfraOperationException(errorCode, message, step, infraStatus, infraError, detail, body, process);
+    }
+
+    private InfraStep parseInfraStep(String step, InfraStep fallback) {
+        if (step == null || step.isBlank()) {
+            return fallback;
+        }
+        try {
+            return InfraStep.valueOf(step.trim().replace('-', '_').toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return InfraStep.UNKNOWN;
+        }
+    }
+
+    private String firstNonBlank(String value, String fallback) {
+        return value != null && !value.isBlank() ? value : fallback;
     }
 }
