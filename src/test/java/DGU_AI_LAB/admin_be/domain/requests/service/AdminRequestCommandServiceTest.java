@@ -118,11 +118,12 @@ class AdminRequestCommandServiceTest {
         when(postUriSpec.uri(anyString())).thenReturn(postBodySpec);
         doReturn(postHeadersSpec).when(postBodySpec).bodyValue(any());
         when(postHeadersSpec.retrieve()).thenReturn(postResponseSpec);
+        when(postResponseSpec.onStatus(any(), any())).thenReturn(postResponseSpec);
         when(postResponseSpec.bodyToMono(PvcResponseDTO.class)).thenReturn(Mono.just(new PvcResponseDTO(
                 null,
                 null,
                 List.of(new PvcResponseDTO.PvcResult(
-                        "created", null, null, null, "testuser", "user", "pvc-testuser-share", "10Gi", null, null, null
+                        "created", null, null, null, "testuser", "user", "pvc-testuser-share", "10Gi", null, null, null, null
                 ))
         )));
     }
@@ -280,7 +281,8 @@ class AdminRequestCommandServiceTest {
                         null,
                         null,
                         500,
-                        "Internal Server Error"
+                        "Internal Server Error",
+                        null
                 ))
         )));
 

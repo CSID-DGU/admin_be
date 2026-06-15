@@ -7,6 +7,8 @@ import DGU_AI_LAB.admin_be.error.exception.InfraOperationException.InfraStep;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ErrorResponseTest {
@@ -26,7 +28,8 @@ class ErrorResponseTest {
     @Test
     @DisplayName("InfraOperationException의 infra envelope를 응답에 포함한다")
     void ofInfraOperationException_includesInfraFields() {
-        String rawBody = "{\"step\":\"create-pod\",\"error\":\"Pod 생성 실패\",\"detail\":\"image pull failed\",\"process\":{\"accountDeleted\":true}}";
+        String rawBody = "{\"step\":\"CREATE_POD\",\"error\":\"Pod 생성 실패\",\"detail\":\"image pull failed\",\"progress\":{\"accountDeleted\":true}}";
+        Map<String, Object> progress = Map.of("accountDeleted", true);
         InfraOperationException exception = new InfraOperationException(
                 ErrorCode.POD_CREATION_FAILED,
                 "Pod 생성 실패",
@@ -35,7 +38,9 @@ class ErrorResponseTest {
                 "Pod 생성 실패",
                 "image pull failed",
                 rawBody,
-                "{\"accountDeleted\":true}"
+                progress,
+                null,
+                null
         );
 
         ErrorResponse response = ErrorResponse.of(exception);
@@ -48,6 +53,28 @@ class ErrorResponseTest {
         assertThat(response.getDetail()).isEqualTo("image pull failed");
         assertThat(response.getInfraError()).isEqualTo("Pod 생성 실패");
         assertThat(response.getInfraBody()).isEqualTo(rawBody);
-        assertThat(response.getProcess()).isEqualTo("{\"accountDeleted\":true}");
+        assertThat(response.getProgress()).isEqualTo(progress);
+    }
+
+    @Test
+    @DisplayName("InfraOperationException에 k8s 필드가 있으면 응답에 포함한다")
+    void ofInfraOperationException_includesK8sFields() {
+        InfraOperationException exception = new InfraOperationException(
+                ErrorCode.PVC_API_FAILURE,
+                "PVC 생성 실패",
+                InfraStep.CREATE_PVC,
+                500,
+                "PVC_CREATE_FAILED",
+                "k8s api error",
+                null,
+                null,
+                422,
+                "Unprocessable Entity"
+        );
+
+        ErrorResponse response = ErrorResponse.of(exception);
+
+        assertThat(response.getK8sStatus()).isEqualTo(422);
+        assertThat(response.getK8sReason()).isEqualTo("Unprocessable Entity");
     }
 }
