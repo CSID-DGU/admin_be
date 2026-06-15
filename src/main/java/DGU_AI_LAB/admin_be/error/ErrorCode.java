@@ -142,6 +142,11 @@ public enum ErrorCode {
      */
     POD_CREATION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 생성 API 요청에 실패했습니다."),
     POD_DELETION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 삭제 API 요청에 실패했습니다."),
+    POD_ALREADY_EXISTS(HttpStatus.CONFLICT, "동일한 이름의 Pod가 이미 존재합니다."),
+    POD_READY_TIMEOUT(HttpStatus.BAD_GATEWAY, "Pod가 시간 내에 Ready 상태가 되지 않았습니다."),
+    POD_DELETE_TIMEOUT(HttpStatus.BAD_GATEWAY, "Pod 삭제가 시간 내에 완료되지 않았습니다."),
+    NODE_SELECTION_FAILED(HttpStatus.BAD_GATEWAY, "적합한 GPU 노드를 선택하지 못했습니다."),
+    USER_CONFIG_NOT_FOUND(HttpStatus.NOT_FOUND, "Infra 서버에서 사용자 설정을 찾을 수 없습니다."),
 
     /**
      * Port Request Error
