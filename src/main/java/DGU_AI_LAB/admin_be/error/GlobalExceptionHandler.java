@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.error;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserAuthResponseDTO;
 import DGU_AI_LAB.admin_be.error.dto.ErrorResponse;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.error.exception.InfraOperationException;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -112,8 +113,12 @@ public class GlobalExceptionHandler {
     protected ResponseEntity<ErrorResponse> handleBusinessException(final BusinessException e) {
         ErrorCode errorCode = e.getErrorCode();
 
-        // 로그 레벨 조정: 비즈니스 로직상의 예외는 error → warn
-        log.warn(">>> handle: BusinessException - {} ({})", errorCode.name(), e.getMessage());
+        if (e instanceof InfraOperationException infraEx) {
+            log.error(">>> handle: InfraOperationException - step={}, infraError={}, detail={}",
+                    infraEx.getStep(), infraEx.getInfraError(), infraEx.getDetail(), e);
+        } else {
+            log.warn(">>> handle: BusinessException - {} ({})", errorCode.name(), e.getMessage());
+        }
 
         ErrorResponse errorResponse = ErrorResponse.of(e);
         return ResponseEntity.status(errorCode.getHttpStatus()).body(errorResponse);
