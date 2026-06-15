@@ -9,6 +9,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.util.Map;
+
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Builder
 @Getter
@@ -22,7 +24,9 @@ public class ErrorResponse {
     private Integer infraStatus;
     private String infraError;
     private String infraBody;
-    private String process;
+    private Map<String, Object> progress;
+    private Integer k8sStatus;
+    private String k8sReason;
 
     public static ErrorResponse of(ErrorCode errorCode) {
         return of(errorCode, errorCode.getMessage());
@@ -49,7 +53,9 @@ public class ErrorResponse {
                     .infraError(infraException.getInfraError())
                     .detail(infraException.getDetail())
                     .infraBody(infraException.getInfraBody())
-                    .process(infraException.getProcess());
+                    .progress(infraException.getProgress())
+                    .k8sStatus(infraException.getK8sStatus())
+                    .k8sReason(infraException.getK8sReason());
         }
 
         return builder.build();

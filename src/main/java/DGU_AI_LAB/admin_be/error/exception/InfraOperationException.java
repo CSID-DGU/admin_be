@@ -3,6 +3,8 @@ package DGU_AI_LAB.admin_be.error.exception;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import lombok.Getter;
 
+import java.util.Map;
+
 @Getter
 public class InfraOperationException extends BusinessException {
     private final InfraStep step;
@@ -10,7 +12,9 @@ public class InfraOperationException extends BusinessException {
     private final String infraError;
     private final String detail;
     private final String infraBody;
-    private final String process;
+    private final Map<String, Object> progress;
+    private final Integer k8sStatus;
+    private final String k8sReason;
 
     public InfraOperationException(
             ErrorCode errorCode,
@@ -20,7 +24,9 @@ public class InfraOperationException extends BusinessException {
             String infraError,
             String detail,
             String infraBody,
-            String process
+            Map<String, Object> progress,
+            Integer k8sStatus,
+            String k8sReason
     ) {
         super(message, errorCode);
         this.step = step;
@@ -28,7 +34,9 @@ public class InfraOperationException extends BusinessException {
         this.infraError = infraError;
         this.detail = detail;
         this.infraBody = infraBody;
-        this.process = process;
+        this.progress = progress;
+        this.k8sStatus = k8sStatus;
+        this.k8sReason = k8sReason;
     }
 
     public enum InfraStep {
@@ -39,6 +47,17 @@ public class InfraOperationException extends BusinessException {
         DELETE_POD,
         DELETE_PVC,
         DELETE_ACCOUNT,
+        VALIDATE_REQUEST,
+        FETCH_USER_CONFIG,
+        CHECK_EXISTING_POD,
+        LIST_NODES,
+        SELECT_NODE,
+        BUILD_POD_SPEC,
+        WAIT_POD_READY,
+        CREATE_NODEPORT_SERVICE,
+        DELETE_NODEPORT_SERVICE,
+        RELEASE_NODEPORT,
+        RESIZE_PVC,
         UNKNOWN
     }
 }
