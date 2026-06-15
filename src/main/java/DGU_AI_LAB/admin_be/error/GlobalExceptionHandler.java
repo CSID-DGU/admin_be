@@ -115,7 +115,7 @@ public class GlobalExceptionHandler {
         // 로그 레벨 조정: 비즈니스 로직상의 예외는 error → warn
         log.warn(">>> handle: BusinessException - {} ({})", errorCode.name(), e.getMessage());
 
-        ErrorResponse errorResponse = ErrorResponse.of(errorCode);
+        ErrorResponse errorResponse = ErrorResponse.of(e);
         return ResponseEntity.status(errorCode.getHttpStatus()).body(errorResponse);
     }
 
