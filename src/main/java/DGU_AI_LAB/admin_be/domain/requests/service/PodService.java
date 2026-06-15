@@ -43,27 +43,18 @@ public class PodService {
                     .uri("/create-pod")
                     .bodyValue(new CreatePodRequestDTO(username))
                     .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
+                    .onStatus(HttpStatusCode::isError, clientResponse ->
                             clientResponse.bodyToMono(String.class)
-                                    .flatMap(body -> Mono.error(toInfraOperationException(
-                                            ErrorCode.POD_CREATION_FAILED,
-                                            InfraStep.CREATE_POD,
-                                            clientResponse.statusCode().value(),
-                                            "Pod 생성 실패",
-                                            "HTTP_ERROR",
-                                            body
-                                    )))
-                    )
-                    .onStatus(HttpStatusCode::is5xxServerError, clientResponse ->
-                            clientResponse.bodyToMono(String.class)
-                                    .flatMap(body -> Mono.error(toInfraOperationException(
-                                            ErrorCode.POD_CREATION_FAILED,
-                                            InfraStep.CREATE_POD,
-                                            clientResponse.statusCode().value(),
-                                            "Pod 생성 실패",
-                                            "HTTP_ERROR",
-                                            body
-                                    )))
+                                    .flatMap(body -> {
+                                        InfraErrorParser.ParsedInfraError parsed = InfraErrorParser.parse(OBJECT_MAPPER, body);
+                                        String infraError = parsed != null ? parsed.error() : null;
+                                        ErrorCode errorCode = resolveCreatePodErrorCode(infraError, clientResponse.statusCode().value());
+                                        return Mono.error(InfraErrorParser.toException(
+                                                OBJECT_MAPPER, errorCode, InfraStep.CREATE_POD,
+                                                clientResponse.statusCode().value(),
+                                                "Pod 생성 실패", "HTTP_ERROR", body
+                                        ));
+                                    })
                     )
                     .bodyToMono(CreatePodResponseDTO.class)
                     .block();
@@ -72,16 +63,13 @@ public class PodService {
                 throw new InfraOperationException(
                         ErrorCode.POD_CREATION_FAILED,
                         "Pod 생성 실패: infra 응답이 비어 있습니다.",
-                        InfraStep.CREATE_POD,
-                        200,
-                        "EMPTY_RESPONSE",
-                        "infra 응답이 비어 있습니다.",
-                        null,
-                        null
+                        InfraStep.CREATE_POD, 200,
+                        "EMPTY_RESPONSE", "infra 응답이 비어 있습니다.",
+                        null, null, null, null
                 );
             }
 
-            log.info("Pod 생성 API 요청 성공: 사용자: {}, pod: {}", username, response != null ? response.podName() : "null");
+            log.info("Pod 생성 API 요청 성공: 사용자: {}, pod: {}", username, response.podName());
             return response;
 
         } catch (BusinessException e) {
@@ -91,14 +79,22 @@ public class PodService {
             throw new InfraOperationException(
                     ErrorCode.POD_CREATION_FAILED,
                     "Pod 생성 API 호출 중 예기치 않은 오류 발생.",
-                    InfraStep.CREATE_POD,
-                    null,
-                    "UNEXPECTED_ERROR",
-                    e.getMessage(),
-                    null,
-                    null
+                    InfraStep.CREATE_POD, null,
+                    "UNEXPECTED_ERROR", e.getMessage(),
+                    null, null, null, null
             );
         }
+    }
+
+    private ErrorCode resolveCreatePodErrorCode(String infraError, int httpStatus) {
+        if (infraError == null) return ErrorCode.POD_CREATION_FAILED;
+        return switch (infraError) {
+            case "POD_ALREADY_EXISTS"    -> ErrorCode.POD_ALREADY_EXISTS;
+            case "NODE_SELECTION_FAILED" -> ErrorCode.NODE_SELECTION_FAILED;
+            case "USER_CONFIG_NOT_FOUND" -> ErrorCode.USER_CONFIG_NOT_FOUND;
+            case "POD_READY_TIMEOUT"     -> ErrorCode.POD_READY_TIMEOUT;
+            default                      -> ErrorCode.POD_CREATION_FAILED;
+        };
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -111,7 +107,8 @@ public class PodService {
         try {
             log.info("Pod 삭제 API 요청 시작: {}", podName);
 
-            webClient.post()
+            @SuppressWarnings("unchecked")
+            Map<String, Object> result = webClient.post()
                     .uri("/delete-pod")
                     .bodyValue(new DeletePodRequest(podName))
                     .retrieve()
@@ -123,18 +120,22 @@ public class PodService {
                                             return Mono.empty();
                                         }
                                         log.error("Pod 삭제 실패 ({}): {}", response.statusCode(), body);
-                                        return Mono.error(toInfraOperationException(
-                                                ErrorCode.POD_DELETION_FAILED,
-                                                InfraStep.DELETE_POD,
+                                        InfraErrorParser.ParsedInfraError parsed = InfraErrorParser.parse(OBJECT_MAPPER, body);
+                                        String infraError = parsed != null ? parsed.error() : null;
+                                        ErrorCode errorCode = resolveDeletePodErrorCode(infraError);
+                                        return Mono.error(InfraErrorParser.toException(
+                                                OBJECT_MAPPER, errorCode, InfraStep.DELETE_POD,
                                                 response.statusCode().value(),
-                                                "Pod 삭제 실패",
-                                                "HTTP_ERROR",
-                                                body
+                                                "Pod 삭제 실패", "HTTP_ERROR", body
                                         ));
                                     })
                     )
                     .bodyToMono(Map.class)
                     .block();
+
+            if (result != null && Boolean.TRUE.equals(result.get("already_absent"))) {
+                log.info("Pod 이미 부재 (already_absent=true): {}", podName);
+            }
 
             log.info("Pod 삭제 API 요청 성공: {}", podName);
 
@@ -145,50 +146,15 @@ public class PodService {
             throw new InfraOperationException(
                     ErrorCode.POD_DELETION_FAILED,
                     "Pod 삭제 API 호출 오류",
-                    InfraStep.DELETE_POD,
-                    null,
-                    "UNEXPECTED_ERROR",
-                    e.getMessage(),
-                    null,
-                    null
+                    InfraStep.DELETE_POD, null,
+                    "UNEXPECTED_ERROR", e.getMessage(),
+                    null, null, null, null
             );
         }
     }
 
-    private InfraOperationException toInfraOperationException(
-            ErrorCode errorCode,
-            InfraStep fallbackStep,
-            Integer infraStatus,
-            String fallbackMessage,
-            String fallbackInfraError,
-            String body
-    ) {
-        InfraErrorParser.ParsedInfraError infraErrorResponse = InfraErrorParser.parse(OBJECT_MAPPER, body);
-        InfraStep step = parseInfraStep(infraErrorResponse != null ? infraErrorResponse.step() : null, fallbackStep);
-        String message = firstNonBlank(infraErrorResponse != null ? infraErrorResponse.error() : null, fallbackMessage);
-        String detail = firstNonBlank(infraErrorResponse != null ? infraErrorResponse.detail() : null, body);
-        String infraError = firstNonBlank(infraErrorResponse != null ? infraErrorResponse.error() : null, fallbackInfraError);
-        String process = infraErrorResponse != null ? infraErrorResponse.process() : null;
-
-        if (infraErrorResponse == null && body != null && !body.isBlank()) {
-            message = fallbackMessage + ": " + body;
-        }
-
-        return new InfraOperationException(errorCode, message, step, infraStatus, infraError, detail, body, process);
-    }
-
-    private InfraStep parseInfraStep(String step, InfraStep fallback) {
-        if (step == null || step.isBlank()) {
-            return fallback;
-        }
-        try {
-            return InfraStep.valueOf(step.trim().replace('-', '_').toUpperCase());
-        } catch (IllegalArgumentException e) {
-            return InfraStep.UNKNOWN;
-        }
-    }
-
-    private String firstNonBlank(String value, String fallback) {
-        return value != null && !value.isBlank() ? value : fallback;
+    private ErrorCode resolveDeletePodErrorCode(String infraError) {
+        if ("POD_DELETE_TIMEOUT".equals(infraError)) return ErrorCode.POD_DELETE_TIMEOUT;
+        return ErrorCode.POD_DELETION_FAILED;
     }
 }

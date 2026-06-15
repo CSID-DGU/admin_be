@@ -20,11 +20,13 @@ public record PvcResponseDTO(
             @JsonProperty("pvc_name")
             String pvcName,
             String storage,
-            Map<String, Object> process,
+            Map<String, Object> progress,
             @JsonProperty("k8s_status")
             Integer k8sStatus,
             @JsonProperty("k8s_reason")
-            String k8sReason
+            String k8sReason,
+            @JsonProperty("k8s_body")
+            String k8sBody
     ) {
         public boolean failed() {
             return error != null && !error.isBlank();
