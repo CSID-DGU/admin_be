@@ -12,8 +12,10 @@ import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
+import DGU_AI_LAB.admin_be.global.event.PodCleanupFailedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +31,7 @@ public class AdminUserService {
     private final RequestRepository requestRepository;
     private final PodService podService;
     private final UbuntuAccountService ubuntuAccountService;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * 전체 유저 조회
@@ -103,15 +106,22 @@ public class AdminUserService {
         String username = request.getUbuntuUsername();
         log.warn("[deleteRequestResources] 리소스 삭제 시도: username={}, pod={}", username, request.getPodName());
 
+        boolean podCleanupFailed = false;
         try {
             podService.deletePod(request.getPodName());
         } catch (Exception e) {
-            log.error("[deleteRequestResources] Pod 삭제 실패 - 수동 정리 필요: pod={}", request.getPodName(), e);
+            log.error("[deleteRequestResources] Pod 삭제 실패 - 자동 재시도 등록 예정: pod={}", request.getPodName(), e);
+            podCleanupFailed = true;
         }
 
         ubuntuAccountService.deleteUbuntuAccount(username);
 
         request.delete();
+
+        if (podCleanupFailed) {
+            eventPublisher.publishEvent(new PodCleanupFailedEvent(request.getPodName(), username));
+        }
+
         log.info("[deleteRequestResources] {} 리소스 삭제 및 상태 DELETED 변경 완료", username);
     }
 }
