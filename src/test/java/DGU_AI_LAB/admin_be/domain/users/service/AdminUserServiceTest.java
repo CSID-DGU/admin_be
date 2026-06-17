@@ -1,6 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.requests.service.PodService;
+import DGU_AI_LAB.admin_be.domain.requests.service.UbuntuAccountService;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserSummaryDTO;
@@ -15,7 +17,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.List;
 import java.util.Optional;
@@ -37,7 +38,10 @@ class AdminUserServiceTest {
     private RequestRepository requestRepository;
 
     @Mock
-    private WebClient userWebClient;
+    private PodService podService;
+
+    @Mock
+    private UbuntuAccountService ubuntuAccountService;
 
     private User mockUser;
 
@@ -63,10 +67,10 @@ class AdminUserServiceTest {
             User user2 = User.builder()
                     .email("user2@dgu.ac.kr")
                     .password("pw")
-                    .name("이순신")
-                    .studentId("2021005678")
+                    .name("백동민")
+                    .studentId("2021112505")
                     .phone("010-5678-1234")
-                    .department("전자공학과")
+                    .department("멀티미디어공학과")
                     .build();
 
             when(userRepository.findAll()).thenReturn(List.of(mockUser, user2));
