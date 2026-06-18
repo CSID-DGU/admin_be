@@ -12,6 +12,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.PvcResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
+import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
@@ -35,7 +36,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
@@ -48,7 +51,6 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@Transactional
 public class AdminRequestCommandService {
 
     private final AlarmService alarmService;
@@ -63,21 +65,333 @@ public class AdminRequestCommandService {
     private final PodService podService;
     private final UbuntuAccountService ubuntuAccountService;
     private final ObjectMapper objectMapper;
+    private final PlatformTransactionManager txManager;
 
     private final @Qualifier("configWebClient") WebClient pvcWebClient;
     private final @Qualifier("configWebClient") WebClient userCreationWebClient;
 
-    /**
-     * 사용 신청, 변경 신청에서 공통으로 사용되는 PVC API 호출 메서드
-     * @param username
-     * @param volumeSizeGiB
-     */
+    // ── 승인 요청 ────────────────────────────────────────────────────────
+
+    private record ApprovalContext(
+            Long requestId,
+            String ubuntuUsername,
+            String ubuntuPasswordBase64,
+            String userName,
+            Long volumeSizeGiB
+    ) {}
+
+    public SaveRequestResponseDTO approveRequest(ApproveRequestDTO dto) {
+        // Phase 1: 검증 (read-only TX, DB 연결 즉시 반환)
+        TransactionTemplate readTx = new TransactionTemplate(txManager);
+        readTx.setReadOnly(true);
+        ApprovalContext ctx = readTx.execute(status -> {
+            Request request = requestRepository.findById(dto.requestId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+            if (request.getStatus() != Status.PENDING) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+            }
+            return new ApprovalContext(
+                    request.getRequestId(),
+                    request.getUbuntuUsername(),
+                    request.getUbuntuPasswordBase64(),
+                    request.getUser().getName(),
+                    request.getVolumeSizeGiB()
+            );
+        });
+
+        String username = ctx.ubuntuUsername();
+
+        // Phase 2: 인프라 프로비저닝 (TX 없고, DB 연결 점유X)
+        UserCreationResponse userResponse = callCreateUserApi(ctx);
+
+        try {
+            callPvcApi(username, ctx.volumeSizeGiB());
+        } catch (BusinessException e) {
+            log.warn("[보상] PVC 생성 실패 → 계정 삭제: {}", username);
+            tryCompensateDeleteUser(username);
+            throw e;
+        }
+
+        CreatePodResponseDTO podResponse;
+        try {
+            podResponse = podService.createPod(username);
+        } catch (BusinessException e) {
+            log.warn("[보상] Pod 생성 실패 → 계정/PVC 삭제: {}", username);
+            tryCompensateDeleteUserAndPvc(username);
+            throw e;
+        }
+
+        // Phase 3: DB 업데이트 + 알림 (write TX 짧은 DB 작업만)
+        TransactionTemplate writeTx = new TransactionTemplate(txManager);
+        final UserCreationResponse finalUserResponse = userResponse;
+        final CreatePodResponseDTO finalPodResponse = podResponse;
+        try {
+            return writeTx.execute(status -> {
+                Request request = requestRepository.findById(dto.requestId())
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                if (request.getStatus() != Status.PENDING) {
+                    throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+                }
+
+                ContainerImage image = containerImageRepository.findById(dto.imageId())
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+                request.assignUbuntuIds(finalUserResponse.uid(), finalUserResponse.gid());
+                request.approve(image, rg, dto.volumeSizeGiB(), dto.adminComment());
+                request.assignPodInfo(finalPodResponse.podName(), finalPodResponse.node());
+
+                for (CreatePodResponseDTO.PortInfo port : finalPodResponse.ports()) {
+                    podExternalPortRepository.save(PodExternalPort.builder()
+                            .request(request)
+                            .internalPort(port.internalPort())
+                            .externalPort(port.externalPort())
+                            .usagePurpose(port.usagePurpose())
+                            .build());
+                }
+
+                try {
+                    alarmService.sendApprovalNotification(request);
+                    log.info("사용자 '{}'에게 승인 알림을 성공적으로 발송했습니다.", request.getUser().getName());
+                } catch (Exception e) {
+                    log.warn("사용자 '{}'에게 승인 알림을 보내는 데 실패했습니다. (RequestId: {})",
+                            request.getUser().getName(), request.getRequestId(), e);
+                }
+
+                return SaveRequestResponseDTO.fromEntity(request);
+            });
+        } catch (Exception e) {
+            log.error("[보상] DB 업데이트 실패 -> 전체 infra 리소스 삭제: {}", username, e);
+            tryCompensateAll(username, finalPodResponse.podName());
+            throw e;
+        }
+    }
+
+    // ── 거절 요청 ────────────────────────────────────────────────────────
+
+    @Transactional
+    public SaveRequestResponseDTO rejectRequest(RejectRequestDTO dto) {
+        Request request = requestRepository.findById(dto.requestId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (!(request.getStatus() == Status.PENDING || request.getStatus() == Status.FULFILLED)) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+        }
+        request.reject(dto.adminComment());
+        return SaveRequestResponseDTO.fromEntity(request);
+    }
+
+    @Transactional
+    public void rejectModification(Long adminId, RejectModificationDTO dto) {
+        ChangeRequest changeRequest = changeRequestRepository.findById(dto.changeRequestId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        if (changeRequest.getStatus() != Status.PENDING) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+        }
+
+        User admin = userRepository.findById(adminId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        changeRequest.deny(admin, dto.adminComment());
+    }
+
+    // ── 변경 승인 ────────────────────────────────────────────────────────
+
+    private record PvcResizeContext(String username, Long newVolumeSize) {}
+
+    public void approveModification(Long adminId, ApproveModificationDTO dto) {
+        // Phase 1: VOLUME_SIZE인 경우 PVC API를 TX 밖에서 먼저 호출
+        TransactionTemplate readTx = new TransactionTemplate(txManager);
+        readTx.setReadOnly(true);
+        PvcResizeContext pvcCtx = readTx.execute(status -> {
+            ChangeRequest cr = changeRequestRepository.findById(dto.changeRequestId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+            if (cr.getStatus() != Status.PENDING) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+            }
+            if (cr.getChangeType() == ChangeType.VOLUME_SIZE) {
+                try {
+                    Long newSize = objectMapper.readValue(cr.getNewValue(), Long.class);
+                    return new PvcResizeContext(cr.getRequest().getUbuntuUsername(), newSize);
+                } catch (JsonProcessingException e) {
+                    throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
+                }
+            }
+            return null;
+        });
+
+        if (pvcCtx != null) {
+            log.info("PVC 크기 변경 API 호출. 사용자: {}, 새로운 크기: {}Gi",
+                    pvcCtx.username(), pvcCtx.newVolumeSize());
+            callPvcApi(pvcCtx.username(), pvcCtx.newVolumeSize());
+        }
+
+        // Phase 2: DB 업데이트 (write TX)
+        TransactionTemplate writeTx = new TransactionTemplate(txManager);
+        try {
+            writeTx.executeWithoutResult(status -> {
+                ChangeRequest changeRequest = changeRequestRepository.findById(dto.changeRequestId())
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                if (changeRequest.getStatus() != Status.PENDING) {
+                    throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+                }
+
+                User admin = userRepository.findById(adminId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+                Request originalRequest = changeRequest.getRequest();
+                if (originalRequest == null) {
+                    throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+                }
+
+                applyChangeToRequest(changeRequest, originalRequest);
+                changeRequest.approve(admin, dto.adminComment());
+            });
+        } catch (Exception e) {
+            if (pvcCtx != null) {
+                log.error("[PVC 불일치] PVC resize 성공했으나 DB 업데이트 실패 - 수동 확인 필요. username={}, newSize={}Gi",
+                        pvcCtx.username(), pvcCtx.newVolumeSize(), e);
+                try {
+                    alarmService.sendSlackAlert(
+                            String.format("⚠️ [PVC 불일치] PVC resize 성공, DB 실패\n- 계정: %s\n- 변경 크기: %dGi\n- 수동 확인 필요",
+                                    pvcCtx.username(), pvcCtx.newVolumeSize()),
+                            null);
+                } catch (Exception alertEx) {
+                    log.error("PVC 불일치 알림 전송 실패", alertEx);
+                }
+            }
+            throw e;
+        }
+    }
+
+    private void applyChangeToRequest(ChangeRequest changeRequest, Request originalRequest) {
+        try {
+            switch (changeRequest.getChangeType()) {
+                case VOLUME_SIZE -> {
+                    Long newVolumeSize = objectMapper.readValue(changeRequest.getNewValue(), Long.class);
+                    originalRequest.updateVolumeSize(newVolumeSize);
+                }
+                case EXPIRES_AT -> {
+                    LocalDateTime newExpiresAt = LocalDateTime.parse(
+                            objectMapper.readValue(changeRequest.getNewValue(), String.class));
+                    originalRequest.updateExpiresAt(newExpiresAt);
+                }
+                case GROUP -> {
+                    originalRequest.getRequestGroups().clear();
+                    Set<Long> newGroupIds = objectMapper.readValue(changeRequest.getNewValue(), Set.class);
+                    Set<Group> newGroups = newGroupIds.stream()
+                            .map(gid -> groupRepository.findByUbuntuGid(gid)
+                                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)))
+                            .collect(Collectors.toSet());
+                    for (Group g : newGroups) {
+                        originalRequest.addGroup(g);
+                    }
+                }
+                case RESOURCE_GROUP -> {
+                    Integer newResourceGroupId = objectMapper.readValue(changeRequest.getNewValue(), Integer.class);
+                    ResourceGroup newResourceGroup = resourceGroupRepository.findById(newResourceGroupId)
+                            .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                    originalRequest.updateResourceGroup(newResourceGroup);
+                }
+                case CONTAINER_IMAGE -> {
+                    Long newImageId = objectMapper.readValue(changeRequest.getNewValue(), Long.class);
+                    ContainerImage newContainerImage = containerImageRepository.findById(newImageId)
+                            .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                    originalRequest.updateContainerImage(newContainerImage);
+                }
+                default -> throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
+            }
+        } catch (JsonProcessingException e) {
+            log.error("Failed to parse change request value: {}", e.getMessage());
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    // ── 인프라 API 호출 (TX 없음) ────────────────────────────────────────
+
+    private UserCreationResponse callCreateUserApi(ApprovalContext ctx) {
+        UserCreationRequestDTO userCreationDto = new UserCreationRequestDTO(
+                ctx.ubuntuUsername(),
+                ctx.ubuntuPasswordBase64(),
+                ctx.userName(),
+                ctx.ubuntuUsername(),
+                false
+        );
+
+        try {
+            log.info("사용자 생성 API 호출 시작: {}", userCreationDto.username());
+
+            UserCreationResponse userResponse = userCreationWebClient.put()
+                    .uri("/accounts/users")
+                    .bodyValue(userCreationDto)
+                    .retrieve()
+                    .onStatus(HttpStatus.BAD_REQUEST::equals, clientResponse ->
+                            clientResponse.bodyToMono(String.class)
+                                    .flatMap(body -> Mono.error(InfraErrorParser.toException(
+                                            objectMapper, ErrorCode.INVALID_USERNAME_FORMAT,
+                                            InfraStep.CREATE_ACCOUNT,
+                                            clientResponse.statusCode().value(),
+                                            ErrorCode.INVALID_USERNAME_FORMAT.getMessage(),
+                                            "HTTP_ERROR", body
+                                    )))
+                    )
+                    .onStatus(HttpStatus.CONFLICT::equals, clientResponse ->
+                            clientResponse.bodyToMono(String.class)
+                                    .flatMap(body -> Mono.error(InfraErrorParser.toException(
+                                            objectMapper, ErrorCode.USER_ALREADY_EXISTS,
+                                            InfraStep.CREATE_ACCOUNT,
+                                            clientResponse.statusCode().value(),
+                                            ErrorCode.USER_ALREADY_EXISTS.getMessage(),
+                                            "HTTP_ERROR", body
+                                    )))
+                    )
+                    .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
+                            clientResponse.bodyToMono(String.class)
+                                    .flatMap(body -> Mono.error(InfraErrorParser.toException(
+                                            objectMapper, ErrorCode.USER_CREATION_FAILED,
+                                            InfraStep.CREATE_ACCOUNT,
+                                            clientResponse.statusCode().value(),
+                                            "사용자 생성 실패", "HTTP_ERROR", body
+                                    )))
+                    )
+                    .onStatus(HttpStatusCode::is5xxServerError, clientResponse ->
+                            clientResponse.bodyToMono(String.class)
+                                    .flatMap(body -> Mono.error(InfraErrorParser.toException(
+                                            objectMapper, ErrorCode.USER_CREATION_FAILED,
+                                            InfraStep.CREATE_ACCOUNT,
+                                            clientResponse.statusCode().value(),
+                                            "사용자 생성 실패", "HTTP_ERROR", body
+                                    )))
+                    )
+                    .bodyToMono(UserCreationResponse.class)
+                    .block();
+
+            log.info("사용자 생성 성공: {}", userResponse);
+            if (userResponse == null || userResponse.uid() == null || userResponse.gid() == null) {
+                log.error("사용자 생성 API 응답에 UID/GID가 없습니다: {}", userResponse);
+                throw new BusinessException(ErrorCode.UID_ALLOCATION_FAILED);
+            }
+            return userResponse;
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("사용자 생성 API 호출 중 예기치 않은 오류 발생.", e);
+            throw new InfraOperationException(
+                    ErrorCode.USER_CREATION_FAILED,
+                    "사용자 생성 API 호출 중 예기치 않은 오류 발생.",
+                    InfraStep.CREATE_ACCOUNT, null,
+                    "UNEXPECTED_ERROR", e.getMessage(),
+                    null, null, null, null
+            );
+        }
+    }
+
     private void callPvcApi(String username, Long volumeSizeGiB) {
         PvcRequestDTO pvcDto = PvcRequestDTO.userPvc(username, volumeSizeGiB);
 
         try {
-            log.info("PVC API 요청 시작: 사용자: {}, 용량: {}Gi",
-                    username, volumeSizeGiB);
+            log.info("PVC API 요청 시작: 사용자: {}, 용량: {}Gi", username, volumeSizeGiB);
 
             PvcResponseDTO response = pvcWebClient.post()
                     .uri("/pvc")
@@ -162,269 +476,37 @@ public class AdminRequestCommandService {
         }
     }
 
-    @Transactional
-    public SaveRequestResponseDTO approveRequest(ApproveRequestDTO dto) {
-        Request request = requestRepository.findById(dto.requestId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        if (request.getStatus() != Status.PENDING) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
-        }
-        // 1. 사용자 생성 API 호출
-        UserCreationRequestDTO userCreationDto = new UserCreationRequestDTO(
-                request.getUbuntuUsername(),
-                request.getUbuntuPasswordBase64(),
-                request.getUser().getName(),
-                request.getUbuntuUsername(), // primary_group_name = username (Linux 관례)
-                false
-        );
-
-        UserCreationResponse userResponse;
-        try {
-            log.info("사용자 생성 API 호출 시작: {}", userCreationDto.username());
-
-            userResponse = userCreationWebClient.put()
-                    .uri("/accounts/users")
-                    .bodyValue(userCreationDto)
-                    .retrieve()
-                    .onStatus(HttpStatus.BAD_REQUEST::equals, clientResponse ->
-                            clientResponse.bodyToMono(String.class)
-                                    .flatMap(body -> Mono.error(InfraErrorParser.toException(
-                                            objectMapper, ErrorCode.INVALID_USERNAME_FORMAT,
-                                            InfraStep.CREATE_ACCOUNT,
-                                            clientResponse.statusCode().value(),
-                                            ErrorCode.INVALID_USERNAME_FORMAT.getMessage(),
-                                            "HTTP_ERROR", body
-                                    )))
-                    )
-                    .onStatus(HttpStatus.CONFLICT::equals, clientResponse ->
-                            clientResponse.bodyToMono(String.class)
-                                    .flatMap(body -> Mono.error(InfraErrorParser.toException(
-                                            objectMapper, ErrorCode.USER_ALREADY_EXISTS,
-                                            InfraStep.CREATE_ACCOUNT,
-                                            clientResponse.statusCode().value(),
-                                            ErrorCode.USER_ALREADY_EXISTS.getMessage(),
-                                            "HTTP_ERROR", body
-                                    )))
-                    )
-                    .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
-                            clientResponse.bodyToMono(String.class)
-                                    .flatMap(body -> Mono.error(InfraErrorParser.toException(
-                                            objectMapper, ErrorCode.USER_CREATION_FAILED,
-                                            InfraStep.CREATE_ACCOUNT,
-                                            clientResponse.statusCode().value(),
-                                            "사용자 생성 실패", "HTTP_ERROR", body
-                                    )))
-                    )
-                    .onStatus(HttpStatusCode::is5xxServerError, clientResponse ->
-                            clientResponse.bodyToMono(String.class)
-                                    .flatMap(body -> Mono.error(InfraErrorParser.toException(
-                                            objectMapper, ErrorCode.USER_CREATION_FAILED,
-                                            InfraStep.CREATE_ACCOUNT,
-                                            clientResponse.statusCode().value(),
-                                            "사용자 생성 실패", "HTTP_ERROR", body
-                                    )))
-                    )
-                    .bodyToMono(UserCreationResponse.class)
-                    .block();
-
-            log.info("사용자 생성 성공: {}", userResponse);
-            if (userResponse == null || userResponse.uid() == null || userResponse.gid() == null) {
-                log.error("사용자 생성 API 응답에 UID/GID가 없습니다: {}", userResponse);
-                throw new BusinessException(ErrorCode.UID_ALLOCATION_FAILED);
-            }
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("사용자 생성 API 호출 중 예기치 않은 오류 발생.", e);
-            throw new InfraOperationException(
-                    ErrorCode.USER_CREATION_FAILED,
-                    "사용자 생성 API 호출 중 예기치 않은 오류 발생.",
-                    InfraStep.CREATE_ACCOUNT, null,
-                    "UNEXPECTED_ERROR", e.getMessage(),
-                    null, null, null, null
-            );
-        }
-
-        String username = request.getUbuntuUsername();
-
-        // 2. PVC 생성 API 호출
-        try {
-            callPvcApi(username, request.getVolumeSizeGiB());
-        } catch (BusinessException e) {
-            log.warn("[보상 트랜잭션] PVC 생성 실패 → 계정 삭제 시작: {}", username);
-            tryCompensateDeleteUser(username);
-            throw e;
-        }
-
-        // 3. Pod 생성 API 호출
-        CreatePodResponseDTO podResponse;
-        try {
-            podResponse = podService.createPod(username);
-        } catch (BusinessException e) {
-            log.warn("[보상 트랜잭션] Pod 생성 실패 → 계정/PVC 삭제 시작: {}", username);
-            tryCompensateDeleteUserAndPvc(username);
-            throw e;
-        }
-
-        // 4. API 호출이 모두 성공한 후에 DB 업데이트
-        try {
-            ContainerImage image = containerImageRepository.findById(dto.imageId())
-                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-            ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
-                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-            request.assignUbuntuIds(userResponse.uid(), userResponse.gid());
-            request.approve(image, rg, dto.volumeSizeGiB(), dto.adminComment());
-            request.assignPodInfo(podResponse.podName(), podResponse.node());
-            for (CreatePodResponseDTO.PortInfo port : podResponse.ports()) {
-                podExternalPortRepository.save(PodExternalPort.builder()
-                        .request(request)
-                        .internalPort(port.internalPort())
-                        .externalPort(port.externalPort())
-                        .usagePurpose(port.usagePurpose())
-                        .build());
-            }
-        } catch (Exception e) {
-            log.error("[보상 트랜잭션] DB 업데이트 실패 → 전체 infra 리소스 삭제 시작: {}", username, e);
-            tryCompensateAll(username, podResponse.podName());
-            throw e;
-        }
-        // requestRepository.flush();
-
-        // 5. 사용자에게 승인 알림 발송
-        try {
-            alarmService.sendApprovalNotification(request);
-            log.info("사용자 '{}'에게 승인 알림을 성공적으로 발송했습니다.", request.getUser().getName());
-        } catch (Exception e) {
-            log.warn("사용자 '{}'에게 승인 알림을 보내는 데 실패했습니다. (RequestId: {})",
-                    request.getUser().getName(), request.getRequestId(), e);
-        }
-        return SaveRequestResponseDTO.fromEntity(request);
-    }
-
-    @Transactional
-    public SaveRequestResponseDTO rejectRequest(RejectRequestDTO dto) {
-        Request request = requestRepository.findById(dto.requestId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        if (!(request.getStatus() == Status.PENDING || request.getStatus() == Status.FULFILLED)) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
-        }
-        request.reject(dto.adminComment());
-        return SaveRequestResponseDTO.fromEntity(request);
-    }
-
-
-    @Transactional
-    public void rejectModification(Long adminId, RejectModificationDTO dto) {
-        ChangeRequest changeRequest = changeRequestRepository.findById(dto.changeRequestId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-
-        if (changeRequest.getStatus() != Status.PENDING) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
-        }
-
-        User admin = userRepository.findById(adminId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-
-        changeRequest.deny(admin, dto.adminComment());
-    }
-
-    @Transactional
-    public void approveModification(Long adminId, ApproveModificationDTO dto) {
-        ChangeRequest changeRequest = changeRequestRepository.findById(dto.changeRequestId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-
-        if (changeRequest.getStatus() != Status.PENDING) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
-        }
-        User admin = userRepository.findById(adminId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-
-        Request originalRequest = changeRequest.getRequest();
-        if (originalRequest == null) {
-            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
-        }
-
-        try {
-            switch (changeRequest.getChangeType()) {
-                case VOLUME_SIZE:
-                    Long newVolumeSize = objectMapper.readValue(changeRequest.getNewValue(), Long.class);
-
-                    log.info("PVC 크기 변경 API 호출. 사용자: {}, 새로운 크기: {}Gi",
-                            originalRequest.getUbuntuUsername(), newVolumeSize);
-                    callPvcApi(originalRequest.getUbuntuUsername(), newVolumeSize);
-
-                    originalRequest.updateVolumeSize(newVolumeSize);
-                    break;
-                case EXPIRES_AT:
-                    LocalDateTime newExpiresAt = LocalDateTime.parse(objectMapper.readValue(changeRequest.getNewValue(), String.class));
-                    originalRequest.updateExpiresAt(newExpiresAt);
-                    break;
-                case GROUP:
-                    // 그룹 변경은 복잡하기 때문에, 엔티티가 아닌 서비스 레이어에서 처리합니다.
-                    originalRequest.getRequestGroups().clear();
-                    Set<Long> newGroupIds = objectMapper.readValue(changeRequest.getNewValue(), Set.class);
-                    Set<Group> newGroups = newGroupIds.stream()
-                            .map(gid -> groupRepository.findByUbuntuGid(gid)
-                                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)))
-                            .collect(Collectors.toSet());
-
-                    for (Group g : newGroups) {
-                        originalRequest.addGroup(g);
-                    }
-                    break;
-                case RESOURCE_GROUP:
-                    Integer newResourceGroupId = objectMapper.readValue(changeRequest.getNewValue(), Integer.class);
-                    ResourceGroup newResourceGroup = resourceGroupRepository.findById(newResourceGroupId)
-                            .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-                    originalRequest.updateResourceGroup(newResourceGroup);
-                    break;
-                case CONTAINER_IMAGE:
-                    Long newImageId = objectMapper.readValue(changeRequest.getNewValue(), Long.class);
-                    ContainerImage newContainerImage = containerImageRepository.findById(newImageId)
-                            .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-                    originalRequest.updateContainerImage(newContainerImage);
-                    break;
-                default:
-                    throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
-            }
-        } catch (JsonProcessingException e) {
-            log.error("Failed to parse change request value: {}", e.getMessage());
-            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
-        }
-
-        changeRequest.approve(admin, dto.adminComment());
-    }
-
-    // ── 보상 트랜잭션 헬퍼 ──────────────────────────────────────────────
+    // ── 보상 헬퍼 (TX 없음 — 외부 HTTP 호출만) ───────────────────────────
 
     private void tryCompensateDeleteUser(String username) {
         try {
             ubuntuAccountService.deleteUbuntuAccount(username);
-            log.info("[보상 트랜잭션 완료] 계정 삭제: {}", username);
+            log.info("[보상 완료] 계정 삭제: {}", username);
         } catch (Exception e) {
-            log.error("[보상 트랜잭션 실패] 계정 삭제 실패 - 수동 정리 필요: {}", username, e);
+            log.error("[보상 실패] 계정 삭제 실패 - 수동 정리 필요: {}", username, e);
         }
     }
 
     private void tryCompensateDeleteUserAndPvc(String username) {
-        // deleteUbuntuAccount 내부에서 PVC → 계정 순으로 삭제하며, PVC 404는 무시함
         try {
             ubuntuAccountService.deleteUbuntuAccount(username);
-            log.info("[보상 트랜잭션 완료] 계정/PVC 삭제: {}", username);
+            log.info("[보상 완료] 계정/PVC 삭제: {}", username);
         } catch (Exception e) {
-            log.error("[보상 트랜잭션 실패] 계정/PVC 삭제 실패 - 수동 정리 필요: {}", username, e);
+            log.error("[보상 실패] 계정/PVC 삭제 실패 - 수동 정리 필요: {}", username, e);
         }
     }
 
     private void tryCompensateAll(String username, String podName) {
         try {
             podService.deletePod(podName);
-            log.info("[보상 트랜잭션 완료] Pod 삭제: {}", podName);
+            log.info("[보상 완료] Pod 삭제: {}", podName);
         } catch (Exception e) {
-            log.error("[보상 트랜잭션 실패] Pod 삭제 실패 - 수동 정리 필요: {}", podName, e);
+            log.error("[보상 실패] Pod 삭제 실패 - 수동 정리 필요: {}", podName, e);
         }
         tryCompensateDeleteUserAndPvc(username);
     }
+
+    // ── 내부 레코드 / 유틸 ───────────────────────────────────────────────
 
     record UserCreationResponse(
             String status,
