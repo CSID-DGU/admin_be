@@ -32,6 +32,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
@@ -59,6 +61,8 @@ class AdminRequestCommandServiceTest {
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private PodService podService;
     @Mock private UbuntuAccountService ubuntuAccountService;
+    @Mock private PlatformTransactionManager txManager;
+    @Mock private TransactionStatus txStatus;
     @Mock private WebClient mockWebClient;
 
     // WebClient 체이닝 mock
@@ -81,11 +85,14 @@ class AdminRequestCommandServiceTest {
 
     @BeforeEach
     void setUp() {
+        // TransactionTemplate이 콜백을 실제 실행하도록 설정
+        when(txManager.getTransaction(any())).thenReturn(txStatus);
         // @RequiredArgsConstructor 생성자 필드 선언 순서대로 주입
         service = new AdminRequestCommandService(
                 alarmService, requestRepository, userRepository, containerImageRepository,
                 resourceGroupRepository, changeRequestRepository,
                 groupRepository, podExternalPortRepository, podService, ubuntuAccountService, new ObjectMapper(),
+                txManager,
                 mockWebClient, mockWebClient
         );
         // 공유 엔티티 기본 설정
