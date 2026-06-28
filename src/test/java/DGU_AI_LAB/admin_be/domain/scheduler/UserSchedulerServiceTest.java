@@ -64,9 +64,10 @@ class UserSchedulerServiceTest {
         updateLastLogin(podUser, now.minusMonths(4));
         createRequestForUser(podUser, now.minusDays(1));
 
-        // 3. [경고 대상 D-7] (Login = Now - 3개월 + 7일)
+        // 3. [경고 대상 D-7] (Login = Now + 7일 - 3개월 → deleteDate = Now + 7일, daysLeft = 7)
+        // plusDays 후 minusMonths 순서여야 달력 연산 오차 없이 정확히 7일이 남음
         User d7User = createUser("d7@test.com", "D7User");
-        LocalDateTime d7LoginDate = now.minusMonths(3).plusDays(7);
+        LocalDateTime d7LoginDate = now.plusDays(7).minusMonths(3);
         updateLastLogin(d7User, d7LoginDate);
 
         // D-7 예상 메시지 생성
