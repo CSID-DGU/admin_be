@@ -58,15 +58,10 @@ class AdminRequestCommandServiceTest {
     @Mock private WebClient mockWebClient;
 
     // WebClient 체이닝 mock
-    // bodyValue()의 반환 타입이 RequestHeadersSpec<?>이므로 별도 mock 경유
     @Mock private WebClient.RequestBodyUriSpec putUriSpec;
     @Mock private WebClient.RequestBodySpec putBodySpec;
     @Mock private WebClient.RequestHeadersSpec putHeadersSpec;
     @Mock private WebClient.ResponseSpec putResponseSpec;
-    @Mock private WebClient.RequestBodyUriSpec postUriSpec;
-    @Mock private WebClient.RequestBodySpec postBodySpec;
-    @Mock private WebClient.RequestHeadersSpec postHeadersSpec;
-    @Mock private WebClient.ResponseSpec postResponseSpec;
 
     // 공유 엔티티 mock - when() 내부에서 다른 mock 호출로 인한 UnfinishedStubbingException 방지
     @Mock private ContainerImage mockImage;
@@ -82,7 +77,7 @@ class AdminRequestCommandServiceTest {
                 alarmService, requestRepository, userRepository, containerImageRepository,
                 resourceGroupRepository, changeRequestRepository,
                 groupRepository, podExternalPortRepository, podService, ubuntuAccountService, new ObjectMapper(),
-                mockWebClient, mockWebClient
+                mockWebClient
         );
         // 공유 엔티티 기본 설정
         when(mockUser.getName()).thenReturn("테스트유저");
