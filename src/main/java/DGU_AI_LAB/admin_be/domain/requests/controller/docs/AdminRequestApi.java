@@ -50,7 +50,7 @@ public interface AdminRequestApi {
     })
     ResponseEntity<SuccessResponse<?>> getAllActiveContainers();
 
-    @Operation(summary = "사용 신청 승인", description = "PENDING 상태의 사용 신청을 승인하고 사용자 PVC를 생성합니다.")
+    @Operation(summary = "사용 신청 승인", description = "PENDING 상태의 사용 신청을 승인합니다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "성공",
                     content = @Content(schema = @Schema(implementation = SuccessResponse.class))),
