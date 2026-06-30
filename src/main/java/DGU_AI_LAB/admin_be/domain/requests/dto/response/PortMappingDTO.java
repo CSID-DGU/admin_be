@@ -9,7 +9,7 @@ public record PortMappingDTO(
         @Schema(description = "포트 요청 ID", example = "1")
         Long portRequestId,
 
-        @Schema(description = "외부 포트 번호 (10000-20000 범위)", example = "10001")
+        @Schema(description = "외부 포트 번호 (30000-32767 범위)", example = "30001")
         Integer externalPort,
 
         @Schema(description = "내부 포트 번호 (컨테이너 포트)", example = "3000")

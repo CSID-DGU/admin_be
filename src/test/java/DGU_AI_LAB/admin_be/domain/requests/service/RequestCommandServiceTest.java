@@ -25,7 +25,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -76,7 +76,7 @@ class RequestCommandServiceTest {
 
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
-            when(requestRepository.existsByUbuntuUsername("existinguser")).thenReturn(true);
+            when(requestRepository.existsByUbuntuUsernameAndStatusIn(eq("existinguser"), anyList())).thenReturn(true);
 
             SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
             when(dto.resourceGroupId()).thenReturn(1);

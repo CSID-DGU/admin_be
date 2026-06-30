@@ -47,9 +47,9 @@ public class UserSchedulerService {
      * 장기 미접속자 조회 및 처리 (경고 알림 OR Soft Delete)
      */
     private void processInactiveUsers(LocalDateTime now) {
-        // 기준일: 오늘 - 3개월 + 7일 (7일 전 알림을 위해 여유 있게 조회 후 로직에서 필터링)
-        // 사실상 3개월 전 즈음에 활동이 멈춘 사람들을 모두 가져옴
-        LocalDateTime searchThreshold = now.minusMonths(INACTIVE_MONTHS).plusDays(8);
+        // 기준일: (오늘 + 8일) - 3개월 (7일 전 알림을 위해 여유 있게 조회 후 로직에서 필터링)
+        // plusDays 후 minusMonths 순서여야 달력 연산 오차 없이 D-7 대상자를 정확히 포함함
+        LocalDateTime searchThreshold = now.plusDays(8).minusMonths(INACTIVE_MONTHS);
         List<User> inactiveCandidates = userRepository.findInactiveUsers(searchThreshold);
 
         for (User user : inactiveCandidates) {

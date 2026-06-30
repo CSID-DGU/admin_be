@@ -7,7 +7,11 @@ import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
-import DGU_AI_LAB.admin_be.domain.requests.dto.request.*;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectModificationDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.UserCreationRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
@@ -33,11 +37,9 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
-import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -60,39 +62,7 @@ public class AdminRequestCommandService {
     private final UbuntuAccountService ubuntuAccountService;
     private final ObjectMapper objectMapper;
 
-    private final @Qualifier("configWebClient") WebClient pvcWebClient;
     private final @Qualifier("configWebClient") WebClient userCreationWebClient;
-
-    /**
-     * 사용 신청, 변경 신청에서 공통으로 사용되는 PVC API 호출 메서드
-     * @param username
-     * @param volumeSizeGiB
-     */
-    private void callPvcApi(String username, Long volumeSizeGiB) {
-        PvcRequestDTO pvcDto = new PvcRequestDTO(username, volumeSizeGiB);
-
-        try {
-            log.info("PVC API 요청 시작: 사용자: {}, 용량: {}Gi",
-                    pvcDto.ubuntuUsername(), pvcDto.volumeSizeGiB());
-
-            pvcWebClient.post()
-                    .uri("/pvc")
-                    .bodyValue(pvcDto)
-                    .retrieve()
-                    .bodyToMono(Map.class)
-                    .block();
-
-            log.info("PVC API 요청 성공: 사용자: {}", username);
-
-        } catch (WebClientResponseException e) {
-            log.error("PVC API 호출 실패: 상태 코드: {}, 응답 본문: {}",
-                    e.getStatusCode(), e.getResponseBodyAsString(), e);
-            throw new BusinessException(ErrorCode.PVC_API_FAILURE);
-        } catch (Exception e) {
-            log.error("PVC API 호출 중 예기치 않은 오류 발생.", e);
-            throw new BusinessException(ErrorCode.PVC_API_FAILURE);
-        }
-    }
 
     @Transactional
     public SaveRequestResponseDTO approveRequest(ApproveRequestDTO dto) {
@@ -149,26 +119,17 @@ public class AdminRequestCommandService {
 
         String username = request.getUbuntuUsername();
 
-        // 2. PVC 생성 API 호출
-        try {
-            callPvcApi(username, request.getVolumeSizeGiB());
-        } catch (BusinessException e) {
-            log.warn("[보상 트랜잭션] PVC 생성 실패 → 계정 삭제 시작: {}", username);
-            tryCompensateDeleteUser(username);
-            throw e;
-        }
-
-        // 3. Pod 생성 API 호출
+        // 2. Pod 생성 API 호출
         CreatePodResponseDTO podResponse;
         try {
             podResponse = podService.createPod(username);
         } catch (BusinessException e) {
-            log.warn("[보상 트랜잭션] Pod 생성 실패 → 계정/PVC 삭제 시작: {}", username);
-            tryCompensateDeleteUserAndPvc(username);
+            log.warn("[보상 트랜잭션] Pod 생성 실패 → 계정 삭제 시작: {}", username);
+            tryCompensateDeleteUser(username);
             throw e;
         }
 
-        // 4. API 호출이 모두 성공한 후에 DB 업데이트
+        // 3. API 호출이 모두 성공한 후에 DB 업데이트
         try {
             ContainerImage image = containerImageRepository.findById(dto.imageId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
@@ -249,12 +210,8 @@ public class AdminRequestCommandService {
         try {
             switch (changeRequest.getChangeType()) {
                 case VOLUME_SIZE:
+                    // ponytail: NFS 전환 후 PVC 없음 — DB 기록만 갱신, NAS 쿼터 필요 시 여기에 추가
                     Long newVolumeSize = objectMapper.readValue(changeRequest.getNewValue(), Long.class);
-
-                    log.info("PVC 크기 변경 API 호출. 사용자: {}, 새로운 크기: {}Gi",
-                            originalRequest.getUbuntuUsername(), newVolumeSize);
-                    callPvcApi(originalRequest.getUbuntuUsername(), newVolumeSize);
-
                     originalRequest.updateVolumeSize(newVolumeSize);
                     break;
                 case EXPIRES_AT:
@@ -308,16 +265,6 @@ public class AdminRequestCommandService {
         }
     }
 
-    private void tryCompensateDeleteUserAndPvc(String username) {
-        // deleteUbuntuAccount 내부에서 PVC → 계정 순으로 삭제하며, PVC 404는 무시함
-        try {
-            ubuntuAccountService.deleteUbuntuAccount(username);
-            log.info("[보상 트랜잭션 완료] 계정/PVC 삭제: {}", username);
-        } catch (Exception e) {
-            log.error("[보상 트랜잭션 실패] 계정/PVC 삭제 실패 - 수동 정리 필요: {}", username, e);
-        }
-    }
-
     private void tryCompensateAll(String username, String podName) {
         try {
             podService.deletePod(podName);
@@ -325,15 +272,23 @@ public class AdminRequestCommandService {
         } catch (Exception e) {
             log.error("[보상 트랜잭션 실패] Pod 삭제 실패 - 수동 정리 필요: {}", podName, e);
         }
-        tryCompensateDeleteUserAndPvc(username);
+        tryCompensateDeleteUser(username);
     }
 
     record UserCreationResponse(
-            @JsonProperty("uid")
-            @JsonAlias({"ubuntuUid", "ubuntu_uid"})
-            Long uid,
-            @JsonProperty("gid")
-            @JsonAlias({"ubuntuGid", "ubuntu_gid"})
-            Long gid
-    ) {}
+            String status,
+            UserInfo user
+    ) {
+        Long uid() { return user != null ? user.uid() : null; }
+        Long gid() { return user != null ? user.gid() : null; }
+
+        record UserInfo(
+                @JsonProperty("uid")
+                @JsonAlias({"ubuntuUid", "ubuntu_uid"})
+                Long uid,
+                @JsonProperty("gid")
+                @JsonAlias({"ubuntuGid", "ubuntu_gid"})
+                Long gid
+        ) {}
+    }
 }
