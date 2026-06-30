@@ -33,7 +33,6 @@ import reactor.core.publisher.Mono;
 
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -101,17 +100,6 @@ class AdminRequestCommandServiceTest {
                 )));
     }
 
-    /** PVC 생성 POST 요청 WebClient 모킹
-     *  체이닝: post() -> postUriSpec -> (uri) -> postBodySpec -> (bodyValue) -> postHeadersSpec -> (retrieve) -> postResponseSpec */
-    @SuppressWarnings("unchecked")
-    private void stubWebClientPost() {
-        when(mockWebClient.post()).thenReturn(postUriSpec);
-        when(postUriSpec.uri(anyString())).thenReturn(postBodySpec);
-        doReturn(postHeadersSpec).when(postBodySpec).bodyValue(any());
-        when(postHeadersSpec.retrieve()).thenReturn(postResponseSpec);
-        when(postResponseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of()));
-    }
-
     /** 공통 Request mock 설정 */
     private Request buildMockedRequest(Long requestId) {
         Request request = mock(Request.class);
@@ -134,7 +122,6 @@ class AdminRequestCommandServiceTest {
         Long requestId = 1L;
         Request request = buildMockedRequest(requestId);
         stubWebClientPut();
-        stubWebClientPost();
 
         // ssh(22→30022), jupyter(8888→30888) 두 개의 external port를 반환하는 pod 응답
         CreatePodResponseDTO podResponse = new CreatePodResponseDTO(
@@ -189,7 +176,6 @@ class AdminRequestCommandServiceTest {
         Long requestId = 2L;
         Request request = buildMockedRequest(requestId);
         stubWebClientPut();
-        stubWebClientPost();
 
         // 포트가 없는 pod 응답
         CreatePodResponseDTO podResponse = new CreatePodResponseDTO(
@@ -215,7 +201,6 @@ class AdminRequestCommandServiceTest {
         Long requestId = 3L;
         Request request = buildMockedRequest(requestId);
         stubWebClientPut();
-        stubWebClientPost();
 
         CreatePodResponseDTO podResponse = new CreatePodResponseDTO(
                 "running", "farm1", "pod-testuser-zzzz", List.of()
