@@ -128,12 +128,39 @@ public class AlarmService {
         sendSlackAlert(message, getAdminWebhookUrl(serverName));
     }
 
-    public void sendApprovalNotification(Request request) {
+    /**
+     * [컨테이너 배정 안내 메일] 신청 승인 시 접속 정보를 담아 사용자에게 발송.
+     * 본문에 초기 비밀번호가 들어가므로 Slack DM은 보내지 않고(이메일 전용),
+     * 관리자 noti 채널엔 본문 없는 수신 로그만 남긴다.
+     * 포트는 문자열로 받는다 — MessageFormat에 숫자형을 주면 30,888처럼 콤마가 붙는다.
+     */
+    public void sendContainerCreatedEmail(Request request, String sshPort, String jupyterPort) {
         User user = request.getUser();
-        String subject = messageUtils.get("notification.approval.subject");
-        String message = messageUtils.get("notification.approval.body", user.getName());
+        var image = request.getContainerImage();
+        String serverName = request.getResourceGroup().getServerName();
 
-        sendAllAlerts(user.getName(), user.getEmail(), subject, message);
+        String subject = messageUtils.get("email.container.created.subject", serverName);
+        String body = messageUtils.get("email.container.created.body",
+                user.getName(),                                        // {0}
+                image.getImageName() + ":" + image.getImageVersion(),  // {1}
+                request.getUbuntuUsername(),                           // {2}
+                sshPort,                                               // {3}
+                jupyterPort,                                           // {4}
+                resolveHostIp(serverName),                             // {5}
+                request.getUbuntuPassword());                          // {6}
+
+        sendMailAlert(user.getEmail(), subject, body);
+        sendMonitoringLog(user.getName(), user.getEmail(), subject);
+    }
+
+    // ponytail: LAB/FARM 2-호스트 하드코딩. 호스트가 늘면 노드/설정 레지스트리로.
+    private String resolveHostIp(String serverName) {
+        if (serverName == null) return "";
+        return switch (serverName.toUpperCase()) {
+            case "LAB"  -> "210.94.179.18";
+            case "FARM" -> "210.94.179.19";
+            default -> { log.warn("호스트 IP 미상 serverName={}", serverName); yield ""; }
+        };
     }
 
     public void sendAdminSlackNotification(String serverName, String message) {
