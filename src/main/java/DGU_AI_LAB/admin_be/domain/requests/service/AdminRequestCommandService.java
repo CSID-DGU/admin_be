@@ -153,15 +153,25 @@ public class AdminRequestCommandService {
         }
         // requestRepository.flush();
 
-        // 5. 사용자에게 승인 알림 발송
+        // 5. 사용자에게 컨테이너 배정 안내 메일 발송 (접속 정보 포함)
         try {
-            alarmService.sendApprovalNotification(request);
-            log.info("사용자 '{}'에게 승인 알림을 성공적으로 발송했습니다.", request.getUser().getName());
+            String sshPort = extractExternalPort(podResponse, "ssh");
+            String jupyterPort = extractExternalPort(podResponse, "jupyter");
+            alarmService.sendContainerCreatedEmail(request, sshPort, jupyterPort);
+            log.info("사용자 '{}'에게 컨테이너 배정 안내 메일을 발송했습니다.", request.getUser().getName());
         } catch (Exception e) {
-            log.warn("사용자 '{}'에게 승인 알림을 보내는 데 실패했습니다. (RequestId: {})",
+            log.warn("사용자 '{}'에게 배정 안내 메일 발송 실패. (RequestId: {})",
                     request.getUser().getName(), request.getRequestId(), e);
         }
         return SaveRequestResponseDTO.fromEntity(request);
+    }
+
+    /** podResponse 포트 목록에서 usage_purpose가 일치하는 첫 외부 포트(문자열). 없으면 "". */
+    private String extractExternalPort(CreatePodResponseDTO podResponse, String purpose) {
+        return podResponse.ports().stream()
+                .filter(p -> purpose.equalsIgnoreCase(p.usagePurpose()))
+                .map(p -> String.valueOf(p.externalPort()))
+                .findFirst().orElse("");
     }
 
     @Transactional
