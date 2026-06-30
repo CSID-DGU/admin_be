@@ -33,7 +33,6 @@ import reactor.core.publisher.Mono;
 
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -58,15 +57,10 @@ class AdminRequestCommandServiceTest {
     @Mock private WebClient mockWebClient;
 
     // WebClient 체이닝 mock
-    // bodyValue()의 반환 타입이 RequestHeadersSpec<?>이므로 별도 mock 경유
     @Mock private WebClient.RequestBodyUriSpec putUriSpec;
     @Mock private WebClient.RequestBodySpec putBodySpec;
     @Mock private WebClient.RequestHeadersSpec putHeadersSpec;
     @Mock private WebClient.ResponseSpec putResponseSpec;
-    @Mock private WebClient.RequestBodyUriSpec postUriSpec;
-    @Mock private WebClient.RequestBodySpec postBodySpec;
-    @Mock private WebClient.RequestHeadersSpec postHeadersSpec;
-    @Mock private WebClient.ResponseSpec postResponseSpec;
 
     // 공유 엔티티 mock - when() 내부에서 다른 mock 호출로 인한 UnfinishedStubbingException 방지
     @Mock private ContainerImage mockImage;
@@ -82,7 +76,7 @@ class AdminRequestCommandServiceTest {
                 alarmService, requestRepository, userRepository, containerImageRepository,
                 resourceGroupRepository, changeRequestRepository,
                 groupRepository, podExternalPortRepository, podService, ubuntuAccountService, new ObjectMapper(),
-                mockWebClient, mockWebClient
+                mockWebClient
         );
         // 공유 엔티티 기본 설정
         when(mockUser.getName()).thenReturn("테스트유저");
@@ -104,17 +98,6 @@ class AdminRequestCommandServiceTest {
                         "created",
                         new AdminRequestCommandService.UserCreationResponse.UserInfo(2001L, 2001L)
                 )));
-    }
-
-    /** PVC 생성 POST 요청 WebClient 모킹
-     *  체이닝: post() -> postUriSpec -> (uri) -> postBodySpec -> (bodyValue) -> postHeadersSpec -> (retrieve) -> postResponseSpec */
-    @SuppressWarnings("unchecked")
-    private void stubWebClientPost() {
-        when(mockWebClient.post()).thenReturn(postUriSpec);
-        when(postUriSpec.uri(anyString())).thenReturn(postBodySpec);
-        doReturn(postHeadersSpec).when(postBodySpec).bodyValue(any());
-        when(postHeadersSpec.retrieve()).thenReturn(postResponseSpec);
-        when(postResponseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of()));
     }
 
     /** 공통 Request mock 설정 */
@@ -139,7 +122,6 @@ class AdminRequestCommandServiceTest {
         Long requestId = 1L;
         Request request = buildMockedRequest(requestId);
         stubWebClientPut();
-        stubWebClientPost();
 
         // ssh(22→30022), jupyter(8888→30888) 두 개의 external port를 반환하는 pod 응답
         CreatePodResponseDTO podResponse = new CreatePodResponseDTO(
@@ -194,7 +176,6 @@ class AdminRequestCommandServiceTest {
         Long requestId = 2L;
         Request request = buildMockedRequest(requestId);
         stubWebClientPut();
-        stubWebClientPost();
 
         // 포트가 없는 pod 응답
         CreatePodResponseDTO podResponse = new CreatePodResponseDTO(
@@ -220,7 +201,6 @@ class AdminRequestCommandServiceTest {
         Long requestId = 3L;
         Request request = buildMockedRequest(requestId);
         stubWebClientPut();
-        stubWebClientPost();
 
         CreatePodResponseDTO podResponse = new CreatePodResponseDTO(
                 "running", "farm1", "pod-testuser-zzzz", List.of()
