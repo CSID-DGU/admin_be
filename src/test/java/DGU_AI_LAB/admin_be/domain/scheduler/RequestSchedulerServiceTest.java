@@ -25,6 +25,7 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -115,6 +116,7 @@ public class RequestSchedulerServiceTest {
         // --- Given: 시간 고정 & 스케줄러 실행 ---
         try (MockedStatic<LocalDateTime> mockedTime = Mockito.mockStatic(LocalDateTime.class, Mockito.CALLS_REAL_METHODS)) {
             mockedTime.when(LocalDateTime::now).thenReturn(MOCK_NOW);
+            mockedTime.when(() -> LocalDateTime.now(any(ZoneId.class))).thenReturn(MOCK_NOW);
 
             requestSchedulerService.runScheduler();
         }
