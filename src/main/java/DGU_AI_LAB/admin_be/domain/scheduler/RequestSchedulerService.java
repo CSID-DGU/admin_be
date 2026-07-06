@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 
 /**
@@ -33,7 +34,7 @@ public class RequestSchedulerService {
     @Scheduled(cron = "0 00 08 * * ?", zone = "Asia/Seoul")
     public void runScheduler() {
         log.info("🗓️ [스케줄러 시작] 만료 계정 관리 작업");
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
 
         sendPreExpiryNotification(now.plusDays(7), "7일");
         sendPreExpiryNotification(now.plusDays(3), "3일");

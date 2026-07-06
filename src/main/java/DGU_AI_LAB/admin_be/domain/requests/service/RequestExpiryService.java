@@ -20,6 +20,7 @@ public class RequestExpiryService {
 
     private final RequestRepository requestRepository;
     private final UbuntuAccountService ubuntuAccountService;
+    private final PodService podService;
     private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
@@ -33,6 +34,7 @@ public class RequestExpiryService {
         String ubuntuUsername = request.getUbuntuUsername();
         User user = request.getUser();
 
+        podService.deletePod(request.getPodName());
         ubuntuAccountService.deleteUbuntuAccount(ubuntuUsername);
 
         request.delete();

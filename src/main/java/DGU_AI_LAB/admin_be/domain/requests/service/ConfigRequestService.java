@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
+import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
 import DGU_AI_LAB.admin_be.domain.portRequests.repository.PortRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.AcceptInfoResponseDTO;
@@ -21,6 +23,7 @@ public class ConfigRequestService {
 
     private final RequestRepository requestRepository;
     private final PortRequestRepository portRequestRepository;
+    private final NodeRepository nodeRepository;
 
     /** ubuntu username 중복 검사 */
     @Transactional(readOnly = true)
@@ -29,10 +32,10 @@ public class ConfigRequestService {
     }
 
     /** config server용 acceptinfo */
+    @Transactional(readOnly = true)
     public AcceptInfoResponseDTO getAcceptInfo(String username) {
         log.info("사용자 승인 정보 조회를 시작합니다. username: {}", username);
 
-        // 사용자 요청 정보 조회
         Request request = requestRepository.findByUbuntuUsername(username)
                 .orElseThrow(() -> {
                     log.warn("사용자 '{}'에 대한 승인 정보가 존재하지 않습니다.", username);
@@ -41,12 +44,13 @@ public class ConfigRequestService {
 
         log.debug("사용자 '{}'의 요청 정보를 성공적으로 찾았습니다. 요청 ID: {}", username, request.getRequestId());
 
-        // 포트 요청 정보 조회
         List<PortRequests> portRequests = portRequestRepository.findByRequestRequestId(request.getRequestId());
         log.debug("요청 '{}'에 속한 포트 요청 {}개를 조회했습니다.", request.getRequestId(), portRequests.size());
 
-        // 응답 DTO 생성 및 반환
-        AcceptInfoResponseDTO response = AcceptInfoResponseDTO.fromEntity(request, portRequests);
+        List<Node> nodes = nodeRepository.findAllByResourceGroup(request.getResourceGroup());
+        log.debug("리소스 그룹 소속 노드 {}개를 조회했습니다.", nodes.size());
+
+        AcceptInfoResponseDTO response = AcceptInfoResponseDTO.fromEntity(request, portRequests, nodes);
         log.info("사용자 '{}'에 대한 AcceptInfoResponseDTO 생성을 완료했습니다.", username);
 
         return response;
