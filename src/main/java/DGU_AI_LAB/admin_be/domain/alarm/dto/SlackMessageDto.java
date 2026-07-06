@@ -18,8 +18,8 @@ public class SlackMessageDto implements Serializable {
         DM       // 사용자 개인 DM
     }
 
-    private MessageType type;   // 메시지 타입 구분
-    private String message;     // 보낼 메시지 내용
+    private MessageType type;
+    private String message;
 
     // Webhook용 필드
     private String webhookUrl;
@@ -27,4 +27,11 @@ public class SlackMessageDto implements Serializable {
     // DM용 필드
     private String username;
     private String email;
+
+    @Builder.Default
+    private int retryCount = 0;
+
+    public void incrementRetryCount() {
+        this.retryCount++;
+    }
 }
