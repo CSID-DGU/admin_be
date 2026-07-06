@@ -48,7 +48,7 @@ public class TokenService {
 
         if (storedRefreshToken == null) {
             storedRefreshToken = issueNewRefreshToken(userId);
-            redisTemplate.opsForValue().set(redisKey, storedRefreshToken, REFRESH_TOKEN_EXPIRE_TIME, TimeUnit.SECONDS);
+            redisTemplate.opsForValue().set(redisKey, storedRefreshToken, REFRESH_TOKEN_EXPIRE_TIME, TimeUnit.MILLISECONDS);
         }
 
         return UserTokenResponseDTO.of(accessToken, storedRefreshToken);
@@ -73,7 +73,7 @@ public class TokenService {
         String newAccessToken = issueNewAccessToken(userId);
         String newRefreshToken = issueNewRefreshToken(userId);
 
-        redisTemplate.opsForValue().set(redisKey, newRefreshToken, REFRESH_TOKEN_EXPIRE_TIME, TimeUnit.SECONDS);
+        redisTemplate.opsForValue().set(redisKey, newRefreshToken, REFRESH_TOKEN_EXPIRE_TIME, TimeUnit.MILLISECONDS);
 
         return UserTokenResponseDTO.of(newAccessToken, newRefreshToken);
     }
