@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.requests.controller.docs;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
 import DGU_AI_LAB.admin_be.error.dto.ErrorResponse;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -12,6 +13,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
+
+import java.util.List;
 
 @Tag(name = "1. 관리자 서버 사용 신청 관리", description = "서버 신규 신청 조회 및 승인/거절 API")
 public interface AdminRequestApi {
@@ -46,9 +49,13 @@ public interface AdminRequestApi {
     @Operation(summary = "모든 활성 컨테이너 조회", description = "현재 활성화된 모든 컨테이너 정보를 조회합니다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "성공",
-                    content = @Content(schema = @Schema(implementation = SuccessResponse.class)))
+                    content = @Content(schema = @Schema(implementation = ContainerListResponseDoc.class)))
     })
     ResponseEntity<SuccessResponse<?>> getAllActiveContainers();
+
+    // Swagger 문서 전용 스키마: SuccessResponse<?> 와일드카드라 data 타입이 추론되지 않아 명시한다. 런타임 미사용.
+    @Schema(name = "SuccessResponseListContainerInfoDTO", description = "활성 컨테이너 목록 응답")
+    record ContainerListResponseDoc(int status, String message, List<ContainerInfoDTO> data) {}
 
     @Operation(summary = "사용 신청 승인", description = "PENDING 상태의 사용 신청을 승인합니다.")
     @ApiResponses({
