@@ -68,10 +68,6 @@ public class UserLoginService {
             throw new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO);
         }
 
-        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
-            throw new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO);
-        }
-
         user.recordLogin();
 
         String accessToken = jwtProvider.getIssueToken(user.getUserId(), true);

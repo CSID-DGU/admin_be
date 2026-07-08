@@ -120,7 +120,7 @@ class UserLoginServiceTest {
     class Login {
 
         @Test
-        @DisplayName("올바른 이메일과 비밀번호로 로그인하면 토큰을 반환한다")
+        @DisplayName("올바른 이메일과 비밀번호로 로그인하면 토큰을 반환하고 BCrypt 검증은 정확히 1회 실행된다")
         void login_success() {
             when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
             when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
@@ -134,6 +134,7 @@ class UserLoginServiceTest {
             assertThat(result).isNotNull();
             assertThat(result.accessToken()).isEqualTo("accessToken");
             assertThat(result.refreshToken()).isEqualTo("refreshToken");
+            verify(passwordEncoder, times(1)).matches("password123", "encodedPassword");
         }
 
         @Test
@@ -169,7 +170,7 @@ class UserLoginServiceTest {
         }
 
         @Test
-        @DisplayName("비밀번호가 틀리면 UnauthorizedException을 던진다")
+        @DisplayName("비밀번호가 틀리면 UnauthorizedException을 던지고 BCrypt 검증은 정확히 1회 실행된다")
         void login_throwsException_whenPasswordWrong() {
             when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
             when(passwordEncoder.matches("wrongPw", "encodedPassword")).thenReturn(false);
@@ -178,6 +179,7 @@ class UserLoginServiceTest {
 
             assertThatThrownBy(() -> userLoginService.login(dto))
                     .isInstanceOf(UnauthorizedException.class);
+            verify(passwordEncoder, times(1)).matches("wrongPw", "encodedPassword");
         }
     }
 }
