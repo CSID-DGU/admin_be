@@ -2,19 +2,15 @@ package DGU_AI_LAB.admin_be.global.auth.jwt;
 
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import lombok.Getter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.util.Base64;
 import java.util.Date;
-import java.util.Map;
 
 @Getter
 @Component
@@ -25,8 +21,6 @@ public class JwtProvider {
     private long ACCESS_TOKEN_EXPIRE_TIME;
     @Value("${jwt.refresh-token-expire-time}")
     private long REFRESH_TOKEN_EXPIRE_TIME;
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public String getIssueToken(Long userId, boolean isAccessToken) {
         if (isAccessToken) return generateToken(userId, ACCESS_TOKEN_EXPIRE_TIME);
@@ -89,11 +83,15 @@ public class JwtProvider {
     }
 
 
-    public String decodeJwtPayloadSubject(String oldAccessToken) throws JsonProcessingException {
-        return objectMapper.readValue(
-                new String(Base64.getDecoder().decode(oldAccessToken.split("\\.")[1]), StandardCharsets.UTF_8),
-                Map.class
-        ).get("sub").toString();
+    public Long getSubjectFromExpiredToken(String token) {
+        try {
+            return Long.valueOf(getJwtParser().parseClaimsJws(token).getBody().getSubject());
+        } catch (ExpiredJwtException e) {
+            // Token is expired but signature is valid — extract subject safely
+            return Long.valueOf(e.getClaims().getSubject());
+        } catch (Exception e) {
+            throw new UnauthorizedException(ErrorCode.INVALID_ACCESS_TOKEN_VALUE);
+        }
     }
 
 }

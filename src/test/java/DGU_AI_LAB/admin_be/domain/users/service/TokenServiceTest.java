@@ -4,7 +4,6 @@ import DGU_AI_LAB.admin_be.domain.users.dto.request.UserTokenRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import DGU_AI_LAB.admin_be.global.auth.jwt.JwtProvider;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -93,10 +92,10 @@ class TokenServiceTest {
     class Reissue {
 
         @Test
-        @DisplayName("유효한 리프레시 토큰으로 재발급하면 새 토큰을 반환한다")
-        void reissue_success() throws JsonProcessingException {
+        @DisplayName("만료되었지만 서명이 유효한 액세스 토큰으로 재발급하면 새 토큰을 반환한다")
+        void reissue_success_withExpiredButValidToken() {
             ReflectionTestUtils.setField(tokenService, "REFRESH_TOKEN_EXPIRE_TIME", 604800L);
-            when(jwtProvider.decodeJwtPayloadSubject("accessToken")).thenReturn("1");
+            when(jwtProvider.getSubjectFromExpiredToken("accessToken")).thenReturn(1L);
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);
             when(valueOperations.get("RT:1")).thenReturn("storedRefreshToken");
             doNothing().when(jwtProvider).validateRefreshToken("refreshToken");
@@ -109,6 +108,18 @@ class TokenServiceTest {
 
             assertThat(result.accessToken()).isEqualTo("newAccessToken");
             assertThat(result.refreshToken()).isEqualTo("newRefreshToken");
+        }
+
+        @Test
+        @DisplayName("서명이 위조된 액세스 토큰으로 재발급 시 UnauthorizedException을 던진다")
+        void reissue_throwsUnauthorizedException_whenTokenSignatureTampered() {
+            when(jwtProvider.getSubjectFromExpiredToken("tamperedToken"))
+                    .thenThrow(new UnauthorizedException(DGU_AI_LAB.admin_be.error.ErrorCode.INVALID_ACCESS_TOKEN_VALUE));
+
+            UserTokenRequestDTO dto = new UserTokenRequestDTO("tamperedToken", "refreshToken");
+
+            assertThatThrownBy(() -> tokenService.reissue(dto))
+                    .isInstanceOf(UnauthorizedException.class);
         }
     }
 
