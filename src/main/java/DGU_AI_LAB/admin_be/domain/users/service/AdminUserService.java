@@ -14,10 +14,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -97,8 +97,8 @@ public class AdminUserService {
 
         try {
             log.info("Starting Config Server API call to delete ubuntu account: {}", username);
-            userWebClient.post()
-                    .uri("/accounts/deleteuser/{username}", username)
+            userWebClient.delete()
+                    .uri("/accounts/users/{username}", username)
                     .retrieve()
                     .onStatus(HttpStatus.BAD_REQUEST::equals, clientResponse ->
                             Mono.error(new BusinessException(ErrorCode.INVALID_USERNAME_FORMAT))
@@ -107,7 +107,7 @@ public class AdminUserService {
                         log.warn("외부 서버에 {} 계정이 이미 존재하지 않아 삭제가 불필요합니다.", username);
                         return Mono.empty();
                     })
-                    .onStatus(WebClientResponseException.class::isInstance, clientResponse ->
+                    .onStatus(HttpStatusCode::isError, clientResponse ->
                             clientResponse.bodyToMono(String.class)
                                     .flatMap(body -> Mono.error(new BusinessException("우분투 계정 삭제 실패: " + body, ErrorCode.UBUNTU_USER_DELETION_FAILED)))
                     )
