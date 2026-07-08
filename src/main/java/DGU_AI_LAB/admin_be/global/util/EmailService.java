@@ -23,11 +23,13 @@ public class EmailService {
     private final RedisTemplate<String, String> redisTemplate;
 
     private static final long AUTH_CODE_EXPIRE_SECONDS = 60 * 5; // 5분
+    private static final String EMAIL_VERIFY_PREFIX = "email:verify:";
 
     public void sendEmailVerificationCode(String email) {
         String authCode = createRandomCode();
+        String redisKey = EMAIL_VERIFY_PREFIX + email;
 
-        redisTemplate.opsForValue().set(email, authCode, AUTH_CODE_EXPIRE_SECONDS, TimeUnit.SECONDS);
+        redisTemplate.opsForValue().set(redisKey, authCode, AUTH_CODE_EXPIRE_SECONDS, TimeUnit.SECONDS);
         log.info("이메일 [{}]에 인증번호 [{}] 저장 완료", email, authCode);
 
         sendEmail(email, "[DGU AI LAB 서버관리팀] 이메일 인증 코드입니다.",
@@ -35,12 +37,13 @@ public class EmailService {
     }
 
     public void confirmAuthCode(String email, String code) {
-        String stored = redisTemplate.opsForValue().get(email);
+        String redisKey = EMAIL_VERIFY_PREFIX + email;
+        String stored = redisTemplate.opsForValue().get(redisKey);
         if (!code.equals(stored)) {
             throw new BusinessException(ErrorCode.INVALID_AUTH_CODE);
         }
 
-        redisTemplate.delete(email); // 인증번호 제거
+        redisTemplate.delete(redisKey); // 인증번호 제거
         redisTemplate.opsForValue().set("VERIFIED:" + email, "true", 10, TimeUnit.MINUTES); // 인증 상태 저장
         log.info("이메일 [{}] 인증 성공. VERIFIED:{} 키 저장 완료", email, email);
     }
@@ -56,7 +59,8 @@ public class EmailService {
 
             mailSender.send(message);
         } catch (MessagingException e) {
-            throw new RuntimeException("이메일 전송 실패", e);
+            log.error("이메일 전송 실패: 수신자={}", to, e);
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
     }
 
