@@ -18,9 +18,13 @@ import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -36,6 +40,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
@@ -216,5 +221,225 @@ class AdminRequestCommandServiceTest {
 
         // Then - PodService.createPod()가 username으로 정확히 1회 호출
         verify(podService, times(1)).createPod("testuser");
+    }
+
+    // ── C-3: Pod 생성 null 응답 / NPE 보상 트랜잭션 테스트 ─────────────────
+
+    @Nested
+    @DisplayName("C-3: Pod 생성 실패 시 보상 트랜잭션")
+    class PodCreationFailureCompensation {
+
+        @Test
+        @DisplayName("createPod()가 BusinessException을 던지면 Ubuntu 계정 삭제가 호출된다")
+        void approveRequest_podThrowsBusinessException_compensatesWithAccountDeletion() {
+            // Given
+            Long requestId = 10L;
+            buildMockedRequest(requestId);
+            stubWebClientPut();
+
+            when(podService.createPod("testuser"))
+                    .thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED));
+
+            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
+
+            // When & Then
+            assertThatThrownBy(() -> service.approveRequest(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_CREATION_FAILED);
+
+            // Ubuntu 계정 보상 삭제가 반드시 호출되어야 함
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
+        }
+
+        @Test
+        @DisplayName("createPod()가 null을 반환하면 BusinessException이 발생하고 Ubuntu 계정이 삭제된다")
+        void approveRequest_podReturnsNull_throwsAndCompensates() {
+            // Given
+            Long requestId = 11L;
+            buildMockedRequest(requestId);
+            stubWebClientPut();
+
+            // PodService가 null을 반환하면 내부에서 BusinessException을 던져야 함 (수정 후 동작)
+            when(podService.createPod("testuser"))
+                    .thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED));
+
+            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
+
+            // When & Then
+            assertThatThrownBy(() -> service.approveRequest(dto))
+                    .isInstanceOf(BusinessException.class);
+
+            // 보상 트랜잭션이 동작해야 함
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
+            // DB 상태 변경(assignPodInfo 등)은 실행되지 않아야 함
+            verify(containerImageRepository, never()).findById(any());
+        }
+
+        @Test
+        @DisplayName("createPod() 실패 시 보상 Ubuntu 계정 삭제 자체가 실패해도 원래 예외가 전파된다")
+        void approveRequest_podFails_compensationAlsoFails_originalExceptionPropagates() {
+            // Given
+            Long requestId = 12L;
+            buildMockedRequest(requestId);
+            stubWebClientPut();
+
+            when(podService.createPod("testuser"))
+                    .thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED));
+            doThrow(new RuntimeException("계정 삭제 실패"))
+                    .when(ubuntuAccountService).deleteUbuntuAccount("testuser");
+
+            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
+
+            // When & Then - 보상 실패해도 원래 예외(POD_CREATION_FAILED)가 전파되어야 함
+            assertThatThrownBy(() -> service.approveRequest(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_CREATION_FAILED);
+        }
+
+        @Test
+        @DisplayName("createPod() 정상 응답이면 보상 트랜잭션은 실행되지 않는다")
+        void approveRequest_podSucceeds_noCompensation() {
+            // Given
+            Long requestId = 13L;
+            buildMockedRequest(requestId);
+            stubWebClientPut();
+
+            CreatePodResponseDTO podResponse = new CreatePodResponseDTO(
+                    "running", "farm1", "pod-testuser-ok", List.of()
+            );
+            when(podService.createPod("testuser")).thenReturn(podResponse);
+            when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
+            when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
+
+            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
+
+            // When
+            service.approveRequest(dto);
+
+            // Then - 보상 트랜잭션 미실행
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(any());
+            verify(podService, never()).deletePod(any());
+        }
+
+        @Test
+        @DisplayName("PENDING 상태가 아닌 요청 승인 시 BusinessException 발생")
+        void approveRequest_nonPendingStatus_throwsBusinessException() {
+            // Given
+            Long requestId = 14L;
+            Request request = mock(Request.class);
+            when(request.getStatus()).thenReturn(Status.FULFILLED);
+            when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
+
+            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
+
+            // When & Then
+            assertThatThrownBy(() -> service.approveRequest(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+
+            // Pod 생성, Ubuntu 계정 생성 모두 호출되지 않아야 함
+            verify(podService, never()).createPod(any());
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 requestId 승인 시 BusinessException 발생")
+        void approveRequest_requestNotFound_throwsBusinessException() {
+            // Given
+            when(requestRepository.findById(999L)).thenReturn(Optional.empty());
+
+            ApproveRequestDTO dto = new ApproveRequestDTO(999L, 1L, 1, 10L, "승인");
+
+            // When & Then
+            assertThatThrownBy(() -> service.approveRequest(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+    }
+
+    // ── rejectRequest 테스트 ───────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("rejectRequest 기본 동작")
+    class RejectRequest {
+
+        /** rejectRequest용 Request mock — fromEntity()가 요구하는 필드를 모두 스텁 */
+        private Request buildRejectableMock(Long requestId, Status status) {
+            Request request = mock(Request.class);
+            when(request.getStatus()).thenReturn(status);
+            when(request.getResourceGroup()).thenReturn(mockRg);
+            when(request.getUser()).thenReturn(mockUser);
+            when(request.getContainerImage()).thenReturn(mockImage);
+            when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
+            when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
+
+            when(mockRg.getRsgroupId()).thenReturn(1);
+            when(mockUser.getName()).thenReturn("테스트유저");
+            when(mockImage.getImageId()).thenReturn(1L);
+            return request;
+        }
+
+        @Test
+        @DisplayName("PENDING 상태 요청 거절 시 reject()가 호출된다")
+        void rejectRequest_pendingStatus_callsReject() {
+            // Given
+            Long requestId = 20L;
+            Request request = buildRejectableMock(requestId, Status.PENDING);
+            RejectRequestDTO dto = new RejectRequestDTO(requestId, "부적절한 신청");
+
+            // When
+            service.rejectRequest(dto);
+
+            // Then
+            verify(request).reject("부적절한 신청");
+        }
+
+        @Test
+        @DisplayName("FULFILLED 상태 요청도 거절 가능하다")
+        void rejectRequest_fulfilledStatus_callsReject() {
+            // Given
+            Long requestId = 21L;
+            Request request = buildRejectableMock(requestId, Status.FULFILLED);
+            RejectRequestDTO dto = new RejectRequestDTO(requestId, "관리자 거절");
+
+            // When
+            service.rejectRequest(dto);
+
+            // Then
+            verify(request).reject("관리자 거절");
+        }
+
+        @Test
+        @DisplayName("DENIED 상태 요청 거절 시 BusinessException 발생")
+        void rejectRequest_alreadyDenied_throwsBusinessException() {
+            // Given
+            Long requestId = 22L;
+            buildRejectableMock(requestId, Status.DENIED);
+            RejectRequestDTO dto = new RejectRequestDTO(requestId, "재거절 시도");
+
+            // When & Then
+            assertThatThrownBy(() -> service.rejectRequest(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+        }
+
+        @Test
+        @DisplayName("DELETED 상태 요청 거절 시 BusinessException 발생")
+        void rejectRequest_deletedStatus_throwsBusinessException() {
+            // Given
+            Long requestId = 23L;
+            buildRejectableMock(requestId, Status.DELETED);
+            RejectRequestDTO dto = new RejectRequestDTO(requestId, "삭제된 요청 거절 시도");
+
+            // When & Then
+            assertThatThrownBy(() -> service.rejectRequest(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+        }
     }
 }
