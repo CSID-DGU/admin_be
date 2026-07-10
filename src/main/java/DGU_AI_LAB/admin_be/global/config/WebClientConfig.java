@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.global.config;
 
+import io.netty.channel.ChannelOption;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -26,6 +27,7 @@ public class WebClientConfig {
                 .build();
 
         HttpClient httpClient = HttpClient.create(provider)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout * 1000)
                 .responseTimeout(Duration.ofSeconds(timeout));
 
         return WebClient.builder()

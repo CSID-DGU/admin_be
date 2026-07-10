@@ -1,6 +1,5 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
-import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
@@ -25,7 +24,6 @@ import java.util.concurrent.TimeUnit;
 public class UserLoginService {
 
     private final UserRepository userRepository;
-    private final GroupRepository groupRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
     private final RedisTemplate<String, String> redisTemplate;
@@ -62,10 +60,6 @@ public class UserLoginService {
 
         if (!user.getIsActive()) {
             throw new UnauthorizedException(ErrorCode.ACCOUNT_DISABLED);
-        }
-
-        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
-            throw new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO);
         }
 
         if (!passwordEncoder.matches(request.password(), user.getPassword())) {

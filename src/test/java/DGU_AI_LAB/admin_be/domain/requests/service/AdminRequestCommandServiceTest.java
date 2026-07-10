@@ -8,10 +8,13 @@ import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.UserCreationRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
@@ -36,7 +39,9 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
@@ -216,5 +221,66 @@ class AdminRequestCommandServiceTest {
 
         // Then - PodService.createPod()가 username으로 정확히 1회 호출
         verify(podService, times(1)).createPod("testuser");
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // rejectRequest 테스트
+    // ──────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("PENDING 상태의 신청은 정상 거절된다")
+    void rejectRequest_success_whenPending() {
+        Request request = mock(Request.class);
+        when(request.getStatus()).thenReturn(Status.PENDING);
+        when(request.getUser()).thenReturn(mockUser);
+        when(request.getResourceGroup()).thenReturn(mockRg);
+        when(request.getContainerImage()).thenReturn(mockImage);
+        when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
+        when(requestRepository.findById(10L)).thenReturn(Optional.of(request));
+
+        RejectRequestDTO dto = new RejectRequestDTO(10L, "신청서 양식 미준수");
+        SaveRequestResponseDTO result = service.rejectRequest(dto);
+
+        verify(request).reject("신청서 양식 미준수");
+        assertThat(result).isNotNull();
+    }
+
+    @Test
+    @DisplayName("FULFILLED 상태의 신청을 거절하면 BusinessException이 발생한다")
+    void rejectRequest_throwsException_whenFulfilled() {
+        Request request = mock(Request.class);
+        when(request.getStatus()).thenReturn(Status.FULFILLED);
+        when(requestRepository.findById(11L)).thenReturn(Optional.of(request));
+
+        RejectRequestDTO dto = new RejectRequestDTO(11L, "거절 시도");
+
+        assertThatThrownBy(() -> service.rejectRequest(dto))
+                .isInstanceOf(BusinessException.class);
+        verify(request, never()).reject(anyString());
+    }
+
+    @Test
+    @DisplayName("DENIED 상태의 신청을 거절하면 BusinessException이 발생한다")
+    void rejectRequest_throwsException_whenAlreadyDenied() {
+        Request request = mock(Request.class);
+        when(request.getStatus()).thenReturn(Status.DENIED);
+        when(requestRepository.findById(12L)).thenReturn(Optional.of(request));
+
+        RejectRequestDTO dto = new RejectRequestDTO(12L, "재거절 시도");
+
+        assertThatThrownBy(() -> service.rejectRequest(dto))
+                .isInstanceOf(BusinessException.class);
+        verify(request, never()).reject(anyString());
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 requestId로 거절하면 BusinessException이 발생한다")
+    void rejectRequest_throwsException_whenRequestNotFound() {
+        when(requestRepository.findById(999L)).thenReturn(Optional.empty());
+
+        RejectRequestDTO dto = new RejectRequestDTO(999L, "거절 시도");
+
+        assertThatThrownBy(() -> service.rejectRequest(dto))
+                .isInstanceOf(BusinessException.class);
     }
 }

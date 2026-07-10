@@ -1,6 +1,5 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
-import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
@@ -36,9 +35,6 @@ class UserLoginServiceTest {
 
     @Mock
     private UserRepository userRepository;
-
-    @Mock
-    private GroupRepository groupRepository;
 
     @Mock
     private PasswordEncoder passwordEncoder;
@@ -178,6 +174,20 @@ class UserLoginServiceTest {
 
             assertThatThrownBy(() -> userLoginService.login(dto))
                     .isInstanceOf(UnauthorizedException.class);
+        }
+
+        @Test
+        @DisplayName("로그인 성공 시 passwordEncoder.matches()는 정확히 1회만 호출된다")
+        void login_callsPasswordMatchesExactlyOnce() {
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
+            when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
+            when(jwtProvider.getIssueToken(any(), eq(true))).thenReturn("accessToken");
+            when(jwtProvider.getIssueToken(any(), eq(false))).thenReturn("refreshToken");
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+            userLoginService.login(new UserLoginRequestDTO("test@dgu.ac.kr", "password123"));
+
+            verify(passwordEncoder, times(1)).matches(anyString(), anyString());
         }
     }
 }
