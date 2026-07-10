@@ -2,19 +2,15 @@ package DGU_AI_LAB.admin_be.global.auth.jwt;
 
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import lombok.Getter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.util.Base64;
 import java.util.Date;
-import java.util.Map;
 
 @Getter
 @Component
@@ -25,8 +21,6 @@ public class JwtProvider {
     private long ACCESS_TOKEN_EXPIRE_TIME;
     @Value("${jwt.refresh-token-expire-time}")
     private long REFRESH_TOKEN_EXPIRE_TIME;
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public String getIssueToken(Long userId, boolean isAccessToken) {
         if (isAccessToken) return generateToken(userId, ACCESS_TOKEN_EXPIRE_TIME);
@@ -89,11 +83,21 @@ public class JwtProvider {
     }
 
 
-    public String decodeJwtPayloadSubject(String oldAccessToken) throws JsonProcessingException {
-        return objectMapper.readValue(
-                new String(Base64.getDecoder().decode(oldAccessToken.split("\\.")[1]), StandardCharsets.UTF_8),
-                Map.class
-        ).get("sub").toString();
+    /**
+     * 만료된 accessToken에서 서명 검증 후 userId(subject)를 추출한다.
+     *
+     * parseClaimsJws()는 만료 여부와 무관하게 서명을 항상 검증한다.
+     * 토큰이 만료된 경우 ExpiredJwtException에서 claims를 꺼내 subject를 반환하고,
+     * 서명이 유효하지 않거나 토큰 형식이 깨진 경우에는 예외가 그대로 전파된다.
+     */
+    public Long getSubjectFromExpiredToken(String accessToken) {
+        try {
+            return Long.valueOf(
+                    getJwtParser().parseClaimsJws(accessToken).getBody().getSubject()
+            );
+        } catch (ExpiredJwtException e) {
+            return Long.valueOf(e.getClaims().getSubject());
+        }
     }
 
 }
