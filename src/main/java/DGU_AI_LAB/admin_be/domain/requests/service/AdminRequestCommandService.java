@@ -168,7 +168,7 @@ public class AdminRequestCommandService {
     public SaveRequestResponseDTO rejectRequest(RejectRequestDTO dto) {
         Request request = requestRepository.findById(dto.requestId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        if (request.getStatus() != Status.PENDING) {
+        if (!(request.getStatus() == Status.PENDING || request.getStatus() == Status.FULFILLED)) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
         request.reject(dto.adminComment());
