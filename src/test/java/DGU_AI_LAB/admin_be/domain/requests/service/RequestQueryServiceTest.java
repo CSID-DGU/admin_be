@@ -1,6 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
-import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
+import DGU_AI_LAB.admin_be.domain.portRequests.repository.PortRequestRepository;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
@@ -24,6 +24,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -42,7 +43,7 @@ class RequestQueryServiceTest {
     private UserRepository userRepository;
 
     @Mock
-    private PortRequestService portRequestService;
+    private PortRequestRepository portRequestRepository;
 
     @Mock
     private PodExternalPortRepository podExternalPortRepository;
@@ -75,8 +76,8 @@ class RequestQueryServiceTest {
 
             when(userRepository.existsById(1L)).thenReturn(true);
             when(requestRepository.findAllByUser_UserId(1L)).thenReturn(List.of(request));
-            when(portRequestService.getPortRequestsByRequestId(1L)).thenReturn(List.of());
-            when(podExternalPortRepository.findByRequestRequestId(1L)).thenReturn(List.of(podExternalPort));
+            when(portRequestRepository.findByRequestRequestIdIn(anyList())).thenReturn(List.of());
+            when(podExternalPortRepository.findByRequestRequestIdIn(anyList())).thenReturn(List.of(podExternalPort));
 
             List<SaveRequestResponseDTO> result = requestQueryService.getRequestsByUserId(1L);
 
