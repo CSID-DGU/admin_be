@@ -21,6 +21,8 @@ public class UserSchedulerService {
 
     private static final int INACTIVE_MONTHS = 3;
     private static final int HARD_DELETE_YEARS = 1;
+    // D-7 경고까지 포함하려면 (strict <) 기준일을 7+1=8일 앞당겨야 한다
+    private static final int NOTIFICATION_LEAD_DAYS = 8;
 
     // 매일 오전 09:00 실행
     @Scheduled(cron = "0 0 9 * * ?", zone = "Asia/Seoul")
@@ -35,7 +37,7 @@ public class UserSchedulerService {
     }
 
     private void processInactiveUsers(LocalDateTime now) {
-        LocalDateTime searchThreshold = now.plusDays(8).minusMonths(INACTIVE_MONTHS);
+        LocalDateTime searchThreshold = now.plusDays(NOTIFICATION_LEAD_DAYS).minusMonths(INACTIVE_MONTHS);
         List<User> inactiveCandidates = userRepository.findInactiveUsers(searchThreshold);
 
         for (User user : inactiveCandidates) {
