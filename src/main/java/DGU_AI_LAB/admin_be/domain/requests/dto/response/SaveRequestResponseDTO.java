@@ -117,45 +117,7 @@ public record SaveRequestResponseDTO(
     }
 
     public static SaveRequestResponseDTO fromEntity(Request request) {
-
-        if (request.getResourceGroup() == null) {
-            throw new BusinessException(ErrorCode.RESOURCE_GROUP_NOT_FOUND);
-        }
-        if (request.getUser() == null) {
-            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
-        }
-        if (request.getContainerImage() == null) {
-            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
-        }
-
-        return SaveRequestResponseDTO.builder()
-                .requestId(request.getRequestId())
-                .resourceGroupId(request.getResourceGroup().getRsgroupId())
-                .resourceGroup(AdminResourceGroupInfo.fromEntity(request.getResourceGroup()))
-                .user(AdminUserInfo.fromEntity(request.getUser()))
-                .imageId(request.getContainerImage().getImageId())
-                .imageName(request.getContainerImage().getImageName())
-                .imageVersion(request.getContainerImage().getImageVersion())
-                .ubuntuUsername(request.getUbuntuUsername())
-                .ubuntuUid(request.getUbuntuUid())
-                .ubuntuGid(request.getUbuntuGid())
-                .ubuntuGids(
-                        request.getRequestGroups().stream()
-                                .map(rg -> rg.getGroup().getUbuntuGid())
-                                .toList()
-                )
-                .volumeSizeGiB(request.getVolumeSizeGiB())
-                .usagePurpose(request.getUsagePurpose())
-                .formAnswers(request.getFormAnswers())
-                .expiresAt(request.getExpiresAt())
-                .status(request.getStatus())
-                .approvedAt(request.getApprovedAt())
-                .comment(request.getAdminComment())
-                .portMappings(List.of())
-                .podExternalPorts(List.of())
-                .createdAt(request.getCreatedAt())
-                .updatedAt(request.getUpdatedAt())
-                .build();
+        return fromEntityWithPorts(request, List.of(), List.of());
     }
 
     public static SaveRequestResponseDTO fromEntityWithPortMappings(Request request, List<PortMappingDTO> portMappings) {
