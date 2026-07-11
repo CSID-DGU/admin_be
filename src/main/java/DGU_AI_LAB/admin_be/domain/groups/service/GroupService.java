@@ -13,11 +13,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.core.publisher.Mono;
 
 import java.util.Collections;
 import java.util.List;
@@ -97,33 +99,42 @@ public class GroupService {
                     .uri("/accounts/groups")
                     .bodyValue(apiDto)
                     .retrieve()
+                    .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
+                            clientResponse.bodyToMono(String.class).flatMap(body -> {
+                                log.error("[createGroup] 외부 API 4xx 오류: 상태 코드={}, 응답={}", clientResponse.statusCode(), body);
+                                if (clientResponse.statusCode() == HttpStatus.BAD_REQUEST) {
+                                    if (body.contains("invalid members")) {
+                                        return Mono.error(new BusinessException(ErrorCode.INVALID_GROUP_MEMBER));
+                                    }
+                                    return Mono.error(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
+                                } else if (clientResponse.statusCode() == HttpStatus.CONFLICT) {
+                                    if (body.contains("group already exists")) {
+                                        return Mono.error(new BusinessException(ErrorCode.DUPLICATE_GROUP_NAME));
+                                    }
+                                    return Mono.error(new BusinessException(ErrorCode.DUPLICATE_GROUP_ID));
+                                }
+                                return Mono.error(new BusinessException(ErrorCode.GROUP_CREATION_FAILED));
+                            })
+                    )
+                    .onStatus(HttpStatusCode::is5xxServerError, clientResponse ->
+                            clientResponse.bodyToMono(String.class).flatMap(body -> {
+                                log.error("[createGroup] 외부 API 5xx 오류: 상태 코드={}, 응답={}", clientResponse.statusCode(), body);
+                                return Mono.error(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
+                            })
+                    )
                     .bodyToMono(ConfigServerGroupResponse.class)
                     .block();
 
             log.info("[createGroup] 외부 API 호출 성공: {}", apiResponse);
 
+        } catch (BusinessException e) {
+            throw e;
         } catch (WebClientResponseException e) {
             log.error("[createGroup] 외부 API 호출 실패: 상태 코드={}, 응답={}", e.getStatusCode(), e.getResponseBodyAsString(), e);
-            String responseBody = e.getResponseBodyAsString();
-
-            if (e.getStatusCode() == HttpStatus.BAD_REQUEST) {
-                if (responseBody.contains("invalid members")) {
-                    throw new BusinessException(ErrorCode.INVALID_GROUP_MEMBER);
-                }
-                throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
-            } else if (e.getStatusCode() == HttpStatus.CONFLICT) {
-                if (responseBody.contains("group already exists")) {
-                    throw new BusinessException(ErrorCode.DUPLICATE_GROUP_NAME);
-                }
-                throw new BusinessException(ErrorCode.DUPLICATE_GROUP_ID);
-            } else if (e.getStatusCode() == HttpStatus.INTERNAL_SERVER_ERROR) {
-                throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
-            }
-
             throw new BusinessException(ErrorCode.GROUP_CREATION_FAILED);
-
         } catch (Exception e) {
-            log.error("[createGroup] 외부 API 호출 중 예상치 못한 오류 발생", e);
+            log.error("[createGroup] 외부 API 응답 파싱 또는 통신 오류 발생 — " +
+                    "외부 시스템에 그룹이 생성되었을 수 있습니다. 수동 확인이 필요합니다. groupName={}", dto.groupName(), e);
             throw new BusinessException(ErrorCode.GROUP_CREATION_FAILED);
         }
 
