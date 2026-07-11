@@ -3,7 +3,6 @@ package DGU_AI_LAB.admin_be.domain.scheduler;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
-import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,20 +20,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("RequestSchedulerService - 만료 조회 종료 시각 범위 검증")
+@DisplayName("RequestNotificationService - 만료 조회 종료 시각 범위 검증")
 class RequestSchedulerServiceEndTimeTest {
 
     @InjectMocks
-    private RequestSchedulerService schedulerService;
+    private RequestNotificationService schedulerService;
 
     @Mock
     private RequestRepository requestRepository;
 
     @Mock
     private AlarmService alarmService;
-
-    @Mock
-    private RequestExpiryService requestExpiryService;
 
     @Mock
     private MessageUtils messageUtils;
