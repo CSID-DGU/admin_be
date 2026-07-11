@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.UserServerResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import DGU_AI_LAB.admin_be.domain.requests.entity.StatusFilter;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import lombok.RequiredArgsConstructor;
@@ -29,13 +30,14 @@ public class DashboardService {
      * 사용자 대시보드 서버 목록 조회
      * 승인받은 서버 및 승인 대기중인 신청 목록을 필터링하여 반환합니다.
      */
-    public List<UserServerResponseDTO> getUserServers(Long userId, Status status) {
-        log.info("[getUserServers] userId={}의 status={} 서버 목록 조회 시작", userId, status);
+    public List<UserServerResponseDTO> getUserServers(Long userId, StatusFilter statusFilter) {
+        log.info("[getUserServers] userId={}의 statusFilter={} 서버 목록 조회 시작", userId, statusFilter);
 
         List<Request> requests;
-        if (status == Status.ALL) {
+        if (statusFilter == StatusFilter.ALL) {
             requests = requestRepository.findAllByUser_UserId(userId);
         } else {
+            Status status = Status.valueOf(statusFilter.name());
             requests = requestRepository.findByUserUserIdAndStatus(userId, status);
         }
 

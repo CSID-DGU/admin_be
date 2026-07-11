@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
 
@@ -69,7 +70,7 @@ public class RequestSchedulerService {
     @Transactional(readOnly = true)
     public void sendPreExpiryNotification(LocalDateTime targetDate, String dayLabel) {
         LocalDateTime start = targetDate.toLocalDate().atStartOfDay();
-        LocalDateTime end = targetDate.toLocalDate().atTime(23, 59, 59);
+        LocalDateTime end = targetDate.toLocalDate().atTime(LocalTime.MAX);
 
         List<Request> requests = requestRepository.findAllByExpiresAtBetweenAndStatus(start, end, Status.FULFILLED);
 
