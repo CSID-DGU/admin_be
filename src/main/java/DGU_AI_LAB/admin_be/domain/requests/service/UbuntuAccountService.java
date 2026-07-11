@@ -9,7 +9,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
 import java.util.Map;
@@ -51,10 +50,8 @@ public class UbuntuAccountService {
                     .block();
             log.info("사용자 삭제 성공: {}", username);
         } catch (Exception e) {
-            if (!(e instanceof WebClientResponseException && ((WebClientResponseException)e).getStatusCode() == HttpStatus.NOT_FOUND)) {
-                log.error("사용자 삭제 API 호출 중 예기치 않은 오류: {}", username, e);
-                throw new BusinessException("사용자 삭제 API 호출 오류", ErrorCode.INTERNAL_SERVER_ERROR);
-            }
+            log.error("사용자 삭제 API 호출 중 예기치 않은 오류: {}", username, e);
+            throw new BusinessException("사용자 삭제 API 호출 오류", ErrorCode.INTERNAL_SERVER_ERROR);
         }
     }
 }
