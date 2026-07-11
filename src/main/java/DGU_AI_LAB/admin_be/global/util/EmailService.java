@@ -58,7 +58,7 @@ public class EmailService {
             helper.setText(text, false);
 
             mailSender.send(message);
-        } catch (MessagingException e) {
+        } catch (MessagingException | RuntimeException e) {
             log.error("이메일 전송 실패: 수신자={}", to, e);
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
