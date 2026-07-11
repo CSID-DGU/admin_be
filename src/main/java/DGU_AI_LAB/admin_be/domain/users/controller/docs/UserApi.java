@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
-@Tag(name = "2. 사용자 정보 관리", description = "일반 사용자 본인 정보 관리 API")
+@Tag(name = "2. 사용자 계정", description = "사용자 본인 정보 조회 및 수정 API")
 public interface UserApi {
 
     @Operation(summary = "사용자 정보 확인", description = "로그인된 사용자의 상세 정보를 조회합니다.")

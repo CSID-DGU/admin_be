@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "0. 인프라 내부 API", description = "인프라 서버 전용 내부 API (인증 불필요, 내부망 전용)")
+@Tag(name = "0. 내부 전용 API", description = "인프라·Config 서버 전용 내부 API (인증 불필요, 내부망 전용)")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/internal")

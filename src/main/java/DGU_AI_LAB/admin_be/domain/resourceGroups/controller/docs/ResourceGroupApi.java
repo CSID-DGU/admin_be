@@ -14,46 +14,21 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 
-@Tag(name = "2. 리소스 그룹 관리 API", description = "GPU 기종별 리소스 정보 조회 등 리소스 그룹 관련 API")
+@Tag(name = "2. 리소스 그룹", description = "GPU 기종별 리소스 그룹 조회 API")
 @RequestMapping("/api/resources")
 public interface ResourceGroupApi {
 
-    @Operation(
-            summary = "GPU 기종별 리소스 정보 조회",
-            description = "서버 신청 시 선택 가능한 GPU 기종별(리소스 그룹) 리소스 현황을 조회합니다.<br>" +
-                    "현재 모든 노드는 사용 가능하다고 가정합니다.",
-            responses = {
-                    @ApiResponse(
-                            responseCode = "200",
-                            description = "성공적으로 GPU 기종별 리소스 정보를 조회했습니다.",
-                            content = @Content(schema = @Schema(implementation = GpuTypeResponseDTO.class))
-                    ),
-                    @ApiResponse(
-                            responseCode = "404",
-                            description = "사용 가능한 리소스가 없습니다. (NO_AVAILABLE_RESOURCES)",
-                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-                    ),
-                    @ApiResponse(
-                            responseCode = "500",
-                            description = "서버 내부 오류 발생.",
-                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-                    )
-            }
-    )
+    @Operation(summary = "GPU 기종별 리소스 현황 조회", description = "서버 신청 시 선택 가능한 GPU 기종별 리소스 현황을 조회합니다.")
+    @ApiResponse(responseCode = "200", description = "성공",
+            content = @Content(schema = @Schema(implementation = GpuTypeResponseDTO.class)))
+    @ApiResponse(responseCode = "404", description = "사용 가능한 리소스가 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @GetMapping("/gpu-types")
     ResponseEntity<SuccessResponse<?>> getGpuTypeResources();
 
-    @Operation(
-            summary = "리소스 그룹 목록 조회",
-            description = "서버 신청 시 선택 가능한 모든 리소스 그룹 목록을 조회합니다.",
-            responses = {
-                    @ApiResponse(
-                            responseCode = "200",
-                            description = "성공적으로 리소스 그룹 목록을 조회했습니다.",
-                            content = @Content(array = @ArraySchema(schema = @Schema(implementation = ResourceGroupResponseDTO.class)))
-                    )
-            }
-    )
+    @Operation(summary = "리소스 그룹 목록 조회", description = "서버 신청 시 선택 가능한 모든 리소스 그룹 목록을 조회합니다.")
+    @ApiResponse(responseCode = "200", description = "성공",
+            content = @Content(array = @ArraySchema(schema = @Schema(implementation = ResourceGroupResponseDTO.class))))
     @GetMapping("/groups")
     ResponseEntity<SuccessResponse<?>> getAvailableResourceGroups();
 }
