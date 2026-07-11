@@ -4,6 +4,7 @@ import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
 import DGU_AI_LAB.admin_be.domain.portRequests.repository.PortRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
+import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,11 +15,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -30,6 +33,9 @@ class PortRequestServiceTest {
 
     @Mock
     private PortRequestRepository portRequestRepository;
+
+    @Mock
+    private ResourceGroupRepository resourceGroupRepository;
 
     @Test
     @DisplayName("NodePort 기본 범위 30000부터 사용 가능한 포트를 할당한다")
@@ -47,6 +53,7 @@ class PortRequestServiceTest {
                 .resourceGroup(resourceGroup)
                 .build();
 
+        when(resourceGroupRepository.findByIdWithPessimisticLock(anyInt())).thenReturn(Optional.of(resourceGroup));
         when(portRequestRepository.findPortNumbersByResourceGroupRsgroupIdOrderByPortNumberAsc(1))
                 .thenReturn(List.of(30000));
         when(portRequestRepository.save(any(PortRequests.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -77,6 +84,7 @@ class PortRequestServiceTest {
                 .boxed()
                 .toList();
 
+        when(resourceGroupRepository.findByIdWithPessimisticLock(anyInt())).thenReturn(Optional.of(resourceGroup));
         when(portRequestRepository.findPortNumbersByResourceGroupRsgroupIdOrderByPortNumberAsc(1))
                 .thenReturn(usedPorts);
 
