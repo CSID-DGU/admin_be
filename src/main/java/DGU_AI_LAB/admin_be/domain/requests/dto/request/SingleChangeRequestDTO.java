@@ -37,6 +37,8 @@ public record SingleChangeRequestDTO(
         String reason
 ) {
 
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
     /**
      * 기존 Request에서 oldValue를 추출하고 ChangeRequest 엔티티 생성
      */
@@ -141,8 +143,7 @@ public record SingleChangeRequestDTO(
                     LocalDateTime.parse(newValue.trim());
                 }
                 case GROUP -> {
-                    ObjectMapper mapper = new ObjectMapper();
-                    Set<Long> groupIds = mapper.readValue(newValue, mapper.getTypeFactory().constructCollectionType(Set.class, Long.class));
+                    Set<Long> groupIds = OBJECT_MAPPER.readValue(newValue, OBJECT_MAPPER.getTypeFactory().constructCollectionType(Set.class, Long.class));
                     if (groupIds.isEmpty()) {
                         throw new BusinessException("그룹 ID 목록은 비어있을 수 없습니다.", ErrorCode.INVALID_INPUT_VALUE);
                     }
@@ -160,9 +161,8 @@ public record SingleChangeRequestDTO(
                     }
                 }
                 case PORT -> {
-                    ObjectMapper mapper = new ObjectMapper();
-                    List<PortRequestDTO> portRequests = mapper.readValue(newValue,
-                        mapper.getTypeFactory().constructCollectionType(List.class, PortRequestDTO.class));
+                    List<PortRequestDTO> portRequests = OBJECT_MAPPER.readValue(newValue,
+                        OBJECT_MAPPER.getTypeFactory().constructCollectionType(List.class, PortRequestDTO.class));
 
                     // Validate each port request
                     for (PortRequestDTO portRequest : portRequests) {
