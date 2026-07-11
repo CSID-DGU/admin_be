@@ -163,7 +163,8 @@ public class AlarmService {
             }
 
             // Fallback이 작동했다는 건 시스템이 불안정하다는 뜻이므로 에러 로그 채널에 알립니다.
-            if (!dto.getWebhookUrl().equals(errorLogWebhookUrl)) {
+            String webhookUrl = dto.getWebhookUrl();
+            if (webhookUrl == null || !webhookUrl.equals(errorLogWebhookUrl)) {
                 slackApiService.sendWebhook(errorLogWebhookUrl, "⚠️ Redis 장애 발생 (Direct Send 작동됨)");
             }
 

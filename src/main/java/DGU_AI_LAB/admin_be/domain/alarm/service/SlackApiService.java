@@ -170,10 +170,17 @@ public class SlackApiService {
 
         try {
             ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
-            if (Boolean.TRUE.equals(response.getBody().get("ok"))) {
-                Map channel = (Map) response.getBody().get("channel");
-                return (String) channel.get("id");
+            Map<?, ?> body = response.getBody();
+            if (body == null || !Boolean.TRUE.equals(body.get("ok"))) {
+                log.warn("conversations.open API 응답 이상: ok=false 또는 body null");
+                return null;
             }
+            Map<?, ?> channel = (Map<?, ?>) body.get("channel");
+            if (channel == null) {
+                log.warn("conversations.open 응답에 channel 필드 없음");
+                return null;
+            }
+            return (String) channel.get("id");
         } catch (Exception e) {
             log.error("DM 채널 오픈 API 오류", e);
         }

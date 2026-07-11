@@ -3,7 +3,7 @@ package DGU_AI_LAB.admin_be.domain.dashboard.controller;
 import DGU_AI_LAB.admin_be.domain.dashboard.controller.docs.DashBoardApi;
 import DGU_AI_LAB.admin_be.domain.dashboard.service.DashboardService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.UserServerResponseDTO;
-import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import DGU_AI_LAB.admin_be.domain.requests.entity.StatusFilter;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import lombok.RequiredArgsConstructor;
@@ -28,15 +28,15 @@ public class DashboardController implements DashBoardApi {
     /**
      * 사용자 신청 현황 서버 목록 조회 API
      *
-     * @param principal 현재 로그인한 사용자의 인증 정보 (CustomUserDetails)
-     * @param status    조회할 서버 요청의 상태 (필수 값: PENDING, FULFILLED, DENIED, ALL)
+     * @param principal    현재 로그인한 사용자의 인증 정보 (CustomUserDetails)
+     * @param statusFilter 조회할 서버 요청의 상태 필터 (PENDING, FULFILLED, DENIED, DELETED, ALL)
      */
     @GetMapping("/me/servers")
     public ResponseEntity<SuccessResponse<?>> getUserServers(
             @AuthenticationPrincipal CustomUserDetails principal,
-            @RequestParam(name = "status") Status status
+            @RequestParam(name = "status") StatusFilter statusFilter
     ) {
-        List<UserServerResponseDTO> userServers = dashboardService.getUserServers(principal.getUserId(), status);
+        List<UserServerResponseDTO> userServers = dashboardService.getUserServers(principal.getUserId(), statusFilter);
         return SuccessResponse.ok(userServers);
     }
 

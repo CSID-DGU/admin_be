@@ -96,7 +96,7 @@ class AdminUserServiceTest {
         void updateUser_success() {
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
 
-            UserUpdateRequestDTO request = new UserUpdateRequestDTO("홍길동", "newPw", false);
+            UserUpdateRequestDTO request = new UserUpdateRequestDTO("newPw", false);
             UserResponseDTO result = adminUserService.updateUser(1L, request);
 
             assertThat(result).isNotNull();
@@ -107,7 +107,7 @@ class AdminUserServiceTest {
         void updateUser_throwsException_whenUserNotFound() {
             when(userRepository.findById(99L)).thenReturn(Optional.empty());
 
-            UserUpdateRequestDTO request = new UserUpdateRequestDTO("홍길동", "newPw", false);
+            UserUpdateRequestDTO request = new UserUpdateRequestDTO("newPw", false);
 
             assertThatThrownBy(() -> adminUserService.updateUser(99L, request))
                     .isInstanceOf(EntityNotFoundException.class);

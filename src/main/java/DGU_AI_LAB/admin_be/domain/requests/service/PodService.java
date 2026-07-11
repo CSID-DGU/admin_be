@@ -10,8 +10,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
@@ -63,7 +61,6 @@ public class PodService {
         }
     }
 
-    @Transactional(propagation = Propagation.MANDATORY)
     public void deletePod(String podName) {
         if (podName == null) {
             log.warn("pod_name이 없어 Pod 삭제를 건너뜁니다.");
