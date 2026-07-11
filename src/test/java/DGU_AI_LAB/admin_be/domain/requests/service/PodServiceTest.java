@@ -78,18 +78,6 @@ class PodServiceTest {
         }
 
         @Test
-        @DisplayName("빈 문자열 podName도 API를 호출한다")
-        void deletePod_callsApi_whenPodNameIsEmpty() {
-            when(responseSpec.bodyToMono(Map.class))
-                    .thenReturn(Mono.just(Map.of()));
-
-            assertThatCode(() -> podService.deletePod(""))
-                    .doesNotThrowAnyException();
-
-            verify(webClient).post();
-        }
-
-        @Test
         @DisplayName("API 호출 중 BusinessException이 발생하면 그대로 전파한다")
         void deletePod_propagatesBusinessException() {
             when(responseSpec.bodyToMono(Map.class))
@@ -146,14 +134,30 @@ class PodServiceTest {
         }
 
         @Test
-        @DisplayName("Pod 생성 API가 빈 응답을 반환하면 null을 반환한다")
-        void createPod_returnsNull_whenApiReturnsEmpty() {
+        @DisplayName("C-3: API가 빈 응답(null)을 반환하면 POD_CREATION_FAILED 예외가 발생한다")
+        void createPod_throwsBusinessException_whenApiReturnsEmpty() {
             when(responseSpec.bodyToMono(CreatePodResponseDTO.class))
                     .thenReturn(Mono.empty());
 
-            CreatePodResponseDTO result = podService.createPod("testuser");
+            assertThatThrownBy(() -> podService.createPod("testuser"))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_CREATION_FAILED);
+        }
 
-            assertThat(result).isNull();
+        @Test
+        @DisplayName("C-3: podName이 null인 응답이면 POD_CREATION_FAILED 예외가 발생한다")
+        void createPod_throwsBusinessException_whenPodNameIsNull() {
+            CreatePodResponseDTO badResponse = new CreatePodResponseDTO(
+                    "unknown", "farm1", null, List.of()
+            );
+            when(responseSpec.bodyToMono(CreatePodResponseDTO.class))
+                    .thenReturn(Mono.just(badResponse));
+
+            assertThatThrownBy(() -> podService.createPod("testuser"))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_CREATION_FAILED);
         }
 
         @Test

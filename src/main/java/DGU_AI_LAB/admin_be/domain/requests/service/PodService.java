@@ -46,7 +46,11 @@ public class PodService {
                     .bodyToMono(CreatePodResponseDTO.class)
                     .block();
 
-            log.info("Pod 생성 API 요청 성공: 사용자: {}, pod: {}", username, response != null ? response.podName() : "null");
+            if (response == null || response.podName() == null) {
+                log.error("Pod 생성 API가 빈 응답을 반환했습니다. 사용자: {}", username);
+                throw new BusinessException(ErrorCode.POD_CREATION_FAILED);
+            }
+            log.info("Pod 생성 API 요청 성공: 사용자: {}, pod: {}", username, response.podName());
             return response;
 
         } catch (BusinessException e) {
