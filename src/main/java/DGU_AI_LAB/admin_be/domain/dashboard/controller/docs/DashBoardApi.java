@@ -1,7 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.dashboard.controller.docs;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.UserServerResponseDTO;
-import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import DGU_AI_LAB.admin_be.domain.requests.entity.StatusFilter;
 import DGU_AI_LAB.admin_be.error.dto.ErrorResponse;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
@@ -53,7 +53,7 @@ public interface DashBoardApi {
     ResponseEntity<SuccessResponse<?>> getUserServers(
             @Parameter(hidden = true)
             @AuthenticationPrincipal CustomUserDetails principal,
-            @Parameter(description = "조회할 서버 신청 상태 (PENDING, FULFILLED, DENIED 등)", required = true, example = "FULFILLED")
-            @RequestParam(name = "status") Status status
+            @Parameter(description = "조회할 서버 신청 상태 필터 (PENDING, FULFILLED, DENIED, DELETED, ALL)", required = true, example = "FULFILLED")
+            @RequestParam(name = "status") StatusFilter statusFilter
     );
 }
