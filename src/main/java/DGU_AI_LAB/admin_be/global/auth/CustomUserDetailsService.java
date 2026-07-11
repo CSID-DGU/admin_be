@@ -28,8 +28,12 @@ public class CustomUserDetailsService implements UserDetailsService {
      * JwtAuthenticationFilter에서 user 엔티티를 직접 가져올 때 사용
      */
     public User loadUserEntityById(Long userId) {
-        return userRepository.findById(userId)
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UnauthorizedException(ErrorCode.USER_NOT_FOUND));
+        if (!user.getIsActive()) {
+            throw new UnauthorizedException(ErrorCode.ACCOUNT_DISABLED);
+        }
+        return user;
     }
 }
 
