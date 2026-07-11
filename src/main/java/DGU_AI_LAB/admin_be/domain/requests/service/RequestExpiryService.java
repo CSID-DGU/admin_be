@@ -3,7 +3,6 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
-import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import DGU_AI_LAB.admin_be.global.event.RequestExpiredEvent;
@@ -32,13 +31,14 @@ public class RequestExpiryService {
 
         String serverName = request.getResourceGroup().getServerName();
         String ubuntuUsername = request.getUbuntuUsername();
-        User user = request.getUser();
+        String userName = request.getUser().getName();
+        String userEmail = request.getUser().getEmail();
 
         podService.deletePod(request.getPodName());
         ubuntuAccountService.deleteUbuntuAccount(ubuntuUsername);
 
         request.deleteAfterCleanup();
-        eventPublisher.publishEvent(new RequestExpiredEvent(user, ubuntuUsername, serverName));
+        eventPublisher.publishEvent(new RequestExpiredEvent(userName, userEmail, ubuntuUsername, serverName));
         log.info("삭제 트랜잭션 성공: {}", ubuntuUsername);
     }
 }

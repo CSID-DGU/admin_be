@@ -1,7 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
-import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.event.RequestExpiredEvent;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +24,8 @@ public class RequestEventListener {
     // DB 커밋이 완료된 후에만 실행됨
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleExpiredEvent(RequestExpiredEvent event) {
-        User user = event.user();
+        String userName = event.userName();
+        String userEmail = event.userEmail();
         String serverName = event.serverName();
         String username = event.ubuntuUsername();
 
@@ -33,9 +33,9 @@ public class RequestEventListener {
         try {
             String subject = messageUtils.get("notification.expired.detail.subject");
             String message = messageUtils.get("notification.expired.detail.body",
-                    user.getName(), serverName, username);
+                    userName, serverName, username);
 
-            alarmService.sendAllAlerts(user.getName(), user.getEmail(), subject, message);
+            alarmService.sendAllAlerts(userName, userEmail, subject, message);
         } catch (Exception e) {
             log.warn("사용자 삭제 알림 전송 실패: {}", e.getMessage());
         }
