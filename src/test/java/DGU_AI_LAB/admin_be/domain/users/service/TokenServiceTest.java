@@ -17,6 +17,8 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
@@ -146,6 +148,22 @@ class TokenServiceTest {
 
             assertThatThrownBy(() -> tokenService.reissue(dto))
                     .isInstanceOf(UnauthorizedException.class);
+        }
+
+        @Test
+        @DisplayName("Redis에 리프레시 토큰이 없으면(만료/로그아웃) EXPIRED_REFRESH_TOKEN 예외를 던진다")
+        void reissue_throwsExpiredRefreshToken_whenRedisTokenIsNull() {
+            when(jwtProvider.getSubjectFromExpiredToken("accessToken")).thenReturn(1L);
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.get("RT:1")).thenReturn(null);
+            doNothing().when(jwtProvider).validateRefreshToken("refreshToken");
+
+            UserTokenRequestDTO dto = new UserTokenRequestDTO("accessToken", "refreshToken");
+
+            assertThatThrownBy(() -> tokenService.reissue(dto))
+                    .isInstanceOf(UnauthorizedException.class)
+                    .satisfies(e -> assertThat(((UnauthorizedException) e).getErrorCode())
+                            .isEqualTo(ErrorCode.EXPIRED_REFRESH_TOKEN));
         }
 
         @Test

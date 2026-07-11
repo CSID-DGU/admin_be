@@ -66,6 +66,9 @@ public class TokenService {
         jwtProvider.validateRefreshToken(refreshToken);
 
         String storedRefreshToken = redisTemplate.opsForValue().get(redisKey);
+        if (storedRefreshToken == null) {
+            throw new UnauthorizedException(ErrorCode.EXPIRED_REFRESH_TOKEN);
+        }
         jwtProvider.equalsRefreshToken(refreshToken, storedRefreshToken);
 
         String newAccessToken = issueNewAccessToken(userId);
