@@ -197,4 +197,68 @@ class RequestRepositoryTest {
             assertThat(result).hasSize(2);
         }
     }
+
+    @Nested
+    @DisplayName("findAllWithUserByExpiredDateBefore")
+    class FindAllWithUserByExpiredDateBefore {
+
+        @Test
+        @DisplayName("만료일이 지난 FULFILLED 요청을 반환한다")
+        void findAllWithUserByExpiredDateBefore_returnsExpiredFulfilledRequests() {
+            // fulfilledRequest는 현재 시각 + 60일 후 만료 → 미래이므로 포함 안 됨
+            // 추가로 만료일이 과거인 FULFILLED 요청 생성
+            Request expiredFulfilled = Request.builder()
+                    .ubuntuUsername("expireduser")
+                    .ubuntuPassword("pw")
+                    .ubuntuPasswordBase64("pw64")
+                    .volumeSizeGiB(30L)
+                    .expiresAt(LocalDateTime.now().minusDays(1))
+                    .usagePurpose("만료 테스트")
+                    .formAnswers("{}")
+                    .user(user)
+                    .resourceGroup(resourceGroup)
+                    .containerImage(containerImage)
+                    .build();
+            expiredFulfilled.approve(containerImage, resourceGroup, 30L, null);
+            requestRepository.save(expiredFulfilled);
+
+            List<Request> result = requestRepository.findAllWithUserByExpiredDateBefore(LocalDateTime.now());
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getUbuntuUsername()).isEqualTo("expireduser");
+        }
+
+        @Test
+        @DisplayName("만료일이 미래인 FULFILLED 요청은 반환하지 않는다")
+        void findAllWithUserByExpiredDateBefore_doesNotReturnNonExpiredRequests() {
+            // fulfilledRequest는 현재 시각 + 60일 후 만료 → 미래
+            List<Request> result = requestRepository.findAllWithUserByExpiredDateBefore(LocalDateTime.now());
+
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("만료일이 지났더라도 PENDING 상태 요청은 반환하지 않는다 (FULFILLED만 대상)")
+        void findAllWithUserByExpiredDateBefore_doesNotReturnExpiredPendingRequests() {
+            // pendingRequest의 expiresAt을 과거로 수정 - 직접 새 요청 생성
+            Request expiredPending = Request.builder()
+                    .ubuntuUsername("expiredpending")
+                    .ubuntuPassword("pw")
+                    .ubuntuPasswordBase64("pw64")
+                    .volumeSizeGiB(30L)
+                    .expiresAt(LocalDateTime.now().minusDays(5))
+                    .usagePurpose("만료 pending 테스트")
+                    .formAnswers("{}")
+                    .user(user)
+                    .resourceGroup(resourceGroup)
+                    .containerImage(containerImage)
+                    .build();
+            requestRepository.save(expiredPending);
+
+            List<Request> result = requestRepository.findAllWithUserByExpiredDateBefore(LocalDateTime.now());
+
+            // PENDING은 포함되지 않아야 함
+            assertThat(result).noneMatch(r -> r.getUbuntuUsername().equals("expiredpending"));
+        }
+    }
 }

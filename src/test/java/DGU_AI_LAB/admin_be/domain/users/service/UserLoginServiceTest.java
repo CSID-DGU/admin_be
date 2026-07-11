@@ -179,5 +179,21 @@ class UserLoginServiceTest {
             assertThatThrownBy(() -> userLoginService.login(dto))
                     .isInstanceOf(UnauthorizedException.class);
         }
+
+        @Test
+        @DisplayName("BCrypt 비밀번호 검증은 정확히 1회만 호출되어야 한다 (C-3 중복 호출 방지)")
+        void login_callsPasswordMatchesExactlyOnce() {
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
+            when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
+            when(jwtProvider.getIssueToken(any(), eq(true))).thenReturn("accessToken");
+            when(jwtProvider.getIssueToken(any(), eq(false))).thenReturn("refreshToken");
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+            UserLoginRequestDTO dto = new UserLoginRequestDTO("test@dgu.ac.kr", "password123");
+            userLoginService.login(dto);
+
+            // 중복 호출 버그(C-3) 수정 검증: 동일 인자로 2번 호출되면 안 됨
+            verify(passwordEncoder, times(1)).matches("password123", "encodedPassword");
+        }
     }
 }
