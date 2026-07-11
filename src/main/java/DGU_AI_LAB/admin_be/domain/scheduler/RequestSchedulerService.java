@@ -2,19 +2,15 @@ package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
-import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
-import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
 
@@ -31,15 +27,16 @@ public class RequestSchedulerService {
     private final AlarmService alarmService;
     private final RequestExpiryService requestExpiryService;
     private final MessageUtils messageUtils;
+    private final RequestNotificationService requestNotificationService;
 
     @Scheduled(cron = "0 00 08 * * ?", zone = "Asia/Seoul")
     public void runScheduler() {
         log.info("🗓️ [스케줄러 시작] 만료 계정 관리 작업");
         LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
 
-        sendPreExpiryNotification(now.plusDays(7), "7일");
-        sendPreExpiryNotification(now.plusDays(3), "3일");
-        sendPreExpiryNotification(now.plusDays(1), "1일");
+        requestNotificationService.sendPreExpiryNotification(now.plusDays(7), "7일");
+        requestNotificationService.sendPreExpiryNotification(now.plusDays(3), "3일");
+        requestNotificationService.sendPreExpiryNotification(now.plusDays(1), "1일");
 
         processExpiredRequests(now);
 
@@ -63,30 +60,6 @@ public class RequestSchedulerService {
             } catch (Exception e) {
                 log.error("계정 삭제 실패 (ID: {}): {}", request.getRequestId(), e.getMessage());
                 sendFailureAlertToAdmin(serverName, username, e.getMessage());
-            }
-        }
-    }
-
-    @Transactional(readOnly = true)
-    public void sendPreExpiryNotification(LocalDateTime targetDate, String dayLabel) {
-        LocalDateTime start = targetDate.toLocalDate().atStartOfDay();
-        LocalDateTime end = targetDate.toLocalDate().atTime(LocalTime.MAX);
-
-        List<Request> requests = requestRepository.findAllByExpiresAtBetweenAndStatus(start, end, Status.FULFILLED);
-
-        for (Request request : requests) {
-            try {
-                User user = request.getUser();
-                String serverName = request.getResourceGroup().getServerName();
-                String expireDate = request.getExpiresAt().toLocalDate().toString();
-                String subject = messageUtils.get("notification.pre-expiry.subject", dayLabel);
-                String message = messageUtils.get("notification.pre-expiry.body",
-                        user.getName(), dayLabel, expireDate, serverName, request.getUbuntuUsername());
-
-                alarmService.sendAllAlerts(user.getName(), user.getEmail(), subject, message);
-
-            } catch (Exception e) {
-                log.warn("{} 전 알림 실패: {}", dayLabel, e.getMessage());
             }
         }
     }
