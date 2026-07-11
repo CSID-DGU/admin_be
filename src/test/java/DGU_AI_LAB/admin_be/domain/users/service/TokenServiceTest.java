@@ -4,7 +4,8 @@ import DGU_AI_LAB.admin_be.domain.users.dto.request.UserTokenRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import DGU_AI_LAB.admin_be.global.auth.jwt.JwtProvider;
-import com.fasterxml.jackson.core.JsonProcessingException;
+import io.jsonwebtoken.MalformedJwtException;
+import io.jsonwebtoken.security.SignatureException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -94,9 +95,9 @@ class TokenServiceTest {
 
         @Test
         @DisplayName("유효한 리프레시 토큰으로 재발급하면 새 토큰을 반환한다")
-        void reissue_success() throws JsonProcessingException {
+        void reissue_success() {
             ReflectionTestUtils.setField(tokenService, "REFRESH_TOKEN_EXPIRE_TIME", 604800L);
-            when(jwtProvider.decodeJwtPayloadSubject("accessToken")).thenReturn("1");
+            when(jwtProvider.getSubjectFromExpiredToken("accessToken")).thenReturn(1L);
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);
             when(valueOperations.get("RT:1")).thenReturn("storedRefreshToken");
             doNothing().when(jwtProvider).validateRefreshToken("refreshToken");
@@ -109,6 +110,59 @@ class TokenServiceTest {
 
             assertThat(result.accessToken()).isEqualTo("newAccessToken");
             assertThat(result.refreshToken()).isEqualTo("newRefreshToken");
+        }
+
+        @Test
+        @DisplayName("서명이 유효하지 않은 accessToken이면 UnauthorizedException을 던진다")
+        void reissue_throwsUnauthorized_whenSignatureInvalid() {
+            when(jwtProvider.getSubjectFromExpiredToken("forgedToken"))
+                    .thenThrow(new SignatureException("JWT signature does not match"));
+
+            UserTokenRequestDTO dto = new UserTokenRequestDTO("forgedToken", "refreshToken");
+
+            assertThatThrownBy(() -> tokenService.reissue(dto))
+                    .isInstanceOf(UnauthorizedException.class);
+        }
+
+        @Test
+        @DisplayName("형식이 잘못된 accessToken이면 UnauthorizedException을 던진다")
+        void reissue_throwsUnauthorized_whenTokenMalformed() {
+            when(jwtProvider.getSubjectFromExpiredToken("bad.token"))
+                    .thenThrow(new MalformedJwtException("Malformed JWT"));
+
+            UserTokenRequestDTO dto = new UserTokenRequestDTO("bad.token", "refreshToken");
+
+            assertThatThrownBy(() -> tokenService.reissue(dto))
+                    .isInstanceOf(UnauthorizedException.class);
+        }
+
+        @Test
+        @DisplayName("getSubjectFromExpiredToken이 일반 예외를 던지면 UnauthorizedException으로 변환한다")
+        void reissue_throwsUnauthorized_whenUnexpectedExceptionOccurs() {
+            when(jwtProvider.getSubjectFromExpiredToken(any()))
+                    .thenThrow(new RuntimeException("unexpected"));
+
+            UserTokenRequestDTO dto = new UserTokenRequestDTO("anyToken", "refreshToken");
+
+            assertThatThrownBy(() -> tokenService.reissue(dto))
+                    .isInstanceOf(UnauthorizedException.class);
+        }
+
+        @Test
+        @DisplayName("재발급 시 getSubjectFromExpiredToken을 통해 서명 검증 후 userId를 추출한다")
+        void reissue_usesGetSubjectFromExpiredToken() {
+            ReflectionTestUtils.setField(tokenService, "REFRESH_TOKEN_EXPIRE_TIME", 604800L);
+            when(jwtProvider.getSubjectFromExpiredToken("accessToken")).thenReturn(1L);
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.get("RT:1")).thenReturn("storedRefreshToken");
+            doNothing().when(jwtProvider).validateRefreshToken("refreshToken");
+            doNothing().when(jwtProvider).equalsRefreshToken("refreshToken", "storedRefreshToken");
+            when(jwtProvider.getIssueToken(1L, true)).thenReturn("newAccess");
+            when(jwtProvider.getIssueToken(1L, false)).thenReturn("newRefresh");
+
+            tokenService.reissue(new UserTokenRequestDTO("accessToken", "refreshToken"));
+
+            verify(jwtProvider).getSubjectFromExpiredToken("accessToken");
         }
     }
 
