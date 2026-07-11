@@ -3,7 +3,6 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
-import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import DGU_AI_LAB.admin_be.global.event.RequestExpiredEvent;
@@ -32,13 +31,23 @@ public class RequestExpiryService {
 
         String serverName = request.getResourceGroup().getServerName();
         String ubuntuUsername = request.getUbuntuUsername();
-        User user = request.getUser();
+        String userName = request.getUser().getName();
+        String userEmail = request.getUser().getEmail();
 
-        podService.deletePod(request.getPodName());
-        ubuntuAccountService.deleteUbuntuAccount(ubuntuUsername);
+        try {
+            podService.deletePod(request.getPodName());
+        } catch (Exception e) {
+            log.warn("[deleteExpiredRequest] Pod 삭제 실패, 계속 진행: requestId={}, error={}", requestId, e.getMessage());
+        }
 
-        request.delete();
-        eventPublisher.publishEvent(new RequestExpiredEvent(user, ubuntuUsername, serverName));
+        try {
+            ubuntuAccountService.deleteUbuntuAccount(ubuntuUsername);
+        } catch (Exception e) {
+            log.warn("[deleteExpiredRequest] 우분투 계정 삭제 실패, DB는 DELETED로 업데이트: requestId={}, username={}, error={}", requestId, ubuntuUsername, e.getMessage());
+        }
+
+        request.deleteAfterCleanup();
+        eventPublisher.publishEvent(new RequestExpiredEvent(userName, userEmail, ubuntuUsername, serverName));
         log.info("삭제 트랜잭션 성공: {}", ubuntuUsername);
     }
 }

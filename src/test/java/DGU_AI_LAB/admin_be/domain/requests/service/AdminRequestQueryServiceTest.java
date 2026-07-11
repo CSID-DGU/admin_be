@@ -1,8 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
-import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
+import DGU_AI_LAB.admin_be.domain.portRequests.repository.PortRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
@@ -22,6 +22,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -37,7 +38,7 @@ class AdminRequestQueryServiceTest {
     private ChangeRequestRepository changeRequestRepository;
 
     @Mock
-    private PortRequestService portRequestService;
+    private PortRequestRepository portRequestRepository;
 
     @Mock
     private PodExternalPortRepository podExternalPortRepository;
@@ -58,7 +59,7 @@ class AdminRequestQueryServiceTest {
         }
 
         @Test
-        @DisplayName("관리자 요청 조회 시 pod_external_ports를 함께 반환한다")
+        @DisplayName("관리자 요청 조회 시 pod_external_ports를 배치 쿼리로 함께 반환한다")
         void getAllRequests_returnsPodExternalPorts() {
             Request request = mockRequest(1L);
             PodExternalPort podExternalPort = PodExternalPort.builder()
@@ -69,8 +70,8 @@ class AdminRequestQueryServiceTest {
                     .build();
 
             when(requestRepository.findAll()).thenReturn(List.of(request));
-            when(portRequestService.getPortRequestsByRequestId(1L)).thenReturn(List.of());
-            when(podExternalPortRepository.findByRequestRequestId(1L)).thenReturn(List.of(podExternalPort));
+            when(portRequestRepository.findByRequestRequestIdIn(anyList())).thenReturn(List.of());
+            when(podExternalPortRepository.findByRequestRequestIdIn(anyList())).thenReturn(List.of(podExternalPort));
 
             List<SaveRequestResponseDTO> result = adminRequestQueryService.getAllRequests();
 
@@ -79,6 +80,9 @@ class AdminRequestQueryServiceTest {
             assertThat(result.get(0).podExternalPorts().get(0).internalPort()).isEqualTo(22);
             assertThat(result.get(0).podExternalPorts().get(0).externalPort()).isEqualTo(30022);
             assertThat(result.get(0).podExternalPorts().get(0).usagePurpose()).isEqualTo("ssh");
+            // 배치 쿼리 1회만 호출되었는지 검증 (N+1 방지)
+            verify(portRequestRepository, times(1)).findByRequestRequestIdIn(anyList());
+            verify(podExternalPortRepository, times(1)).findByRequestRequestIdIn(anyList());
         }
     }
 

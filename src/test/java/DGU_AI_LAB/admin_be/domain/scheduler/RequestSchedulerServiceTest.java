@@ -212,7 +212,7 @@ public class RequestSchedulerServiceTest {
         }
 
         if (status == Status.DELETED) {
-            req.delete();
+            req.deleteAfterCleanup();
         }
 
         return requestRepository.saveAndFlush(req);

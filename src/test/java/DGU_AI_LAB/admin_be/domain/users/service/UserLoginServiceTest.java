@@ -1,6 +1,5 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
-import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
@@ -21,7 +20,10 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import org.springframework.test.util.ReflectionTestUtils;
+
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -36,9 +38,6 @@ class UserLoginServiceTest {
 
     @Mock
     private UserRepository userRepository;
-
-    @Mock
-    private GroupRepository groupRepository;
 
     @Mock
     private PasswordEncoder passwordEncoder;
@@ -56,6 +55,9 @@ class UserLoginServiceTest {
 
     @BeforeEach
     void setUp() {
+        // @Value 필드는 Mockito가 주입하지 않으므로 직접 설정 (604800000ms = 7일)
+        ReflectionTestUtils.setField(userLoginService, "REFRESH_TOKEN_EXPIRE_TIME", 604800000L);
+
         activeUser = User.builder()
                 .email("test@dgu.ac.kr")
                 .password("encodedPassword")
@@ -120,7 +122,7 @@ class UserLoginServiceTest {
     class Login {
 
         @Test
-        @DisplayName("올바른 이메일과 비밀번호로 로그인하면 토큰을 반환한다")
+        @DisplayName("올바른 이메일과 비밀번호로 로그인하면 토큰을 반환하고 BCrypt 검증은 정확히 1회 실행된다")
         void login_success() {
             when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
             when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
@@ -134,6 +136,8 @@ class UserLoginServiceTest {
             assertThat(result).isNotNull();
             assertThat(result.accessToken()).isEqualTo("accessToken");
             assertThat(result.refreshToken()).isEqualTo("refreshToken");
+            verify(passwordEncoder, times(1)).matches("password123", "encodedPassword");
+            verify(valueOperations).set(anyString(), eq("refreshToken"), eq(604800000L), eq(TimeUnit.MILLISECONDS));
         }
 
         @Test
@@ -169,7 +173,7 @@ class UserLoginServiceTest {
         }
 
         @Test
-        @DisplayName("비밀번호가 틀리면 UnauthorizedException을 던진다")
+        @DisplayName("비밀번호가 틀리면 UnauthorizedException을 던지고 BCrypt 검증은 정확히 1회 실행된다")
         void login_throwsException_whenPasswordWrong() {
             when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
             when(passwordEncoder.matches("wrongPw", "encodedPassword")).thenReturn(false);
@@ -178,6 +182,23 @@ class UserLoginServiceTest {
 
             assertThatThrownBy(() -> userLoginService.login(dto))
                     .isInstanceOf(UnauthorizedException.class);
+            verify(passwordEncoder, times(1)).matches("wrongPw", "encodedPassword");
+        }
+
+        @Test
+        @DisplayName("BCrypt 비밀번호 검증은 정확히 1회만 호출되어야 한다 (C-3 중복 호출 방지)")
+        void login_callsPasswordMatchesExactlyOnce() {
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
+            when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
+            when(jwtProvider.getIssueToken(any(), eq(true))).thenReturn("accessToken");
+            when(jwtProvider.getIssueToken(any(), eq(false))).thenReturn("refreshToken");
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+            UserLoginRequestDTO dto = new UserLoginRequestDTO("test@dgu.ac.kr", "password123");
+            userLoginService.login(dto);
+
+            // 중복 호출 버그(C-3) 수정 검증: 동일 인자로 2번 호출되면 안 됨
+            verify(passwordEncoder, times(1)).matches("password123", "encodedPassword");
         }
     }
 }

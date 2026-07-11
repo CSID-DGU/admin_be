@@ -1,6 +1,11 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.requests.service.UbuntuAccountService;
+import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserSummaryDTO;
@@ -15,8 +20,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.web.reactive.function.client.WebClient;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -37,7 +42,7 @@ class AdminUserServiceTest {
     private RequestRepository requestRepository;
 
     @Mock
-    private WebClient userWebClient;
+    private UbuntuAccountService ubuntuAccountService;
 
     private User mockUser;
 
@@ -96,7 +101,7 @@ class AdminUserServiceTest {
         void updateUser_success() {
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
 
-            UserUpdateRequestDTO request = new UserUpdateRequestDTO("홍길동", "newPw", false);
+            UserUpdateRequestDTO request = new UserUpdateRequestDTO("newPw", false);
             UserResponseDTO result = adminUserService.updateUser(1L, request);
 
             assertThat(result).isNotNull();
@@ -107,7 +112,7 @@ class AdminUserServiceTest {
         void updateUser_throwsException_whenUserNotFound() {
             when(userRepository.findById(99L)).thenReturn(Optional.empty());
 
-            UserUpdateRequestDTO request = new UserUpdateRequestDTO("홍길동", "newPw", false);
+            UserUpdateRequestDTO request = new UserUpdateRequestDTO("newPw", false);
 
             assertThatThrownBy(() -> adminUserService.updateUser(99L, request))
                     .isInstanceOf(EntityNotFoundException.class);
@@ -127,6 +132,7 @@ class AdminUserServiceTest {
             adminUserService.deleteUser(1L);
 
             assertThat(mockUser.getIsActive()).isFalse();
+            verifyNoInteractions(ubuntuAccountService);
         }
 
         @Test
@@ -136,6 +142,135 @@ class AdminUserServiceTest {
 
             assertThatThrownBy(() -> adminUserService.deleteUser(99L))
                     .isInstanceOf(EntityNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("FULFILLED 상태 Request가 있으면 외부 계정 삭제 후 deleteAfterCleanup을 호출한다")
+        void deleteUser_withFulfilledRequest_callsUbuntuDelete() {
+            Request fulfilledRequest = mock(Request.class);
+            when(fulfilledRequest.getStatus()).thenReturn(Status.FULFILLED);
+            when(fulfilledRequest.getUbuntuUsername()).thenReturn("testuser");
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(fulfilledRequest));
+
+            adminUserService.deleteUser(1L);
+
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
+            verify(fulfilledRequest).deleteAfterCleanup();
+            assertThat(mockUser.getIsActive()).isFalse();
+        }
+
+        @Test
+        @DisplayName("PENDING 상태 Request가 있으면 delete()를 호출한다 (외부 API 미호출)")
+        void deleteUser_withPendingRequest_callsDelete() {
+            Request pendingRequest = mock(Request.class);
+            when(pendingRequest.getStatus()).thenReturn(Status.PENDING);
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(pendingRequest));
+
+            adminUserService.deleteUser(1L);
+
+            verify(pendingRequest).delete();
+            verifyNoInteractions(ubuntuAccountService);
+        }
+
+        @Test
+        @DisplayName("DELETED 상태 Request는 아무 처리도 하지 않는다")
+        void deleteUser_withDeletedRequest_skips() {
+            Request deletedRequest = mock(Request.class);
+            when(deletedRequest.getStatus()).thenReturn(Status.DELETED);
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(deletedRequest));
+
+            adminUserService.deleteUser(1L);
+
+            verify(deletedRequest, never()).delete();
+            verify(deletedRequest, never()).deleteAfterCleanup();
+            verifyNoInteractions(ubuntuAccountService);
+        }
+
+        @Test
+        @DisplayName("여러 상태의 Request가 혼합되면 각각 적절히 처리한다")
+        void deleteUser_withMixedRequests_handlesEachCorrectly() {
+            Request fulfilled = mock(Request.class);
+            when(fulfilled.getStatus()).thenReturn(Status.FULFILLED);
+            when(fulfilled.getUbuntuUsername()).thenReturn("fuser");
+
+            Request pending = mock(Request.class);
+            when(pending.getStatus()).thenReturn(Status.PENDING);
+
+            Request deleted = mock(Request.class);
+            when(deleted.getStatus()).thenReturn(Status.DELETED);
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(fulfilled, pending, deleted));
+
+            adminUserService.deleteUser(1L);
+
+            verify(ubuntuAccountService).deleteUbuntuAccount("fuser");
+            verify(fulfilled).deleteAfterCleanup();
+            verify(pending).delete();
+            verify(deleted, never()).delete();
+            verify(deleted, never()).deleteAfterCleanup();
+        }
+    }
+
+    @Nested
+    @DisplayName("deleteUbuntuAccount (단독 엔드포인트용)")
+    class DeleteUbuntuAccount {
+
+        private Request buildFulfilledRequest() {
+            ResourceGroup rg = ResourceGroup.builder()
+                    .resourceGroupName("Server A")
+                    .description("desc")
+                    .serverName("server-01")
+                    .build();
+            ContainerImage image = ContainerImage.builder()
+                    .imageName("pytorch")
+                    .imageVersion("2.1.0")
+                    .cudaVersion("11.8")
+                    .description("desc")
+                    .build();
+            Request req = Request.builder()
+                    .ubuntuUsername("testuser")
+                    .ubuntuPassword("pw")
+                    .ubuntuPasswordBase64("base64pw")
+                    .volumeSizeGiB(50L)
+                    .expiresAt(LocalDateTime.now().plusDays(30))
+                    .usagePurpose("연구")
+                    .formAnswers("{}")
+                    .user(mockUser)
+                    .resourceGroup(rg)
+                    .containerImage(image)
+                    .build();
+            req.approve(image, rg, 100L, null);
+            return req;
+        }
+
+        @Test
+        @DisplayName("FULFILLED Request가 있으면 외부 API 호출 후 DB 상태를 DELETED로 변경한다")
+        void deleteUbuntuAccount_success() {
+            Request request = buildFulfilledRequest();
+            when(requestRepository.findByUbuntuUsername("testuser")).thenReturn(Optional.of(request));
+
+            adminUserService.deleteUbuntuAccount("testuser");
+
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
+            assertThat(request.getStatus()).isEqualTo(Status.DELETED);
+        }
+
+        @Test
+        @DisplayName("해당 username의 Request가 없으면 EntityNotFoundException을 던진다")
+        void deleteUbuntuAccount_throwsWhenNotFound() {
+            when(requestRepository.findByUbuntuUsername("nobody")).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> adminUserService.deleteUbuntuAccount("nobody"))
+                    .isInstanceOf(EntityNotFoundException.class);
+
+            verifyNoInteractions(ubuntuAccountService);
         }
     }
 }

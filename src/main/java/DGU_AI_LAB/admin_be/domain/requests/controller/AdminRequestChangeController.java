@@ -49,7 +49,7 @@ public class AdminRequestChangeController implements AdminRequestChangeApi {
             @RequestBody @Valid ApproveModificationDTO dto
     ) {
         adminRequestCommandService.approveModification(adminId, dto);
-        return ResponseEntity.ok().build();
+        return SuccessResponse.ok(null);
     }
 
 
@@ -59,7 +59,7 @@ public class AdminRequestChangeController implements AdminRequestChangeApi {
             @RequestBody @Valid RejectModificationDTO dto
     ) {
         adminRequestCommandService.rejectModification(adminId, dto);
-        return ResponseEntity.ok().build();
+        return SuccessResponse.ok(null);
     }
 
 }

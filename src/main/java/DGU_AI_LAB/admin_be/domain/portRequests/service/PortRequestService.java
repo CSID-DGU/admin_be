@@ -4,6 +4,7 @@ import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
 import DGU_AI_LAB.admin_be.domain.portRequests.repository.PortRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
+import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ import java.util.Set;
 public class PortRequestService {
 
     private final PortRequestRepository portRequestRepository;
+    private final ResourceGroupRepository resourceGroupRepository;
 
     private static final int NODE_PORT_RANGE_START = 30000;
     private static final int NODE_PORT_RANGE_END = 32767;
@@ -28,6 +30,10 @@ public class PortRequestService {
     @Transactional
     public PortRequests createPortRequest(Request request, ResourceGroup resourceGroup,
                                         Integer internalPort, String usagePurpose) {
+
+        // 포트 할당 Race Condition 방지: ResourceGroup 행에 비관적 락을 걸어 직렬화
+        resourceGroupRepository.findByIdWithPessimisticLock(resourceGroup.getRsgroupId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
         // Auto-assign external NodePort from the Kubernetes default range.
         Integer assignedPortNumber = findNextAvailablePort(resourceGroup.getRsgroupId());
@@ -88,6 +94,7 @@ public class PortRequestService {
         PortRequests portRequest = portRequestRepository.findById(portRequestId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
+        portRequest.activate();
         log.info("Port request {} activated", portRequestId);
     }
 }

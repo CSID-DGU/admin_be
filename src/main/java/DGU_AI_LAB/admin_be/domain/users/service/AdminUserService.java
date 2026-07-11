@@ -1,24 +1,20 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.requests.service.UbuntuAccountService;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
-import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
-import reactor.core.publisher.Mono;
 
 import java.util.List;
 
@@ -30,7 +26,7 @@ public class AdminUserService {
 
     private final UserRepository userRepository;
     private final RequestRepository requestRepository;
-    private final @Qualifier("configWebClient") WebClient userWebClient;
+    private final UbuntuAccountService ubuntuAccountService;
 
     /**
      * 전체 유저 조회
@@ -58,15 +54,43 @@ public class AdminUserService {
 
         List<Request> userRequests = requestRepository.findAllByUser(user);
 
-        if (!userRequests.isEmpty()) {
-            userRequests.forEach(request -> deleteUbuntuAccount(request.getUbuntuUsername()));
-            log.info("[deleteUser] userId={}와 연결된 모든 Request의 외부 계정 삭제 요청 완료", userId);
-        } else {
-            log.info("[deleteUser] userId={}와 연결된 Request가 없습니다. 외부 계정 삭제 요청을 건너뜁니다.", userId);
+        for (Request request : userRequests) {
+            if (request.getStatus() == Status.FULFILLED) {
+                ubuntuAccountService.deleteUbuntuAccount(request.getUbuntuUsername());
+                request.deleteAfterCleanup();
+                requestRepository.save(request);
+            } else if (request.getStatus() != Status.DELETED) {
+                request.delete();
+            }
         }
+        log.info("[deleteUser] userId={}와 연결된 Request 정리 완료", userId);
 
         user.updateUserInfo(null, false);
         log.info("[deleteUser] userId={} 논리적 삭제 완료 (isActive=false)", userId);
+    }
+
+    /**
+     * 단독 우분투 계정 삭제 (컨트롤러 엔드포인트용)
+     * FULFILLED 상태인 Request를 username으로 찾아 외부 계정 삭제 후 DB 상태를 DELETED로 변경한다.
+     */
+    @Transactional
+    public void deleteUbuntuAccount(String username) {
+        log.warn("[deleteUbuntuAccount] 우분투 계정 삭제 시도: {}", username);
+        Request request = requestRepository.findByUbuntuUsername(username)
+                .orElseThrow(() -> {
+                    log.warn("[deleteUbuntuAccount] {}에 해당하는 Request가 없습니다.", username);
+                    return new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND);
+                });
+
+        if (request.getStatus() == Status.DELETED) {
+            log.warn("[deleteUbuntuAccount] {}은 이미 DELETED 상태입니다.", username);
+            throw new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND);
+        }
+
+        ubuntuAccountService.deleteUbuntuAccount(username);
+        request.deleteAfterCleanup();
+        requestRepository.save(request);
+        log.info("[deleteUbuntuAccount] {} 계정 삭제 및 DB 상태 업데이트 완료", username);
     }
 
     /**
@@ -80,51 +104,5 @@ public class AdminUserService {
         user.updateUserInfo(request.password(), request.isActive());
         log.info("[updateUser] userId={} 정보 수정 완료", userId);
         return UserResponseDTO.fromEntity(user);
-    }
-
-    /**
-     * username으로 우분투 계정 삭제
-     * Config Server에 요청을 보내 실제로 ubuntu 계정을 삭제하고, DB의 Request 엔티티 Status를 DELETED로 변경합니다.
-     */
-    public void deleteUbuntuAccount(String username) {
-        log.warn("[deleteUbuntuAccount] 우분투 계정 삭제 시도: {}", username);
-
-        Request request = requestRepository.findByUbuntuUsername(username)
-                .orElseThrow(() -> {
-                    log.warn("[deleteUbuntuAccount] {}에 해당하는 Request가 없습니다.", username);
-                    return new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND);
-                });
-
-        try {
-            log.info("Starting Config Server API call to delete ubuntu account: {}", username);
-            userWebClient.post()
-                    .uri("/accounts/deleteuser/{username}", username)
-                    .retrieve()
-                    .onStatus(HttpStatus.BAD_REQUEST::equals, clientResponse ->
-                            Mono.error(new BusinessException(ErrorCode.INVALID_USERNAME_FORMAT))
-                    )
-                    .onStatus(HttpStatus.NOT_FOUND::equals, clientResponse -> {
-                        log.warn("외부 서버에 {} 계정이 이미 존재하지 않아 삭제가 불필요합니다.", username);
-                        return Mono.empty();
-                    })
-                    .onStatus(WebClientResponseException.class::isInstance, clientResponse ->
-                            clientResponse.bodyToMono(String.class)
-                                    .flatMap(body -> Mono.error(new BusinessException("우분투 계정 삭제 실패: " + body, ErrorCode.UBUNTU_USER_DELETION_FAILED)))
-                    )
-                    .toBodilessEntity()
-                    .block();
-
-            log.info("Config Server's deletion successful for account: {}", username);
-
-            request.delete();
-            requestRepository.save(request);
-            log.info("[deleteUbuntuAccount] {}에 대한 Request 정보 상태를 DELETED로 변경 완료", username);
-
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("An unexpected error occurred during Config Server's account deletion.", e);
-            throw new BusinessException("우분투 계정 삭제 중 예기치 않은 오류 발생.", ErrorCode.UBUNTU_USER_DELETION_FAILED);
-        }
     }
 }

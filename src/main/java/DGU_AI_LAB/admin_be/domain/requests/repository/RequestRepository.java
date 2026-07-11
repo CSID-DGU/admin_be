@@ -33,6 +33,6 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     List<Request> findAllByExpiresAtBetweenAndStatus(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end, @Param("status") Status status);
 
 
-    @Query("SELECT r FROM Request r JOIN FETCH r.user JOIN FETCH r.resourceGroup WHERE r.expiresAt < :now AND r.status = 'FULFILLED'")
-    List<Request> findAllWithUserByExpiredDateBefore(@Param("now") LocalDateTime now);
+    @Query("SELECT r FROM Request r JOIN FETCH r.user JOIN FETCH r.resourceGroup WHERE r.expiresAt < :now AND r.status = :status")
+    List<Request> findAllWithUserByExpiredDateBefore(@Param("now") LocalDateTime now, @Param("status") Status status);
 }

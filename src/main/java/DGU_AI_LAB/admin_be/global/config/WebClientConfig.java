@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.global.config;
 
+import io.netty.channel.ChannelOption;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,15 +18,13 @@ public class WebClientConfig {
     public WebClient configWebClient(@Value("${config.base-url}") String baseUrl,
                                      @Value("${config.timeout-seconds}") int timeout) {
 
-        /**
-         * 연결 풀 설정: HTTP 연결을 효율적으로 재사용하도록 한다.
-         */
         ConnectionProvider provider = ConnectionProvider.builder("pvc-connection-pool")
                 .maxConnections(50)
                 .maxIdleTime(Duration.ofSeconds(20))
                 .build();
 
         HttpClient httpClient = HttpClient.create(provider)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout * 1000)
                 .responseTimeout(Duration.ofSeconds(timeout));
 
         return WebClient.builder()
@@ -34,5 +33,22 @@ public class WebClientConfig {
                 .build();
     }
 
+    @Bean
+    public WebClient podWebClient(@Value("${config.base-url}") String baseUrl,
+                                  @Value("${config.pod-timeout-seconds:300}") int podTimeout) {
 
+        ConnectionProvider provider = ConnectionProvider.builder("pod-connection-pool")
+                .maxConnections(10)
+                .maxIdleTime(Duration.ofSeconds(60))
+                .build();
+
+        HttpClient httpClient = HttpClient.create(provider)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 30_000)
+                .responseTimeout(Duration.ofSeconds(podTimeout));
+
+        return WebClient.builder()
+                .baseUrl(baseUrl)
+                .clientConnector(new ReactorClientHttpConnector(httpClient))
+                .build();
+    }
 }

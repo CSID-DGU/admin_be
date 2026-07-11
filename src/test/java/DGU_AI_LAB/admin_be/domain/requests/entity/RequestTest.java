@@ -76,8 +76,18 @@ class RequestTest {
     class Delete {
 
         @Test
-        @DisplayName("삭제하면 상태가 DELETED로 변경된다")
-        void delete_changesStatusToDeleted() {
+        @DisplayName("PENDING 상태에서 삭제하면 상태가 DELETED로 변경된다")
+        void delete_changesStatusToDeleted_whenPending() {
+            request.delete();
+
+            assertThat(request.getStatus()).isEqualTo(Status.DELETED);
+        }
+
+        @Test
+        @DisplayName("DENIED 상태에서 삭제하면 상태가 DELETED로 변경된다")
+        void delete_changesStatusToDeleted_whenDenied() {
+            request.reject("리소스 부족");
+
             request.delete();
 
             assertThat(request.getStatus()).isEqualTo(Status.DELETED);
@@ -89,6 +99,50 @@ class RequestTest {
             request.delete();
 
             assertThatThrownBy(request::delete)
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("FULFILLED 상태의 Request를 delete()로 삭제하면 BusinessException을 던진다")
+        void delete_throwsException_whenFulfilled() {
+            ContainerImage image = mock(ContainerImage.class);
+            ResourceGroup rg = mock(ResourceGroup.class);
+            request.approve(image, rg, 50L, null);
+
+            assertThatThrownBy(request::delete)
+                    .isInstanceOf(BusinessException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("deleteAfterCleanup")
+    class DeleteAfterCleanup {
+
+        @Test
+        @DisplayName("FULFILLED 상태에서 인프라 정리 후 삭제하면 상태가 DELETED로 변경된다")
+        void deleteAfterCleanup_changesStatusToDeleted_whenFulfilled() {
+            ContainerImage image = mock(ContainerImage.class);
+            ResourceGroup rg = mock(ResourceGroup.class);
+            request.approve(image, rg, 50L, null);
+
+            request.deleteAfterCleanup();
+
+            assertThat(request.getStatus()).isEqualTo(Status.DELETED);
+        }
+
+        @Test
+        @DisplayName("FULFILLED 이외의 상태에서 deleteAfterCleanup을 호출하면 BusinessException을 던진다")
+        void deleteAfterCleanup_throwsException_whenNotFulfilled() {
+            assertThatThrownBy(request::deleteAfterCleanup)
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("DENIED 상태에서 deleteAfterCleanup을 호출하면 BusinessException을 던진다")
+        void deleteAfterCleanup_throwsException_whenDenied() {
+            request.reject("리소스 부족");
+
+            assertThatThrownBy(request::deleteAfterCleanup)
                     .isInstanceOf(BusinessException.class);
         }
     }

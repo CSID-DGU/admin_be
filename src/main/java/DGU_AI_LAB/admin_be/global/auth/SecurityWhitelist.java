@@ -11,7 +11,8 @@ public class SecurityWhitelist {
             "/api/auth/email/**",
             "/auth/callback/**",
             "/actuator/health", "/actuator/info",
-            "/api/requests/config/**" // 개발 완료 이후 IP 제한 필요
+            "/api/requests/config/**", // 개발 완료 이후 IP 제한 필요
+            "/api/internal/**"         // 인프라 내부망 전용 — 운영 시 네트워크 레벨 IP 제한 필요
             //"/api/groups/**"
     );
 }

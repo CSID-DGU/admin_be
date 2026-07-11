@@ -197,4 +197,46 @@ class RequestRepositoryTest {
             assertThat(result).hasSize(2);
         }
     }
+
+    @Nested
+    @DisplayName("findAllWithUserByExpiredDateBefore (JPQL 파라미터 바인딩)")
+    class FindAllWithUserByExpiredDateBefore {
+
+        @Test
+        @DisplayName("만료된 FULFILLED 요청이 반환된다")
+        void findAllWithUserByExpiredDateBefore_returnsFulfilledExpired() {
+            fulfilledRequest.updateExpiresAt(LocalDateTime.now().minusDays(1));
+            requestRepository.save(fulfilledRequest);
+
+            List<Request> result = requestRepository.findAllWithUserByExpiredDateBefore(
+                    LocalDateTime.now(), Status.FULFILLED
+            );
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getStatus()).isEqualTo(Status.FULFILLED);
+        }
+
+        @Test
+        @DisplayName("PENDING 상태 요청은 만료 대상에 포함되지 않는다")
+        void findAllWithUserByExpiredDateBefore_excludesPendingRequests() {
+            pendingRequest.updateExpiresAt(LocalDateTime.now().minusDays(1));
+            requestRepository.save(pendingRequest);
+
+            List<Request> result = requestRepository.findAllWithUserByExpiredDateBefore(
+                    LocalDateTime.now(), Status.FULFILLED
+            );
+
+            assertThat(result).noneMatch(r -> r.getStatus() == Status.PENDING);
+        }
+
+        @Test
+        @DisplayName("미래 만료 FULFILLED 요청은 반환되지 않는다")
+        void findAllWithUserByExpiredDateBefore_excludesFutureExpiry() {
+            List<Request> result = requestRepository.findAllWithUserByExpiredDateBefore(
+                    LocalDateTime.now(), Status.FULFILLED
+            );
+
+            assertThat(result).isEmpty();
+        }
+    }
 }
