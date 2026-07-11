@@ -74,5 +74,23 @@ class ResourceGroupServiceTest {
             assertThatThrownBy(() -> resourceGroupService.getGpuTypeResources())
                     .isInstanceOf(BusinessException.class);
         }
+
+        @Test
+        @DisplayName("findGpuSummary는 한 번만 호출된다 (중복 쿼리 제거 검증)")
+        void getGpuTypeResources_callsFindGpuSummaryOnce() {
+            GpuRepository.GpuSummary summary = mock(GpuRepository.GpuSummary.class);
+            when(summary.getRamGb()).thenReturn(80);
+            when(summary.getDescription()).thenReturn("A100 x4");
+            when(summary.getResourceGroupName()).thenReturn("GPU-Server-A");
+            when(summary.getNodeCount()).thenReturn(4L);
+            when(summary.getRsgroupId()).thenReturn(1);
+            when(summary.getNodeId()).thenReturn("node-1");
+            when(summary.getServerName()).thenReturn("server-01");
+            when(gpuRepository.findGpuSummary()).thenReturn(List.of(summary));
+
+            resourceGroupService.getGpuTypeResources();
+
+            verify(gpuRepository, times(1)).findGpuSummary();
+        }
     }
 }
