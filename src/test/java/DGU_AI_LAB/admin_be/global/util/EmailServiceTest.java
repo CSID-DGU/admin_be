@@ -73,6 +73,16 @@ class EmailServiceTest {
             assertThatCode(() -> emailService.sendEmailVerificationCode("test@example.com"))
                     .doesNotThrowAnyException();
         }
+
+        @Test
+        @DisplayName("메일 전송 실패 시 BusinessException이 발생한다")
+        void sendEmailVerificationCode_throwsBusinessException_whenMailFails() {
+            when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+            doThrow(new RuntimeException("SMTP 오류")).when(mailSender).send(any(MimeMessage.class));
+
+            assertThatThrownBy(() -> emailService.sendEmailVerificationCode("test@example.com"))
+                    .isInstanceOf(BusinessException.class);
+        }
     }
 
     @Nested
