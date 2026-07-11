@@ -8,8 +8,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
@@ -27,7 +25,6 @@ public class UbuntuAccountService {
 
     private final @Qualifier("configWebClient") WebClient webClient;
 
-    @Transactional(propagation = Propagation.MANDATORY)
     public void deleteUbuntuAccount(String username) {
 
         try {
