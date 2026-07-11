@@ -23,7 +23,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PodService {
 
-    private final @Qualifier("configWebClient") WebClient webClient;
+    private final @Qualifier("podWebClient") WebClient webClient;
 
     private record DeletePodRequest(@com.fasterxml.jackson.annotation.JsonProperty("pod_name") String podName) {}
 
