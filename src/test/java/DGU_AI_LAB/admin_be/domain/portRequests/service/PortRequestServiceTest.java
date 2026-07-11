@@ -91,4 +91,30 @@ class PortRequestServiceTest {
         assertThatThrownBy(() -> portRequestService.createPortRequest(request, resourceGroup, 8888, "jupyter"))
                 .isInstanceOf(BusinessException.class);
     }
+
+    @Test
+    @DisplayName("activatePortRequest는 isActive를 true로 변경한다")
+    void activatePortRequest_setsIsActiveTrue() {
+        PortRequests portRequest = PortRequests.builder()
+                .portNumber(30001)
+                .internalPort(8888)
+                .usagePurpose("jupyter")
+                .build();
+        assertThat(portRequest.getIsActive()).isFalse();
+
+        when(portRequestRepository.findById(1L)).thenReturn(Optional.of(portRequest));
+
+        portRequestService.activatePortRequest(1L);
+
+        assertThat(portRequest.getIsActive()).isTrue();
+    }
+
+    @Test
+    @DisplayName("activatePortRequest에서 존재하지 않는 ID 요청 시 BusinessException을 던진다")
+    void activatePortRequest_throwsException_whenNotFound() {
+        when(portRequestRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> portRequestService.activatePortRequest(999L))
+                .isInstanceOf(BusinessException.class);
+    }
 }

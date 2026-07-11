@@ -94,6 +94,7 @@ public class PortRequestService {
         PortRequests portRequest = portRequestRepository.findById(portRequestId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
+        portRequest.activate();
         log.info("Port request {} activated", portRequestId);
     }
 }
