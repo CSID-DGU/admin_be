@@ -116,7 +116,7 @@ public class AdminUserService {
 
             log.info("Config Server's deletion successful for account: {}", username);
 
-            request.delete();
+            request.deleteAfterCleanup();
             requestRepository.save(request);
             log.info("[deleteUbuntuAccount] {}에 대한 Request 정보 상태를 DELETED로 변경 완료", username);
 

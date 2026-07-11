@@ -200,10 +200,26 @@ public class Request extends BaseTimeEntity {
 
     /**
      * Request의 상태를 DELETED로 변경합니다. (soft delete)
+     * PENDING, DENIED 상태에서만 호출 가능합니다.
+     * FULFILLED 상태의 요청은 인프라 정리 후 deleteAfterCleanup()을 사용하세요.
      */
     public void delete() {
         if (this.status == Status.DELETED) {
             throw new BusinessException("이미 삭제된 요청입니다.", ErrorCode.INVALID_REQUEST_STATUS);
+        }
+        if (this.status == Status.FULFILLED) {
+            throw new BusinessException("컨테이너가 실행 중입니다. 인프라 정리 후 삭제해주세요.", ErrorCode.INVALID_REQUEST_STATUS);
+        }
+        this.status = Status.DELETED;
+    }
+
+    /**
+     * 인프라(Pod, 우분투 계정) 정리가 완료된 이후 FULFILLED 요청을 DELETED로 전환합니다.
+     * 반드시 외부 리소스 정리를 완료한 시스템 서비스(만료 처리, 사용자 삭제 등)에서만 호출하세요.
+     */
+    public void deleteAfterCleanup() {
+        if (this.status != Status.FULFILLED) {
+            throw new BusinessException("인프라 정리 후 삭제는 FULFILLED 상태에서만 가능합니다.", ErrorCode.INVALID_REQUEST_STATUS);
         }
         this.status = Status.DELETED;
     }
