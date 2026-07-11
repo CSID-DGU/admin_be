@@ -2,11 +2,16 @@ package DGU_AI_LAB.admin_be.domain.alarm.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 
 @Schema(description = "인프라 Slack 알림 요청 DTO")
 public record InfraSlackRequestDTO(
 
         @NotBlank(message = "webhookUrl은 필수입니다.")
+        @Pattern(
+                regexp = "https://hooks\\.slack\\.com/services/[A-Za-z0-9]+/[A-Za-z0-9]+/[A-Za-z0-9]+",
+                message = "webhookUrl은 Slack Webhook URL 형식이어야 합니다."
+        )
         @Schema(description = "전송할 Slack Webhook URL", example = "https://hooks.slack.com/services/...")
         String webhookUrl,
 

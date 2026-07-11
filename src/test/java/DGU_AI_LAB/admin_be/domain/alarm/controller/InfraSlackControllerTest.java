@@ -34,6 +34,9 @@ class InfraSlackControllerTest extends WebMvcTestSupport {
     @DisplayName("POST /api/internal/slack/notify")
     class NotifySlack {
 
+        private static final String VALID_WEBHOOK_URL =
+                "https://hooks.slack.com/services/FAKE/FAKE/FAKE";
+
         @Test
         @DisplayName("유효한 요청이면 200 OK와 SuccessResponse를 반환한다")
         void notify_returns200_whenValidRequest() throws Exception {
@@ -41,7 +44,7 @@ class InfraSlackControllerTest extends WebMvcTestSupport {
 
             mockMvc.perform(post("/api/internal/slack/notify")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"webhookUrl\":\"https://hooks.slack.com/test\",\"message\":\"테스트 메시지\"}"))
+                            .content("{\"webhookUrl\":\"" + VALID_WEBHOOK_URL + "\",\"message\":\"테스트 메시지\"}"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.status").value(200))
                     .andExpect(jsonPath("$.message").exists());
@@ -54,10 +57,10 @@ class InfraSlackControllerTest extends WebMvcTestSupport {
 
             mockMvc.perform(post("/api/internal/slack/notify")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"webhookUrl\":\"https://hooks.slack.com/abc\",\"message\":\"GPU 경고\"}"))
+                            .content("{\"webhookUrl\":\"" + VALID_WEBHOOK_URL + "\",\"message\":\"GPU 경고\"}"))
                     .andExpect(status().isOk());
 
-            verify(infraAlarmService).enqueue("https://hooks.slack.com/abc", "GPU 경고");
+            verify(infraAlarmService).enqueue(VALID_WEBHOOK_URL, "GPU 경고");
         }
 
         @Test
@@ -74,7 +77,7 @@ class InfraSlackControllerTest extends WebMvcTestSupport {
         void notify_returns400_whenMessageMissing() throws Exception {
             mockMvc.perform(post("/api/internal/slack/notify")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"webhookUrl\":\"https://hooks.slack.com/test\"}"))
+                            .content("{\"webhookUrl\":\"" + VALID_WEBHOOK_URL + "\"}"))
                     .andExpect(status().isBadRequest());
         }
 
@@ -92,7 +95,25 @@ class InfraSlackControllerTest extends WebMvcTestSupport {
         void notify_returns400_whenMessageBlank() throws Exception {
             mockMvc.perform(post("/api/internal/slack/notify")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"webhookUrl\":\"https://hooks.slack.com/test\",\"message\":\"\"}"))
+                            .content("{\"webhookUrl\":\"" + VALID_WEBHOOK_URL + "\",\"message\":\"\"}"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("Slack Webhook URL 형식이 아니면 400 Bad Request를 반환한다")
+        void notify_returns400_whenWebhookUrlNotSlackFormat() throws Exception {
+            mockMvc.perform(post("/api/internal/slack/notify")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"webhookUrl\":\"https://evil.com/steal\",\"message\":\"SSRF 시도\"}"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("hooks.slack.com 도메인이지만 /services/ 경로가 없으면 400을 반환한다")
+        void notify_returns400_whenWebhookUrlMissingServicesPath() throws Exception {
+            mockMvc.perform(post("/api/internal/slack/notify")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"webhookUrl\":\"https://hooks.slack.com/invalid\",\"message\":\"메시지\"}"))
                     .andExpect(status().isBadRequest());
         }
     }
