@@ -6,7 +6,6 @@ import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -15,26 +14,24 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
-@Tag(name = "2. 사용자 그룹 API", description = "사용자용 우분투 그룹 관련 API")
+@Tag(name = "2. 사용자 그룹", description = "우분투 그룹 조회 및 생성 API")
 public interface GroupApi {
 
-    @Operation(summary = "모든 그룹 목록 조회", description = "시스템에 등록된 모든 그룹의 정보를 조회합니다. 사용 신청 단계에서 이 목록을 조회하고, 그룹을 선택할 수 있습니다.")
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "성공"),
-            @ApiResponse(responseCode = "404", description = "조회된 그룹 정보 없음")
-    })
+    @Operation(summary = "그룹 목록 조회", description = "시스템에 등록된 모든 우분투 그룹을 조회합니다. 서버 사용 신청 시 소속 그룹 선택에 활용합니다.")
+    @ApiResponse(responseCode = "200", description = "성공")
     @GetMapping
     ResponseEntity<SuccessResponse<?>> getGroups();
 
-    @Operation(summary = "새로운 그룹 생성", description = "infra Server에 그룹 생성 API를 호출하고, 응답으로 확정된 GID를 MySQL DB에 저장합니다. 그룹명(groupName)은 필수값이며, 사용자 이름(ubuntuUsername)은 선택값입니다. 사용자 이름이 생략되면 멤버 없는 그룹이 생성됩니다. " +
-            "사용 신청을 아직 생성하지 않았지만, 그룹을 먼저 생성해야 하는 경우를 고려했습니다.")
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "201", description = "생성 성공"),
-            @ApiResponse(responseCode = "400", description = "잘못된 요청: 필수 필드 누락(groupName) 또는 잘못된 형식"),
-            @ApiResponse(responseCode = "403", description = "접근 금지: 요청한 ubuntuUsername이 로그인한 사용자와 일치하지 않음"),
-            @ApiResponse(responseCode = "409", description = "데이터 충돌: 동일한 그룹명이 이미 존재함"),
-            @ApiResponse(responseCode = "502", description = "외부 API 응답의 GID 누락 또는 외부 API 호출 실패")
-    })
+    @Operation(
+            summary = "그룹 생성",
+            description = "인프라 서버에 그룹 생성을 요청하고, 확정된 GID를 DB에 저장합니다. " +
+                    "groupName은 필수이며, ubuntuUsername은 생략 가능합니다(생략 시 멤버 없는 그룹 생성)."
+    )
+    @ApiResponse(responseCode = "201", description = "생성 성공")
+    @ApiResponse(responseCode = "400", description = "groupName 누락 또는 형식 오류")
+    @ApiResponse(responseCode = "403", description = "ubuntuUsername이 로그인 사용자와 불일치")
+    @ApiResponse(responseCode = "409", description = "동일한 그룹명 중복")
+    @ApiResponse(responseCode = "502", description = "인프라 서버 응답 오류")
     @PostMapping
     ResponseEntity<SuccessResponse<?>> createGroup(
             @RequestBody @Valid CreateGroupRequestDTO dto,

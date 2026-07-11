@@ -7,75 +7,49 @@ import DGU_AI_LAB.admin_be.error.dto.ErrorResponse;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 
 import java.util.List;
 
-@Tag(name = "1. 관리자 서버 사용 신청 관리", description = "서버 신규 신청 조회 및 승인/거절 API")
+@Tag(name = "3. 관리자 신청 관리", description = "서버 사용 신청 승인·거절 및 컨테이너 현황 조회 API")
 public interface AdminRequestApi {
 
-    @Operation(summary = "모든 요청 목록 조회", description = "모든 상태의 서버 사용 신청 목록을 조회합니다.")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "성공",
-                    content = @Content(mediaType = "application/json",
-                            schema = @Schema(implementation = SuccessResponse.class),
-                            examples = @ExampleObject(value = "{\"status\": 200, \"message\": \"요청이 성공했습니다.\", \"data\": [...]}")
-                    )),
-            @ApiResponse(responseCode = "500", description = "서버 오류",
-                    content = @Content(mediaType = "application/json",
-                            schema = @Schema(implementation = ErrorResponse.class)))
-    })
+    @Operation(summary = "전체 신청 목록 조회", description = "모든 상태의 서버 사용 신청 목록을 조회합니다.")
+    @ApiResponse(responseCode = "200", description = "성공")
     ResponseEntity<SuccessResponse<?>> getAllRequests();
 
-    @Operation(summary = "신규 신청 목록 조회", description = "PENDING 상태의 서버 사용 신청 목록을 조회합니다.")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "성공",
-                    content = @Content(schema = @Schema(implementation = SuccessResponse.class)))
-    })
+    @Operation(summary = "신규 신청 목록 조회", description = "PENDING 상태의 신청 목록을 조회합니다.")
+    @ApiResponse(responseCode = "200", description = "성공")
     ResponseEntity<SuccessResponse<?>> getNewRequests();
 
-    @Operation(summary = "전체 리소스 사용량 조회", description = "FULFILLED 상태인 모든 서버의 리소스 사용량 정보를 조회합니다.")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "성공",
-                    content = @Content(schema = @Schema(implementation = SuccessResponse.class)))
-    })
+    @Operation(summary = "전체 리소스 사용량 조회", description = "FULFILLED 상태인 모든 서버의 리소스 사용량을 조회합니다.")
+    @ApiResponse(responseCode = "200", description = "성공")
     ResponseEntity<SuccessResponse<?>> getAllResourceUsage();
 
-    @Operation(summary = "모든 활성 컨테이너 조회", description = "현재 활성화된 모든 컨테이너 정보를 조회합니다.")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "성공",
-                    content = @Content(schema = @Schema(implementation = ContainerListResponseDoc.class)))
-    })
+    @Operation(summary = "활성 컨테이너 목록 조회", description = "현재 활성화된 모든 컨테이너 정보(ubuntuUsername, Pod명, 노드명 등)를 조회합니다.")
+    @ApiResponse(responseCode = "200", description = "성공",
+            content = @Content(schema = @Schema(implementation = ContainerListResponseDoc.class)))
     ResponseEntity<SuccessResponse<?>> getAllActiveContainers();
 
-    // Swagger 문서 전용 스키마: SuccessResponse<?> 와일드카드라 data 타입이 추론되지 않아 명시한다. 런타임 미사용.
     @Schema(name = "SuccessResponseListContainerInfoDTO", description = "활성 컨테이너 목록 응답")
     record ContainerListResponseDoc(int status, String message, List<ContainerInfoDTO> data) {}
 
-    @Operation(summary = "사용 신청 승인", description = "PENDING 상태의 사용 신청을 승인합니다.")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "성공",
-                    content = @Content(schema = @Schema(implementation = SuccessResponse.class))),
-            @ApiResponse(responseCode = "404", description = "리소스 없음",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-            @ApiResponse(responseCode = "409", description = "사용자명 중복",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-            @ApiResponse(responseCode = "500", description = "서버 오류",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
-    })
+    @Operation(summary = "사용 신청 승인", description = "PENDING 상태의 신청을 승인하고 우분투 계정을 생성합니다.")
+    @ApiResponse(responseCode = "200", description = "성공")
+    @ApiResponse(responseCode = "404", description = "신청 또는 리소스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "409", description = "우분투 계정명 중복",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     ResponseEntity<SuccessResponse<?>> approveRequest(ApproveRequestDTO dto);
 
-    @Operation(summary = "사용 신청 거절", description = "PENDING 상태의 사용 신청을 거절합니다.")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "성공",
-                    content = @Content(schema = @Schema(implementation = SuccessResponse.class))),
-            @ApiResponse(responseCode = "404", description = "리소스 없음",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
-    })
+    @Operation(summary = "사용 신청 거절", description = "PENDING 또는 FULFILLED 상태의 신청을 거절 처리합니다.")
+    @ApiResponse(responseCode = "200", description = "성공")
+    @ApiResponse(responseCode = "404", description = "신청을 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "400", description = "이미 거절/삭제된 상태",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     ResponseEntity<SuccessResponse<?>> rejectRequest(RejectRequestDTO dto);
 }

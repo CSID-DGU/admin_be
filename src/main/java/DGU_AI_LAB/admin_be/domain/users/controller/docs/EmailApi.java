@@ -9,7 +9,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestParam;
 
-@Tag(name = "0. 회원가입 이메일 인증", description = "이메일 인증번호 발송 및 인증 확인 API")
+@Tag(name = "1. 인증", description = "회원가입, 로그인, SSH 인증 API")
 public interface EmailApi {
 
     @Operation(summary = "이메일 인증번호 발송", description = "입력한 이메일 주소로 인증번호를 전송합니다.")

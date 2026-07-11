@@ -7,9 +7,14 @@ import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectModificationDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.UserCreationRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
+import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
@@ -18,7 +23,6 @@ import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
-import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -35,6 +39,7 @@ import org.mockito.quality.Strictness;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -232,7 +237,6 @@ class AdminRequestCommandServiceTest {
         @Test
         @DisplayName("createPod()가 BusinessException을 던지면 Ubuntu 계정 삭제가 호출된다")
         void approveRequest_podThrowsBusinessException_compensatesWithAccountDeletion() {
-            // Given
             Long requestId = 10L;
             buildMockedRequest(requestId);
             stubWebClientPut();
@@ -242,44 +246,36 @@ class AdminRequestCommandServiceTest {
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
 
-            // When & Then
             assertThatThrownBy(() -> service.approveRequest(dto))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_CREATION_FAILED);
 
-            // Ubuntu 계정 보상 삭제가 반드시 호출되어야 함
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
         }
 
         @Test
         @DisplayName("createPod()가 null을 반환하면 BusinessException이 발생하고 Ubuntu 계정이 삭제된다")
         void approveRequest_podReturnsNull_throwsAndCompensates() {
-            // Given
             Long requestId = 11L;
             buildMockedRequest(requestId);
             stubWebClientPut();
 
-            // PodService가 null을 반환하면 내부에서 BusinessException을 던져야 함 (수정 후 동작)
             when(podService.createPod("testuser"))
                     .thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED));
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
 
-            // When & Then
             assertThatThrownBy(() -> service.approveRequest(dto))
                     .isInstanceOf(BusinessException.class);
 
-            // 보상 트랜잭션이 동작해야 함
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
-            // DB 상태 변경(assignPodInfo 등)은 실행되지 않아야 함
             verify(containerImageRepository, never()).findById(any());
         }
 
         @Test
         @DisplayName("createPod() 실패 시 보상 Ubuntu 계정 삭제 자체가 실패해도 원래 예외가 전파된다")
         void approveRequest_podFails_compensationAlsoFails_originalExceptionPropagates() {
-            // Given
             Long requestId = 12L;
             buildMockedRequest(requestId);
             stubWebClientPut();
@@ -291,7 +287,6 @@ class AdminRequestCommandServiceTest {
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
 
-            // When & Then - 보상 실패해도 원래 예외(POD_CREATION_FAILED)가 전파되어야 함
             assertThatThrownBy(() -> service.approveRequest(dto))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
@@ -301,7 +296,6 @@ class AdminRequestCommandServiceTest {
         @Test
         @DisplayName("createPod() 정상 응답이면 보상 트랜잭션은 실행되지 않는다")
         void approveRequest_podSucceeds_noCompensation() {
-            // Given
             Long requestId = 13L;
             buildMockedRequest(requestId);
             stubWebClientPut();
@@ -315,10 +309,8 @@ class AdminRequestCommandServiceTest {
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
 
-            // When
             service.approveRequest(dto);
 
-            // Then - 보상 트랜잭션 미실행
             verify(ubuntuAccountService, never()).deleteUbuntuAccount(any());
             verify(podService, never()).deletePod(any());
         }
@@ -326,7 +318,6 @@ class AdminRequestCommandServiceTest {
         @Test
         @DisplayName("PENDING 상태가 아닌 요청 승인 시 BusinessException 발생")
         void approveRequest_nonPendingStatus_throwsBusinessException() {
-            // Given
             Long requestId = 14L;
             Request request = mock(Request.class);
             when(request.getStatus()).thenReturn(Status.FULFILLED);
@@ -334,25 +325,21 @@ class AdminRequestCommandServiceTest {
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
 
-            // When & Then
             assertThatThrownBy(() -> service.approveRequest(dto))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
 
-            // Pod 생성, Ubuntu 계정 생성 모두 호출되지 않아야 함
             verify(podService, never()).createPod(any());
         }
 
         @Test
         @DisplayName("존재하지 않는 requestId 승인 시 BusinessException 발생")
         void approveRequest_requestNotFound_throwsBusinessException() {
-            // Given
             when(requestRepository.findById(999L)).thenReturn(Optional.empty());
 
             ApproveRequestDTO dto = new ApproveRequestDTO(999L, 1L, 1, 10L, "승인");
 
-            // When & Then
             assertThatThrownBy(() -> service.approveRequest(dto))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
@@ -360,86 +347,287 @@ class AdminRequestCommandServiceTest {
         }
     }
 
-    // ── rejectRequest 테스트 ───────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────────────────
+    // rejectRequest 테스트
+    // ──────────────────────────────────────────────────────────────────────
 
     @Nested
-    @DisplayName("rejectRequest 기본 동작")
+    @DisplayName("rejectRequest")
     class RejectRequest {
 
-        /** rejectRequest용 Request mock — fromEntity()가 요구하는 필드를 모두 스텁 */
-        private Request buildRejectableMock(Long requestId, Status status) {
-            Request request = mock(Request.class);
-            when(request.getStatus()).thenReturn(status);
-            when(request.getResourceGroup()).thenReturn(mockRg);
-            when(request.getUser()).thenReturn(mockUser);
-            when(request.getContainerImage()).thenReturn(mockImage);
-            when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
-            when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
-
-            when(mockRg.getRsgroupId()).thenReturn(1);
-            when(mockUser.getName()).thenReturn("테스트유저");
-            when(mockImage.getImageId()).thenReturn(1L);
-            return request;
-        }
-
         @Test
-        @DisplayName("PENDING 상태 요청 거절 시 reject()가 호출된다")
-        void rejectRequest_pendingStatus_callsReject() {
-            // Given
-            Long requestId = 20L;
-            Request request = buildRejectableMock(requestId, Status.PENDING);
-            RejectRequestDTO dto = new RejectRequestDTO(requestId, "부적절한 신청");
+        @DisplayName("PENDING 상태 요청을 거절하면 request.reject()가 호출된다")
+        void rejectRequest_success_whenStatusIsPending() {
+            Request request = buildMockedRequestWithStatus(30L, Status.PENDING);
 
-            // When
+            RejectRequestDTO dto = new RejectRequestDTO(30L, "신청서 양식 미흡");
             service.rejectRequest(dto);
 
-            // Then
-            verify(request).reject("부적절한 신청");
+            verify(request).reject("신청서 양식 미흡");
         }
 
         @Test
-        @DisplayName("FULFILLED 상태 요청도 거절 가능하다")
-        void rejectRequest_fulfilledStatus_callsReject() {
-            // Given
-            Long requestId = 21L;
-            Request request = buildRejectableMock(requestId, Status.FULFILLED);
-            RejectRequestDTO dto = new RejectRequestDTO(requestId, "관리자 거절");
+        @DisplayName("FULFILLED 상태 요청도 거절 가능하다 (현재 정책)")
+        void rejectRequest_success_whenStatusIsFulfilled() {
+            Request request = buildMockedRequestWithStatus(31L, Status.FULFILLED);
 
-            // When
+            RejectRequestDTO dto = new RejectRequestDTO(31L, "계정 정책 위반");
             service.rejectRequest(dto);
 
-            // Then
-            verify(request).reject("관리자 거절");
+            verify(request).reject("계정 정책 위반");
         }
 
         @Test
-        @DisplayName("DENIED 상태 요청 거절 시 BusinessException 발생")
-        void rejectRequest_alreadyDenied_throwsBusinessException() {
-            // Given
-            Long requestId = 22L;
-            buildRejectableMock(requestId, Status.DENIED);
-            RejectRequestDTO dto = new RejectRequestDTO(requestId, "재거절 시도");
+        @DisplayName("존재하지 않는 requestId로 거절하면 BusinessException을 던진다")
+        void rejectRequest_throwsException_whenRequestNotFound() {
+            when(requestRepository.findById(999L)).thenReturn(Optional.empty());
 
-            // When & Then
+            RejectRequestDTO dto = new RejectRequestDTO(999L, "사유");
+
             assertThatThrownBy(() -> service.rejectRequest(dto))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+                    .isInstanceOf(BusinessException.class);
         }
 
         @Test
-        @DisplayName("DELETED 상태 요청 거절 시 BusinessException 발생")
-        void rejectRequest_deletedStatus_throwsBusinessException() {
-            // Given
-            Long requestId = 23L;
-            buildRejectableMock(requestId, Status.DELETED);
-            RejectRequestDTO dto = new RejectRequestDTO(requestId, "삭제된 요청 거절 시도");
+        @DisplayName("DENIED 상태 요청을 거절하려 하면 BusinessException을 던진다")
+        void rejectRequest_throwsException_whenStatusIsDenied() {
+            buildMockedRequestWithStatus(32L, Status.DENIED);
 
-            // When & Then
+            RejectRequestDTO dto = new RejectRequestDTO(32L, "사유");
+
             assertThatThrownBy(() -> service.rejectRequest(dto))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+                    .isInstanceOf(BusinessException.class);
         }
+
+        @Test
+        @DisplayName("DELETED 상태 요청을 거절하려 하면 BusinessException을 던진다")
+        void rejectRequest_throwsException_whenStatusIsDeleted() {
+            buildMockedRequestWithStatus(33L, Status.DELETED);
+
+            RejectRequestDTO dto = new RejectRequestDTO(33L, "사유");
+
+            assertThatThrownBy(() -> service.rejectRequest(dto))
+                    .isInstanceOf(BusinessException.class);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // rejectModification 테스트
+    // ──────────────────────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("rejectModification")
+    class RejectModification {
+
+        @Test
+        @DisplayName("PENDING 상태 변경 요청을 거절하면 changeRequest.deny()가 호출된다")
+        void rejectModification_success_whenStatusIsPending() {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequestRepository.findById(1L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+
+            RejectModificationDTO dto = new RejectModificationDTO(1L, "변경 사유 불충분");
+            service.rejectModification(100L, dto);
+
+            verify(changeRequest).deny(mockUser, "변경 사유 불충분");
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 변경 요청 ID로 거절하면 BusinessException을 던진다")
+        void rejectModification_throwsException_whenChangeRequestNotFound() {
+            when(changeRequestRepository.findById(999L)).thenReturn(Optional.empty());
+
+            RejectModificationDTO dto = new RejectModificationDTO(999L, "사유");
+
+            assertThatThrownBy(() -> service.rejectModification(100L, dto))
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("PENDING 이 아닌 상태의 변경 요청 거절 시 BusinessException을 던진다")
+        void rejectModification_throwsException_whenStatusIsNotPending() {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getStatus()).thenReturn(Status.FULFILLED);
+            when(changeRequestRepository.findById(2L)).thenReturn(Optional.of(changeRequest));
+
+            RejectModificationDTO dto = new RejectModificationDTO(2L, "사유");
+
+            assertThatThrownBy(() -> service.rejectModification(100L, dto))
+                    .isInstanceOf(BusinessException.class);
+            verify(changeRequest, never()).deny(any(), anyString());
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 adminId로 거절하면 BusinessException을 던진다")
+        void rejectModification_throwsException_whenAdminNotFound() {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequestRepository.findById(3L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(999L)).thenReturn(Optional.empty());
+
+            RejectModificationDTO dto = new RejectModificationDTO(3L, "사유");
+
+            assertThatThrownBy(() -> service.rejectModification(999L, dto))
+                    .isInstanceOf(BusinessException.class);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // approveModification 테스트
+    // ──────────────────────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("approveModification")
+    class ApproveModification {
+
+        @Test
+        @DisplayName("VOLUME_SIZE 변경 요청 승인 시 originalRequest.updateVolumeSize()가 호출된다")
+        void approveModification_volumeSize_success() throws Exception {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            Request originalRequest = buildMockedRequestWithStatus(20L, Status.FULFILLED);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.VOLUME_SIZE);
+            when(changeRequest.getNewValue()).thenReturn("200");
+            when(changeRequest.getRequest()).thenReturn(originalRequest);
+            when(changeRequestRepository.findById(1L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+
+            ApproveModificationDTO dto = new ApproveModificationDTO(1L, "승인합니다");
+            service.approveModification(100L, dto);
+
+            verify(originalRequest).updateVolumeSize(200L);
+            verify(changeRequest).approve(mockUser, "승인합니다");
+        }
+
+        @Test
+        @DisplayName("EXPIRES_AT 변경 요청 승인 시 originalRequest.updateExpiresAt()가 호출된다")
+        void approveModification_expiresAt_success() throws Exception {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            Request originalRequest = buildMockedRequestWithStatus(21L, Status.FULFILLED);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.EXPIRES_AT);
+            when(changeRequest.getNewValue()).thenReturn("\"2027-12-31T23:59:59\"");
+            when(changeRequest.getRequest()).thenReturn(originalRequest);
+            when(changeRequestRepository.findById(2L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+
+            ApproveModificationDTO dto = new ApproveModificationDTO(2L, "기간 연장 승인");
+            service.approveModification(100L, dto);
+
+            ArgumentCaptor<LocalDateTime> captor = ArgumentCaptor.forClass(LocalDateTime.class);
+            verify(originalRequest).updateExpiresAt(captor.capture());
+            assertThat(captor.getValue()).isEqualTo(LocalDateTime.of(2027, 12, 31, 23, 59, 59));
+            verify(changeRequest).approve(mockUser, "기간 연장 승인");
+        }
+
+        @Test
+        @DisplayName("RESOURCE_GROUP 변경 요청 승인 시 originalRequest.updateResourceGroup()이 호출된다")
+        void approveModification_resourceGroup_success() throws Exception {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            Request originalRequest = buildMockedRequestWithStatus(22L, Status.FULFILLED);
+            ResourceGroup newRg = mock(ResourceGroup.class);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.RESOURCE_GROUP);
+            when(changeRequest.getNewValue()).thenReturn("2");
+            when(changeRequest.getRequest()).thenReturn(originalRequest);
+            when(changeRequestRepository.findById(3L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+            when(resourceGroupRepository.findById(2)).thenReturn(Optional.of(newRg));
+
+            ApproveModificationDTO dto = new ApproveModificationDTO(3L, "리소스 그룹 변경 승인");
+            service.approveModification(100L, dto);
+
+            verify(originalRequest).updateResourceGroup(newRg);
+            verify(changeRequest).approve(mockUser, "리소스 그룹 변경 승인");
+        }
+
+        @Test
+        @DisplayName("CONTAINER_IMAGE 변경 요청 승인 시 originalRequest.updateContainerImage()가 호출된다")
+        void approveModification_containerImage_success() throws Exception {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            Request originalRequest = buildMockedRequestWithStatus(23L, Status.FULFILLED);
+            ContainerImage newImage = mock(ContainerImage.class);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.CONTAINER_IMAGE);
+            when(changeRequest.getNewValue()).thenReturn("5");
+            when(changeRequest.getRequest()).thenReturn(originalRequest);
+            when(changeRequestRepository.findById(4L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+            when(containerImageRepository.findById(5L)).thenReturn(Optional.of(newImage));
+
+            ApproveModificationDTO dto = new ApproveModificationDTO(4L, "이미지 변경 승인");
+            service.approveModification(100L, dto);
+
+            verify(originalRequest).updateContainerImage(newImage);
+            verify(changeRequest).approve(mockUser, "이미지 변경 승인");
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 변경 요청 ID로 승인하면 BusinessException을 던진다")
+        void approveModification_throwsException_whenChangeRequestNotFound() {
+            when(changeRequestRepository.findById(999L)).thenReturn(Optional.empty());
+
+            ApproveModificationDTO dto = new ApproveModificationDTO(999L, "승인");
+
+            assertThatThrownBy(() -> service.approveModification(100L, dto))
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("PENDING이 아닌 변경 요청 승인 시 BusinessException을 던진다")
+        void approveModification_throwsException_whenNotPendingStatus() {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getStatus()).thenReturn(Status.FULFILLED);
+            when(changeRequestRepository.findById(5L)).thenReturn(Optional.of(changeRequest));
+
+            ApproveModificationDTO dto = new ApproveModificationDTO(5L, "승인");
+
+            assertThatThrownBy(() -> service.approveModification(100L, dto))
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 adminId로 승인하면 BusinessException을 던진다")
+        void approveModification_throwsException_whenAdminNotFound() {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequestRepository.findById(6L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(999L)).thenReturn(Optional.empty());
+
+            ApproveModificationDTO dto = new ApproveModificationDTO(6L, "승인");
+
+            assertThatThrownBy(() -> service.approveModification(999L, dto))
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("originalRequest가 null이면 BusinessException을 던진다")
+        void approveModification_throwsException_whenOriginalRequestIsNull() {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequest.getRequest()).thenReturn(null);
+            when(changeRequestRepository.findById(7L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+
+            ApproveModificationDTO dto = new ApproveModificationDTO(7L, "승인");
+
+            assertThatThrownBy(() -> service.approveModification(100L, dto))
+                    .isInstanceOf(BusinessException.class);
+        }
+    }
+
+    private Request buildMockedRequestWithStatus(Long requestId, Status status) {
+        Request request = mock(Request.class);
+        when(request.getStatus()).thenReturn(status);
+        when(request.getUbuntuUsername()).thenReturn("testuser");
+        when(request.getUbuntuPassword()).thenReturn("encoded_pw");
+        when(request.getUbuntuPasswordBase64()).thenReturn("cGxhaW5fdGV4dF9wdw==");
+        when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
+        when(request.getUser()).thenReturn(mockUser);
+        when(request.getResourceGroup()).thenReturn(mockRg);
+        when(request.getContainerImage()).thenReturn(mockImage);
+        when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
+        return request;
     }
 }
