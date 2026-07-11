@@ -81,6 +81,12 @@ public class AdminUserService {
                     log.warn("[deleteUbuntuAccount] {}에 해당하는 Request가 없습니다.", username);
                     return new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND);
                 });
+
+        if (request.getStatus() == Status.DELETED) {
+            log.warn("[deleteUbuntuAccount] {}은 이미 DELETED 상태입니다.", username);
+            throw new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND);
+        }
+
         ubuntuAccountService.deleteUbuntuAccount(username);
         request.deleteAfterCleanup();
         requestRepository.save(request);
@@ -99,5 +105,4 @@ public class AdminUserService {
         log.info("[updateUser] userId={} 정보 수정 완료", userId);
         return UserResponseDTO.fromEntity(user);
     }
-
 }
