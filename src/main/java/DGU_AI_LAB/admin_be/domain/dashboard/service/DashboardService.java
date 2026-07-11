@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -41,6 +43,16 @@ public class DashboardService {
             requests = requestRepository.findByUserUserIdAndStatus(userId, status);
         }
 
+        Set<ResourceGroup> resourceGroups = requests.stream()
+                .map(Request::getResourceGroup)
+                .filter(rg -> rg != null)
+                .collect(Collectors.toSet());
+
+        Map<Integer, List<Node>> nodesByRsgroupId = nodeRepository
+                .findAllByResourceGroupIn(resourceGroups)
+                .stream()
+                .collect(Collectors.groupingBy(node -> node.getResourceGroup().getRsgroupId()));
+
         return requests.stream()
                 .map(request -> {
                     String serverAddress = (request.getStatus() == Status.FULFILLED) ? "TBD (서버 할당 후 표시)" : null;
@@ -53,7 +65,7 @@ public class DashboardService {
                     if (resourceGroup != null) {
                         resourceGroupName = resourceGroup.getDescription();
 
-                        List<Node> nodesInGroup = nodeRepository.findAllByResourceGroup(resourceGroup);
+                        List<Node> nodesInGroup = nodesByRsgroupId.getOrDefault(resourceGroup.getRsgroupId(), List.of());
                         if (!nodesInGroup.isEmpty()) {
                             Node representativeNode = nodesInGroup.get(0);
                             cpuCoreCount = representativeNode.getCpuCoreCount();
