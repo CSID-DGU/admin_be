@@ -20,7 +20,10 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import org.springframework.test.util.ReflectionTestUtils;
+
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -52,6 +55,9 @@ class UserLoginServiceTest {
 
     @BeforeEach
     void setUp() {
+        // @Value 필드는 Mockito가 주입하지 않으므로 직접 설정 (604800000ms = 7일)
+        ReflectionTestUtils.setField(userLoginService, "REFRESH_TOKEN_EXPIRE_TIME", 604800000L);
+
         activeUser = User.builder()
                 .email("test@dgu.ac.kr")
                 .password("encodedPassword")
@@ -131,6 +137,7 @@ class UserLoginServiceTest {
             assertThat(result.accessToken()).isEqualTo("accessToken");
             assertThat(result.refreshToken()).isEqualTo("refreshToken");
             verify(passwordEncoder, times(1)).matches("password123", "encodedPassword");
+            verify(valueOperations).set(anyString(), eq("refreshToken"), eq(604800000L), eq(TimeUnit.MILLISECONDS));
         }
 
         @Test
