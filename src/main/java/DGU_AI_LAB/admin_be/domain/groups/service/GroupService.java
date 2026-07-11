@@ -159,7 +159,12 @@ public class GroupService {
                 .ubuntuGid(assignedGid)
                 .build();
 
-        group = groupRepository.save(group);
+        try {
+            group = groupRepository.save(group);
+        } catch (Exception e) {
+            log.error("[createGroup] 인프라에 그룹 생성됨, DB 저장 실패 — 수동 정리 필요: groupName={}, gid={}", dto.groupName(), assignedGid, e);
+            throw new BusinessException(ErrorCode.GROUP_CREATION_FAILED);
+        }
         log.info("[createGroup] 그룹 생성 및 로컬 DB 저장 완료: id={}, name={}", group.getGroupId(), group.getGroupName());
 
         return GroupResponseDTO.fromEntity(group);

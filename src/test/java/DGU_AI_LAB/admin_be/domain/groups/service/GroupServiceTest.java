@@ -247,5 +247,24 @@ class GroupServiceTest {
                     .isInstanceOf(BusinessException.class);
             verify(groupRepository, never()).save(any(Group.class));
         }
+
+        @Test
+        @DisplayName("인프라 그룹 생성 후 DB 저장 실패 시 GROUP_CREATION_FAILED를 던진다")
+        void createGroup_throwsException_whenDbSaveFails() {
+            when(groupRepository.existsByGroupName("developers")).thenReturn(false);
+            when(groupRepository.existsByUbuntuGid(2000L)).thenReturn(false);
+
+            mockWebClientSuccess(new GroupService.ConfigServerGroupResponse(
+                    new GroupService.ConfigServerGroupInfo("developers", 2000L)));
+
+            when(groupRepository.save(any(Group.class))).thenThrow(new RuntimeException("DB connection lost"));
+
+            CreateGroupRequestDTO dto = new CreateGroupRequestDTO("developers", null);
+
+            assertThatThrownBy(() -> groupService.createGroup(dto, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.GROUP_CREATION_FAILED);
+        }
     }
 }
