@@ -54,4 +54,7 @@ public class PortRequests extends BaseTimeEntity {
         this.resourceGroup = resourceGroup;
     }
 
+    public void activate() {
+        this.isActive = true;
+    }
 }
