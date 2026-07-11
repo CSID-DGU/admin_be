@@ -25,6 +25,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -62,7 +63,7 @@ class AlarmServiceTest {
         ReflectionTestUtils.setField(alarmService, "errorLogWebhookUrl", ERROR_WEBHOOK);
         ReflectionTestUtils.setField(alarmService, "farmAdminWebhookUrl", FARM_WEBHOOK);
         ReflectionTestUtils.setField(alarmService, "labAdminWebhookUrl", LAB_WEBHOOK);
-        ReflectionTestUtils.setField(alarmService, "from", "no-reply@dgu.ac.kr");
+        ReflectionTestUtils.setField(alarmService, "from", "noreply@dgu.ac.kr");
         when(redisTemplate.opsForList()).thenReturn(listOperations);
     }
 
@@ -131,6 +132,18 @@ class AlarmServiceTest {
             assertThat(dto.getUsername()).isEqualTo("홍길동");
             assertThat(dto.getEmail()).isEqualTo("hong@dgu.ac.kr");
             assertThat(dto.getMessage()).isEqualTo("승인 완료");
+        }
+
+        @Test
+        @DisplayName("Redis 장애 시 DM 타입은 webhookUrl이 null이어도 NPE 없이 직접 전송된다")
+        void sendDMAlert_fallback_doesNotThrowNPE_whenWebhookUrlIsNull() {
+            when(redisTemplate.opsForList()).thenThrow(new RuntimeException("Redis 연결 실패"));
+            when(messageUtils.get("notification.error.redis-fallback")).thenReturn(" [Redis 장애]");
+            doNothing().when(slackApiService).sendDM(anyString(), anyString(), anyString());
+            doNothing().when(slackApiService).sendWebhook(anyString(), anyString());
+
+            assertThatCode(() -> alarmService.sendDMAlert("testuser", "test@example.com", "hello"))
+                    .doesNotThrowAnyException();
         }
     }
 

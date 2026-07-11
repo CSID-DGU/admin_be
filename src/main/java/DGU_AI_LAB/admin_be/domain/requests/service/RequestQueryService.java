@@ -1,7 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
-import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
+import DGU_AI_LAB.admin_be.domain.portRequests.repository.PortRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.PodExternalPortResponseDTO;
@@ -21,6 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -31,7 +33,7 @@ public class RequestQueryService {
     private final RequestRepository requestRepository;
     private final ChangeRequestRepository changeRequestRepository;
     private final UserRepository userRepository;
-    private final PortRequestService portRequestService;
+    private final PortRequestRepository portRequestRepository;
     private final PodExternalPortRepository podExternalPortRepository;
 
     /** 내 신청 목록 */
@@ -39,22 +41,36 @@ public class RequestQueryService {
         if (!userRepository.existsById(userId)) {
             throw new BusinessException(ErrorCode.USER_NOT_FOUND);
         }
-        return requestRepository.findAllByUser_UserId(userId).stream()
-                .map(this::createResponseDTOWithPortMappings)
-                .toList();
+        return toResponseDTOs(requestRepository.findAllByUser_UserId(userId));
     }
 
-    private SaveRequestResponseDTO createResponseDTOWithPortMappings(Request request) {
-        List<PortMappingDTO> portMappings = portRequestService.getPortRequestsByRequestId(request.getRequestId())
-                .stream()
-                .map(PortMappingDTO::fromEntity)
-                .toList();
-        List<PodExternalPortResponseDTO> podExternalPorts = podExternalPortRepository.findByRequestRequestId(request.getRequestId())
-                .stream()
-                .map(PodExternalPortResponseDTO::fromEntity)
-                .toList();
+    /** 목록 단위 배치 로딩으로 N+1 방지: portRequests, podExternalPorts를 IN절 1회씩 조회 */
+    private List<SaveRequestResponseDTO> toResponseDTOs(List<Request> requests) {
+        if (requests.isEmpty()) return List.of();
 
-        return SaveRequestResponseDTO.fromEntityWithPorts(request, portMappings, podExternalPorts);
+        List<Long> ids = requests.stream().map(Request::getRequestId).toList();
+
+        Map<Long, List<PortMappingDTO>> portMappingsByRequest =
+                portRequestRepository.findByRequestRequestIdIn(ids).stream()
+                        .collect(Collectors.groupingBy(
+                                pr -> pr.getRequest().getRequestId(),
+                                Collectors.mapping(PortMappingDTO::fromEntity, Collectors.toList())
+                        ));
+
+        Map<Long, List<PodExternalPortResponseDTO>> podPortsByRequest =
+                podExternalPortRepository.findByRequestRequestIdIn(ids).stream()
+                        .collect(Collectors.groupingBy(
+                                pep -> pep.getRequest().getRequestId(),
+                                Collectors.mapping(PodExternalPortResponseDTO::fromEntity, Collectors.toList())
+                        ));
+
+        return requests.stream()
+                .map(r -> SaveRequestResponseDTO.fromEntityWithPorts(
+                        r,
+                        portMappingsByRequest.getOrDefault(r.getRequestId(), List.of()),
+                        podPortsByRequest.getOrDefault(r.getRequestId(), List.of())
+                ))
+                .toList();
     }
 
     /** 승인 완료 자원 사용량 */
@@ -84,9 +100,7 @@ public class RequestQueryService {
         if (!userRepository.existsById(userId)) {
             throw new BusinessException(ErrorCode.USER_NOT_FOUND);
         }
-        return requestRepository.findAllByUser_UserIdAndStatus(userId, Status.FULFILLED).stream()
-                .map(this::createResponseDTOWithPortMappings)
-                .toList();
+        return toResponseDTOs(requestRepository.findAllByUser_UserIdAndStatus(userId, Status.FULFILLED));
     }
 
     /** 내 변경 요청 목록 조회 */

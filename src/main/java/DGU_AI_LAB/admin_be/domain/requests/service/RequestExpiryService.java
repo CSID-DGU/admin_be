@@ -37,7 +37,7 @@ public class RequestExpiryService {
         podService.deletePod(request.getPodName());
         ubuntuAccountService.deleteUbuntuAccount(ubuntuUsername);
 
-        request.delete();
+        request.deleteAfterCleanup();
         eventPublisher.publishEvent(new RequestExpiredEvent(user, ubuntuUsername, serverName));
         log.info("삭제 트랜잭션 성공: {}", ubuntuUsername);
     }

@@ -47,7 +47,7 @@ class AuthControllerTest extends WebMvcTestSupport {
     class Register {
 
         @Test
-        @DisplayName("유효한 요청으로 회원가입하면 200 OK를 반환한다")
+        @DisplayName("유효한 요청으로 회원가입하면 201 Created를 반환한다")
         void register_returns200_whenSuccess() throws Exception {
             doNothing().when(userLoginService).register(any());
 
@@ -58,7 +58,7 @@ class AuthControllerTest extends WebMvcTestSupport {
             mockMvc.perform(post("/api/auth/register")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(dto)))
-                    .andExpect(status().isOk());
+                    .andExpect(status().isCreated());
         }
 
         @Test

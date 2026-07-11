@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.requests.dto.request;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 
 @Schema(description = "관리자용 요청 승인 요청 DTO")
 public record ApproveRequestDTO(
@@ -20,6 +21,7 @@ public record ApproveRequestDTO(
 
         @Schema(description = "할당할 볼륨 크기 (GiB)", example = "20")
         @NotNull(message = "볼륨 크기는 필수로 입력해야 합니다.")
+        @Positive(message = "볼륨 크기는 양수여야 합니다.")
         Long volumeSizeGiB,
 
         @Schema(description = "관리자 승인 코멘트 (선택 사항)", example = "사용 목적에 따라 리소스를 할당함")

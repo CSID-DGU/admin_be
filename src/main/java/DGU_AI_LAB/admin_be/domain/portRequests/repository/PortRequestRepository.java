@@ -6,12 +6,15 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 
 @Repository
 public interface PortRequestRepository extends JpaRepository<PortRequests, Long> {
 
     List<PortRequests> findByRequestRequestId(Long requestId);
+
+    List<PortRequests> findByRequestRequestIdIn(Collection<Long> requestIds);
 
     List<PortRequests> findByResourceGroupRsgroupId(Integer resourceGroupId);
 
