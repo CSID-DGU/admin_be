@@ -44,7 +44,7 @@ public class RequestSchedulerService {
     }
 
     public void processExpiredRequests(LocalDateTime now) {
-        List<Request> expiredRequests = requestRepository.findAllWithUserByExpiredDateBefore(now);
+        List<Request> expiredRequests = requestRepository.findAllWithUserByExpiredDateBefore(now, Status.FULFILLED);
         if (expiredRequests.isEmpty()) return;
 
         for (Request request : expiredRequests) {
