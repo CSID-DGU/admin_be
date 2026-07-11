@@ -34,8 +34,17 @@ public class RequestExpiryService {
         String userName = request.getUser().getName();
         String userEmail = request.getUser().getEmail();
 
-        podService.deletePod(request.getPodName());
-        ubuntuAccountService.deleteUbuntuAccount(ubuntuUsername);
+        try {
+            podService.deletePod(request.getPodName());
+        } catch (Exception e) {
+            log.warn("[deleteExpiredRequest] Pod 삭제 실패, 계속 진행: requestId={}, error={}", requestId, e.getMessage());
+        }
+
+        try {
+            ubuntuAccountService.deleteUbuntuAccount(ubuntuUsername);
+        } catch (Exception e) {
+            log.warn("[deleteExpiredRequest] 우분투 계정 삭제 실패, DB는 DELETED로 업데이트: requestId={}, username={}, error={}", requestId, ubuntuUsername, e.getMessage());
+        }
 
         request.deleteAfterCleanup();
         eventPublisher.publishEvent(new RequestExpiredEvent(userName, userEmail, ubuntuUsername, serverName));
