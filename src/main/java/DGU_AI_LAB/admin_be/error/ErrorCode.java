@@ -142,13 +142,6 @@ public enum ErrorCode {
     POD_CREATION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 생성 API 요청에 실패했습니다."),
     POD_DELETION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 삭제 API 요청에 실패했습니다."),
 
-    /**
-     * Port Request Error
-     */
-    DUPLICATE_PORT_NUMBER(HttpStatus.CONFLICT, "이미 사용 중인 포트 번호입니다."),
-    NO_AVAILABLE_PORT(HttpStatus.CONFLICT, "사용 가능한 포트가 없습니다. (30000-32767 범위)")
-
-
     ;
     private final HttpStatus httpStatus;
     private final String message;
