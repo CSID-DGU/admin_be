@@ -24,7 +24,7 @@ public class WebClientConfig {
                 .build();
 
         HttpClient httpClient = HttpClient.create(provider)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout * 1000)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10_000)
                 .responseTimeout(Duration.ofSeconds(timeout));
 
         return WebClient.builder()
