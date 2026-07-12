@@ -241,7 +241,7 @@ class AdminRequestCommandServiceTest {
     class PodCreationFailureCompensation {
 
         @Test
-        @DisplayName("createPod()가 BusinessException을 던지면 Ubuntu 계정 삭제가 호출된다")
+        @DisplayName("createPod()가 BusinessException을 던지면 Ubuntu 계정 삭제 및 상태 복구가 호출된다")
         void approveRequest_podThrowsBusinessException_compensatesWithAccountDeletion() {
             Long requestId = 10L;
             buildMockedRequest(requestId);
@@ -258,6 +258,8 @@ class AdminRequestCommandServiceTest {
                     .isEqualTo(ErrorCode.POD_CREATION_FAILED);
 
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
+            // requestRepository.findById 재조회 후 revertToPending 호출 검증
+            verify(requestRepository, atLeast(2)).findById(requestId);
         }
 
         @Test
@@ -381,6 +383,17 @@ class AdminRequestCommandServiceTest {
             service.rejectRequest(dto);
 
             verify(request).reject("계정 정책 위반");
+        }
+
+        @Test
+        @DisplayName("PROCESSING 상태 요청도 거절 가능하다 (승인 진행 중 취소)")
+        void rejectRequest_success_whenStatusIsProcessing() {
+            Request request = buildMockedRequestWithStatus(34L, Status.PROCESSING);
+
+            RejectRequestDTO dto = new RejectRequestDTO(34L, "승인 취소");
+            service.rejectRequest(dto);
+
+            verify(request).reject("승인 취소");
         }
 
         @Test

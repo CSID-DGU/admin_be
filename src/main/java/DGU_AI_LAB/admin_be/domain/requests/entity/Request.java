@@ -134,6 +134,14 @@ public class Request extends BaseTimeEntity {
         }
     }
 
+    public void markAsProcessing() {
+        this.status = Status.PROCESSING;
+    }
+
+    public void revertToPending() {
+        this.status = Status.PENDING;
+    }
+
     public void approve(ContainerImage image, ResourceGroup resourceGroup, Long volumeSizeGiB, String adminComment) {
         this.containerImage = image;
         this.resourceGroup = resourceGroup;
