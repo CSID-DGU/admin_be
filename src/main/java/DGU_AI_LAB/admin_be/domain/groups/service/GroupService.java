@@ -15,7 +15,10 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
@@ -34,6 +37,7 @@ public class GroupService {
     private final GroupRepository groupRepository;
     private final RequestRepository requestRepository;
     private final @Qualifier("configWebClient") WebClient groupCreationWebClient;
+    private final PlatformTransactionManager transactionManager;
 
     /**
      * 모든 그룹 정보를 조회하는 API
@@ -56,34 +60,32 @@ public class GroupService {
      * 새로운 그룹을 생성하는 API
      * POST /api/groups
      */
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public GroupResponseDTO createGroup(CreateGroupRequestDTO dto, Long userId) {
 
         log.info("[createGroup] 그룹 생성 요청 시작: groupName={}, ubuntuUsername={}", dto.groupName(), dto.ubuntuUsername());
 
-        // 1. ubuntuUsername이 제공된 경우에만 유효성 검사 (필수 X)
-        if (StringUtils.hasText(dto.ubuntuUsername())) {
-            if (!requestRepository.existsByUbuntuUsernameAndUser_UserId(dto.ubuntuUsername(), userId)) {
-                throw new BusinessException(ErrorCode.FORBIDDEN_REQUEST);
+        // 1. 트랜잭션 안에서 DB 유효성 검사
+        TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
+        txTemplate.executeWithoutResult(status -> {
+            if (StringUtils.hasText(dto.ubuntuUsername())) {
+                if (!requestRepository.existsByUbuntuUsernameAndUser_UserId(dto.ubuntuUsername(), userId)) {
+                    throw new BusinessException(ErrorCode.FORBIDDEN_REQUEST);
+                }
             }
-        }
+            if (groupRepository.existsByGroupName(dto.groupName())) {
+                log.warn("[createGroup] DB에 이미 존재하는 그룹명입니다: {}", dto.groupName());
+                throw new BusinessException(ErrorCode.DUPLICATE_GROUP_NAME);
+            }
+        });
 
-        // 2. DB에서 그룹명 중복을 먼저 확인합니다.
-        if (groupRepository.existsByGroupName(dto.groupName())) {
-            log.warn("[createGroup] DB에 이미 존재하는 그룹명입니다: {}", dto.groupName());
-            throw new BusinessException(ErrorCode.DUPLICATE_GROUP_NAME);
-        }
-
-        // 3. 외부 API 호출을 위한 ubuntuUser 멤버 리스트를 구성합니다.
+        // 2. 트랜잭션 종료 후 외부 API 호출 (커넥션 미점유)
         List<String> members = Optional.ofNullable(dto.ubuntuUsername())
                 .filter(StringUtils::hasText)
                 .map(List::of)
                 .orElse(Collections.emptyList());
 
-        ConfigServerGroupRequest apiDto = new ConfigServerGroupRequest(
-                dto.groupName(),
-                members
-        );
+        ConfigServerGroupRequest apiDto = new ConfigServerGroupRequest(dto.groupName(), members);
 
         ConfigServerGroupResponse apiResponse;
         try {
@@ -143,26 +145,27 @@ public class GroupService {
             throw new BusinessException(ErrorCode.GID_ALLOCATION_FAILED);
         }
 
-        if (groupRepository.existsByUbuntuGid(assignedGid)) {
-            log.warn("[createGroup] DB에 이미 존재하는 GID입니다: {}", assignedGid);
-            throw new BusinessException(ErrorCode.DUPLICATE_GROUP_ID);
-        }
+        // 3. API 성공 후 새 트랜잭션에서 DB 저장
+        final Long finalGid = assignedGid;
+        Group savedGroup = txTemplate.execute(status -> {
+            if (groupRepository.existsByUbuntuGid(finalGid)) {
+                log.warn("[createGroup] DB에 이미 존재하는 GID입니다: {}", finalGid);
+                throw new BusinessException(ErrorCode.DUPLICATE_GROUP_ID);
+            }
+            Group group = Group.builder()
+                    .groupName(dto.groupName())
+                    .ubuntuGid(finalGid)
+                    .build();
+            try {
+                return groupRepository.save(group);
+            } catch (Exception e) {
+                log.error("[createGroup] 인프라에 그룹 생성됨, DB 저장 실패 — 수동 정리 필요: groupName={}, gid={}", dto.groupName(), finalGid, e);
+                throw new BusinessException(ErrorCode.GROUP_CREATION_FAILED);
+            }
+        });
 
-        // 4. API 호출이 성공한 후에만 로컬 DB에 그룹을 저장합니다.
-        Group group = Group.builder()
-                .groupName(dto.groupName())
-                .ubuntuGid(assignedGid)
-                .build();
-
-        try {
-            group = groupRepository.save(group);
-        } catch (Exception e) {
-            log.error("[createGroup] 인프라에 그룹 생성됨, DB 저장 실패 — 수동 정리 필요: groupName={}, gid={}", dto.groupName(), assignedGid, e);
-            throw new BusinessException(ErrorCode.GROUP_CREATION_FAILED);
-        }
-        log.info("[createGroup] 그룹 생성 및 로컬 DB 저장 완료: id={}, name={}", group.getGroupId(), group.getGroupName());
-
-        return GroupResponseDTO.fromEntity(group);
+        log.info("[createGroup] 그룹 생성 및 로컬 DB 저장 완료: id={}, name={}", savedGroup.getGroupId(), savedGroup.getGroupName());
+        return GroupResponseDTO.fromEntity(savedGroup);
     }
 
     // GroupService에서만 사용하는 infra API 요청/응답 DTO입니다. 테스트 검증을 위해 패키지 범위로 둡니다.
