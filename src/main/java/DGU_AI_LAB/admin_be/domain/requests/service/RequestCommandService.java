@@ -66,8 +66,7 @@ public class RequestCommandService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
 
-        User requestedBy = userRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        User requestedBy = originalRequest.getUser();
 
         // 저장공간 크기 변경
         if (dto.requestedVolumeSizeGiB() != null) {
@@ -134,8 +133,7 @@ public class RequestCommandService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
 
-        User requestedBy = userRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        User requestedBy = originalRequest.getUser();
 
         // DTO 팩토리 메서드를 사용하여 검증된 ChangeRequest 생성 및 저장
         ChangeRequest changeRequest = SingleChangeRequestDTO.createValidatedChangeRequest(
