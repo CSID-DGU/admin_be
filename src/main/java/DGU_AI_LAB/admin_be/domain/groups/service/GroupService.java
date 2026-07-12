@@ -44,11 +44,6 @@ public class GroupService {
         log.info("[getAllGroups] 모든 그룹 정보 조회 시작");
         var groups = groupRepository.findAll();
 
-        if (groups.isEmpty()) {
-            log.warn("[getAllGroups] 조회된 그룹 정보가 없습니다.");
-            throw new BusinessException(ErrorCode.NO_AVAILABLE_GROUPS);
-        }
-
         var response = groups.stream()
                 .map(GroupResponseDTO::fromEntity)
                 .toList();

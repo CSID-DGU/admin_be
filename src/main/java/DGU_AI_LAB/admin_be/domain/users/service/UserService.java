@@ -64,22 +64,12 @@ public class UserService {
         String passwordBase64 = dto.passwordBase64();
         log.debug("비밀번호를 확인합니다. username: {}", dto.username());
 
-        // 3. 사용자 및 비밀번호 일치 여부 확인
         Request request = requestRepository.findByUbuntuUsernameAndUbuntuPasswordBase64(dto.username(), passwordBase64)
                 .orElseThrow(() -> {
-                    // 3-1. 사용자 정보를 찾을 수 없을 때의 로그
                     log.warn("사용자 '{}'를 찾을 수 없거나 비밀번호가 일치하지 않습니다.", dto.username());
                     return new UnauthorizedException(ErrorCode.USER_NOT_FOUND);
                 });
 
-        // 4. 추가 비밀번호 일치 확인 (Optional: Optional로 처리되었기 때문에 이중 확인)
-        if (!passwordBase64.equals(request.getUbuntuPasswordBase64())) {
-            // 4-1. 비밀번호 불일치 로그
-            log.error("사용자 '{}'에 대해 데이터베이스 비밀번호와 암호화된 비밀번호가 일치하지 않습니다. (내부 로직 오류 가능성)", dto.username());
-            throw new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO);
-        }
-
-        // 5. 인증 성공 로그
         log.info("사용자 '{}'의 인증이 성공적으로 완료되었습니다.", dto.username());
 
         return new UserAuthResponseDTO(true, request.getUbuntuUsername());

@@ -196,7 +196,6 @@ class UserServiceTest {
 
             Request request = mock(Request.class);
             when(request.getUbuntuUsername()).thenReturn("testuser");
-            when(request.getUbuntuPasswordBase64()).thenReturn(passwordBase64);
             when(requestRepository.findByUbuntuUsernameAndUbuntuPasswordBase64("testuser", passwordBase64))
                     .thenReturn(Optional.of(request));
 

@@ -45,7 +45,7 @@ public class RequestQueryService {
     }
 
     /** 목록 단위 배치 로딩으로 N+1 방지: portRequests, podExternalPorts를 IN절 1회씩 조회 */
-    private List<SaveRequestResponseDTO> toResponseDTOs(List<Request> requests) {
+    List<SaveRequestResponseDTO> toResponseDTOs(List<Request> requests) {
         if (requests.isEmpty()) return List.of();
 
         List<Long> ids = requests.stream().map(Request::getRequestId).toList();
