@@ -81,6 +81,7 @@ public class AdminRequestCommandService {
             if (req.getStatus() != Status.PENDING) {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
             }
+            req.markAsProcessing(); // 다른 관리자의 중복 승인 시도 차단
             usernameRef[0] = req.getUbuntuUsername();
             creationDtoRef[0] = new UserCreationRequestDTO(
                     req.getUbuntuUsername(),
@@ -93,15 +94,23 @@ public class AdminRequestCommandService {
         });
         String username = usernameRef[0];
 
-        // 2. 외부 HTTP 호출 (DB 커넥션 미보유)
-        UserCreationResponse userResponse = callUserCreationApi(creationDtoRef[0]);
+        // 2. 외부 HTTP 호출 (DB 커넥션 미보유, status=PROCESSING으로 중복 승인 차단된 상태)
+        UserCreationResponse userResponse;
+        try {
+            userResponse = callUserCreationApi(creationDtoRef[0]);
+        } catch (Exception e) {
+            log.warn("[보상 트랜잭션] 사용자 생성 실패 → 상태 복구 시작: {}", username);
+            revertRequestToPending(dto.requestId());
+            throw e;
+        }
 
         CreatePodResponseDTO podResponse;
         try {
             podResponse = podService.createPod(username);
         } catch (BusinessException e) {
-            log.warn("[보상 트랜잭션] Pod 생성 실패 → 계정 삭제 시작: {}", username);
+            log.warn("[보상 트랜잭션] Pod 생성 실패 → 계정 삭제 및 상태 복구 시작: {}", username);
             tryCompensateDeleteUser(username);
+            revertRequestToPending(dto.requestId());
             throw e;
         }
 
@@ -202,7 +211,7 @@ public class AdminRequestCommandService {
     public SaveRequestResponseDTO rejectRequest(RejectRequestDTO dto) {
         Request request = requestRepository.findById(dto.requestId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        if (!(request.getStatus() == Status.PENDING || request.getStatus() == Status.FULFILLED)) {
+        if (!(request.getStatus() == Status.PENDING || request.getStatus() == Status.PROCESSING || request.getStatus() == Status.FULFILLED)) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
         request.reject(dto.adminComment());
@@ -288,7 +297,19 @@ public class AdminRequestCommandService {
         changeRequest.approve(admin, dto.adminComment());
     }
 
-    // ── 보상 트랜잭션 헬퍼 ──────────────────────────────────────────────
+    // ── 보상 트랜잭션 헬퍼 ─────────────────────────────────────────────
+
+    private void revertRequestToPending(Long requestId) {
+        try {
+            new TransactionTemplate(transactionManager).execute(status -> {
+                requestRepository.findById(requestId).ifPresent(Request::revertToPending);
+                return null;
+            });
+            log.info("[보상 트랜잭션 완료] 요청 상태 PENDING 복구: requestId={}", requestId);
+        } catch (Exception e) {
+            log.error("[보상 트랜잭션 실패] 요청 상태 복구 실패 — 수동 확인 필요: requestId={}", requestId, e);
+        }
+    }
 
     private void tryCompensateDeleteUser(String username) {
         try {
