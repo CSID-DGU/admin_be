@@ -36,6 +36,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
@@ -65,6 +67,8 @@ class AdminRequestCommandServiceTest {
     @Mock private PodService podService;
     @Mock private UbuntuAccountService ubuntuAccountService;
     @Mock private WebClient mockWebClient;
+    @Mock private PlatformTransactionManager transactionManager;
+    @Mock private TransactionStatus transactionStatus;
 
     // WebClient 체이닝 mock
     @Mock private WebClient.RequestBodyUriSpec putUriSpec;
@@ -81,12 +85,14 @@ class AdminRequestCommandServiceTest {
 
     @BeforeEach
     void setUp() {
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
+
         // @RequiredArgsConstructor 생성자 필드 선언 순서대로 주입
         service = new AdminRequestCommandService(
                 alarmService, requestRepository, userRepository, containerImageRepository,
                 resourceGroupRepository, changeRequestRepository,
                 groupRepository, podExternalPortRepository, podService, ubuntuAccountService, new ObjectMapper(),
-                mockWebClient
+                mockWebClient, transactionManager
         );
         // 공유 엔티티 기본 설정
         when(mockUser.getName()).thenReturn("테스트유저");

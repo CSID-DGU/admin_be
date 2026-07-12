@@ -4,14 +4,10 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
 import jakarta.persistence.*;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import lombok.*;
 
 @Entity
-@Table(name = "port_requests", uniqueConstraints = {
-        @UniqueConstraint(columnNames = {"port_number", "rsgroup_id"})
-})
+@Table(name = "port_requests")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PortRequests extends BaseTimeEntity {
@@ -21,14 +17,7 @@ public class PortRequests extends BaseTimeEntity {
     @Column(name = "port_request_id")
     private Long portRequestId;
 
-    @Column(name = "port_number", nullable = false)
-    @Min(1)
-    @Max(65535)
-    private Integer portNumber;
-
     @Column(name = "internal_port", nullable = false)
-    @Min(1)
-    @Max(65535)
     private Integer internalPort;
 
     @Column(name = "usage_purpose", nullable = false, length = 1000)
@@ -46,8 +35,7 @@ public class PortRequests extends BaseTimeEntity {
     private ResourceGroup resourceGroup;
 
     @Builder
-    public PortRequests(Integer portNumber, Integer internalPort, String usagePurpose, Request request, ResourceGroup resourceGroup) {
-        this.portNumber = portNumber;
+    public PortRequests(Integer internalPort, String usagePurpose, Request request, ResourceGroup resourceGroup) {
         this.internalPort = internalPort;
         this.usagePurpose = usagePurpose;
         this.request = request;

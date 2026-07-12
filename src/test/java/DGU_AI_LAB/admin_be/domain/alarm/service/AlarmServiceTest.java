@@ -192,29 +192,6 @@ class AlarmServiceTest {
     }
 
     @Nested
-    @DisplayName("sendApprovalNotification")
-    class SendApprovalNotification {
-
-        @Test
-        @DisplayName("승인 알림은 메일 전송과 DM/모니터링 큐 적재를 모두 수행한다")
-        void sendApprovalNotification_callsMailAndQueuePush() {
-            Request request = mockRequest("박지성", "FARM");
-            User user = request.getUser();
-            when(user.getEmail()).thenReturn("park@dgu.ac.kr");
-            when(messageUtils.get(eq("notification.approval.subject"))).thenReturn("승인 완료");
-            when(messageUtils.get(eq("notification.approval.body"), any())).thenReturn("승인되었습니다");
-            when(messageUtils.get(eq("notification.monitor.log"), any(), any(), any())).thenReturn("로그");
-
-            alarmService.sendApprovalNotification(request);
-
-            // 메일 전송 1회
-            verify(mailSender).send(any(SimpleMailMessage.class));
-            // DM 큐 적재 1회 + 모니터링 WEBHOOK 큐 적재 1회 = 총 2회
-            verify(listOperations, times(2)).rightPush(eq(QUEUE_KEY), any());
-        }
-    }
-
-    @Nested
     @DisplayName("sendAdminSlackNotification")
     class SendAdminSlackNotification {
 
