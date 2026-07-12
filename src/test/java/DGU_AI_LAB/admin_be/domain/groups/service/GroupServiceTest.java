@@ -59,12 +59,13 @@ class GroupServiceTest {
         }
 
         @Test
-        @DisplayName("그룹이 없으면 BusinessException을 던진다")
-        void getAllGroups_throwsException_whenEmpty() {
+        @DisplayName("그룹이 없으면 빈 리스트를 반환한다")
+        void getAllGroups_returnsEmptyList_whenNoGroups() {
             when(groupRepository.findAll()).thenReturn(List.of());
 
-            assertThatThrownBy(() -> groupService.getAllGroups())
-                    .isInstanceOf(BusinessException.class);
+            List<GroupResponseDTO> result = groupService.getAllGroups();
+
+            assertThat(result).isEmpty();
         }
     }
 
