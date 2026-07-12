@@ -179,7 +179,6 @@ class RequestCommandServiceTest {
             when(request.getUser()).thenReturn(owner);
             when(request.getStatus()).thenReturn(Status.FULFILLED);
             when(requestRepository.findById(12L)).thenReturn(Optional.of(request));
-            when(userRepository.findById(1L)).thenReturn(Optional.empty());
 
             // dto stubs 불필요 - userRepository.findById 에서 이미 예외 발생
             ModifyRequestDTO dto = mock(ModifyRequestDTO.class);
