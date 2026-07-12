@@ -29,6 +29,15 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     @Query("SELECT r.ubuntuUsername FROM Request r WHERE r.status = :status")
     List<String> findUbuntuUsernamesByStatus(@Param("status") Status status);
 
+    @Query("SELECT DISTINCT r FROM Request r " +
+           "JOIN FETCH r.user " +
+           "LEFT JOIN FETCH r.resourceGroup " +
+           "LEFT JOIN FETCH r.containerImage " +
+           "LEFT JOIN FETCH r.requestGroups rg " +
+           "LEFT JOIN FETCH rg.group " +
+           "WHERE r.status = :status")
+    List<Request> findAllByStatusWithAssociations(@Param("status") Status status);
+
     @Query("SELECT r FROM Request r JOIN FETCH r.user JOIN FETCH r.resourceGroup WHERE r.expiresAt BETWEEN :start AND :end AND r.status = :status")
     List<Request> findAllByExpiresAtBetweenAndStatus(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end, @Param("status") Status status);
 

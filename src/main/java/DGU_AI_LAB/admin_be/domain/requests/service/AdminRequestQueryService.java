@@ -35,13 +35,13 @@ public class AdminRequestQueryService {
     }
 
     public List<ResourceUsageDTO> getAllFulfilledResourceUsage() {
-        return requestRepository.findAllByStatus(Status.FULFILLED).stream()
+        return requestRepository.findAllByStatusWithAssociations(Status.FULFILLED).stream()
                 .map(ResourceUsageDTO::fromEntity)
                 .toList();
     }
 
     public List<ContainerInfoDTO> getAllActiveContainers() {
-        return requestRepository.findAllByStatus(Status.FULFILLED).stream()
+        return requestRepository.findAllByStatusWithAssociations(Status.FULFILLED).stream()
                 .map(ContainerInfoDTO::fromEntity)
                 .toList();
     }
