@@ -35,7 +35,10 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
@@ -63,28 +66,97 @@ public class AdminRequestCommandService {
     private final ObjectMapper objectMapper;
 
     private final @Qualifier("configWebClient") WebClient userCreationWebClient;
+    private final PlatformTransactionManager transactionManager;
 
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SaveRequestResponseDTO approveRequest(ApproveRequestDTO dto) {
-        Request request = requestRepository.findById(dto.requestId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        if (request.getStatus() != Status.PENDING) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
-        }
-        // 1. 사용자 생성 API 호출
-        UserCreationRequestDTO userCreationDto = new UserCreationRequestDTO(
-                request.getUbuntuUsername(),
-                request.getUbuntuPasswordBase64(),
-                request.getUser().getName(),
-                request.getUbuntuUsername(), // primary_group_name = username (Linux 관례)
-                false
-        );
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
 
-        UserCreationResponse userResponse;
+        // 1. 상태 검증 + HTTP 요청 데이터 추출 (짧은 트랜잭션, 이후 커넥션 반납)
+        final UserCreationRequestDTO[] creationDtoRef = {null};
+        final String[] usernameRef = {null};
+        tx.execute(status -> {
+            Request req = requestRepository.findById(dto.requestId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+            if (req.getStatus() != Status.PENDING) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+            }
+            usernameRef[0] = req.getUbuntuUsername();
+            creationDtoRef[0] = new UserCreationRequestDTO(
+                    req.getUbuntuUsername(),
+                    req.getUbuntuPasswordBase64(),
+                    req.getUser().getName(),
+                    req.getUbuntuUsername(),
+                    false
+            );
+            return null;
+        });
+        String username = usernameRef[0];
+
+        // 2. 외부 HTTP 호출 (DB 커넥션 미보유)
+        UserCreationResponse userResponse = callUserCreationApi(creationDtoRef[0]);
+
+        CreatePodResponseDTO podResponse;
+        try {
+            podResponse = podService.createPod(username);
+        } catch (BusinessException e) {
+            log.warn("[보상 트랜잭션] Pod 생성 실패 → 계정 삭제 시작: {}", username);
+            tryCompensateDeleteUser(username);
+            throw e;
+        }
+
+        final CreatePodResponseDTO finalPodResponse = podResponse;
+        final UserCreationResponse finalUserResponse = userResponse;
+
+        // 3. DB 저장 (새 트랜잭션, HTTP 완료 후 짧게만 커넥션 보유)
+        final Request[] savedRequestRef = {null};
+        try {
+            tx.execute(status -> {
+                Request req = requestRepository.findById(dto.requestId())
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                ContainerImage image = containerImageRepository.findById(dto.imageId())
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                req.assignUbuntuIds(finalUserResponse.uid(), finalUserResponse.gid());
+                req.approve(image, rg, dto.volumeSizeGiB(), dto.adminComment());
+                req.assignPodInfo(finalPodResponse.podName(), finalPodResponse.node());
+                for (CreatePodResponseDTO.PortInfo port : finalPodResponse.ports()) {
+                    podExternalPortRepository.save(PodExternalPort.builder()
+                            .request(req)
+                            .internalPort(port.internalPort())
+                            .externalPort(port.externalPort())
+                            .usagePurpose(port.usagePurpose())
+                            .build());
+                }
+                req.getUser().getEmail(); // lazy 연관 초기화 (트랜잭션 종료 후 이메일 발송 시 필요)
+                savedRequestRef[0] = req;
+                return null;
+            });
+        } catch (Exception e) {
+            log.error("[보상 트랜잭션] DB 업데이트 실패 → 전체 infra 리소스 삭제 시작: {}", username, e);
+            tryCompensateAll(username, finalPodResponse.podName());
+            throw e;
+        }
+
+        // 4. 이메일 발송 (트랜잭션 종료 후, 실패해도 Pod·계정은 이미 생성됨)
+        Request savedRequest = savedRequestRef[0];
+        try {
+            String sshPort = extractExternalPort(finalPodResponse, "ssh");
+            String jupyterPort = extractExternalPort(finalPodResponse, "jupyter");
+            alarmService.sendContainerCreatedEmail(savedRequest, sshPort, jupyterPort);
+            log.info("사용자 '{}'에게 컨테이너 배정 안내 메일을 발송했습니다.", savedRequest.getUser().getName());
+        } catch (Exception e) {
+            log.warn("사용자 '{}'에게 배정 안내 메일 발송 실패. (RequestId: {})",
+                    savedRequest.getUser().getName(), savedRequest.getRequestId(), e);
+        }
+        return SaveRequestResponseDTO.fromEntity(savedRequest);
+    }
+
+    private UserCreationResponse callUserCreationApi(UserCreationRequestDTO userCreationDto) {
         try {
             log.info("사용자 생성 API 호출 시작: {}", userCreationDto.username());
-
-            userResponse = userCreationWebClient.put()
+            UserCreationResponse userResponse = userCreationWebClient.put()
                     .uri("/accounts/users")
                     .bodyValue(userCreationDto)
                     .retrieve()
@@ -104,66 +176,18 @@ public class AdminRequestCommandService {
                     )
                     .bodyToMono(UserCreationResponse.class)
                     .block();
-
             log.info("사용자 생성 성공: {}", userResponse);
             if (userResponse == null || userResponse.uid() == null || userResponse.gid() == null) {
                 log.error("사용자 생성 API 응답에 UID/GID가 없습니다: {}", userResponse);
                 throw new BusinessException(ErrorCode.UID_ALLOCATION_FAILED);
             }
+            return userResponse;
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
             log.error("사용자 생성 API 호출 중 예기치 않은 오류 발생.", e);
             throw new BusinessException(ErrorCode.USER_CREATION_FAILED);
         }
-
-        String username = request.getUbuntuUsername();
-
-        // 2. Pod 생성 API 호출
-        CreatePodResponseDTO podResponse;
-        try {
-            podResponse = podService.createPod(username);
-        } catch (BusinessException e) {
-            log.warn("[보상 트랜잭션] Pod 생성 실패 → 계정 삭제 시작: {}", username);
-            tryCompensateDeleteUser(username);
-            throw e;
-        }
-
-        // 3. API 호출이 모두 성공한 후에 DB 업데이트
-        try {
-            ContainerImage image = containerImageRepository.findById(dto.imageId())
-                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-            ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
-                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-            request.assignUbuntuIds(userResponse.uid(), userResponse.gid());
-            request.approve(image, rg, dto.volumeSizeGiB(), dto.adminComment());
-            request.assignPodInfo(podResponse.podName(), podResponse.node());
-            for (CreatePodResponseDTO.PortInfo port : podResponse.ports()) {
-                podExternalPortRepository.save(PodExternalPort.builder()
-                        .request(request)
-                        .internalPort(port.internalPort())
-                        .externalPort(port.externalPort())
-                        .usagePurpose(port.usagePurpose())
-                        .build());
-            }
-        } catch (Exception e) {
-            log.error("[보상 트랜잭션] DB 업데이트 실패 → 전체 infra 리소스 삭제 시작: {}", username, e);
-            tryCompensateAll(username, podResponse.podName());
-            throw e;
-        }
-        // requestRepository.flush();
-
-        // 5. 사용자에게 컨테이너 배정 안내 메일 발송 (접속 정보 포함)
-        try {
-            String sshPort = extractExternalPort(podResponse, "ssh");
-            String jupyterPort = extractExternalPort(podResponse, "jupyter");
-            alarmService.sendContainerCreatedEmail(request, sshPort, jupyterPort);
-            log.info("사용자 '{}'에게 컨테이너 배정 안내 메일을 발송했습니다.", request.getUser().getName());
-        } catch (Exception e) {
-            log.warn("사용자 '{}'에게 배정 안내 메일 발송 실패. (RequestId: {})",
-                    request.getUser().getName(), request.getRequestId(), e);
-        }
-        return SaveRequestResponseDTO.fromEntity(request);
     }
 
     /** podResponse 포트 목록에서 usage_purpose가 일치하는 첫 외부 포트(문자열). 없으면 "". */
