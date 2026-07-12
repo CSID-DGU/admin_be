@@ -11,3 +11,6 @@ service:
   nodePort: 30083 # 외부 접속용 Port
 
 forceReload: "" # CI/CD에서 동적으로 넣어주는 값
+
+args:
+  - --config.base-url=http://containerssh-config-service.ailab-infra.svc.cluster.local:80
