@@ -18,7 +18,9 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import lombok.Builder;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -78,12 +80,15 @@ public record SaveRequestRequestDTO(
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
 
+        // 클라이언트는 base64 인코딩된 값을 전송 — 평문은 디코딩해서 이메일 발송용으로 따로 보관
+        String plainPassword = new String(Base64.getDecoder().decode(ubuntuPasswordBase64), StandardCharsets.UTF_8);
+
         Request req = Request.builder()
                 .user(user)
                 .resourceGroup(resourceGroup)
                 .containerImage(image)
                 .ubuntuUsername(ubuntuUsername)
-                .ubuntuPassword(ubuntuPasswordBase64)
+                .ubuntuPassword(plainPassword)
                 .ubuntuPasswordBase64(ubuntuPasswordBase64)
                 .volumeSizeGiB(volumeSizeGiB)
                 .usagePurpose(usagePurpose)
