@@ -23,7 +23,9 @@ public record AcceptInfoResponseDTO(
         @Schema(description = "GPU 노드 목록")
         List<GpuNodeDTO> gpu_nodes,
         @Schema(description = "추가 포트 목록")
-        List<AdditionalPortDTO> additional_ports
+        List<AdditionalPortDTO> additional_ports,
+        @Schema(description = "Base64 인코딩된 초기 비밀번호")
+        String passwd_base64
 ) {
     @Schema(description = "그룹 정보")
     @Builder
@@ -89,6 +91,7 @@ public record AcceptInfoResponseDTO(
                 .volume_size(request.getVolumeSizeGiB())
                 .gpu_nodes(gpuNodeDTOList)
                 .additional_ports(additionalPortDTOList)
+                .passwd_base64(request.getUbuntuPasswordBase64())
                 .build();
     }
 }
