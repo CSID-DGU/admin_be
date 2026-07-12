@@ -129,7 +129,11 @@ public class AdminRequestCommandService {
                             .usagePurpose(port.usagePurpose())
                             .build());
                 }
-                req.getUser().getEmail(); // lazy 연관 초기화 (트랜잭션 종료 후 이메일 발송 시 필요)
+                // 트랜잭션 종료 후 사용되는 모든 lazy 연관 초기화
+                req.getUser().getEmail();
+                req.getContainerImage().getImageName();
+                req.getResourceGroup().getServerName();
+                req.getRequestGroups().size();
                 savedRequestRef[0] = req;
                 return null;
             });
