@@ -3,7 +3,6 @@ package DGU_AI_LAB.admin_be.domain.requests.dto.request;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
-import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;

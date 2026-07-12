@@ -53,10 +53,14 @@ public class MessageTemplateService {
         Map<String, MessageTemplate> overrides = new HashMap<>();
         repository.findAll().forEach(t -> overrides.put(t.getKey(), t));
 
-        // 3. 기본값 기준으로 순회하면서 DB 오버라이드와 머지
+        // 3. properties 키 ∪ DB 키 순회 — properties에 없고 DB에만 있는 키(email.*)도 노출.
+        //    (기존엔 properties 키만 돌아서 DB 전용 키가 누락됐음.) TreeSet이라 자동 정렬.
+        Set<String> allKeys = new TreeSet<>(defaults.stringPropertyNames());
+        allKeys.addAll(overrides.keySet());
+
         List<TemplateView> result = new ArrayList<>();
-        for (String key : defaults.stringPropertyNames()) {
-            String def = defaults.getProperty(key);
+        for (String key : allKeys) {
+            String def = defaults.getProperty(key);            // DB 전용 키면 null
             MessageTemplate override = overrides.get(key);
             result.add(new TemplateView(
                     key, def,
@@ -64,8 +68,6 @@ public class MessageTemplateService {
                     override != null                                // DB에 row가 있는지 여부
             ));
         }
-        // ponytail스킬: O(n) scan, ~20개 템플릿이라 정렬 비용 무시 가능
-        result.sort(Comparator.comparing(TemplateView::key));
         return result;
     }
 
