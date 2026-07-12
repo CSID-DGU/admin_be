@@ -80,7 +80,12 @@ public record SaveRequestRequestDTO(
         }
 
         // 클라이언트는 base64 인코딩된 값을 전송 — 평문은 디코딩해서 이메일 발송용으로 따로 보관
-        String plainPassword = new String(Base64.getDecoder().decode(ubuntuPasswordBase64), StandardCharsets.UTF_8);
+        String plainPassword;
+        try {
+            plainPassword = new String(Base64.getDecoder().decode(ubuntuPasswordBase64), StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
 
         Request req = Request.builder()
                 .user(user)
