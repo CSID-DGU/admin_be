@@ -26,7 +26,7 @@ public class PodController implements PodApi {
     @GetMapping
     public List<String> getPods() {
         return client.pods()
-                .inNamespace("default")
+                .inNamespace("ailab-infra")
                 .list()
                 .getItems()
                 .stream()
@@ -38,7 +38,7 @@ public class PodController implements PodApi {
     @GetMapping("/{podName}")
     public PodResponseDTO getPodDetail(@PathVariable String podName) {
         Pod pod = client.pods()
-                .inNamespace("default")
+                .inNamespace("ailab-infra")
                 .withName(podName)
                 .get();
 
