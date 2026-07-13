@@ -19,8 +19,7 @@ public record ApproveRequestDTO(
         @NotNull(message = "리소스 그룹 ID는 필수로 입력해야 합니다.")
         Integer resourceGroupId,
 
-        @Schema(description = "할당할 볼륨 크기 (GiB)", example = "20")
-        @NotNull(message = "볼륨 크기는 필수로 입력해야 합니다.")
+        @Schema(description = "할당할 볼륨 크기 (GiB, null이면 신청 시 값 유지)", example = "20")
         @Positive(message = "볼륨 크기는 양수여야 합니다.")
         Long volumeSizeGiB,
 

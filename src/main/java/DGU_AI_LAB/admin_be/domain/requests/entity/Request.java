@@ -145,7 +145,9 @@ public class Request extends BaseTimeEntity {
     public void approve(ContainerImage image, ResourceGroup resourceGroup, Long volumeSizeGiB, String adminComment) {
         this.containerImage = image;
         this.resourceGroup = resourceGroup;
-        this.volumeSizeGiB = volumeSizeGiB;
+        if (volumeSizeGiB != null) {
+            this.volumeSizeGiB = volumeSizeGiB;
+        }
         this.status = Status.FULFILLED;
         this.approvedAt = LocalDateTime.now();
 
