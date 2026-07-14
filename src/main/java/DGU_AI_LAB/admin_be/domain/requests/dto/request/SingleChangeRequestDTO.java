@@ -46,11 +46,17 @@ public record SingleChangeRequestDTO(
         try {
             String oldValue = extractOldValue(originalRequest, dto.changeType(), objectMapper, portRequestService);
 
+            // new_value는 MySQL json 컬럼이고 승인 로직은 readValue(String.class)로 읽는다.
+            // EXPIRES_AT의 생 날짜 문자열은 유효한 JSON이 아니므로 저장 직전에 JSON 인코딩한다. (#367)
+            String storedNewValue = dto.changeType() == ChangeType.EXPIRES_AT
+                    ? objectMapper.writeValueAsString(dto.newValue().trim())
+                    : dto.newValue();
+
             return ChangeRequest.builder()
                     .request(originalRequest)
                     .changeType(dto.changeType())
                     .oldValue(oldValue)
-                    .newValue(dto.newValue())
+                    .newValue(storedNewValue)
                     .reason(dto.reason())
                     .requestedBy(requestedBy)
                     .build();
