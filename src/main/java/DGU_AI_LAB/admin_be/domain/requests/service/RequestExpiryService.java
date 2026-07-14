@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
+import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -12,6 +14,9 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -20,6 +25,7 @@ public class RequestExpiryService {
     private final RequestRepository requestRepository;
     private final UbuntuAccountService ubuntuAccountService;
     private final PodService podService;
+    private final PodExternalPortRepository podExternalPortRepository;
     private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
@@ -33,6 +39,14 @@ public class RequestExpiryService {
         String ubuntuUsername = request.getUbuntuUsername();
         String userName = request.getUser().getName();
         String userEmail = request.getUser().getEmail();
+        String podName = request.getPodName();
+        String expiresAt = request.getExpiresAt() != null ? request.getExpiresAt().toLocalDate().toString() : "";
+
+        List<PodExternalPort> ports = podExternalPortRepository.findByRequestRequestId(requestId);
+        String portSummary = ports.isEmpty() ? "없음"
+                : ports.stream()
+                        .map(p -> p.getUsagePurpose() + "(" + p.getExternalPort() + ")")
+                        .collect(Collectors.joining(", "));
 
         try {
             podService.deletePod(request.getPodName());
@@ -47,7 +61,7 @@ public class RequestExpiryService {
         }
 
         request.deleteAfterCleanup();
-        eventPublisher.publishEvent(new RequestExpiredEvent(userName, userEmail, ubuntuUsername, serverName));
+        eventPublisher.publishEvent(new RequestExpiredEvent(userName, userEmail, ubuntuUsername, serverName, podName, portSummary, expiresAt));
         log.info("삭제 트랜잭션 성공: {}", ubuntuUsername);
     }
 }

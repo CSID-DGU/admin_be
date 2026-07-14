@@ -129,10 +129,14 @@ public class RequestSchedulerServiceTest {
 
         // [이벤트 리스너 검증] -> 삭제 완료 알림 (MessageUtils 사용 검증)
         // subject: notification.expired.detail.subject
-        // body: notification.expired.detail.body ({0}이름, {1}서버, {2}계정)
+        // body: notification.expired.detail.body ({0}이름, {1}서버, {2}계정, {3}컨테이너, {4}포트, {5}만료일)
+        // 테스트 요청은 podName 미설정(null), 포트 없음("없음")
         String expectedDelSubject = messageUtils.get("notification.expired.detail.subject");
         String expectedDelBody = messageUtils.get("notification.expired.detail.body",
-                testUser.getName(), "FARM-01", "user-expired");
+                testUser.getName(), "FARM-01", "user-expired",
+                reqExpired.getPodName(),
+                "없음",
+                reqExpired.getExpiresAt().toLocalDate().toString());
 
         verify(alarmService).sendAllAlerts(
                 eq(testUser.getName()),

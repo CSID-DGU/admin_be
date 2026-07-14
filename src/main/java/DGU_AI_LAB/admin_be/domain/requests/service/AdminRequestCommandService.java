@@ -255,6 +255,7 @@ public class AdminRequestCommandService {
         }
 
         LocalDateTime pendingExpiresAt = null;
+        LocalDateTime pendingOldExpiresAt = null;
         try {
             switch (changeRequest.getChangeType()) {
                 case VOLUME_SIZE:
@@ -264,6 +265,7 @@ public class AdminRequestCommandService {
                     break;
                 case EXPIRES_AT:
                     LocalDateTime newExpiresAt = LocalDateTime.parse(objectMapper.readValue(changeRequest.getNewValue(), String.class));
+                    pendingOldExpiresAt = originalRequest.getExpiresAt();
                     originalRequest.updateExpiresAt(newExpiresAt);
                     pendingExpiresAt = newExpiresAt;
                     break;
@@ -304,7 +306,7 @@ public class AdminRequestCommandService {
 
         if (pendingExpiresAt != null) {
             try {
-                alarmService.sendContainerExtendedEmail(originalRequest, pendingExpiresAt);
+                alarmService.sendContainerExtendedEmail(originalRequest, pendingOldExpiresAt, pendingExpiresAt);
                 log.info("사용자 '{}'에게 기간 연장 안내 메일을 발송했습니다.", originalRequest.getUser().getName());
             } catch (Exception e) {
                 log.warn("기간 연장 안내 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e);
