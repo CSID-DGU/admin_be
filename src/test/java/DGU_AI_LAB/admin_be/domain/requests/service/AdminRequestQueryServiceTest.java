@@ -90,7 +90,7 @@ class AdminRequestQueryServiceTest {
         @Test
         @DisplayName("FULFILLED 상태 요청들의 리소스 사용량을 반환한다")
         void getAllFulfilledResourceUsage_returnsList() {
-            when(requestRepository.findAllByStatus(Status.FULFILLED)).thenReturn(List.of());
+            when(requestRepository.findAllByStatusWithAssociations(Status.FULFILLED)).thenReturn(List.of());
 
             List<ResourceUsageDTO> result = adminRequestQueryService.getAllFulfilledResourceUsage();
 
@@ -105,7 +105,7 @@ class AdminRequestQueryServiceTest {
         @Test
         @DisplayName("FULFILLED 상태 요청들의 컨테이너 정보를 반환한다")
         void getAllActiveContainers_returnsList() {
-            when(requestRepository.findAllByStatus(Status.FULFILLED)).thenReturn(List.of());
+            when(requestRepository.findAllByStatusWithAssociations(Status.FULFILLED)).thenReturn(List.of());
 
             List<ContainerInfoDTO> result = adminRequestQueryService.getAllActiveContainers();
 

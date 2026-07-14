@@ -4,5 +4,8 @@ public record RequestExpiredEvent(
         String userName,
         String userEmail,
         String ubuntuUsername,
-        String serverName
+        String serverName,
+        String podName,
+        String portSummary,
+        String expiresAt
 ) {}

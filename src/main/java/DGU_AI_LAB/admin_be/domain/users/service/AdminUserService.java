@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -10,6 +11,7 @@ import DGU_AI_LAB.admin_be.domain.users.dto.response.UserSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.ConflictException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +29,7 @@ public class AdminUserService {
     private final UserRepository userRepository;
     private final RequestRepository requestRepository;
     private final UbuntuAccountService ubuntuAccountService;
+    private final AlarmService alarmService;
 
     /**
      * 전체 유저 조회
@@ -59,6 +62,11 @@ public class AdminUserService {
                 ubuntuAccountService.deleteUbuntuAccount(request.getUbuntuUsername());
                 request.deleteAfterCleanup();
                 requestRepository.save(request);
+                try {
+                    alarmService.sendContainerDeletedEmail(request);
+                } catch (Exception e) {
+                    log.warn("[deleteUser] 삭제 안내 메일 발송 실패: ubuntuUsername={}", request.getUbuntuUsername(), e);
+                }
             } else if (request.getStatus() != Status.DELETED) {
                 request.delete();
             }
@@ -91,6 +99,30 @@ public class AdminUserService {
         request.deleteAfterCleanup();
         requestRepository.save(request);
         log.info("[deleteUbuntuAccount] {} 계정 삭제 및 DB 상태 업데이트 완료", username);
+        try {
+            alarmService.sendContainerDeletedEmail(request);
+        } catch (Exception e) {
+            log.warn("[deleteUbuntuAccount] 삭제 안내 메일 발송 실패: ubuntuUsername={}", username, e);
+        }
+    }
+
+    /**
+     * 비활성화된 유저 재활성화
+     */
+    @Transactional
+    public UserSummaryDTO reactivateUser(Long userId) {
+        log.info("[reactivateUser] userId={} 재활성화 시도", userId);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
+
+        if (user.getIsActive()) {
+            log.warn("[reactivateUser] userId={} 이미 활성화 상태", userId);
+            throw new ConflictException(ErrorCode.USER_ALREADY_ACTIVE);
+        }
+
+        user.reactivate();
+        log.info("[reactivateUser] userId={} 재활성화 완료", userId);
+        return UserSummaryDTO.fromEntity(user);
     }
 
     /**

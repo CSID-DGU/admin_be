@@ -520,10 +520,14 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
-        @DisplayName("EXPIRES_AT 변경 요청 승인 시 originalRequest.updateExpiresAt()가 호출된다")
+        @DisplayName("EXPIRES_AT 변경 요청 승인 시 이전 만료일 캡처 후 updateExpiresAt()가 호출된다")
         void approveModification_expiresAt_success() throws Exception {
+            LocalDateTime oldExpiry = LocalDateTime.of(2026, 6, 30, 23, 59, 59);
+            LocalDateTime newExpiry = LocalDateTime.of(2027, 12, 31, 23, 59, 59);
+
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             Request originalRequest = buildMockedRequestWithStatus(21L, Status.FULFILLED);
+            when(originalRequest.getExpiresAt()).thenReturn(oldExpiry);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
             when(changeRequest.getChangeType()).thenReturn(ChangeType.EXPIRES_AT);
             when(changeRequest.getNewValue()).thenReturn("\"2027-12-31T23:59:59\"");
@@ -536,8 +540,9 @@ class AdminRequestCommandServiceTest {
 
             ArgumentCaptor<LocalDateTime> captor = ArgumentCaptor.forClass(LocalDateTime.class);
             verify(originalRequest).updateExpiresAt(captor.capture());
-            assertThat(captor.getValue()).isEqualTo(LocalDateTime.of(2027, 12, 31, 23, 59, 59));
+            assertThat(captor.getValue()).isEqualTo(newExpiry);
             verify(changeRequest).approve(mockUser, "기간 연장 승인");
+            verify(alarmService).sendContainerExtendedEmail(eq(originalRequest), eq(oldExpiry), eq(newExpiry));
         }
 
         @Test

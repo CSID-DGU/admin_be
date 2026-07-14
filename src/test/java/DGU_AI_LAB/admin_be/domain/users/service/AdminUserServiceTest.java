@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
@@ -11,6 +12,8 @@ import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.ConflictException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -43,6 +46,9 @@ class AdminUserServiceTest {
 
     @Mock
     private UbuntuAccountService ubuntuAccountService;
+
+    @Mock
+    private AlarmService alarmService;
 
     private User mockUser;
 
@@ -158,6 +164,7 @@ class AdminUserServiceTest {
 
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
             verify(fulfilledRequest).deleteAfterCleanup();
+            verify(alarmService).sendContainerDeletedEmail(fulfilledRequest);
             assertThat(mockUser.getIsActive()).isFalse();
         }
 
@@ -212,9 +219,47 @@ class AdminUserServiceTest {
 
             verify(ubuntuAccountService).deleteUbuntuAccount("fuser");
             verify(fulfilled).deleteAfterCleanup();
+            verify(alarmService).sendContainerDeletedEmail(fulfilled);
             verify(pending).delete();
             verify(deleted, never()).delete();
             verify(deleted, never()).deleteAfterCleanup();
+        }
+    }
+
+    @Nested
+    @DisplayName("reactivateUser")
+    class ReactivateUser {
+
+        @Test
+        @DisplayName("비활성화된 유저를 재활성화하면 isActive가 true, deletedAt이 null이 된다")
+        void reactivateUser_success() {
+            mockUser.withdraw();
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+
+            UserSummaryDTO result = adminUserService.reactivateUser(1L);
+
+            assertThat(mockUser.getIsActive()).isTrue();
+            assertThat(mockUser.getDeletedAt()).isNull();
+            assertThat(result.isActive()).isTrue();
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 유저면 EntityNotFoundException을 던진다")
+        void reactivateUser_throwsWhenUserNotFound() {
+            when(userRepository.findById(99L)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> adminUserService.reactivateUser(99L))
+                    .isInstanceOf(EntityNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("이미 활성화된 유저면 ConflictException을 던진다")
+        void reactivateUser_throwsWhenAlreadyActive() {
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+
+            assertThatThrownBy(() -> adminUserService.reactivateUser(1L))
+                    .isInstanceOf(ConflictException.class)
+                    .hasMessageContaining(ErrorCode.USER_ALREADY_ACTIVE.getMessage());
         }
     }
 
@@ -260,6 +305,7 @@ class AdminUserServiceTest {
 
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
             assertThat(request.getStatus()).isEqualTo(Status.DELETED);
+            verify(alarmService).sendContainerDeletedEmail(request);
         }
 
         @Test

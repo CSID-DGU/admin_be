@@ -5,6 +5,7 @@ import DGU_AI_LAB.admin_be.domain.users.dto.response.UserSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.service.AdminUserService;
 import DGU_AI_LAB.admin_be.domain.users.service.UserService;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.ConflictException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import DGU_AI_LAB.admin_be.support.WebMvcTestSupport;
 import org.junit.jupiter.api.DisplayName;
@@ -108,6 +109,49 @@ class AdminUserControllerTest extends WebMvcTestSupport {
 
             mockMvc.perform(delete("/api/admin/users/99").contentType(MediaType.APPLICATION_JSON))
                     .andExpect(status().isNotFound());
+        }
+    }
+
+    @Nested
+    @DisplayName("PATCH /api/admin/users/{id}/reactivate")
+    class ReactivateUser {
+
+        private final UserSummaryDTO reactivatedUser = UserSummaryDTO.builder()
+                .userId(1L).name("홍길동").email("test@dgu.ac.kr")
+                .role("USER").studentId("2021001234").phone("010-1111-2222")
+                .department("컴퓨터공학과").isActive(true)
+                .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now())
+                .build();
+
+        @Test
+        @DisplayName("비활성화 유저를 재활성화하면 200 OK와 사용자 정보를 반환한다")
+        void reactivateUser_returns200() throws Exception {
+            when(adminUserService.reactivateUser(1L)).thenReturn(reactivatedUser);
+
+            mockMvc.perform(patch("/api/admin/users/1/reactivate").contentType(MediaType.APPLICATION_JSON))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.isActive").value(true))
+                    .andExpect(jsonPath("$.data.name").value("홍길동"));
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 유저면 404 Not Found를 반환한다")
+        void reactivateUser_returns404_whenNotFound() throws Exception {
+            when(adminUserService.reactivateUser(99L))
+                    .thenThrow(new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
+
+            mockMvc.perform(patch("/api/admin/users/99/reactivate").contentType(MediaType.APPLICATION_JSON))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("이미 활성화된 유저면 409 Conflict를 반환한다")
+        void reactivateUser_returns409_whenAlreadyActive() throws Exception {
+            when(adminUserService.reactivateUser(1L))
+                    .thenThrow(new ConflictException(ErrorCode.USER_ALREADY_ACTIVE));
+
+            mockMvc.perform(patch("/api/admin/users/1/reactivate").contentType(MediaType.APPLICATION_JSON))
+                    .andExpect(status().isConflict());
         }
     }
 }

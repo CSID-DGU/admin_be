@@ -1,6 +1,12 @@
 package DGU_AI_LAB.admin_be.domain.alarm.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.dto.SlackMessageDto;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Collectors;
+import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
+import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
@@ -45,6 +51,7 @@ public class AlarmService {
     private final SlackApiService slackApiService;
     private final RedisTemplate<String, Object> redisTemplate;
     private final MessageUtils messageUtils;
+    private final PodExternalPortRepository podExternalPortRepository;
 
     private static final String SLACK_QUEUE_KEY = "slack:notification:queue";
 
@@ -161,6 +168,56 @@ public class AlarmService {
             case "FARM" -> "210.94.179.19";
             default -> { log.warn("호스트 IP 미상 serverName={}", serverName); yield ""; }
         };
+    }
+
+    /**
+     * [관리자 수동 삭제 안내 메일] 관리자가 계정 삭제 시 사용자에게 발송.
+     */
+    public void sendContainerDeletedEmail(Request request) {
+        User user = request.getUser();
+        String serverName = request.getResourceGroup().getServerName();
+        List<PodExternalPort> ports = podExternalPortRepository.findByRequestRequestId(request.getRequestId());
+
+        String subject = messageUtils.get("email.container.deleted.subject", serverName);
+        String body = messageUtils.get("email.container.deleted.body",
+                user.getName(),                              // {0}
+                serverName,                                  // {1}
+                request.getUbuntuUsername(),                 // {2}
+                request.getPodName(),                        // {3}
+                formatPortSummary(ports),                    // {4}
+                LocalDate.now().toString());                 // {5}
+
+        sendMailAlert(user.getEmail(), subject, body);
+        sendMonitoringLog(user.getName(), user.getEmail(), subject);
+    }
+
+    /**
+     * [만료일 연장 승인 안내 메일] 관리자가 EXPIRES_AT 변경 요청 승인 시 사용자에게 발송.
+     */
+    public void sendContainerExtendedEmail(Request request, LocalDateTime oldExpiresAt, LocalDateTime newExpiresAt) {
+        User user = request.getUser();
+        String serverName = request.getResourceGroup().getServerName();
+        List<PodExternalPort> ports = podExternalPortRepository.findByRequestRequestId(request.getRequestId());
+
+        String subject = messageUtils.get("email.container.extended.subject", serverName);
+        String body = messageUtils.get("email.container.extended.body",
+                user.getName(),                              // {0}
+                serverName,                                  // {1}
+                request.getUbuntuUsername(),                 // {2}
+                newExpiresAt.toLocalDate().toString(),       // {3}
+                oldExpiresAt.toLocalDate().toString(),       // {4}
+                request.getPodName(),                        // {5}
+                formatPortSummary(ports));                   // {6}
+
+        sendMailAlert(user.getEmail(), subject, body);
+        sendMonitoringLog(user.getName(), user.getEmail(), subject);
+    }
+
+    private String formatPortSummary(List<PodExternalPort> ports) {
+        if (ports == null || ports.isEmpty()) return "없음";
+        return ports.stream()
+                .map(p -> p.getUsagePurpose() + "(" + p.getExternalPort() + ")")
+                .collect(Collectors.joining(", "));
     }
 
     public void sendAdminSlackNotification(String serverName, String message) {

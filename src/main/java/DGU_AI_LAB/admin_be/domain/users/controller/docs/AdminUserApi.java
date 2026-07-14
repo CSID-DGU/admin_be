@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 
 @Tag(name = "3. 관리자 유저 관리", description = "사용자 계정 조회 및 삭제 API")
@@ -43,5 +44,17 @@ public interface AdminUserApi {
     @DeleteMapping("/ubuntu/{username}")
     ResponseEntity<SuccessResponse<?>> deleteUbuntuAccount(
             @PathVariable @Parameter(description = "우분투 계정명") String username
+    );
+
+    @Operation(
+            summary = "비활성화 사용자 재활성화",
+            description = "비활성화(isActive=false) 처리된 사용자 계정을 재활성화합니다. deletedAt을 초기화하고 isActive를 true로 전환합니다."
+    )
+    @ApiResponse(responseCode = "200", description = "성공")
+    @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음")
+    @ApiResponse(responseCode = "409", description = "이미 활성화된 사용자")
+    @PatchMapping("/{id}/reactivate")
+    ResponseEntity<SuccessResponse<?>> reactivateUser(
+            @PathVariable @Parameter(description = "사용자 ID") Long id
     );
 }

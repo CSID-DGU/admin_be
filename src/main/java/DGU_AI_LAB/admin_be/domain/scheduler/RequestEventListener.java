@@ -33,7 +33,8 @@ public class RequestEventListener {
         try {
             String subject = messageUtils.get("notification.expired.detail.subject");
             String message = messageUtils.get("notification.expired.detail.body",
-                    userName, serverName, username);
+                    userName, serverName, username,
+                    event.podName(), event.portSummary(), event.expiresAt());
 
             alarmService.sendAllAlerts(userName, userEmail, subject, message);
         } catch (Exception e) {

@@ -254,6 +254,8 @@ public class AdminRequestCommandService {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
 
+        LocalDateTime pendingExpiresAt = null;
+        LocalDateTime pendingOldExpiresAt = null;
         try {
             switch (changeRequest.getChangeType()) {
                 case VOLUME_SIZE:
@@ -263,7 +265,9 @@ public class AdminRequestCommandService {
                     break;
                 case EXPIRES_AT:
                     LocalDateTime newExpiresAt = LocalDateTime.parse(objectMapper.readValue(changeRequest.getNewValue(), String.class));
+                    pendingOldExpiresAt = originalRequest.getExpiresAt();
                     originalRequest.updateExpiresAt(newExpiresAt);
+                    pendingExpiresAt = newExpiresAt;
                     break;
                 case GROUP:
                     // 그룹 변경은 복잡하기 때문에, 엔티티가 아닌 서비스 레이어에서 처리합니다.
@@ -299,6 +303,15 @@ public class AdminRequestCommandService {
         }
 
         changeRequest.approve(admin, dto.adminComment());
+
+        if (pendingExpiresAt != null) {
+            try {
+                alarmService.sendContainerExtendedEmail(originalRequest, pendingOldExpiresAt, pendingExpiresAt);
+                log.info("사용자 '{}'에게 기간 연장 안내 메일을 발송했습니다.", originalRequest.getUser().getName());
+            } catch (Exception e) {
+                log.warn("기간 연장 안내 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e);
+            }
+        }
     }
 
     // ── 보상 트랜잭션 헬퍼 ─────────────────────────────────────────────

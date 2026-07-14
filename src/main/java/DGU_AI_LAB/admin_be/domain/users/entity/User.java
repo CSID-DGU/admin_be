@@ -89,4 +89,9 @@ public class User extends BaseTimeEntity {
         this.isActive = false;
         this.deletedAt = LocalDateTime.now();
     }
+
+    public void reactivate() {
+        this.isActive = true;
+        this.deletedAt = null;
+    }
 }

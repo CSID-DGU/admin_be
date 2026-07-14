@@ -9,12 +9,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class RequestEventListenerTest {
 
     @InjectMocks
@@ -26,14 +29,14 @@ class RequestEventListenerTest {
     @Mock
     private MessageUtils messageUtils;
 
+    private static final RequestExpiredEvent EVENT = new RequestExpiredEvent(
+            "홍길동", "hong@test.com", "user1", "server-lab",
+            "pod-xxx", "ssh(30022)", "2025-12-31");
+
     @Test
     @DisplayName("이벤트에 포함된 userName/userEmail로 사용자 알림을 전송한다")
     void handleExpiredEvent_sendsUserNotificationWithStringFields() {
-        RequestExpiredEvent event = new RequestExpiredEvent("홍길동", "hong@test.com", "user1", "server-lab");
-        when(messageUtils.get(any())).thenReturn("subject");
-        when(messageUtils.get(any(), any(), any(), any())).thenReturn("message body");
-
-        requestEventListener.handleExpiredEvent(event);
+        requestEventListener.handleExpiredEvent(EVENT);
 
         verify(alarmService).sendAllAlerts(eq("홍길동"), eq("hong@test.com"), any(), any());
     }
@@ -41,11 +44,7 @@ class RequestEventListenerTest {
     @Test
     @DisplayName("관리자 알림은 serverName으로 전송한다")
     void handleExpiredEvent_sendsAdminNotificationWithServerName() {
-        RequestExpiredEvent event = new RequestExpiredEvent("홍길동", "hong@test.com", "user1", "server-lab");
-        when(messageUtils.get(any())).thenReturn("subject");
-        when(messageUtils.get(any(), any(), any(), any())).thenReturn("admin message");
-
-        requestEventListener.handleExpiredEvent(event);
+        requestEventListener.handleExpiredEvent(EVENT);
 
         verify(alarmService).sendAdminSlackNotification(eq("server-lab"), any());
     }
@@ -53,12 +52,9 @@ class RequestEventListenerTest {
     @Test
     @DisplayName("알림 전송 실패 시 예외가 전파되지 않는다")
     void handleExpiredEvent_doesNotPropagateException_whenAlarmFails() {
-        RequestExpiredEvent event = new RequestExpiredEvent("홍길동", "hong@test.com", "user1", "server-lab");
-        when(messageUtils.get(any())).thenReturn("subject");
-        when(messageUtils.get(any(), any(), any(), any())).thenReturn("message");
         doThrow(new RuntimeException("slack error")).when(alarmService).sendAllAlerts(any(), any(), any(), any());
 
-        requestEventListener.handleExpiredEvent(event);
+        requestEventListener.handleExpiredEvent(EVENT);
 
         verify(alarmService, times(1)).sendAllAlerts(any(), any(), any(), any());
     }
