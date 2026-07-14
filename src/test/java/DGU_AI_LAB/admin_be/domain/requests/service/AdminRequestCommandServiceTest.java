@@ -538,6 +538,7 @@ class AdminRequestCommandServiceTest {
             verify(originalRequest).updateExpiresAt(captor.capture());
             assertThat(captor.getValue()).isEqualTo(LocalDateTime.of(2027, 12, 31, 23, 59, 59));
             verify(changeRequest).approve(mockUser, "기간 연장 승인");
+            verify(alarmService).sendContainerExtendedEmail(originalRequest, LocalDateTime.of(2027, 12, 31, 23, 59, 59));
         }
 
         @Test
