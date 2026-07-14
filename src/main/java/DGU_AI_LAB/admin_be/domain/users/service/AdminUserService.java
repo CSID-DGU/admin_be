@@ -10,6 +10,7 @@ import DGU_AI_LAB.admin_be.domain.users.dto.response.UserSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.ConflictException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -91,6 +92,25 @@ public class AdminUserService {
         request.deleteAfterCleanup();
         requestRepository.save(request);
         log.info("[deleteUbuntuAccount] {} 계정 삭제 및 DB 상태 업데이트 완료", username);
+    }
+
+    /**
+     * 비활성화된 유저 재활성화
+     */
+    @Transactional
+    public UserSummaryDTO reactivateUser(Long userId) {
+        log.info("[reactivateUser] userId={} 재활성화 시도", userId);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
+
+        if (user.getIsActive()) {
+            log.warn("[reactivateUser] userId={} 이미 활성화 상태", userId);
+            throw new ConflictException(ErrorCode.USER_ALREADY_ACTIVE);
+        }
+
+        user.reactivate();
+        log.info("[reactivateUser] userId={} 재활성화 완료", userId);
+        return UserSummaryDTO.fromEntity(user);
     }
 
     /**

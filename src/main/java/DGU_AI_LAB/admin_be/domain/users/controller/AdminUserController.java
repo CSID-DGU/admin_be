@@ -37,4 +37,9 @@ public class AdminUserController implements AdminUserApi {
         adminUserService.deleteUbuntuAccount(username);
         return SuccessResponse.ok(null);
     }
+
+    @PatchMapping("/{id}/reactivate")
+    public ResponseEntity<SuccessResponse<?>> reactivateUser(@PathVariable Long id) {
+        return SuccessResponse.ok(adminUserService.reactivateUser(id));
+    }
 }
