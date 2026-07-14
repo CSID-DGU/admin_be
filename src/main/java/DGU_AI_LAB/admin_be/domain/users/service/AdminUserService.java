@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -28,6 +29,7 @@ public class AdminUserService {
     private final UserRepository userRepository;
     private final RequestRepository requestRepository;
     private final UbuntuAccountService ubuntuAccountService;
+    private final AlarmService alarmService;
 
     /**
      * 전체 유저 조회
@@ -60,6 +62,11 @@ public class AdminUserService {
                 ubuntuAccountService.deleteUbuntuAccount(request.getUbuntuUsername());
                 request.deleteAfterCleanup();
                 requestRepository.save(request);
+                try {
+                    alarmService.sendContainerDeletedEmail(request);
+                } catch (Exception e) {
+                    log.warn("[deleteUser] 삭제 안내 메일 발송 실패: ubuntuUsername={}", request.getUbuntuUsername(), e);
+                }
             } else if (request.getStatus() != Status.DELETED) {
                 request.delete();
             }
@@ -92,6 +99,11 @@ public class AdminUserService {
         request.deleteAfterCleanup();
         requestRepository.save(request);
         log.info("[deleteUbuntuAccount] {} 계정 삭제 및 DB 상태 업데이트 완료", username);
+        try {
+            alarmService.sendContainerDeletedEmail(request);
+        } catch (Exception e) {
+            log.warn("[deleteUbuntuAccount] 삭제 안내 메일 발송 실패: ubuntuUsername={}", username, e);
+        }
     }
 
     /**

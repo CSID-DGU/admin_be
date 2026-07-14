@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
@@ -45,6 +46,9 @@ class AdminUserServiceTest {
 
     @Mock
     private UbuntuAccountService ubuntuAccountService;
+
+    @Mock
+    private AlarmService alarmService;
 
     private User mockUser;
 
@@ -160,6 +164,7 @@ class AdminUserServiceTest {
 
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
             verify(fulfilledRequest).deleteAfterCleanup();
+            verify(alarmService).sendContainerDeletedEmail(fulfilledRequest);
             assertThat(mockUser.getIsActive()).isFalse();
         }
 
@@ -214,6 +219,7 @@ class AdminUserServiceTest {
 
             verify(ubuntuAccountService).deleteUbuntuAccount("fuser");
             verify(fulfilled).deleteAfterCleanup();
+            verify(alarmService).sendContainerDeletedEmail(fulfilled);
             verify(pending).delete();
             verify(deleted, never()).delete();
             verify(deleted, never()).deleteAfterCleanup();
@@ -299,6 +305,7 @@ class AdminUserServiceTest {
 
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
             assertThat(request.getStatus()).isEqualTo(Status.DELETED);
+            verify(alarmService).sendContainerDeletedEmail(request);
         }
 
         @Test
