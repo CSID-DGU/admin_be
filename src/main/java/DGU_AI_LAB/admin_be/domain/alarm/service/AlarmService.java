@@ -139,6 +139,13 @@ public class AlarmService {
         var image = request.getContainerImage();
         String serverName = request.getResourceGroup().getServerName();
 
+        // FARM은 pfSense가 210.94.179.19:9300-9397 → farm6:30000-30097로 오프셋 포워딩하므로
+        // 사용자에겐 NodePort가 아니라 공인 포트를 안내해야 한다 (26-07-15 외부 실측 검증).
+        if ("FARM".equalsIgnoreCase(serverName)) {
+            sshPort = toFarmPublicPort(sshPort);
+            jupyterPort = toFarmPublicPort(jupyterPort);
+        }
+
         String subject = messageUtils.get("email.container.created.subject", serverName);
         String body = messageUtils.get("email.container.created.body",
                 user.getName(),                                        // {0}
@@ -151,6 +158,23 @@ public class AlarmService {
 
         sendMailAlert(user.getEmail(), subject, body);
         sendMonitoringLog(user.getName(), user.getEmail(), subject);
+    }
+
+    // ponytail: pfSense FARM 오프셋 매핑 하드코딩(admin_fe publicEndpoint.js와 동일 공식). 대역이 늘면 설정으로.
+    private static final int NODEPORT_BASE = 30000;
+    private static final int FARM_PUBLIC_PORT_BASE = 9300;
+    private static final int FARM_PUBLIC_BAND_SIZE = 98; // 외부 9300-9397
+
+    private String toFarmPublicPort(String nodePort) {
+        try {
+            int offset = Integer.parseInt(nodePort) - NODEPORT_BASE;
+            if (offset >= 0 && offset < FARM_PUBLIC_BAND_SIZE) {
+                return String.valueOf(FARM_PUBLIC_PORT_BASE + offset);
+            }
+        } catch (NumberFormatException ignored) {
+            // 빈 문자열 등 — 원본 그대로 반환
+        }
+        return nodePort; // 매핑 대역 밖이면 원본 유지(외부 미개방 포트임이 그대로 드러나는 편이 낫다)
     }
 
     // ponytail: LAB/FARM 2-호스트 하드코딩. 호스트가 늘면 노드/설정 레지스트리로.
