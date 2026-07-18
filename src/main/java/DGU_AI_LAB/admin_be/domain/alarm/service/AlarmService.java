@@ -147,6 +147,13 @@ public class AlarmService {
         var image = request.getContainerImage();
         String serverName = request.getResourceGroup().getServerName();
 
+        List<PodExternalPort> allPorts = podExternalPortRepository.findByRequestRequestId(request.getRequestId());
+        String extraPorts = allPorts.stream()
+                .filter(p -> !"ssh".equalsIgnoreCase(p.getUsagePurpose()) && !"jupyter".equalsIgnoreCase(p.getUsagePurpose()))
+                .map(p -> p.getUsagePurpose() + "(" + p.getExternalPort() + ")")
+                .collect(Collectors.joining(", "));
+        if (extraPorts.isEmpty()) extraPorts = "없음";
+
         String subject = messageUtils.get("email.container.created.subject", serverName);
         String body = messageUtils.get("email.container.created.body",
                 user.getName(),                                        // {0}
@@ -155,7 +162,8 @@ public class AlarmService {
                 sshPort,                                               // {3}
                 jupyterPort,                                           // {4}
                 resolveHostIp(serverName),                             // {5}
-                request.getUbuntuPassword());                          // {6}
+                request.getUbuntuPassword(),                           // {6}
+                extraPorts);                                           // {7}
 
         sendMailAlert(user.getEmail(), subject, body);
         sendMonitoringLog(user.getName(), user.getEmail(), subject);
