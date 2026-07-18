@@ -219,6 +219,7 @@ public class AdminRequestCommandService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
         request.reject(dto.adminComment());
+        alarmService.sendRequestRejectedEmail(request, dto.adminComment());
         return SaveRequestResponseDTO.fromEntity(request);
     }
 
@@ -236,6 +237,7 @@ public class AdminRequestCommandService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         changeRequest.deny(admin, dto.adminComment());
+        alarmService.sendModificationRejectedEmail(changeRequest, dto.adminComment());
     }
 
     @Transactional

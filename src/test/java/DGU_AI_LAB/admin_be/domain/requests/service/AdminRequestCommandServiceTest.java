@@ -428,6 +428,41 @@ class AdminRequestCommandServiceTest {
             assertThatThrownBy(() -> service.rejectRequest(dto))
                     .isInstanceOf(BusinessException.class);
         }
+
+        @Test
+        @DisplayName("거절 성공 시 alarmService.sendRequestRejectedEmail이 호출된다")
+        void rejectRequest_sendsRejectionEmail_onSuccess() {
+            Request request = buildMockedRequestWithStatus(35L, Status.PENDING);
+            RejectRequestDTO dto = new RejectRequestDTO(35L, "신청서 양식 미흡");
+
+            service.rejectRequest(dto);
+
+            verify(alarmService).sendRequestRejectedEmail(request, "신청서 양식 미흡");
+        }
+
+        @Test
+        @DisplayName("거절 사유가 이메일 발송 메서드에 그대로 전달된다")
+        void rejectRequest_passesAdminCommentToEmail() {
+            Request request = buildMockedRequestWithStatus(36L, Status.PENDING);
+            String comment = "서버 정원 초과로 인한 거절";
+            RejectRequestDTO dto = new RejectRequestDTO(36L, comment);
+
+            service.rejectRequest(dto);
+
+            verify(alarmService).sendRequestRejectedEmail(request, comment);
+        }
+
+        @Test
+        @DisplayName("유효하지 않은 상태로 거절 시 이메일이 발송되지 않는다")
+        void rejectRequest_doesNotSendEmail_whenStatusIsInvalid() {
+            buildMockedRequestWithStatus(37L, Status.DENIED);
+            RejectRequestDTO dto = new RejectRequestDTO(37L, "사유");
+
+            assertThatThrownBy(() -> service.rejectRequest(dto))
+                    .isInstanceOf(BusinessException.class);
+
+            verify(alarmService, never()).sendRequestRejectedEmail(any(), anyString());
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -489,6 +524,47 @@ class AdminRequestCommandServiceTest {
 
             assertThatThrownBy(() -> service.rejectModification(999L, dto))
                     .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("변경 요청 거절 성공 시 alarmService.sendModificationRejectedEmail이 호출된다")
+        void rejectModification_sendsRejectionEmail_onSuccess() {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequestRepository.findById(10L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+
+            RejectModificationDTO dto = new RejectModificationDTO(10L, "변경 사유 불충분");
+            service.rejectModification(100L, dto);
+
+            verify(alarmService).sendModificationRejectedEmail(changeRequest, "변경 사유 불충분");
+        }
+
+        @Test
+        @DisplayName("거절 사유가 이메일 발송 메서드에 그대로 전달된다")
+        void rejectModification_passesAdminCommentToEmail() {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequestRepository.findById(11L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+            String comment = "리소스 여유 없음";
+
+            service.rejectModification(100L, new RejectModificationDTO(11L, comment));
+
+            verify(alarmService).sendModificationRejectedEmail(changeRequest, comment);
+        }
+
+        @Test
+        @DisplayName("PENDING이 아닌 상태에서 거절 시 이메일이 발송되지 않는다")
+        void rejectModification_doesNotSendEmail_whenStatusIsNotPending() {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getStatus()).thenReturn(Status.FULFILLED);
+            when(changeRequestRepository.findById(12L)).thenReturn(Optional.of(changeRequest));
+
+            assertThatThrownBy(() -> service.rejectModification(100L, new RejectModificationDTO(12L, "사유")))
+                    .isInstanceOf(BusinessException.class);
+
+            verify(alarmService, never()).sendModificationRejectedEmail(any(), anyString());
         }
     }
 

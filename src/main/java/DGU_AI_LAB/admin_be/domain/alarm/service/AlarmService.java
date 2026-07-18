@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
+import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
@@ -218,6 +219,34 @@ public class AlarmService {
         return ports.stream()
                 .map(p -> p.getUsagePurpose() + "(" + p.getExternalPort() + ")")
                 .collect(Collectors.joining(", "));
+    }
+
+    public void sendRequestRejectedEmail(Request request, String adminComment) {
+        User user = request.getUser();
+        String serverName = request.getResourceGroup().getServerName();
+
+        String subject = messageUtils.get("email.request.rejected.subject", serverName);
+        String body = messageUtils.get("email.request.rejected.body",
+                user.getName(),    // {0}
+                serverName,        // {1}
+                adminComment);     // {2}
+
+        sendMailAlert(user.getEmail(), subject, body);
+        sendMonitoringLog(user.getName(), user.getEmail(), subject);
+    }
+
+    public void sendModificationRejectedEmail(ChangeRequest changeRequest, String adminComment) {
+        User user = changeRequest.getRequestedBy();
+        String changeType = changeRequest.getChangeType().name();
+
+        String subject = messageUtils.get("email.modification.rejected.subject", changeType);
+        String body = messageUtils.get("email.modification.rejected.body",
+                user.getName(),    // {0}
+                changeType,        // {1}
+                adminComment);     // {2}
+
+        sendMailAlert(user.getEmail(), subject, body);
+        sendMonitoringLog(user.getName(), user.getEmail(), subject);
     }
 
     public void sendAdminSlackNotification(String serverName, String message) {
