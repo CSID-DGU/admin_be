@@ -36,3 +36,6 @@ out/
 application.yml
 /.gradle
 .DS_Store
+
+### Local notes ###
+status.md

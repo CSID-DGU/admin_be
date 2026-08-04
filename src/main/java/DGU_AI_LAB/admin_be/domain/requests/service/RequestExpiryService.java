@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.pod.PodPortUtils;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
@@ -15,7 +16,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -43,10 +43,7 @@ public class RequestExpiryService {
         String expiresAt = request.getExpiresAt() != null ? request.getExpiresAt().toLocalDate().toString() : "";
 
         List<PodExternalPort> ports = podExternalPortRepository.findByRequestRequestId(requestId);
-        String portSummary = ports.isEmpty() ? "없음"
-                : ports.stream()
-                        .map(p -> p.getUsagePurpose() + "(" + p.getExternalPort() + ")")
-                        .collect(Collectors.joining(", "));
+        String portSummary = PodPortUtils.formatPortSummary(ports);
 
         try {
             podService.deletePod(request.getPodName());

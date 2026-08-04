@@ -463,6 +463,34 @@ class AdminRequestCommandServiceTest {
 
             verify(alarmService, never()).sendRequestRejectedEmail(any(), anyString());
         }
+
+        @Test
+        @DisplayName("이메일 발송 실패 시 예외가 전파되지 않고 reject()는 이미 호출된 상태다")
+        void rejectRequest_emailFailure_doesNotPropagateException() {
+            Request request = buildMockedRequestWithStatus(38L, Status.PENDING);
+            doThrow(new RuntimeException("SMTP 연결 실패"))
+                    .when(alarmService).sendRequestRejectedEmail(any(), anyString());
+
+            RejectRequestDTO dto = new RejectRequestDTO(38L, "신청서 양식 미흡");
+
+            // 이메일 실패해도 예외 미전파 (DB 롤백 없음)
+            service.rejectRequest(dto);
+
+            verify(request).reject("신청서 양식 미흡");
+        }
+
+        @Test
+        @DisplayName("이메일 발송 실패 시에도 정상 응답 DTO가 반환된다")
+        void rejectRequest_emailFailure_stillReturnsResponseDTO() {
+            buildMockedRequestWithStatus(39L, Status.PENDING);
+            doThrow(new RuntimeException("MessageUtils 키 없음"))
+                    .when(alarmService).sendRequestRejectedEmail(any(), anyString());
+
+            RejectRequestDTO dto = new RejectRequestDTO(39L, "사유");
+
+            // 예외 없이 DTO 반환
+            assertThat(service.rejectRequest(dto)).isNotNull();
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -565,6 +593,37 @@ class AdminRequestCommandServiceTest {
                     .isInstanceOf(BusinessException.class);
 
             verify(alarmService, never()).sendModificationRejectedEmail(any(), anyString());
+        }
+
+        @Test
+        @DisplayName("이메일 발송 실패 시 예외가 전파되지 않고 deny()는 이미 호출된 상태다")
+        void rejectModification_emailFailure_doesNotPropagateException() {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequestRepository.findById(13L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+            doThrow(new RuntimeException("SMTP 연결 실패"))
+                    .when(alarmService).sendModificationRejectedEmail(any(), anyString());
+
+            // 이메일 실패해도 예외 미전파 (DB 롤백 없음)
+            service.rejectModification(100L, new RejectModificationDTO(13L, "변경 사유 불충분"));
+
+            verify(changeRequest).deny(mockUser, "변경 사유 불충분");
+        }
+
+        @Test
+        @DisplayName("이메일 발송 시 RuntimeException 발생해도 deny()는 호출되고 정상 종료된다")
+        void rejectModification_emailThrowsRuntimeException_denyStillCalled() {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequestRepository.findById(14L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+            doThrow(new IllegalStateException("MessageUtils 키 없음"))
+                    .when(alarmService).sendModificationRejectedEmail(any(), anyString());
+
+            service.rejectModification(100L, new RejectModificationDTO(14L, "사유"));
+
+            verify(changeRequest).deny(eq(mockUser), eq("사유"));
         }
     }
 

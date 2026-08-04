@@ -2,6 +2,8 @@ package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
+import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
+import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -30,6 +32,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -49,6 +52,9 @@ class AdminUserServiceTest {
 
     @Mock
     private AlarmService alarmService;
+
+    @Mock
+    private PodExternalPortRepository podExternalPortRepository;
 
     private User mockUser;
 
@@ -156,6 +162,8 @@ class AdminUserServiceTest {
             Request fulfilledRequest = mock(Request.class);
             when(fulfilledRequest.getStatus()).thenReturn(Status.FULFILLED);
             when(fulfilledRequest.getUbuntuUsername()).thenReturn("testuser");
+            when(fulfilledRequest.getRequestId()).thenReturn(1L);
+            when(podExternalPortRepository.findByRequestRequestIdIn(anyList())).thenReturn(List.of());
 
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(fulfilledRequest));
@@ -164,7 +172,7 @@ class AdminUserServiceTest {
 
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
             verify(fulfilledRequest).deleteAfterCleanup();
-            verify(alarmService).sendContainerDeletedEmail(fulfilledRequest);
+            verify(alarmService).sendContainerDeletedEmail(eq(fulfilledRequest), anyList());
             assertThat(mockUser.getIsActive()).isFalse();
         }
 
@@ -205,6 +213,8 @@ class AdminUserServiceTest {
             Request fulfilled = mock(Request.class);
             when(fulfilled.getStatus()).thenReturn(Status.FULFILLED);
             when(fulfilled.getUbuntuUsername()).thenReturn("fuser");
+            when(fulfilled.getRequestId()).thenReturn(10L);
+            when(podExternalPortRepository.findByRequestRequestIdIn(anyList())).thenReturn(List.of());
 
             Request pending = mock(Request.class);
             when(pending.getStatus()).thenReturn(Status.PENDING);
@@ -219,10 +229,40 @@ class AdminUserServiceTest {
 
             verify(ubuntuAccountService).deleteUbuntuAccount("fuser");
             verify(fulfilled).deleteAfterCleanup();
-            verify(alarmService).sendContainerDeletedEmail(fulfilled);
+            verify(alarmService).sendContainerDeletedEmail(eq(fulfilled), anyList());
             verify(pending).delete();
             verify(deleted, never()).delete();
             verify(deleted, never()).deleteAfterCleanup();
+        }
+
+        @Test
+        @DisplayName("FULFILLED 요청이 여러 개여도 포트 배치 쿼리는 1회만 실행된다")
+        void deleteUser_multipleFullfilledRequests_batchQueriesPorts() {
+            Request req1 = mock(Request.class);
+            when(req1.getStatus()).thenReturn(Status.FULFILLED);
+            when(req1.getUbuntuUsername()).thenReturn("user1");
+            when(req1.getRequestId()).thenReturn(1L);
+
+            Request req2 = mock(Request.class);
+            when(req2.getStatus()).thenReturn(Status.FULFILLED);
+            when(req2.getUbuntuUsername()).thenReturn("user2");
+            when(req2.getRequestId()).thenReturn(2L);
+
+            Request req3 = mock(Request.class);
+            when(req3.getStatus()).thenReturn(Status.FULFILLED);
+            when(req3.getUbuntuUsername()).thenReturn("user3");
+            when(req3.getRequestId()).thenReturn(3L);
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(req1, req2, req3));
+            when(podExternalPortRepository.findByRequestRequestIdIn(anyList())).thenReturn(List.of());
+
+            adminUserService.deleteUser(1L);
+
+            // 개별 쿼리(findByRequestRequestId) 미호출, 배치 쿼리 1회만 호출
+            verify(podExternalPortRepository, never()).findByRequestRequestId(any());
+            verify(podExternalPortRepository, times(1)).findByRequestRequestIdIn(anyList());
+            verify(alarmService, times(3)).sendContainerDeletedEmail(any(Request.class), anyList());
         }
     }
 

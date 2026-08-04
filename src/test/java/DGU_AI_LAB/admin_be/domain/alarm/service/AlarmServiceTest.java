@@ -466,6 +466,148 @@ class AlarmServiceTest {
         }
     }
 
+    @Nested
+    @DisplayName("sendContainerDeletedEmail")
+    class SendContainerDeletedEmail {
+
+        @Test
+        @DisplayName("podName이 null이면 이메일 본문에 '미배정'으로 전달된다")
+        void sendContainerDeletedEmail_nullPodName_renders_placeholder() {
+            Request request = mockRequestForDeleted("홍길동", "hong@dgu.ac.kr", "LAB", null);
+            when(podExternalPortRepository.findByRequestRequestId(any())).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
+
+            alarmService.sendContainerDeletedEmail(request);
+
+            verify(messageUtils).get(eq("email.container.deleted.body"),
+                    any(), any(), any(), eq("미배정"), any(), any());
+        }
+
+        @Test
+        @DisplayName("podName이 있으면 실제 값이 이메일 본문에 전달된다")
+        void sendContainerDeletedEmail_withPodName_passesRealValue() {
+            Request request = mockRequestForDeleted("홍길동", "hong@dgu.ac.kr", "LAB", "pod-user1-abc");
+            when(podExternalPortRepository.findByRequestRequestId(any())).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
+
+            alarmService.sendContainerDeletedEmail(request);
+
+            verify(messageUtils).get(eq("email.container.deleted.body"),
+                    any(), any(), any(), eq("pod-user1-abc"), any(), any());
+        }
+
+        @Test
+        @DisplayName("ports를 직접 전달하는 오버로드는 DB를 조회하지 않는다")
+        void sendContainerDeletedEmail_overload_doesNotQueryRepository() {
+            Request request = mockRequestForDeleted("홍길동", "hong@dgu.ac.kr", "LAB", "pod-abc");
+            PodExternalPort port = mockPodPort("ssh", 30022);
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
+
+            alarmService.sendContainerDeletedEmail(request, List.of(port));
+
+            verify(podExternalPortRepository, never()).findByRequestRequestId(any());
+            verify(mailSender).send(any(SimpleMailMessage.class));
+        }
+
+        @Test
+        @DisplayName("ports를 직접 전달하면 포트 요약이 본문에 포함된다")
+        void sendContainerDeletedEmail_overload_includesPortSummary() {
+            Request request = mockRequestForDeleted("이순신", "lee@dgu.ac.kr", "FARM", "pod-xyz");
+            PodExternalPort port = mockPodPort("jupyter", 30888);
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
+
+            alarmService.sendContainerDeletedEmail(request, List.of(port));
+
+            verify(messageUtils).get(eq("email.container.deleted.body"),
+                    any(), any(), any(), any(), eq("jupyter(30888)"), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("sendContainerExtendedEmail")
+    class SendContainerExtendedEmail {
+
+        @Test
+        @DisplayName("oldExpiresAt이 null이면 NPE 없이 '이전 기록 없음'이 본문에 전달된다")
+        void sendContainerExtendedEmail_nullOldExpiresAt_rendersPlaceholder() {
+            Request request = mockRequestForExtended("홍길동", "hong@dgu.ac.kr", "LAB", "pod-abc");
+            when(podExternalPortRepository.findByRequestRequestId(any())).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
+
+            alarmService.sendContainerExtendedEmail(request, null,
+                    java.time.LocalDateTime.of(2027, 12, 31, 23, 59, 59));
+
+            verify(messageUtils).get(eq("email.container.extended.body"),
+                    any(), any(), any(), any(), eq("이전 기록 없음"), any(), any());
+        }
+
+        @Test
+        @DisplayName("oldExpiresAt이 있으면 날짜 문자열이 본문에 전달된다")
+        void sendContainerExtendedEmail_withOldExpiresAt_passesDate() {
+            Request request = mockRequestForExtended("홍길동", "hong@dgu.ac.kr", "LAB", "pod-abc");
+            when(podExternalPortRepository.findByRequestRequestId(any())).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
+
+            alarmService.sendContainerExtendedEmail(request,
+                    java.time.LocalDateTime.of(2026, 6, 30, 0, 0),
+                    java.time.LocalDateTime.of(2027, 12, 31, 23, 59, 59));
+
+            verify(messageUtils).get(eq("email.container.extended.body"),
+                    any(), any(), any(), any(), eq("2026-06-30"), any(), any());
+        }
+
+        @Test
+        @DisplayName("podName이 null이면 '미배정'이 본문에 전달된다")
+        void sendContainerExtendedEmail_nullPodName_rendersPlaceholder() {
+            Request request = mockRequestForExtended("홍길동", "hong@dgu.ac.kr", "LAB", null);
+            when(podExternalPortRepository.findByRequestRequestId(any())).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
+
+            alarmService.sendContainerExtendedEmail(request,
+                    java.time.LocalDateTime.of(2026, 6, 30, 0, 0),
+                    java.time.LocalDateTime.of(2027, 12, 31, 23, 59, 59));
+
+            verify(messageUtils).get(eq("email.container.extended.body"),
+                    any(), any(), any(), any(), any(), eq("미배정"), any());
+        }
+    }
+
+    private Request mockRequestForDeleted(String userName, String email, String serverName, String podName) {
+        User user = mock(User.class);
+        when(user.getName()).thenReturn(userName);
+        when(user.getEmail()).thenReturn(email);
+        ResourceGroup rg = mock(ResourceGroup.class);
+        when(rg.getServerName()).thenReturn(serverName);
+        Request request = mock(Request.class);
+        when(request.getUser()).thenReturn(user);
+        when(request.getResourceGroup()).thenReturn(rg);
+        when(request.getPodName()).thenReturn(podName);
+        when(request.getUbuntuUsername()).thenReturn("testuser");
+        return request;
+    }
+
+    private Request mockRequestForExtended(String userName, String email, String serverName, String podName) {
+        User user = mock(User.class);
+        when(user.getName()).thenReturn(userName);
+        when(user.getEmail()).thenReturn(email);
+        ResourceGroup rg = mock(ResourceGroup.class);
+        when(rg.getServerName()).thenReturn(serverName);
+        Request request = mock(Request.class);
+        when(request.getUser()).thenReturn(user);
+        when(request.getResourceGroup()).thenReturn(rg);
+        when(request.getPodName()).thenReturn(podName);
+        when(request.getUbuntuUsername()).thenReturn("testuser");
+        when(request.getRequestId()).thenReturn(99L);
+        return request;
+    }
+
     private Request mockRequest(String userName, String serverName) {
         User user = mock(User.class);
         when(user.getName()).thenReturn(userName);

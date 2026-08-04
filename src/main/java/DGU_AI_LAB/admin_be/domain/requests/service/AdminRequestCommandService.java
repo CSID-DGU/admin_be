@@ -219,7 +219,11 @@ public class AdminRequestCommandService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
         request.reject(dto.adminComment());
-        alarmService.sendRequestRejectedEmail(request, dto.adminComment());
+        try {
+            alarmService.sendRequestRejectedEmail(request, dto.adminComment());
+        } catch (Exception e) {
+            log.warn("거절 안내 메일 발송 실패: requestId={}", dto.requestId(), e);
+        }
         return SaveRequestResponseDTO.fromEntity(request);
     }
 
@@ -237,7 +241,11 @@ public class AdminRequestCommandService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         changeRequest.deny(admin, dto.adminComment());
-        alarmService.sendModificationRejectedEmail(changeRequest, dto.adminComment());
+        try {
+            alarmService.sendModificationRejectedEmail(changeRequest, dto.adminComment());
+        } catch (Exception e) {
+            log.warn("변경 요청 거절 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e);
+        }
     }
 
     @Transactional

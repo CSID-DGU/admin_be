@@ -1,10 +1,10 @@
 package DGU_AI_LAB.admin_be.domain.alarm.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.dto.SlackMessageDto;
+import DGU_AI_LAB.admin_be.domain.pod.PodPortUtils;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.stream.Collectors;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
@@ -148,11 +148,7 @@ public class AlarmService {
         String serverName = request.getResourceGroup().getServerName();
 
         List<PodExternalPort> allPorts = podExternalPortRepository.findByRequestRequestId(request.getRequestId());
-        String extraPorts = allPorts.stream()
-                .filter(p -> !"ssh".equalsIgnoreCase(p.getUsagePurpose()) && !"jupyter".equalsIgnoreCase(p.getUsagePurpose()))
-                .map(p -> p.getUsagePurpose() + "(" + p.getExternalPort() + ")")
-                .collect(Collectors.joining(", "));
-        if (extraPorts.isEmpty()) extraPorts = "없음";
+        String extraPorts = PodPortUtils.formatExtraPortSummary(allPorts);
 
         String subject = messageUtils.get("email.container.created.subject", serverName);
         String body = messageUtils.get("email.container.created.body",
@@ -183,17 +179,22 @@ public class AlarmService {
      * [관리자 수동 삭제 안내 메일] 관리자가 계정 삭제 시 사용자에게 발송.
      */
     public void sendContainerDeletedEmail(Request request) {
+        List<PodExternalPort> ports = podExternalPortRepository.findByRequestRequestId(request.getRequestId());
+        sendContainerDeletedEmail(request, ports);
+    }
+
+    public void sendContainerDeletedEmail(Request request, List<PodExternalPort> ports) {
         User user = request.getUser();
         String serverName = request.getResourceGroup().getServerName();
-        List<PodExternalPort> ports = podExternalPortRepository.findByRequestRequestId(request.getRequestId());
+        String podName = request.getPodName() != null ? request.getPodName() : "미배정";
 
         String subject = messageUtils.get("email.container.deleted.subject", serverName);
         String body = messageUtils.get("email.container.deleted.body",
                 user.getName(),                              // {0}
                 serverName,                                  // {1}
                 request.getUbuntuUsername(),                 // {2}
-                request.getPodName(),                        // {3}
-                formatPortSummary(ports),                    // {4}
+                podName,                                     // {3}
+                PodPortUtils.formatPortSummary(ports),       // {4}
                 LocalDate.now().toString());                 // {5}
 
         sendMailAlert(user.getEmail(), subject, body);
@@ -207,6 +208,8 @@ public class AlarmService {
         User user = request.getUser();
         String serverName = request.getResourceGroup().getServerName();
         List<PodExternalPort> ports = podExternalPortRepository.findByRequestRequestId(request.getRequestId());
+        String oldDate = oldExpiresAt != null ? oldExpiresAt.toLocalDate().toString() : "이전 기록 없음";
+        String podName = request.getPodName() != null ? request.getPodName() : "미배정";
 
         String subject = messageUtils.get("email.container.extended.subject", serverName);
         String body = messageUtils.get("email.container.extended.body",
@@ -214,19 +217,12 @@ public class AlarmService {
                 serverName,                                  // {1}
                 request.getUbuntuUsername(),                 // {2}
                 newExpiresAt.toLocalDate().toString(),       // {3}
-                oldExpiresAt.toLocalDate().toString(),       // {4}
-                request.getPodName(),                        // {5}
-                formatPortSummary(ports));                   // {6}
+                oldDate,                                     // {4}
+                podName,                                     // {5}
+                PodPortUtils.formatPortSummary(ports));      // {6}
 
         sendMailAlert(user.getEmail(), subject, body);
         sendMonitoringLog(user.getName(), user.getEmail(), subject);
-    }
-
-    private String formatPortSummary(List<PodExternalPort> ports) {
-        if (ports == null || ports.isEmpty()) return "없음";
-        return ports.stream()
-                .map(p -> p.getUsagePurpose() + "(" + p.getExternalPort() + ")")
-                .collect(Collectors.joining(", "));
     }
 
     public void sendRequestRejectedEmail(Request request, String adminComment) {

@@ -1,6 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
+import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -19,6 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -30,6 +34,7 @@ public class AdminUserService {
     private final RequestRepository requestRepository;
     private final UbuntuAccountService ubuntuAccountService;
     private final AlarmService alarmService;
+    private final PodExternalPortRepository podExternalPortRepository;
 
     /**
      * 전체 유저 조회
@@ -57,13 +62,23 @@ public class AdminUserService {
 
         List<Request> userRequests = requestRepository.findAllByUser(user);
 
+        List<Long> fulfilledIds = userRequests.stream()
+                .filter(r -> r.getStatus() == Status.FULFILLED)
+                .map(Request::getRequestId)
+                .collect(Collectors.toList());
+        Map<Long, List<PodExternalPort>> portsMap = podExternalPortRepository
+                .findByRequestRequestIdIn(fulfilledIds)
+                .stream()
+                .collect(Collectors.groupingBy(p -> p.getRequest().getRequestId()));
+
         for (Request request : userRequests) {
             if (request.getStatus() == Status.FULFILLED) {
                 ubuntuAccountService.deleteUbuntuAccount(request.getUbuntuUsername());
                 request.deleteAfterCleanup();
                 requestRepository.save(request);
                 try {
-                    alarmService.sendContainerDeletedEmail(request);
+                    List<PodExternalPort> ports = portsMap.getOrDefault(request.getRequestId(), List.of());
+                    alarmService.sendContainerDeletedEmail(request, ports);
                 } catch (Exception e) {
                     log.warn("[deleteUser] 삭제 안내 메일 발송 실패: ubuntuUsername={}", request.getUbuntuUsername(), e);
                 }
