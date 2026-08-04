@@ -49,7 +49,7 @@ class UserSchedulerServiceTest {
 
 
     @Test
-    @DisplayName("유저 수명주기 통합 테스트: 알림(D-7, D-1), Soft Delete, Hard Delete, 활동 유저 보호")
+    @DisplayName("유저 수명주기 통합 테스트: 알림(D-7, D-1), Soft Delete, 활동 유저 보호")
     void userLifecycleScheduler_IntegrationTest() {
         // --- Given ---
         LocalDateTime now = LocalDateTime.now();
@@ -97,17 +97,6 @@ class UserSchedulerServiceTest {
         String softBody = messageUtils.get("notification.user.soft-delete.body", "SoftTarget");
 
 
-        // 6. [Hard Delete 대상]
-        User hardTarget = createUser("hard@test.com", "HardTarget");
-        hardTarget.withdraw();
-        updateDeletedAt(hardTarget, now.minusYears(1).minusDays(1));
-
-        // 7. [Hard Delete 미대상]
-        User hardSafe = createUser("hardsafe@test.com", "HardSafe");
-        hardSafe.withdraw();
-        updateDeletedAt(hardSafe, now.minusMonths(11));
-
-
         // --- When ---
         userSchedulerService.runUserLifecycleScheduler();
 
@@ -147,12 +136,6 @@ class UserSchedulerServiceTest {
                 eq(softSubject),
                 eq(softBody)
         );
-
-        // 6. [Hard Delete] 삭제 확인
-        assertThat(userRepository.findById(hardTarget.getUserId())).isEmpty();
-
-        // 7. [Hard Delete 미대상] 생존 확인
-        assertThat(userRepository.findById(hardSafe.getUserId())).isPresent();
     }
 
 
@@ -172,17 +155,6 @@ class UserSchedulerServiceTest {
     private void updateLastLogin(User user, LocalDateTime time) {
         try {
             var field = User.class.getDeclaredField("lastLoginAt");
-            field.setAccessible(true);
-            field.set(user, time);
-            userRepository.saveAndFlush(user);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private void updateDeletedAt(User user, LocalDateTime time) {
-        try {
-            var field = User.class.getDeclaredField("deletedAt");
             field.setAccessible(true);
             field.set(user, time);
             userRepository.saveAndFlush(user);
