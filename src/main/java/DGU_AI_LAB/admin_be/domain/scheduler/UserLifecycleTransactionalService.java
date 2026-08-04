@@ -60,18 +60,6 @@ public class UserLifecycleTransactionalService {
         }
     }
 
-    /**
-     * 특정 유저를 DB에서 완전 삭제(Hard Delete)합니다.
-     * 독립 트랜잭션으로 실행되어, 실패 시 다른 유저의 처리에 영향을 주지 않습니다.
-     */
-    @Transactional
-    public void hardDeleteUser(Long userId, String email) {
-        userRepository.findById(userId).ifPresent(user -> {
-            userRepository.delete(user);
-            log.info("계정 영구 삭제(Hard Delete) 완료: ID={}, Email={}", userId, email);
-        });
-    }
-
     private void sendWarningAlert(User user, long daysLeft, LocalDateTime deleteDate) {
         String dateStr = deleteDate.toLocalDate().toString();
         String subject = messageUtils.get("notification.user.delete-warning.subject", String.valueOf(daysLeft));

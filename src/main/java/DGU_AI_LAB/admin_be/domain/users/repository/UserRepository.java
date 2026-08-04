@@ -32,11 +32,4 @@ public interface UserRepository extends JpaRepository<User,Long> {
             "  AND " +
             "  (MAX(r.expiresAt) IS NULL OR MAX(r.expiresAt) < :thresholdDate)")
     List<User> findInactiveUsers(@Param("thresholdDate") LocalDateTime thresholdDate);
-
-    /**
-     * [Hard Delete 대상 조회]
-     * 조건: Soft Delete 된 지 1년 지난 유저
-     */
-    @Query("SELECT u FROM User u WHERE u.isActive = false AND u.deletedAt < :hardDeleteThreshold")
-    List<User> findUsersForHardDelete(@Param("hardDeleteThreshold") LocalDateTime hardDeleteThreshold);
 }
