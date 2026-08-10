@@ -66,10 +66,12 @@ public class AdminUserService {
                 .filter(r -> r.getStatus() == Status.FULFILLED)
                 .map(Request::getRequestId)
                 .collect(Collectors.toList());
-        Map<Long, List<PodExternalPort>> portsMap = podExternalPortRepository
-                .findByRequestRequestIdIn(fulfilledIds)
-                .stream()
-                .collect(Collectors.groupingBy(p -> p.getRequest().getRequestId()));
+        Map<Long, List<PodExternalPort>> portsMap = fulfilledIds.isEmpty()
+                ? Map.of()
+                : podExternalPortRepository
+                        .findByRequestRequestIdIn(fulfilledIds)
+                        .stream()
+                        .collect(Collectors.groupingBy(p -> p.getRequest().getRequestId()));
 
         for (Request request : userRequests) {
             if (request.getStatus() == Status.FULFILLED) {

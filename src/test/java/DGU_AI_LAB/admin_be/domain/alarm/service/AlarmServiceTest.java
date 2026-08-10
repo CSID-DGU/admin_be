@@ -580,20 +580,14 @@ class AlarmServiceTest {
     }
 
     private Request mockRequestForDeleted(String userName, String email, String serverName, String podName) {
-        User user = mock(User.class);
-        when(user.getName()).thenReturn(userName);
-        when(user.getEmail()).thenReturn(email);
-        ResourceGroup rg = mock(ResourceGroup.class);
-        when(rg.getServerName()).thenReturn(serverName);
-        Request request = mock(Request.class);
-        when(request.getUser()).thenReturn(user);
-        when(request.getResourceGroup()).thenReturn(rg);
-        when(request.getPodName()).thenReturn(podName);
-        when(request.getUbuntuUsername()).thenReturn("testuser");
-        return request;
+        return mockRequestWithOptionalId(userName, email, serverName, podName, null);
     }
 
     private Request mockRequestForExtended(String userName, String email, String serverName, String podName) {
+        return mockRequestWithOptionalId(userName, email, serverName, podName, 99L);
+    }
+
+    private Request mockRequestWithOptionalId(String userName, String email, String serverName, String podName, Long requestId) {
         User user = mock(User.class);
         when(user.getName()).thenReturn(userName);
         when(user.getEmail()).thenReturn(email);
@@ -604,7 +598,9 @@ class AlarmServiceTest {
         when(request.getResourceGroup()).thenReturn(rg);
         when(request.getPodName()).thenReturn(podName);
         when(request.getUbuntuUsername()).thenReturn("testuser");
-        when(request.getRequestId()).thenReturn(99L);
+        if (requestId != null) {
+            when(request.getRequestId()).thenReturn(requestId);
+        }
         return request;
     }
 
