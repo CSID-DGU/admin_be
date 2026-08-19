@@ -7,8 +7,10 @@ import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
+import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.PortRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.UserCreationRequestDTO;
@@ -43,6 +45,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -63,6 +66,7 @@ public class AdminRequestCommandService {
     private final PodExternalPortRepository podExternalPortRepository;
     private final PodService podService;
     private final UbuntuAccountService ubuntuAccountService;
+    private final PortRequestService portRequestService;
     private final ObjectMapper objectMapper;
 
     private final @Qualifier("configWebClient") WebClient userCreationWebClient;
@@ -303,6 +307,18 @@ public class AdminRequestCommandService {
                     ContainerImage newContainerImage = containerImageRepository.findById(newImageId)
                             .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
                     originalRequest.updateContainerImage(newContainerImage);
+                    break;
+                case PORT:
+                    List<PortRequestDTO> newPorts = objectMapper.readValue(changeRequest.getNewValue(),
+                            objectMapper.getTypeFactory().constructCollectionType(List.class, PortRequestDTO.class));
+                    for (PortRequestDTO portRequestDTO : newPorts) {
+                        portRequestService.createPortRequest(
+                                originalRequest,
+                                originalRequest.getResourceGroup(),
+                                portRequestDTO.internalPort(),
+                                portRequestDTO.usagePurpose()
+                        );
+                    }
                     break;
                 default:
                     throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);

@@ -7,6 +7,7 @@ import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
+import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectModificationDTO;
@@ -66,6 +67,7 @@ class AdminRequestCommandServiceTest {
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private PodService podService;
     @Mock private UbuntuAccountService ubuntuAccountService;
+    @Mock private PortRequestService portRequestService;
     @Mock private WebClient mockWebClient;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
@@ -91,7 +93,7 @@ class AdminRequestCommandServiceTest {
         service = new AdminRequestCommandService(
                 alarmService, requestRepository, userRepository, containerImageRepository,
                 resourceGroupRepository, changeRequestRepository,
-                groupRepository, podExternalPortRepository, podService, ubuntuAccountService, new ObjectMapper(),
+                groupRepository, podExternalPortRepository, podService, ubuntuAccountService, portRequestService, new ObjectMapper(),
                 mockWebClient, transactionManager
         );
         // 공유 엔티티 기본 설정
@@ -720,6 +722,33 @@ class AdminRequestCommandServiceTest {
 
             verify(originalRequest).updateContainerImage(newImage);
             verify(changeRequest).approve(mockUser, "이미지 변경 승인");
+        }
+
+        @Test
+        @DisplayName("PORT 변경 요청 승인 시 요청된 각 포트에 대해 portRequestService.createPortRequest()가 호출된다")
+        void approveModification_port_success() throws Exception {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            Request originalRequest = buildMockedRequestWithStatus(24L, Status.FULFILLED);
+            when(originalRequest.getResourceGroup()).thenReturn(mockRg);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.PORT);
+            when(changeRequest.getNewValue()).thenReturn(
+                    "[{\"internalPort\":3000,\"usagePurpose\":\"웹 서버\"},{\"internalPort\":6006,\"usagePurpose\":\"텐서보드\"}]");
+            when(changeRequest.getRequest()).thenReturn(originalRequest);
+            when(changeRequestRepository.findById(8L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+
+            ApproveModificationDTO dto = new ApproveModificationDTO(8L, "포트 추가 승인");
+            service.approveModification(100L, dto);
+
+            ArgumentCaptor<Integer> portCaptor = ArgumentCaptor.forClass(Integer.class);
+            ArgumentCaptor<String> purposeCaptor = ArgumentCaptor.forClass(String.class);
+            verify(portRequestService, times(2)).createPortRequest(
+                    eq(originalRequest), eq(mockRg), portCaptor.capture(), purposeCaptor.capture());
+
+            assertThat(portCaptor.getAllValues()).containsExactly(3000, 6006);
+            assertThat(purposeCaptor.getAllValues()).containsExactly("웹 서버", "텐서보드");
+            verify(changeRequest).approve(mockUser, "포트 추가 승인");
         }
 
         @Test
