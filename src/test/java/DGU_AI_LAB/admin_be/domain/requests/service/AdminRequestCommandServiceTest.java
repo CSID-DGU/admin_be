@@ -656,6 +656,7 @@ class AdminRequestCommandServiceTest {
 
             verify(originalRequest).updateVolumeSize(200L);
             verify(changeRequest).approve(mockUser, "승인합니다");
+            verify(alarmService).sendModificationApprovedEmail(changeRequest, "승인합니다");
         }
 
         @Test
@@ -682,6 +683,8 @@ class AdminRequestCommandServiceTest {
             assertThat(captor.getValue()).isEqualTo(newExpiry);
             verify(changeRequest).approve(mockUser, "기간 연장 승인");
             verify(alarmService).sendContainerExtendedEmail(eq(originalRequest), eq(oldExpiry), eq(newExpiry));
+            // EXPIRES_AT은 전용 메일(sendContainerExtendedEmail)만 보내고, 공용 승인 메일은 중복 발송하지 않는다
+            verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
         }
 
         @Test
@@ -703,6 +706,7 @@ class AdminRequestCommandServiceTest {
 
             verify(originalRequest).updateResourceGroup(newRg);
             verify(changeRequest).approve(mockUser, "리소스 그룹 변경 승인");
+            verify(alarmService).sendModificationApprovedEmail(changeRequest, "리소스 그룹 변경 승인");
         }
 
         @Test
@@ -724,6 +728,30 @@ class AdminRequestCommandServiceTest {
 
             verify(originalRequest).updateContainerImage(newImage);
             verify(changeRequest).approve(mockUser, "이미지 변경 승인");
+            verify(alarmService).sendModificationApprovedEmail(changeRequest, "이미지 변경 승인");
+        }
+
+        @Test
+        @DisplayName("GROUP 변경 요청 승인 시 originalRequest.addGroup()이 호출된다")
+        void approveModification_group_success() throws Exception {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            Request originalRequest = buildMockedRequestWithStatus(25L, Status.FULFILLED);
+            Group newGroup = mock(Group.class);
+            when(newGroup.getUbuntuGid()).thenReturn(42L);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.GROUP);
+            when(changeRequest.getNewValue()).thenReturn("[42]");
+            when(changeRequest.getRequest()).thenReturn(originalRequest);
+            when(changeRequestRepository.findByIdForUpdate(9L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+            when(groupRepository.findByUbuntuGid(42L)).thenReturn(Optional.of(newGroup));
+
+            ApproveModificationDTO dto = new ApproveModificationDTO(9L, "그룹 변경 승인");
+            service.approveModification(100L, dto);
+
+            verify(originalRequest).addGroup(newGroup);
+            verify(changeRequest).approve(mockUser, "그룹 변경 승인");
+            verify(alarmService).sendModificationApprovedEmail(changeRequest, "그룹 변경 승인");
         }
 
         @Test
@@ -751,6 +779,7 @@ class AdminRequestCommandServiceTest {
             assertThat(portCaptor.getAllValues()).containsExactly(3000, 6006);
             assertThat(purposeCaptor.getAllValues()).containsExactly("웹 서버", "텐서보드");
             verify(changeRequest).approve(mockUser, "포트 추가 승인");
+            verify(alarmService).sendModificationApprovedEmail(changeRequest, "포트 추가 승인");
         }
 
         @Test

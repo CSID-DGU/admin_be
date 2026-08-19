@@ -290,7 +290,8 @@ public class AdminRequestCommandService {
                 case GROUP:
                     // 그룹 변경은 복잡하기 때문에, 엔티티가 아닌 서비스 레이어에서 처리합니다.
                     originalRequest.getRequestGroups().clear();
-                    Set<Long> newGroupIds = objectMapper.readValue(changeRequest.getNewValue(), Set.class);
+                    Set<Long> newGroupIds = objectMapper.readValue(changeRequest.getNewValue(),
+                            objectMapper.getTypeFactory().constructCollectionType(Set.class, Long.class));
                     Set<Group> newGroups = newGroupIds.stream()
                             .map(gid -> groupRepository.findByUbuntuGid(gid)
                                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)))
@@ -340,6 +341,13 @@ public class AdminRequestCommandService {
                 log.info("사용자 '{}'에게 기간 연장 안내 메일을 발송했습니다.", originalRequest.getUser().getName());
             } catch (Exception e) {
                 log.warn("기간 연장 안내 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e);
+            }
+        } else {
+            try {
+                alarmService.sendModificationApprovedEmail(changeRequest, dto.adminComment());
+                log.info("사용자 '{}'에게 변경 요청 승인 안내 메일을 발송했습니다.", originalRequest.getUser().getName());
+            } catch (Exception e) {
+                log.warn("변경 요청 승인 안내 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e);
             }
         }
     }

@@ -17,6 +17,7 @@ import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.ConflictException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
+import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -55,6 +56,9 @@ class AdminUserServiceTest {
 
     @Mock
     private PodExternalPortRepository podExternalPortRepository;
+
+    @Mock
+    private MessageUtils messageUtils;
 
     private User mockUser;
 
@@ -140,12 +144,14 @@ class AdminUserServiceTest {
         void deleteUser_withNoRequests_softDeletes() {
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
             adminUserService.deleteUser(1L);
 
             assertThat(mockUser.getIsActive()).isFalse();
             assertThat(mockUser.getDeletedAt()).isNotNull();
             verifyNoInteractions(ubuntuAccountService);
+            verify(alarmService).sendAllAlerts(eq("홍길동"), eq("test@dgu.ac.kr"), anyString(), anyString());
         }
 
         @Test
@@ -168,6 +174,7 @@ class AdminUserServiceTest {
 
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(fulfilledRequest));
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
             adminUserService.deleteUser(1L);
 
@@ -185,6 +192,7 @@ class AdminUserServiceTest {
 
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(pendingRequest));
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
             adminUserService.deleteUser(1L);
 
@@ -200,6 +208,7 @@ class AdminUserServiceTest {
 
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(deletedRequest));
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
             adminUserService.deleteUser(1L);
 
@@ -225,6 +234,7 @@ class AdminUserServiceTest {
 
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(fulfilled, pending, deleted));
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
             adminUserService.deleteUser(1L);
 
@@ -257,6 +267,7 @@ class AdminUserServiceTest {
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(req1, req2, req3));
             when(podExternalPortRepository.findByRequestRequestIdIn(anyList())).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
             adminUserService.deleteUser(1L);
 

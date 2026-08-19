@@ -15,6 +15,7 @@ import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.ConflictException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
+import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -35,6 +36,7 @@ public class AdminUserService {
     private final UbuntuAccountService ubuntuAccountService;
     private final AlarmService alarmService;
     private final PodExternalPortRepository podExternalPortRepository;
+    private final MessageUtils messageUtils;
 
     /**
      * 전체 유저 조회
@@ -92,6 +94,14 @@ public class AdminUserService {
 
         user.withdraw();
         log.info("[deleteUser] userId={} 논리적 삭제 완료 (isActive=false)", userId);
+
+        try {
+            String subject = messageUtils.get("notification.user.admin-delete.subject");
+            String body = messageUtils.get("notification.user.admin-delete.body", user.getName());
+            alarmService.sendAllAlerts(user.getName(), user.getEmail(), subject, body);
+        } catch (Exception e) {
+            log.warn("[deleteUser] 계정 비활성화 안내 메일 발송 실패: userId={}", userId, e);
+        }
     }
 
     /**

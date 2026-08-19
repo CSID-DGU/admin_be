@@ -253,6 +253,24 @@ public class AlarmService {
         sendMonitoringLog(user.getName(), user.getEmail(), subject);
     }
 
+    /**
+     * [변경 요청 승인 안내 메일] EXPIRES_AT 외 타입(VOLUME_SIZE/GROUP/RESOURCE_GROUP/CONTAINER_IMAGE/PORT) 공통.
+     * EXPIRES_AT은 sendContainerExtendedEmail로 별도의 상세 메일을 보낸다.
+     */
+    public void sendModificationApprovedEmail(ChangeRequest changeRequest, String adminComment) {
+        User user = changeRequest.getRequestedBy();
+        String changeType = changeRequest.getChangeType().name();
+
+        String subject = messageUtils.get("email.modification.approved.subject", changeType);
+        String body = messageUtils.get("email.modification.approved.body",
+                user.getName(),    // {0}
+                changeType,        // {1}
+                adminComment);     // {2}
+
+        sendMailAlert(user.getEmail(), subject, body);
+        sendMonitoringLog(user.getName(), user.getEmail(), subject);
+    }
+
     public void sendAdminSlackNotification(String serverName, String message) {
         sendSlackAlert(message, getAdminWebhookUrl(serverName));
     }
