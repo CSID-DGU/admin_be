@@ -74,7 +74,7 @@ public class AdminUserService {
                         .collect(Collectors.groupingBy(p -> p.getRequest().getRequestId()));
 
         for (Request request : userRequests) {
-            if (request.getStatus() == Status.FULFILLED) {
+            if (fulfilledIds.contains(request.getRequestId())) {
                 ubuntuAccountService.deleteUbuntuAccount(request.getUbuntuUsername());
                 request.deleteAfterCleanup();
                 requestRepository.save(request);
@@ -90,7 +90,7 @@ public class AdminUserService {
         }
         log.info("[deleteUser] userId={}와 연결된 Request 정리 완료", userId);
 
-        user.updateUserInfo(null, false);
+        user.withdraw();
         log.info("[deleteUser] userId={} 논리적 삭제 완료 (isActive=false)", userId);
     }
 

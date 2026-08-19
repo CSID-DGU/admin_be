@@ -144,6 +144,7 @@ class AdminUserServiceTest {
             adminUserService.deleteUser(1L);
 
             assertThat(mockUser.getIsActive()).isFalse();
+            assertThat(mockUser.getDeletedAt()).isNotNull();
             verifyNoInteractions(ubuntuAccountService);
         }
 

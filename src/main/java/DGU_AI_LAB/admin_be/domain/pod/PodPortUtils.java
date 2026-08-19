@@ -20,11 +20,10 @@ public class PodPortUtils {
     /** ssh/jupyter를 제외한 추가 포트만 포맷. 없으면 "없음". */
     public static String formatExtraPortSummary(List<PodExternalPort> ports) {
         if (ports == null) return "없음";
-        String result = ports.stream()
+        List<PodExternalPort> extraPorts = ports.stream()
                 .filter(p -> !"ssh".equalsIgnoreCase(p.getUsagePurpose())
                         && !"jupyter".equalsIgnoreCase(p.getUsagePurpose()))
-                .map(p -> p.getUsagePurpose() + "(" + p.getExternalPort() + ")")
-                .collect(Collectors.joining(", "));
-        return result.isEmpty() ? "없음" : result;
+                .collect(Collectors.toList());
+        return formatPortSummary(extraPorts);
     }
 }
