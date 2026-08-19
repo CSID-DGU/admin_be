@@ -80,7 +80,9 @@ public class AdminRequestCommandService {
         final UserCreationRequestDTO[] creationDtoRef = {null};
         final String[] usernameRef = {null};
         tx.execute(status -> {
-            Request req = requestRepository.findById(dto.requestId())
+            // 행 잠금 조회: 동시에 같은 요청을 승인 시도하는 두 번째 트랜잭션은 여기서 대기하다가
+            // 첫 트랜잭션 커밋 후 PROCESSING 상태를 보고 아래에서 실패한다 (중복 승인/중복 provisioning 방지)
+            Request req = requestRepository.findByIdForUpdate(dto.requestId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
             if (req.getStatus() != Status.PENDING) {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
@@ -254,7 +256,9 @@ public class AdminRequestCommandService {
 
     @Transactional
     public void approveModification(Long adminId, ApproveModificationDTO dto) {
-        ChangeRequest changeRequest = changeRequestRepository.findById(dto.changeRequestId())
+        // 행 잠금 조회: 동시에 같은 변경 요청을 승인 시도하는 두 번째 트랜잭션은 첫 트랜잭션 커밋까지 대기하다가
+        // FULFILLED 상태를 보고 실패한다 (PORT 등 부수 효과의 중복 실행 방지)
+        ChangeRequest changeRequest = changeRequestRepository.findByIdForUpdate(dto.changeRequestId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
         if (changeRequest.getStatus() != Status.PENDING) {

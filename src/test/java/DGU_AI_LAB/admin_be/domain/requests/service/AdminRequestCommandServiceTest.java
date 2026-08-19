@@ -130,6 +130,7 @@ class AdminRequestCommandServiceTest {
         when(request.getResourceGroup()).thenReturn(mockRg);
         when(request.getContainerImage()).thenReturn(mockImage);
         when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
+        when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
         return request;
     }
 
@@ -260,8 +261,9 @@ class AdminRequestCommandServiceTest {
                     .isEqualTo(ErrorCode.POD_CREATION_FAILED);
 
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
-            // requestRepository.findById 재조회 후 revertToPending 호출 검증
-            verify(requestRepository, atLeast(2)).findById(requestId);
+            // 1단계는 findByIdForUpdate(행 잠금)로 상태 확인, 보상 트랜잭션은 findById로 재조회 후 revertToPending 호출
+            verify(requestRepository).findByIdForUpdate(requestId);
+            verify(requestRepository).findById(requestId);
         }
 
         @Test
@@ -331,7 +333,7 @@ class AdminRequestCommandServiceTest {
             Long requestId = 14L;
             Request request = mock(Request.class);
             when(request.getStatus()).thenReturn(Status.FULFILLED);
-            when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
+            when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
 
@@ -346,7 +348,7 @@ class AdminRequestCommandServiceTest {
         @Test
         @DisplayName("존재하지 않는 requestId 승인 시 BusinessException 발생")
         void approveRequest_requestNotFound_throwsBusinessException() {
-            when(requestRepository.findById(999L)).thenReturn(Optional.empty());
+            when(requestRepository.findByIdForUpdate(999L)).thenReturn(Optional.empty());
 
             ApproveRequestDTO dto = new ApproveRequestDTO(999L, 1L, 1, 10L, "승인");
 
@@ -646,7 +648,7 @@ class AdminRequestCommandServiceTest {
             when(changeRequest.getChangeType()).thenReturn(ChangeType.VOLUME_SIZE);
             when(changeRequest.getNewValue()).thenReturn("200");
             when(changeRequest.getRequest()).thenReturn(originalRequest);
-            when(changeRequestRepository.findById(1L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
 
             ApproveModificationDTO dto = new ApproveModificationDTO(1L, "승인합니다");
@@ -669,7 +671,7 @@ class AdminRequestCommandServiceTest {
             when(changeRequest.getChangeType()).thenReturn(ChangeType.EXPIRES_AT);
             when(changeRequest.getNewValue()).thenReturn("\"2027-12-31T23:59:59\"");
             when(changeRequest.getRequest()).thenReturn(originalRequest);
-            when(changeRequestRepository.findById(2L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
 
             ApproveModificationDTO dto = new ApproveModificationDTO(2L, "기간 연장 승인");
@@ -692,7 +694,7 @@ class AdminRequestCommandServiceTest {
             when(changeRequest.getChangeType()).thenReturn(ChangeType.RESOURCE_GROUP);
             when(changeRequest.getNewValue()).thenReturn("2");
             when(changeRequest.getRequest()).thenReturn(originalRequest);
-            when(changeRequestRepository.findById(3L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(3L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
             when(resourceGroupRepository.findById(2)).thenReturn(Optional.of(newRg));
 
@@ -713,7 +715,7 @@ class AdminRequestCommandServiceTest {
             when(changeRequest.getChangeType()).thenReturn(ChangeType.CONTAINER_IMAGE);
             when(changeRequest.getNewValue()).thenReturn("5");
             when(changeRequest.getRequest()).thenReturn(originalRequest);
-            when(changeRequestRepository.findById(4L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(4L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
             when(containerImageRepository.findById(5L)).thenReturn(Optional.of(newImage));
 
@@ -735,7 +737,7 @@ class AdminRequestCommandServiceTest {
             when(changeRequest.getNewValue()).thenReturn(
                     "[{\"internalPort\":3000,\"usagePurpose\":\"웹 서버\"},{\"internalPort\":6006,\"usagePurpose\":\"텐서보드\"}]");
             when(changeRequest.getRequest()).thenReturn(originalRequest);
-            when(changeRequestRepository.findById(8L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(8L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
 
             ApproveModificationDTO dto = new ApproveModificationDTO(8L, "포트 추가 승인");
@@ -754,7 +756,7 @@ class AdminRequestCommandServiceTest {
         @Test
         @DisplayName("존재하지 않는 변경 요청 ID로 승인하면 BusinessException을 던진다")
         void approveModification_throwsException_whenChangeRequestNotFound() {
-            when(changeRequestRepository.findById(999L)).thenReturn(Optional.empty());
+            when(changeRequestRepository.findByIdForUpdate(999L)).thenReturn(Optional.empty());
 
             ApproveModificationDTO dto = new ApproveModificationDTO(999L, "승인");
 
@@ -767,7 +769,7 @@ class AdminRequestCommandServiceTest {
         void approveModification_throwsException_whenNotPendingStatus() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             when(changeRequest.getStatus()).thenReturn(Status.FULFILLED);
-            when(changeRequestRepository.findById(5L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(5L)).thenReturn(Optional.of(changeRequest));
 
             ApproveModificationDTO dto = new ApproveModificationDTO(5L, "승인");
 
@@ -780,7 +782,7 @@ class AdminRequestCommandServiceTest {
         void approveModification_throwsException_whenAdminNotFound() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
-            when(changeRequestRepository.findById(6L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(6L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(999L)).thenReturn(Optional.empty());
 
             ApproveModificationDTO dto = new ApproveModificationDTO(6L, "승인");
@@ -795,7 +797,7 @@ class AdminRequestCommandServiceTest {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
             when(changeRequest.getRequest()).thenReturn(null);
-            when(changeRequestRepository.findById(7L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
 
             ApproveModificationDTO dto = new ApproveModificationDTO(7L, "승인");

@@ -3,7 +3,9 @@ package DGU_AI_LAB.admin_be.domain.requests.repository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -28,6 +30,15 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
 
     @Query("SELECT r.ubuntuUsername FROM Request r WHERE r.status = :status")
     List<String> findUbuntuUsernamesByStatus(@Param("status") Status status);
+
+    /**
+     * 승인 처리 중 상태 확인 → 변경 사이의 race condition을 막기 위한 행 잠금 조회.
+     * 동시에 같은 Request를 승인하려는 두 번째 트랜잭션은 첫 트랜잭션 커밋(짧은 상태-확인 트랜잭션) 때까지 대기한 뒤
+     * PROCESSING 상태를 보고 INVALID_REQUEST_STATUS로 실패한다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT r FROM Request r WHERE r.requestId = :requestId")
+    Optional<Request> findByIdForUpdate(@Param("requestId") Long requestId);
 
     @Query("SELECT DISTINCT r FROM Request r " +
            "JOIN FETCH r.user " +
