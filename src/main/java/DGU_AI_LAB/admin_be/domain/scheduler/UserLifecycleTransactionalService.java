@@ -6,9 +6,11 @@ import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 
@@ -25,6 +27,7 @@ public class UserLifecycleTransactionalService {
     private final UserRepository userRepository;
     private final AlarmService alarmService;
     private final MessageUtils messageUtils;
+    private final RedisTemplate<String, Object> redisTemplate;
 
     private static final int INACTIVE_MONTHS = 3;
 
@@ -54,13 +57,18 @@ public class UserLifecycleTransactionalService {
         long daysLeft = ChronoUnit.DAYS.between(now.toLocalDate(), deleteDate.toLocalDate());
 
         if (daysLeft == 7 || daysLeft == 3 || daysLeft == 1) {
-            sendWarningAlert(user, daysLeft, deleteDate);
+            sendWarningAlert(user, daysLeft, deleteDate, now.toLocalDate().toString());
         } else if (daysLeft <= 0) {
             softDeleteUser(user);
         }
     }
 
-    private void sendWarningAlert(User user, long daysLeft, LocalDateTime deleteDate) {
+    private void sendWarningAlert(User user, long daysLeft, LocalDateTime deleteDate, String today) {
+        if (isDuplicateWarning(user.getUserId(), daysLeft, today)) {
+            log.debug("계정 삭제 경고 중복 발송 방지: userId={}, daysLeft={}, date={}", user.getUserId(), daysLeft, today);
+            return;
+        }
+
         String dateStr = deleteDate.toLocalDate().toString();
         String subject = messageUtils.get("notification.user.delete-warning.subject", String.valueOf(daysLeft));
         String body = messageUtils.get("notification.user.delete-warning.body",
@@ -68,6 +76,21 @@ public class UserLifecycleTransactionalService {
 
         alarmService.sendAllAlerts(user.getName(), user.getEmail(), subject, body);
         log.info("경고 알림 발송: {} ({}일 전)", user.getEmail(), daysLeft);
+    }
+
+    /**
+     * Redis SETNX로 당일 중복 발송을 방지한다 (RequestNotificationService.isDuplicate와 동일 패턴).
+     * Redis 장애 시 false를 반환해 이메일 발송을 허용한다(fail-open).
+     */
+    private boolean isDuplicateWarning(Long userId, long daysLeft, String date) {
+        try {
+            String key = "email:user-inactive-warning:" + userId + ":" + daysLeft + ":" + date;
+            Boolean set = redisTemplate.opsForValue().setIfAbsent(key, "sent", Duration.ofHours(25));
+            return Boolean.FALSE.equals(set);
+        } catch (Exception e) {
+            log.warn("Redis 중복 체크 실패, 발송 진행: {}", e.getMessage());
+            return false;
+        }
     }
 
     private void softDeleteUser(User user) {
