@@ -1,6 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
+import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -13,12 +15,15 @@ import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.ConflictException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
+import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -30,6 +35,8 @@ public class AdminUserService {
     private final RequestRepository requestRepository;
     private final UbuntuAccountService ubuntuAccountService;
     private final AlarmService alarmService;
+    private final PodExternalPortRepository podExternalPortRepository;
+    private final MessageUtils messageUtils;
 
     /**
      * 전체 유저 조회
@@ -57,13 +64,25 @@ public class AdminUserService {
 
         List<Request> userRequests = requestRepository.findAllByUser(user);
 
+        List<Long> fulfilledIds = userRequests.stream()
+                .filter(r -> r.getStatus() == Status.FULFILLED)
+                .map(Request::getRequestId)
+                .collect(Collectors.toList());
+        Map<Long, List<PodExternalPort>> portsMap = fulfilledIds.isEmpty()
+                ? Map.of()
+                : podExternalPortRepository
+                        .findByRequestRequestIdIn(fulfilledIds)
+                        .stream()
+                        .collect(Collectors.groupingBy(p -> p.getRequest().getRequestId()));
+
         for (Request request : userRequests) {
-            if (request.getStatus() == Status.FULFILLED) {
+            if (fulfilledIds.contains(request.getRequestId())) {
                 ubuntuAccountService.deleteUbuntuAccount(request.getUbuntuUsername());
                 request.deleteAfterCleanup();
                 requestRepository.save(request);
                 try {
-                    alarmService.sendContainerDeletedEmail(request);
+                    List<PodExternalPort> ports = portsMap.getOrDefault(request.getRequestId(), List.of());
+                    alarmService.sendContainerDeletedEmail(request, ports);
                 } catch (Exception e) {
                     log.warn("[deleteUser] 삭제 안내 메일 발송 실패: ubuntuUsername={}", request.getUbuntuUsername(), e);
                 }
@@ -73,8 +92,16 @@ public class AdminUserService {
         }
         log.info("[deleteUser] userId={}와 연결된 Request 정리 완료", userId);
 
-        user.updateUserInfo(null, false);
+        user.withdraw();
         log.info("[deleteUser] userId={} 논리적 삭제 완료 (isActive=false)", userId);
+
+        try {
+            String subject = messageUtils.get("notification.user.admin-delete.subject");
+            String body = messageUtils.get("notification.user.admin-delete.body", user.getName());
+            alarmService.sendAllAlerts(user.getName(), user.getEmail(), subject, body);
+        } catch (Exception e) {
+            log.warn("[deleteUser] 계정 비활성화 안내 메일 발송 실패: userId={}", userId, e);
+        }
     }
 
     /**

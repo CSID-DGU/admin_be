@@ -7,6 +7,7 @@ import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
+import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectModificationDTO;
@@ -66,6 +67,7 @@ class AdminRequestCommandServiceTest {
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private PodService podService;
     @Mock private UbuntuAccountService ubuntuAccountService;
+    @Mock private PortRequestService portRequestService;
     @Mock private WebClient mockWebClient;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
@@ -91,7 +93,7 @@ class AdminRequestCommandServiceTest {
         service = new AdminRequestCommandService(
                 alarmService, requestRepository, userRepository, containerImageRepository,
                 resourceGroupRepository, changeRequestRepository,
-                groupRepository, podExternalPortRepository, podService, ubuntuAccountService, new ObjectMapper(),
+                groupRepository, podExternalPortRepository, podService, ubuntuAccountService, portRequestService, new ObjectMapper(),
                 mockWebClient, transactionManager
         );
         // 공유 엔티티 기본 설정
@@ -128,6 +130,7 @@ class AdminRequestCommandServiceTest {
         when(request.getResourceGroup()).thenReturn(mockRg);
         when(request.getContainerImage()).thenReturn(mockImage);
         when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
+        when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
         return request;
     }
 
@@ -258,8 +261,9 @@ class AdminRequestCommandServiceTest {
                     .isEqualTo(ErrorCode.POD_CREATION_FAILED);
 
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
-            // requestRepository.findById 재조회 후 revertToPending 호출 검증
-            verify(requestRepository, atLeast(2)).findById(requestId);
+            // 1단계는 findByIdForUpdate(행 잠금)로 상태 확인, 보상 트랜잭션은 findById로 재조회 후 revertToPending 호출
+            verify(requestRepository).findByIdForUpdate(requestId);
+            verify(requestRepository).findById(requestId);
         }
 
         @Test
@@ -329,7 +333,7 @@ class AdminRequestCommandServiceTest {
             Long requestId = 14L;
             Request request = mock(Request.class);
             when(request.getStatus()).thenReturn(Status.FULFILLED);
-            when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
+            when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
 
@@ -344,7 +348,7 @@ class AdminRequestCommandServiceTest {
         @Test
         @DisplayName("존재하지 않는 requestId 승인 시 BusinessException 발생")
         void approveRequest_requestNotFound_throwsBusinessException() {
-            when(requestRepository.findById(999L)).thenReturn(Optional.empty());
+            when(requestRepository.findByIdForUpdate(999L)).thenReturn(Optional.empty());
 
             ApproveRequestDTO dto = new ApproveRequestDTO(999L, 1L, 1, 10L, "승인");
 
@@ -463,6 +467,34 @@ class AdminRequestCommandServiceTest {
 
             verify(alarmService, never()).sendRequestRejectedEmail(any(), anyString());
         }
+
+        @Test
+        @DisplayName("이메일 발송 실패 시 예외가 전파되지 않고 reject()는 이미 호출된 상태다")
+        void rejectRequest_emailFailure_doesNotPropagateException() {
+            Request request = buildMockedRequestWithStatus(38L, Status.PENDING);
+            doThrow(new RuntimeException("SMTP 연결 실패"))
+                    .when(alarmService).sendRequestRejectedEmail(any(), anyString());
+
+            RejectRequestDTO dto = new RejectRequestDTO(38L, "신청서 양식 미흡");
+
+            // 이메일 실패해도 예외 미전파 (DB 롤백 없음)
+            service.rejectRequest(dto);
+
+            verify(request).reject("신청서 양식 미흡");
+        }
+
+        @Test
+        @DisplayName("이메일 발송 실패 시에도 정상 응답 DTO가 반환된다")
+        void rejectRequest_emailFailure_stillReturnsResponseDTO() {
+            buildMockedRequestWithStatus(39L, Status.PENDING);
+            doThrow(new RuntimeException("MessageUtils 키 없음"))
+                    .when(alarmService).sendRequestRejectedEmail(any(), anyString());
+
+            RejectRequestDTO dto = new RejectRequestDTO(39L, "사유");
+
+            // 예외 없이 DTO 반환
+            assertThat(service.rejectRequest(dto)).isNotNull();
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -566,6 +598,37 @@ class AdminRequestCommandServiceTest {
 
             verify(alarmService, never()).sendModificationRejectedEmail(any(), anyString());
         }
+
+        @Test
+        @DisplayName("이메일 발송 실패 시 예외가 전파되지 않고 deny()는 이미 호출된 상태다")
+        void rejectModification_emailFailure_doesNotPropagateException() {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequestRepository.findById(13L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+            doThrow(new RuntimeException("SMTP 연결 실패"))
+                    .when(alarmService).sendModificationRejectedEmail(any(), anyString());
+
+            // 이메일 실패해도 예외 미전파 (DB 롤백 없음)
+            service.rejectModification(100L, new RejectModificationDTO(13L, "변경 사유 불충분"));
+
+            verify(changeRequest).deny(mockUser, "변경 사유 불충분");
+        }
+
+        @Test
+        @DisplayName("이메일 발송 시 RuntimeException 발생해도 deny()는 호출되고 정상 종료된다")
+        void rejectModification_emailThrowsRuntimeException_denyStillCalled() {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequestRepository.findById(14L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+            doThrow(new IllegalStateException("MessageUtils 키 없음"))
+                    .when(alarmService).sendModificationRejectedEmail(any(), anyString());
+
+            service.rejectModification(100L, new RejectModificationDTO(14L, "사유"));
+
+            verify(changeRequest).deny(eq(mockUser), eq("사유"));
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -585,7 +648,7 @@ class AdminRequestCommandServiceTest {
             when(changeRequest.getChangeType()).thenReturn(ChangeType.VOLUME_SIZE);
             when(changeRequest.getNewValue()).thenReturn("200");
             when(changeRequest.getRequest()).thenReturn(originalRequest);
-            when(changeRequestRepository.findById(1L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
 
             ApproveModificationDTO dto = new ApproveModificationDTO(1L, "승인합니다");
@@ -593,6 +656,7 @@ class AdminRequestCommandServiceTest {
 
             verify(originalRequest).updateVolumeSize(200L);
             verify(changeRequest).approve(mockUser, "승인합니다");
+            verify(alarmService).sendModificationApprovedEmail(changeRequest, "승인합니다");
         }
 
         @Test
@@ -608,7 +672,7 @@ class AdminRequestCommandServiceTest {
             when(changeRequest.getChangeType()).thenReturn(ChangeType.EXPIRES_AT);
             when(changeRequest.getNewValue()).thenReturn("\"2027-12-31T23:59:59\"");
             when(changeRequest.getRequest()).thenReturn(originalRequest);
-            when(changeRequestRepository.findById(2L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
 
             ApproveModificationDTO dto = new ApproveModificationDTO(2L, "기간 연장 승인");
@@ -619,6 +683,8 @@ class AdminRequestCommandServiceTest {
             assertThat(captor.getValue()).isEqualTo(newExpiry);
             verify(changeRequest).approve(mockUser, "기간 연장 승인");
             verify(alarmService).sendContainerExtendedEmail(eq(originalRequest), eq(oldExpiry), eq(newExpiry));
+            // EXPIRES_AT은 전용 메일(sendContainerExtendedEmail)만 보내고, 공용 승인 메일은 중복 발송하지 않는다
+            verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
         }
 
         @Test
@@ -631,7 +697,7 @@ class AdminRequestCommandServiceTest {
             when(changeRequest.getChangeType()).thenReturn(ChangeType.RESOURCE_GROUP);
             when(changeRequest.getNewValue()).thenReturn("2");
             when(changeRequest.getRequest()).thenReturn(originalRequest);
-            when(changeRequestRepository.findById(3L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(3L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
             when(resourceGroupRepository.findById(2)).thenReturn(Optional.of(newRg));
 
@@ -640,6 +706,7 @@ class AdminRequestCommandServiceTest {
 
             verify(originalRequest).updateResourceGroup(newRg);
             verify(changeRequest).approve(mockUser, "리소스 그룹 변경 승인");
+            verify(alarmService).sendModificationApprovedEmail(changeRequest, "리소스 그룹 변경 승인");
         }
 
         @Test
@@ -652,7 +719,7 @@ class AdminRequestCommandServiceTest {
             when(changeRequest.getChangeType()).thenReturn(ChangeType.CONTAINER_IMAGE);
             when(changeRequest.getNewValue()).thenReturn("5");
             when(changeRequest.getRequest()).thenReturn(originalRequest);
-            when(changeRequestRepository.findById(4L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(4L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
             when(containerImageRepository.findById(5L)).thenReturn(Optional.of(newImage));
 
@@ -661,12 +728,64 @@ class AdminRequestCommandServiceTest {
 
             verify(originalRequest).updateContainerImage(newImage);
             verify(changeRequest).approve(mockUser, "이미지 변경 승인");
+            verify(alarmService).sendModificationApprovedEmail(changeRequest, "이미지 변경 승인");
+        }
+
+        @Test
+        @DisplayName("GROUP 변경 요청 승인 시 originalRequest.addGroup()이 호출된다")
+        void approveModification_group_success() throws Exception {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            Request originalRequest = buildMockedRequestWithStatus(25L, Status.FULFILLED);
+            Group newGroup = mock(Group.class);
+            when(newGroup.getUbuntuGid()).thenReturn(42L);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.GROUP);
+            when(changeRequest.getNewValue()).thenReturn("[42]");
+            when(changeRequest.getRequest()).thenReturn(originalRequest);
+            when(changeRequestRepository.findByIdForUpdate(9L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+            when(groupRepository.findByUbuntuGid(42L)).thenReturn(Optional.of(newGroup));
+
+            ApproveModificationDTO dto = new ApproveModificationDTO(9L, "그룹 변경 승인");
+            service.approveModification(100L, dto);
+
+            verify(originalRequest).addGroup(newGroup);
+            verify(changeRequest).approve(mockUser, "그룹 변경 승인");
+            verify(alarmService).sendModificationApprovedEmail(changeRequest, "그룹 변경 승인");
+        }
+
+        @Test
+        @DisplayName("PORT 변경 요청 승인 시 요청된 각 포트에 대해 portRequestService.createPortRequest()가 호출된다")
+        void approveModification_port_success() throws Exception {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            Request originalRequest = buildMockedRequestWithStatus(24L, Status.FULFILLED);
+            when(originalRequest.getResourceGroup()).thenReturn(mockRg);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.PORT);
+            when(changeRequest.getNewValue()).thenReturn(
+                    "[{\"internalPort\":3000,\"usagePurpose\":\"웹 서버\"},{\"internalPort\":6006,\"usagePurpose\":\"텐서보드\"}]");
+            when(changeRequest.getRequest()).thenReturn(originalRequest);
+            when(changeRequestRepository.findByIdForUpdate(8L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+
+            ApproveModificationDTO dto = new ApproveModificationDTO(8L, "포트 추가 승인");
+            service.approveModification(100L, dto);
+
+            ArgumentCaptor<Integer> portCaptor = ArgumentCaptor.forClass(Integer.class);
+            ArgumentCaptor<String> purposeCaptor = ArgumentCaptor.forClass(String.class);
+            verify(portRequestService, times(2)).createPortRequest(
+                    eq(originalRequest), eq(mockRg), portCaptor.capture(), purposeCaptor.capture());
+
+            assertThat(portCaptor.getAllValues()).containsExactly(3000, 6006);
+            assertThat(purposeCaptor.getAllValues()).containsExactly("웹 서버", "텐서보드");
+            verify(changeRequest).approve(mockUser, "포트 추가 승인");
+            verify(alarmService).sendModificationApprovedEmail(changeRequest, "포트 추가 승인");
         }
 
         @Test
         @DisplayName("존재하지 않는 변경 요청 ID로 승인하면 BusinessException을 던진다")
         void approveModification_throwsException_whenChangeRequestNotFound() {
-            when(changeRequestRepository.findById(999L)).thenReturn(Optional.empty());
+            when(changeRequestRepository.findByIdForUpdate(999L)).thenReturn(Optional.empty());
 
             ApproveModificationDTO dto = new ApproveModificationDTO(999L, "승인");
 
@@ -679,7 +798,7 @@ class AdminRequestCommandServiceTest {
         void approveModification_throwsException_whenNotPendingStatus() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             when(changeRequest.getStatus()).thenReturn(Status.FULFILLED);
-            when(changeRequestRepository.findById(5L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(5L)).thenReturn(Optional.of(changeRequest));
 
             ApproveModificationDTO dto = new ApproveModificationDTO(5L, "승인");
 
@@ -692,7 +811,7 @@ class AdminRequestCommandServiceTest {
         void approveModification_throwsException_whenAdminNotFound() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
-            when(changeRequestRepository.findById(6L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(6L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(999L)).thenReturn(Optional.empty());
 
             ApproveModificationDTO dto = new ApproveModificationDTO(6L, "승인");
@@ -707,7 +826,7 @@ class AdminRequestCommandServiceTest {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
             when(changeRequest.getRequest()).thenReturn(null);
-            when(changeRequestRepository.findById(7L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
 
             ApproveModificationDTO dto = new ApproveModificationDTO(7L, "승인");
