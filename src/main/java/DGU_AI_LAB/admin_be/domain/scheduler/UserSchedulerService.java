@@ -20,7 +20,6 @@ public class UserSchedulerService {
     private final UserLifecycleTransactionalService userLifecycleService;
 
     private static final int INACTIVE_MONTHS = 3;
-    private static final int HARD_DELETE_YEARS = 1;
     // D-7 경고까지 포함하려면 (strict <) 기준일을 7+1=8일 앞당겨야 한다
     private static final int NOTIFICATION_LEAD_DAYS = 8;
 
@@ -31,7 +30,6 @@ public class UserSchedulerService {
         LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
 
         processInactiveUsers(now);
-        processHardDeleteUsers(now);
 
         log.info("👤 [스케줄러 종료]");
     }
@@ -46,20 +44,6 @@ public class UserSchedulerService {
                 userLifecycleService.processInactiveUser(user.getUserId(), now);
             } catch (Exception e) {
                 log.error("유저({}) 수명주기 처리 중 오류: {}", user.getEmail(), e.getMessage());
-            }
-        }
-    }
-
-    private void processHardDeleteUsers(LocalDateTime now) {
-        LocalDateTime hardDeleteThreshold = now.minusYears(HARD_DELETE_YEARS);
-        List<User> hardDeleteTargets = userRepository.findUsersForHardDelete(hardDeleteThreshold);
-
-        for (User user : hardDeleteTargets) {
-            try {
-                // 유저별 독립 트랜잭션으로 처리 — processInactiveUsers 결과에 영향 없음
-                userLifecycleService.hardDeleteUser(user.getUserId(), user.getEmail());
-            } catch (Exception e) {
-                log.error("Hard Delete 실패: {}", user.getEmail(), e);
             }
         }
     }

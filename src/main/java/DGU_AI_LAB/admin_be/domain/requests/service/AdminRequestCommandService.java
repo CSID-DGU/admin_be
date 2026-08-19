@@ -7,8 +7,10 @@ import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
+import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.PortRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.UserCreationRequestDTO;
@@ -43,6 +45,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -63,6 +66,7 @@ public class AdminRequestCommandService {
     private final PodExternalPortRepository podExternalPortRepository;
     private final PodService podService;
     private final UbuntuAccountService ubuntuAccountService;
+    private final PortRequestService portRequestService;
     private final ObjectMapper objectMapper;
 
     private final @Qualifier("configWebClient") WebClient userCreationWebClient;
@@ -76,7 +80,9 @@ public class AdminRequestCommandService {
         final UserCreationRequestDTO[] creationDtoRef = {null};
         final String[] usernameRef = {null};
         tx.execute(status -> {
-            Request req = requestRepository.findById(dto.requestId())
+            // 행 잠금 조회: 동시에 같은 요청을 승인 시도하는 두 번째 트랜잭션은 여기서 대기하다가
+            // 첫 트랜잭션 커밋 후 PROCESSING 상태를 보고 아래에서 실패한다 (중복 승인/중복 provisioning 방지)
+            Request req = requestRepository.findByIdForUpdate(dto.requestId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
             if (req.getStatus() != Status.PENDING) {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
@@ -219,6 +225,11 @@ public class AdminRequestCommandService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
         request.reject(dto.adminComment());
+        try {
+            alarmService.sendRequestRejectedEmail(request, dto.adminComment());
+        } catch (Exception e) {
+            log.warn("거절 안내 메일 발송 실패: requestId={}", dto.requestId(), e);
+        }
         return SaveRequestResponseDTO.fromEntity(request);
     }
 
@@ -236,11 +247,18 @@ public class AdminRequestCommandService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         changeRequest.deny(admin, dto.adminComment());
+        try {
+            alarmService.sendModificationRejectedEmail(changeRequest, dto.adminComment());
+        } catch (Exception e) {
+            log.warn("변경 요청 거절 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e);
+        }
     }
 
     @Transactional
     public void approveModification(Long adminId, ApproveModificationDTO dto) {
-        ChangeRequest changeRequest = changeRequestRepository.findById(dto.changeRequestId())
+        // 행 잠금 조회: 동시에 같은 변경 요청을 승인 시도하는 두 번째 트랜잭션은 첫 트랜잭션 커밋까지 대기하다가
+        // FULFILLED 상태를 보고 실패한다 (PORT 등 부수 효과의 중복 실행 방지)
+        ChangeRequest changeRequest = changeRequestRepository.findByIdForUpdate(dto.changeRequestId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
         if (changeRequest.getStatus() != Status.PENDING) {
@@ -272,7 +290,8 @@ public class AdminRequestCommandService {
                 case GROUP:
                     // 그룹 변경은 복잡하기 때문에, 엔티티가 아닌 서비스 레이어에서 처리합니다.
                     originalRequest.getRequestGroups().clear();
-                    Set<Long> newGroupIds = objectMapper.readValue(changeRequest.getNewValue(), Set.class);
+                    Set<Long> newGroupIds = objectMapper.readValue(changeRequest.getNewValue(),
+                            objectMapper.getTypeFactory().constructCollectionType(Set.class, Long.class));
                     Set<Group> newGroups = newGroupIds.stream()
                             .map(gid -> groupRepository.findByUbuntuGid(gid)
                                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)))
@@ -294,6 +313,18 @@ public class AdminRequestCommandService {
                             .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
                     originalRequest.updateContainerImage(newContainerImage);
                     break;
+                case PORT:
+                    List<PortRequestDTO> newPorts = objectMapper.readValue(changeRequest.getNewValue(),
+                            objectMapper.getTypeFactory().constructCollectionType(List.class, PortRequestDTO.class));
+                    for (PortRequestDTO portRequestDTO : newPorts) {
+                        portRequestService.createPortRequest(
+                                originalRequest,
+                                originalRequest.getResourceGroup(),
+                                portRequestDTO.internalPort(),
+                                portRequestDTO.usagePurpose()
+                        );
+                    }
+                    break;
                 default:
                     throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
             }
@@ -310,6 +341,13 @@ public class AdminRequestCommandService {
                 log.info("사용자 '{}'에게 기간 연장 안내 메일을 발송했습니다.", originalRequest.getUser().getName());
             } catch (Exception e) {
                 log.warn("기간 연장 안내 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e);
+            }
+        } else {
+            try {
+                alarmService.sendModificationApprovedEmail(changeRequest, dto.adminComment());
+                log.info("사용자 '{}'에게 변경 요청 승인 안내 메일을 발송했습니다.", originalRequest.getUser().getName());
+            } catch (Exception e) {
+                log.warn("변경 요청 승인 안내 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e);
             }
         }
     }

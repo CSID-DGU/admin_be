@@ -1,10 +1,16 @@
 package DGU_AI_LAB.admin_be.domain.alarm.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.dto.SlackMessageDto;
+import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
+import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
+import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
+import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
+import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
+import org.springframework.mail.SimpleMailMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -47,6 +53,9 @@ class AlarmServiceTest {
 
     @Mock
     private MessageUtils messageUtils;
+
+    @Mock
+    private PodExternalPortRepository podExternalPortRepository;
 
     @Mock
     private ListOperations<String, Object> listOperations;
@@ -246,6 +255,355 @@ class AlarmServiceTest {
         }
     }
 
+    @Nested
+    @DisplayName("sendContainerCreatedEmail")
+    class SendContainerCreatedEmail {
+
+        @Test
+        @DisplayName("추가 포트가 없을 때 '없음'으로 메일이 발송된다")
+        void sendContainerCreatedEmail_sendsMailWithNoExtraPorts() {
+            Request request = mockRequestForCreated("홍길동", "hong@dgu.ac.kr", "LAB", 1L);
+            when(podExternalPortRepository.findByRequestRequestId(1L)).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any())).thenReturn("[DGU AILab] 서버 배정 안내 (LAB)");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn("배정 안내 본문 (추가 포트: 없음)");
+
+            alarmService.sendContainerCreatedEmail(request, "9100", "9104");
+
+            ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+            verify(mailSender).send(captor.capture());
+            assertThat(captor.getValue().getTo()).containsExactly("hong@dgu.ac.kr");
+        }
+
+        @Test
+        @DisplayName("추가 포트가 있을 때 포트 목록이 포함되어 발송된다")
+        void sendContainerCreatedEmail_sendsMailWithExtraPorts() {
+            Request request = mockRequestForCreated("이순신", "lee@dgu.ac.kr", "FARM", 2L);
+            PodExternalPort sshPort = mockPodPort("ssh", 9100);
+            PodExternalPort jupyterPort = mockPodPort("jupyter", 9104);
+            PodExternalPort tensorPort = mockPodPort("tensorboard", 9200);
+            when(podExternalPortRepository.findByRequestRequestId(2L))
+                    .thenReturn(List.of(sshPort, jupyterPort, tensorPort));
+            when(messageUtils.get(anyString(), any())).thenReturn("[DGU AILab] 서버 배정 안내 (FARM)");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn("배정 안내 본문 (추가 포트: tensorboard(9200))");
+
+            alarmService.sendContainerCreatedEmail(request, "9100", "9104");
+
+            // ssh, jupyter 필터링 후 tensorboard만 {7}로 전달되는지 검증
+            verify(messageUtils).get(eq("email.container.created.body"),
+                    any(), any(), any(), eq("9100"), eq("9104"), any(), any(), eq("tensorboard(9200)"));
+        }
+
+        @Test
+        @DisplayName("ssh와 jupyter는 추가 포트에서 제외된다")
+        void sendContainerCreatedEmail_excludesSshAndJupyterFromExtraPorts() {
+            Request request = mockRequestForCreated("김철수", "kim@dgu.ac.kr", "LAB", 3L);
+            PodExternalPort sshPort = mockPodPort("ssh", 9100);
+            PodExternalPort jupyterPort = mockPodPort("jupyter", 9104);
+            when(podExternalPortRepository.findByRequestRequestId(3L))
+                    .thenReturn(List.of(sshPort, jupyterPort));
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn("본문");
+
+            alarmService.sendContainerCreatedEmail(request, "9100", "9104");
+
+            verify(messageUtils).get(eq("email.container.created.body"),
+                    any(), any(), any(), any(), any(), any(), any(), eq("없음"));
+        }
+
+        @Test
+        @DisplayName("메일 발송 후 noti 채널에 모니터링 로그가 적재된다")
+        void sendContainerCreatedEmail_pushesMonitoringLogToNotiChannel() {
+            Request request = mockRequestForCreated("홍길동", "hong@dgu.ac.kr", "LAB", 4L);
+            when(podExternalPortRepository.findByRequestRequestId(4L)).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn("본문");
+            when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("로그");
+
+            alarmService.sendContainerCreatedEmail(request, "9100", "9104");
+
+            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
+            verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
+            assertThat(captor.getValue().getWebhookUrl()).isEqualTo(NOTI_WEBHOOK);
+        }
+
+        @Test
+        @DisplayName("메일 전송 실패 시 에러 Slack 알림이 발송된다")
+        void sendContainerCreatedEmail_sendsSlackError_whenMailFails() {
+            Request request = mockRequestForCreated("홍길동", "hong@dgu.ac.kr", "LAB", 5L);
+            when(podExternalPortRepository.findByRequestRequestId(5L)).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn("본문");
+            when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("로그");
+            doThrow(new RuntimeException("SMTP 오류")).when(mailSender).send(any(SimpleMailMessage.class));
+
+            alarmService.sendContainerCreatedEmail(request, "9100", "9104");
+
+            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
+            verify(listOperations, atLeastOnce()).rightPush(eq(QUEUE_KEY), captor.capture());
+            assertThat(captor.getAllValues()).anyMatch(dto ->
+                    dto.getWebhookUrl().equals(ERROR_WEBHOOK));
+        }
+    }
+
+    @Nested
+    @DisplayName("sendRequestRejectedEmail")
+    class SendRequestRejectedEmail {
+
+        @Test
+        @DisplayName("사용자에게 거절 이메일이 발송된다")
+        void sendRequestRejectedEmail_sendsMailToUser() {
+            Request request = mockRequest("홍길동", "hong@dgu.ac.kr", "FARM");
+            when(messageUtils.get(anyString(), any())).thenReturn("[DGU AILab] 서버 신청 거절 안내 (FARM)");
+            when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("거절 안내 본문");
+
+            alarmService.sendRequestRejectedEmail(request, "신청서 양식 미흡");
+
+            ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+            verify(mailSender).send(captor.capture());
+            assertThat(captor.getValue().getTo()).containsExactly("hong@dgu.ac.kr");
+            assertThat(captor.getValue().getSubject()).isEqualTo("[DGU AILab] 서버 신청 거절 안내 (FARM)");
+        }
+
+        @Test
+        @DisplayName("거절 이메일 발송 후 noti 채널에 모니터링 로그가 적재된다")
+        void sendRequestRejectedEmail_pushesMonitoringLogToNotiChannel() {
+            Request request = mockRequest("홍길동", "hong@dgu.ac.kr", "FARM");
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("로그");
+
+            alarmService.sendRequestRejectedEmail(request, "신청서 양식 미흡");
+
+            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
+            verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
+            assertThat(captor.getValue().getWebhookUrl()).isEqualTo(NOTI_WEBHOOK);
+            assertThat(captor.getValue().getType()).isEqualTo(SlackMessageDto.MessageType.WEBHOOK);
+        }
+
+        @Test
+        @DisplayName("메일 전송 실패 시 에러 Slack 알림이 발송된다")
+        void sendRequestRejectedEmail_sendsSlackError_whenMailFails() {
+            Request request = mockRequest("홍길동", "hong@dgu.ac.kr", "FARM");
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("로그");
+            doThrow(new RuntimeException("SMTP 오류")).when(mailSender).send(any(SimpleMailMessage.class));
+
+            alarmService.sendRequestRejectedEmail(request, "신청서 양식 미흡");
+
+            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
+            verify(listOperations, atLeastOnce()).rightPush(eq(QUEUE_KEY), captor.capture());
+            assertThat(captor.getAllValues()).anyMatch(dto ->
+                    dto.getWebhookUrl().equals(ERROR_WEBHOOK));
+        }
+    }
+
+    @Nested
+    @DisplayName("sendModificationRejectedEmail")
+    class SendModificationRejectedEmail {
+
+        @Test
+        @DisplayName("사용자에게 변경 요청 거절 이메일이 발송된다")
+        void sendModificationRejectedEmail_sendsMailToUser() {
+            ChangeRequest changeRequest = mockChangeRequest("이순신", "lee@dgu.ac.kr", ChangeType.EXPIRES_AT);
+            when(messageUtils.get(anyString(), any())).thenReturn("[DGU AILab] 서버 변경 요청 거절 안내 (EXPIRES_AT)");
+            when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("변경 거절 안내 본문");
+
+            alarmService.sendModificationRejectedEmail(changeRequest, "변경 사유 불충분");
+
+            ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+            verify(mailSender).send(captor.capture());
+            assertThat(captor.getValue().getTo()).containsExactly("lee@dgu.ac.kr");
+            assertThat(captor.getValue().getSubject()).isEqualTo("[DGU AILab] 서버 변경 요청 거절 안내 (EXPIRES_AT)");
+        }
+
+        @Test
+        @DisplayName("변경 요청 거절 이메일 발송 후 noti 채널에 모니터링 로그가 적재된다")
+        void sendModificationRejectedEmail_pushesMonitoringLogToNotiChannel() {
+            ChangeRequest changeRequest = mockChangeRequest("이순신", "lee@dgu.ac.kr", ChangeType.EXPIRES_AT);
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("로그");
+
+            alarmService.sendModificationRejectedEmail(changeRequest, "변경 사유 불충분");
+
+            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
+            verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
+            assertThat(captor.getValue().getWebhookUrl()).isEqualTo(NOTI_WEBHOOK);
+        }
+
+        @Test
+        @DisplayName("변경 유형이 이메일 제목에 포함된다")
+        void sendModificationRejectedEmail_includesChangeTypeInSubject() {
+            ChangeRequest changeRequest = mockChangeRequest("김철수", "kim@dgu.ac.kr", ChangeType.VOLUME_SIZE);
+            when(messageUtils.get(eq("email.modification.rejected.subject"), eq("VOLUME_SIZE")))
+                    .thenReturn("[DGU AILab] 서버 변경 요청 거절 안내 (VOLUME_SIZE)");
+            when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("본문");
+
+            alarmService.sendModificationRejectedEmail(changeRequest, "볼륨 변경 불가");
+
+            ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+            verify(mailSender).send(captor.capture());
+            assertThat(captor.getValue().getSubject()).contains("VOLUME_SIZE");
+        }
+
+        @Test
+        @DisplayName("메일 전송 실패 시 에러 Slack 알림이 발송된다")
+        void sendModificationRejectedEmail_sendsSlackError_whenMailFails() {
+            ChangeRequest changeRequest = mockChangeRequest("이순신", "lee@dgu.ac.kr", ChangeType.EXPIRES_AT);
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("로그");
+            doThrow(new RuntimeException("SMTP 오류")).when(mailSender).send(any(SimpleMailMessage.class));
+
+            alarmService.sendModificationRejectedEmail(changeRequest, "변경 사유 불충분");
+
+            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
+            verify(listOperations, atLeastOnce()).rightPush(eq(QUEUE_KEY), captor.capture());
+            assertThat(captor.getAllValues()).anyMatch(dto ->
+                    dto.getWebhookUrl().equals(ERROR_WEBHOOK));
+        }
+    }
+
+    @Nested
+    @DisplayName("sendContainerDeletedEmail")
+    class SendContainerDeletedEmail {
+
+        @Test
+        @DisplayName("podName이 null이면 이메일 본문에 '미배정'으로 전달된다")
+        void sendContainerDeletedEmail_nullPodName_renders_placeholder() {
+            Request request = mockRequestForDeleted("홍길동", "hong@dgu.ac.kr", "LAB", null);
+            when(podExternalPortRepository.findByRequestRequestId(any())).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
+
+            alarmService.sendContainerDeletedEmail(request);
+
+            verify(messageUtils).get(eq("email.container.deleted.body"),
+                    any(), any(), any(), eq("미배정"), any(), any());
+        }
+
+        @Test
+        @DisplayName("podName이 있으면 실제 값이 이메일 본문에 전달된다")
+        void sendContainerDeletedEmail_withPodName_passesRealValue() {
+            Request request = mockRequestForDeleted("홍길동", "hong@dgu.ac.kr", "LAB", "pod-user1-abc");
+            when(podExternalPortRepository.findByRequestRequestId(any())).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
+
+            alarmService.sendContainerDeletedEmail(request);
+
+            verify(messageUtils).get(eq("email.container.deleted.body"),
+                    any(), any(), any(), eq("pod-user1-abc"), any(), any());
+        }
+
+        @Test
+        @DisplayName("ports를 직접 전달하는 오버로드는 DB를 조회하지 않는다")
+        void sendContainerDeletedEmail_overload_doesNotQueryRepository() {
+            Request request = mockRequestForDeleted("홍길동", "hong@dgu.ac.kr", "LAB", "pod-abc");
+            PodExternalPort port = mockPodPort("ssh", 30022);
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
+
+            alarmService.sendContainerDeletedEmail(request, List.of(port));
+
+            verify(podExternalPortRepository, never()).findByRequestRequestId(any());
+            verify(mailSender).send(any(SimpleMailMessage.class));
+        }
+
+        @Test
+        @DisplayName("ports를 직접 전달하면 포트 요약이 본문에 포함된다")
+        void sendContainerDeletedEmail_overload_includesPortSummary() {
+            Request request = mockRequestForDeleted("이순신", "lee@dgu.ac.kr", "FARM", "pod-xyz");
+            PodExternalPort port = mockPodPort("jupyter", 30888);
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
+
+            alarmService.sendContainerDeletedEmail(request, List.of(port));
+
+            verify(messageUtils).get(eq("email.container.deleted.body"),
+                    any(), any(), any(), any(), eq("jupyter(30888)"), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("sendContainerExtendedEmail")
+    class SendContainerExtendedEmail {
+
+        @Test
+        @DisplayName("oldExpiresAt이 null이면 NPE 없이 '이전 기록 없음'이 본문에 전달된다")
+        void sendContainerExtendedEmail_nullOldExpiresAt_rendersPlaceholder() {
+            Request request = mockRequestForExtended("홍길동", "hong@dgu.ac.kr", "LAB", "pod-abc");
+            when(podExternalPortRepository.findByRequestRequestId(any())).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
+
+            alarmService.sendContainerExtendedEmail(request, null,
+                    java.time.LocalDateTime.of(2027, 12, 31, 23, 59, 59));
+
+            verify(messageUtils).get(eq("email.container.extended.body"),
+                    any(), any(), any(), any(), eq("이전 기록 없음"), any(), any());
+        }
+
+        @Test
+        @DisplayName("oldExpiresAt이 있으면 날짜 문자열이 본문에 전달된다")
+        void sendContainerExtendedEmail_withOldExpiresAt_passesDate() {
+            Request request = mockRequestForExtended("홍길동", "hong@dgu.ac.kr", "LAB", "pod-abc");
+            when(podExternalPortRepository.findByRequestRequestId(any())).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
+
+            alarmService.sendContainerExtendedEmail(request,
+                    java.time.LocalDateTime.of(2026, 6, 30, 0, 0),
+                    java.time.LocalDateTime.of(2027, 12, 31, 23, 59, 59));
+
+            verify(messageUtils).get(eq("email.container.extended.body"),
+                    any(), any(), any(), any(), eq("2026-06-30"), any(), any());
+        }
+
+        @Test
+        @DisplayName("podName이 null이면 '미배정'이 본문에 전달된다")
+        void sendContainerExtendedEmail_nullPodName_rendersPlaceholder() {
+            Request request = mockRequestForExtended("홍길동", "hong@dgu.ac.kr", "LAB", null);
+            when(podExternalPortRepository.findByRequestRequestId(any())).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
+
+            alarmService.sendContainerExtendedEmail(request,
+                    java.time.LocalDateTime.of(2026, 6, 30, 0, 0),
+                    java.time.LocalDateTime.of(2027, 12, 31, 23, 59, 59));
+
+            verify(messageUtils).get(eq("email.container.extended.body"),
+                    any(), any(), any(), any(), any(), eq("미배정"), any());
+        }
+    }
+
+    private Request mockRequestForDeleted(String userName, String email, String serverName, String podName) {
+        return mockRequestWithOptionalId(userName, email, serverName, podName, null);
+    }
+
+    private Request mockRequestForExtended(String userName, String email, String serverName, String podName) {
+        return mockRequestWithOptionalId(userName, email, serverName, podName, 99L);
+    }
+
+    private Request mockRequestWithOptionalId(String userName, String email, String serverName, String podName, Long requestId) {
+        User user = mock(User.class);
+        when(user.getName()).thenReturn(userName);
+        when(user.getEmail()).thenReturn(email);
+        ResourceGroup rg = mock(ResourceGroup.class);
+        when(rg.getServerName()).thenReturn(serverName);
+        Request request = mock(Request.class);
+        when(request.getUser()).thenReturn(user);
+        when(request.getResourceGroup()).thenReturn(rg);
+        when(request.getPodName()).thenReturn(podName);
+        when(request.getUbuntuUsername()).thenReturn("testuser");
+        if (requestId != null) {
+            when(request.getRequestId()).thenReturn(requestId);
+        }
+        return request;
+    }
+
     private Request mockRequest(String userName, String serverName) {
         User user = mock(User.class);
         when(user.getName()).thenReturn(userName);
@@ -255,5 +613,53 @@ class AlarmServiceTest {
         when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(rg);
         return request;
+    }
+
+    private Request mockRequest(String userName, String email, String serverName) {
+        User user = mock(User.class);
+        when(user.getName()).thenReturn(userName);
+        when(user.getEmail()).thenReturn(email);
+        ResourceGroup rg = mock(ResourceGroup.class);
+        when(rg.getServerName()).thenReturn(serverName);
+        Request request = mock(Request.class);
+        when(request.getUser()).thenReturn(user);
+        when(request.getResourceGroup()).thenReturn(rg);
+        return request;
+    }
+
+    private ChangeRequest mockChangeRequest(String userName, String email, ChangeType changeType) {
+        User user = mock(User.class);
+        when(user.getName()).thenReturn(userName);
+        when(user.getEmail()).thenReturn(email);
+        ChangeRequest changeRequest = mock(ChangeRequest.class);
+        when(changeRequest.getRequestedBy()).thenReturn(user);
+        when(changeRequest.getChangeType()).thenReturn(changeType);
+        return changeRequest;
+    }
+
+    private Request mockRequestForCreated(String userName, String email, String serverName, Long requestId) {
+        User user = mock(User.class);
+        when(user.getName()).thenReturn(userName);
+        when(user.getEmail()).thenReturn(email);
+        ResourceGroup rg = mock(ResourceGroup.class);
+        when(rg.getServerName()).thenReturn(serverName);
+        ContainerImage image = mock(ContainerImage.class);
+        when(image.getImageName()).thenReturn("ubuntu");
+        when(image.getImageVersion()).thenReturn("22.04");
+        Request request = mock(Request.class);
+        when(request.getUser()).thenReturn(user);
+        when(request.getResourceGroup()).thenReturn(rg);
+        when(request.getContainerImage()).thenReturn(image);
+        when(request.getUbuntuUsername()).thenReturn("testuser");
+        when(request.getUbuntuPassword()).thenReturn("InitPass1!");
+        when(request.getRequestId()).thenReturn(requestId);
+        return request;
+    }
+
+    private PodExternalPort mockPodPort(String purpose, int externalPort) {
+        PodExternalPort port = mock(PodExternalPort.class);
+        when(port.getUsagePurpose()).thenReturn(purpose);
+        when(port.getExternalPort()).thenReturn(externalPort);
+        return port;
     }
 }

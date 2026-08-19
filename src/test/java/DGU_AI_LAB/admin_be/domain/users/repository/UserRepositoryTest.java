@@ -86,35 +86,4 @@ class UserRepositoryTest {
             assertThat(result).extracting(User::getEmail).contains("active@dgu.ac.kr");
         }
     }
-
-    @Nested
-    @DisplayName("findUsersForHardDelete")
-    class FindUsersForHardDelete {
-
-        @Test
-        @DisplayName("Soft delete 후 1년이 지나지 않은 유저는 Hard delete 대상이 아니다")
-        void findUsersForHardDelete_returnsEmpty_whenDeletedWithinOneYear() {
-            user1.withdraw();
-            userRepository.save(user1);
-            userRepository.flush();
-
-            List<User> result = userRepository.findUsersForHardDelete(LocalDateTime.now().minusYears(1));
-
-            assertThat(result).isEmpty();
-        }
-
-        @Test
-        @DisplayName("Soft delete된 지 1년이 지난 유저를 Hard delete 대상으로 조회한다")
-        void findUsersForHardDelete_returnsUser_whenDeletedBeforeOneYearThreshold() {
-            user1.withdraw();
-            ReflectionTestUtils.setField(user1, "deletedAt", LocalDateTime.now().minusYears(2));
-            userRepository.save(user1);
-            userRepository.flush();
-
-            List<User> result = userRepository.findUsersForHardDelete(LocalDateTime.now().minusYears(1));
-
-            assertThat(result).hasSize(1);
-            assertThat(result.get(0).getEmail()).isEqualTo("active@dgu.ac.kr");
-        }
-    }
 }
