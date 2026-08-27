@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
@@ -32,6 +33,7 @@ public class PodMigrationService {
     private final PodExternalPortRepository podExternalPortRepository;
     private final PodService podService;
     private final PlatformTransactionManager transactionManager;
+    private final AlarmService alarmService;
 
     public MigratePodResponseDTO migratePod(Long requestId, MigratePodRequestDTO dto) {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
@@ -76,10 +78,32 @@ public class PodMigrationService {
             });
             log.info("Pod 마이그레이션 완료: requestId={}, username={}, from={}, to={}, newPod={}",
                     requestId, username, response.from(), response.to(), response.newPod());
+
+            if ("failed".equals(response.oldPodCleanup())) {
+                warnOldPodCleanupFailed(requestId, username, response.from());
+            }
         } else {
             log.info("Pod 마이그레이션 스킵: requestId={}, username={}, reason={}", requestId, username, response.reason());
         }
 
         return response;
+    }
+
+    /**
+     * 새 Pod는 정상 생성·반영됐지만 config-server가 기존(이전 노드) Pod 정리에 실패한 경우.
+     * 정확한 기존 Pod 이름은 이 응답에 담겨오지 않으므로, 어느 노드에 남아있었는지까지만 알려주고
+     * 실제 정리는 수동 확인이 필요하다.
+     */
+    private void warnOldPodCleanupFailed(Long requestId, String username, String oldNode) {
+        String msg = String.format(
+                "[마이그레이션] 새 Pod는 정상 반영됐지만 기존 Pod 정리 실패 - 수동 확인 필요: requestId=%d, username=%s, oldNode=%s",
+                requestId, username, oldNode
+        );
+        log.warn(msg);
+        try {
+            alarmService.sendSlackAlert(msg, null);
+        } catch (Exception ignored) {
+            // 알림 발송 실패가 마이그레이션 성공 응답을 막으면 안 된다.
+        }
     }
 }

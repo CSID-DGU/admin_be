@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
@@ -43,13 +44,14 @@ class PodMigrationServiceTest {
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
     @Mock private Request mockRequest;
+    @Mock private AlarmService alarmService;
 
     private PodMigrationService service;
 
     @BeforeEach
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
-        service = new PodMigrationService(requestRepository, podExternalPortRepository, podService, transactionManager);
+        service = new PodMigrationService(requestRepository, podExternalPortRepository, podService, transactionManager, alarmService);
     }
 
     /** 1단계는 findByIdForUpdate(행 잠금)로 상태 확인, migrated일 때만 실행되는 3단계는 findById로 재조회한다. */
@@ -76,7 +78,7 @@ class PodMigrationServiceTest {
                             new CreatePodResponseDTO.PortInfo("ssh", 22, 30099),
                             new CreatePodResponseDTO.PortInfo("jupyter", 8888, 30988)
                     ),
-                    null, null, null, null
+                    null, null, null, null, null
             );
             when(podService.migratePod("testuser", List.of("farm1", "farm2"), 0.2)).thenReturn(response);
             when(podExternalPortRepository.save(any(PodExternalPort.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -102,7 +104,7 @@ class PodMigrationServiceTest {
             stubExistingRequest(requestId, Status.FULFILLED);
 
             MigratePodResponseDTO response = new MigratePodResponseDTO(
-                    "skipped", "no_significant_improvement", null, null, null, null,
+                    "skipped", "no_significant_improvement", null, null, null, null, null,
                     "farm1", 1.5, "farm2", 1.4
             );
             when(podService.migratePod(eq("testuser"), any(), any())).thenReturn(response);
@@ -138,7 +140,7 @@ class PodMigrationServiceTest {
             Long requestId = 3L;
             stubExistingRequest(requestId, Status.FULFILLED);
             when(podService.migratePod(any(), any(), any())).thenReturn(
-                    new MigratePodResponseDTO("skipped", "no_candidate_node", null, null, null, null, null, null, null, null)
+                    new MigratePodResponseDTO("skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null)
             );
 
             service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1"), null));
@@ -202,7 +204,7 @@ class PodMigrationServiceTest {
             Long requestId = 6L;
             stubExistingRequest(requestId, Status.FULFILLED);
             MigratePodResponseDTO response = new MigratePodResponseDTO(
-                    "migrated", null, "farm1", "farm2", "pod-testuser-3", List.of(),
+                    "migrated", null, "farm1", "farm2", "pod-testuser-3", List.of(), null,
                     null, null, null, null
             );
             when(podService.migratePod(any(), any(), any())).thenReturn(response);
@@ -211,6 +213,74 @@ class PodMigrationServiceTest {
 
             verify(podExternalPortRepository).deleteByRequestRequestId(requestId);
             verify(podExternalPortRepository, never()).save(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("기존 Pod 정리 실패 신호(old_pod_cleanup)")
+    class OldPodCleanupSignal {
+
+        @Test
+        @DisplayName("oldPodCleanup이 null이면(정상 정리) 알림을 보내지 않는다")
+        void migratePod_oldPodCleanupNull_doesNotAlert() {
+            Long requestId = 7L;
+            stubExistingRequest(requestId, Status.FULFILLED);
+            MigratePodResponseDTO response = new MigratePodResponseDTO(
+                    "migrated", null, "farm1", "farm2", "pod-testuser-4", List.of(), null,
+                    null, null, null, null
+            );
+            when(podService.migratePod(any(), any(), any())).thenReturn(response);
+
+            service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1", "farm2"), null));
+
+            verify(mockRequest).assignPodInfo("pod-testuser-4", "farm2");
+            verify(alarmService, never()).sendSlackAlert(any(), any());
+        }
+
+        @Test
+        @DisplayName("oldPodCleanup이 'failed'면 DB는 정상 반영되고 Slack 알림이 발송된다")
+        void migratePod_oldPodCleanupFailed_updatesDbAndAlerts() {
+            Long requestId = 8L;
+            stubExistingRequest(requestId, Status.FULFILLED);
+            MigratePodResponseDTO response = new MigratePodResponseDTO(
+                    "migrated", null, "farm1", "farm2", "pod-testuser-5",
+                    List.of(new CreatePodResponseDTO.PortInfo("ssh", 22, 30099)),
+                    "failed",
+                    null, null, null, null
+            );
+            when(podService.migratePod(any(), any(), any())).thenReturn(response);
+            when(podExternalPortRepository.save(any(PodExternalPort.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1", "farm2"), null));
+
+            // 새 Pod 추적은 정리 실패와 무관하게 정상적으로 반영돼야 한다
+            verify(mockRequest).assignPodInfo("pod-testuser-5", "farm2");
+            verify(podExternalPortRepository).save(any(PodExternalPort.class));
+
+            ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
+            verify(alarmService, times(1)).sendSlackAlert(messageCaptor.capture(), eq(null));
+            assertThat(messageCaptor.getValue())
+                    .contains("requestId=8")
+                    .contains("username=testuser")
+                    .contains("oldNode=farm1");
+        }
+
+        @Test
+        @DisplayName("알림 발송 자체가 실패해도 마이그레이션 결과는 정상 반환된다")
+        void migratePod_alertSendingFails_stillReturnsResult() {
+            Long requestId = 9L;
+            stubExistingRequest(requestId, Status.FULFILLED);
+            MigratePodResponseDTO response = new MigratePodResponseDTO(
+                    "migrated", null, "farm1", "farm2", "pod-testuser-6", List.of(), "failed",
+                    null, null, null, null
+            );
+            when(podService.migratePod(any(), any(), any())).thenReturn(response);
+            doThrow(new RuntimeException("slack down")).when(alarmService).sendSlackAlert(any(), any());
+
+            MigratePodResponseDTO result = service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1", "farm2"), null));
+
+            assertThat(result).isEqualTo(response);
+            verify(mockRequest).assignPodInfo("pod-testuser-6", "farm2");
         }
     }
 }

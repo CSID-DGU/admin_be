@@ -207,7 +207,7 @@ class PodServiceTest {
             MigratePodResponseDTO mockResponse = new MigratePodResponseDTO(
                     "migrated", null, "farm1", "farm2", "pod-testuser-2",
                     List.of(new CreatePodResponseDTO.PortInfo("ssh", 22, 30099)),
-                    null, null, null, null
+                    null, null, null, null, null
             );
             when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
                     .thenReturn(Mono.just(mockResponse));
@@ -223,7 +223,7 @@ class PodServiceTest {
         @DisplayName("개선 폭이 기준 미만이면 status=skipped 응답을 그대로 반환한다")
         void migratePod_returnsSkippedResponse_whenNoSignificantImprovement() {
             MigratePodResponseDTO mockResponse = new MigratePodResponseDTO(
-                    "skipped", "no_significant_improvement", null, null, null, null,
+                    "skipped", "no_significant_improvement", null, null, null, null, null,
                     "farm1", 1.5, "farm2", 1.4
             );
             when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
@@ -251,7 +251,7 @@ class PodServiceTest {
         @DisplayName("status가 null인 응답이면 POD_MIGRATION_FAILED 예외가 발생한다")
         void migratePod_throwsBusinessException_whenStatusIsNull() {
             MigratePodResponseDTO badResponse = new MigratePodResponseDTO(
-                    null, null, null, null, null, null, null, null, null, null
+                    null, null, null, null, null, null, null, null, null, null, null
             );
             when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
                     .thenReturn(Mono.just(badResponse));
@@ -290,7 +290,7 @@ class PodServiceTest {
         void migratePod_callsCorrectUri() {
             when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
                     .thenReturn(Mono.just(new MigratePodResponseDTO(
-                            "skipped", "no_candidate_node", null, null, null, null, null, null, null, null
+                            "skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null
                     )));
 
             podService.migratePod("myuser", List.of("farm1"), 0.3);

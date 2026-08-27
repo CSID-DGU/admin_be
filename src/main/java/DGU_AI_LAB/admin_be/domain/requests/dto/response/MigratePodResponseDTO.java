@@ -26,6 +26,10 @@ public record MigratePodResponseDTO(
         @Schema(description = "새 Pod의 포트 매핑 목록 (migrated일 때만 존재)")
         List<CreatePodResponseDTO.PortInfo> ports,
 
+        @JsonProperty("old_pod_cleanup")
+        @Schema(description = "마이그레이션은 성공했지만 기존 Pod 정리에 실패한 경우 'failed', 정상 정리됐으면 null", example = "failed")
+        String oldPodCleanup,
+
         @JsonProperty("current_node")
         @Schema(description = "스킵 시 현재 노드명", example = "farm1")
         String currentNode,
