@@ -43,7 +43,7 @@ public class GroupController implements GroupApi {
             @RequestBody @Valid CreateGroupRequestDTO dto,
             @AuthenticationPrincipal CustomUserDetails principal
     ) {
-        log.info("[createGroup] 새로운 그룹 생성 요청 접수: groupName={}, ubuntuUsername={}", dto.groupName(), dto.ubuntuUsername());
+        log.info("[createGroup] 새로운 그룹 생성 요청 접수: groupName={}", dto.groupName());
         GroupResponseDTO response = groupService.createGroup(dto, principal.getUserId());
         return SuccessResponse.created(response);
     }

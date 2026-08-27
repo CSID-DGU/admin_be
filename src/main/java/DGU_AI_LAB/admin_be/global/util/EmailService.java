@@ -30,7 +30,7 @@ public class EmailService {
         String redisKey = EMAIL_VERIFY_PREFIX + email;
 
         redisTemplate.opsForValue().set(redisKey, authCode, AUTH_CODE_EXPIRE_SECONDS, TimeUnit.SECONDS);
-        log.info("이메일 [{}]에 인증번호 [{}] 저장 완료", email, authCode);
+        log.info("이메일 인증번호 저장 완료");
 
         sendEmail(email, "[DGU AI LAB 서버관리팀] 이메일 인증 코드입니다.",
                 "인증번호는 다음과 같습니다: " + authCode + "\n5분 안에 입력해주세요.");
