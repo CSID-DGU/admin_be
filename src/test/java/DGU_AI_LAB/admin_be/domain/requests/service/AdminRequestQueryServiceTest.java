@@ -96,6 +96,50 @@ class AdminRequestQueryServiceTest {
 
             assertThat(result).isEmpty();
         }
+
+        @Test
+        @DisplayName("볼륨 크기는 GiB 단위 값을 그대로 내려준다")
+        void getAllFulfilledResourceUsage_mapsVolumeSizeInGiB() {
+            Request request = mock(Request.class);
+            var user = mock(DGU_AI_LAB.admin_be.domain.users.entity.User.class);
+            var resourceGroup = mock(DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup.class);
+
+            when(request.getUser()).thenReturn(user);
+            when(user.getUserId()).thenReturn(7L);
+            when(user.getName()).thenReturn("테스트유저");
+            when(request.getResourceGroup()).thenReturn(resourceGroup);
+            when(resourceGroup.getRsgroupId()).thenReturn(3);
+            when(request.getVolumeSizeGiB()).thenReturn(20L);
+            when(requestRepository.findAllByStatusInWithAssociations(Status.activeStatuses())).thenReturn(List.of(request));
+
+            List<ResourceUsageDTO> result = adminRequestQueryService.getAllFulfilledResourceUsage();
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).userId()).isEqualTo(7L);
+            assertThat(result.get(0).userName()).isEqualTo("테스트유저");
+            assertThat(result.get(0).resourceGroupId()).isEqualTo(3);
+            assertThat(result.get(0).volumeSizeGiB()).isEqualTo(20L);
+        }
+
+        @Test
+        @DisplayName("리소스 그룹이 없는 신청도 NPE 없이 매핑된다")
+        void getAllFulfilledResourceUsage_toleratesNullResourceGroup() {
+            Request request = mock(Request.class);
+            var user = mock(DGU_AI_LAB.admin_be.domain.users.entity.User.class);
+
+            when(request.getUser()).thenReturn(user);
+            when(user.getUserId()).thenReturn(7L);
+            when(user.getName()).thenReturn("테스트유저");
+            when(request.getResourceGroup()).thenReturn(null);
+            when(request.getVolumeSizeGiB()).thenReturn(20L);
+            when(requestRepository.findAllByStatusInWithAssociations(Status.activeStatuses())).thenReturn(List.of(request));
+
+            List<ResourceUsageDTO> result = adminRequestQueryService.getAllFulfilledResourceUsage();
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).resourceGroupId()).isNull();
+            assertThat(result.get(0).volumeSizeGiB()).isEqualTo(20L);
+        }
     }
 
     @Nested
