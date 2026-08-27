@@ -106,12 +106,12 @@ class RequestQueryServiceTest {
         @DisplayName("존재하는 userId로 조회하면 FULFILLED 상태 요청만 반환한다")
         void getApprovedRequestsByUserId_returnsFulfilledList() {
             when(userRepository.existsById(1L)).thenReturn(true);
-            when(requestRepository.findAllByUser_UserIdAndStatus(1L, Status.FULFILLED)).thenReturn(List.of());
+            when(requestRepository.findAllByUser_UserIdAndStatusIn(1L, Status.activeStatuses())).thenReturn(List.of());
 
             List<SaveRequestResponseDTO> result = requestQueryService.getApprovedRequestsByUserId(1L);
 
             assertThat(result).isEmpty();
-            verify(requestRepository).findAllByUser_UserIdAndStatus(1L, Status.FULFILLED);
+            verify(requestRepository).findAllByUser_UserIdAndStatusIn(1L, Status.activeStatuses());
         }
 
         @Test
@@ -131,12 +131,12 @@ class RequestQueryServiceTest {
         @Test
         @DisplayName("FULFILLED 상태 요청들의 리소스 사용량을 반환한다")
         void getAllFulfilledResourceUsage_returnsList() {
-            when(requestRepository.findAllByStatus(Status.FULFILLED)).thenReturn(List.of());
+            when(requestRepository.findAllByStatusIn(Status.activeStatuses())).thenReturn(List.of());
 
             List<ResourceUsageDTO> result = requestQueryService.getAllFulfilledResourceUsage();
 
             assertThat(result).isEmpty();
-            verify(requestRepository).findAllByStatus(Status.FULFILLED);
+            verify(requestRepository).findAllByStatusIn(Status.activeStatuses());
         }
     }
 
@@ -147,7 +147,7 @@ class RequestQueryServiceTest {
         @Test
         @DisplayName("FULFILLED 상태 요청들의 컨테이너 정보를 반환한다")
         void getActiveContainers_returnsList() {
-            when(requestRepository.findAllByStatus(Status.FULFILLED)).thenReturn(List.of());
+            when(requestRepository.findAllByStatusIn(Status.activeStatuses())).thenReturn(List.of());
 
             List<ContainerInfoDTO> result = requestQueryService.getActiveContainers();
 
@@ -162,7 +162,7 @@ class RequestQueryServiceTest {
         @Test
         @DisplayName("FULFILLED 상태 요청들의 ubuntu username 목록을 반환한다")
         void getAllFulfilledUsernames_returnsList() {
-            when(requestRepository.findUbuntuUsernamesByStatus(Status.FULFILLED))
+            when(requestRepository.findUbuntuUsernamesByStatusIn(Status.activeStatuses()))
                     .thenReturn(List.of("user1", "user2"));
 
             List<String> result = requestQueryService.getAllFulfilledUsernames();

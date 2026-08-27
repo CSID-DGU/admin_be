@@ -28,7 +28,6 @@ class RequestTest {
         request = Request.builder()
                 .ubuntuUsername("testuser")
                 .ubuntuPassword("hashedPassword")
-                .ubuntuPasswordBase64("base64Password")
                 .volumeSizeGiB(50L)
                 .expiresAt(LocalDateTime.now().plusDays(30))
                 .usagePurpose("딥러닝 연구")

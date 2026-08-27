@@ -17,6 +17,7 @@ import java.time.LocalTime;
 import java.util.Collections;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -44,10 +45,9 @@ class RequestSchedulerServiceEndTimeTest {
 
         ArgumentCaptor<LocalDateTime> startCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
         ArgumentCaptor<LocalDateTime> endCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
-        ArgumentCaptor<Status> statusCaptor = ArgumentCaptor.forClass(Status.class);
 
-        when(requestRepository.findAllByExpiresAtBetweenAndStatus(
-                startCaptor.capture(), endCaptor.capture(), statusCaptor.capture()))
+        when(requestRepository.findAllByExpiresAtBetweenAndStatusIn(
+                startCaptor.capture(), endCaptor.capture(), any()))
                 .thenReturn(Collections.emptyList());
 
         schedulerService.sendPreExpiryNotification(targetDate, "7일");

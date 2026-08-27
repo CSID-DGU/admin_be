@@ -170,21 +170,18 @@ public class RequestCommandService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
         if (requestRepository.existsByUbuntuUsernameAndStatusIn(
-                dto.ubuntuUsername(), List.of(Status.PENDING, Status.FULFILLED))) {
+                dto.ubuntuUsername(), List.of(Status.PENDING, Status.FULFILLED, Status.MIGRATING))) {
             throw new BusinessException(ErrorCode.DUPLICATE_USERNAME);
         }
 
         ContainerImage img = containerImageRepository.findById(dto.imageId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        String ubuntuPassword = dto.ubuntuPassword();
-
         Request req = dto.toEntity(
                 user,
                 rg,
                 img,
-                java.util.Collections.emptySet(),
-                ubuntuPassword
+                java.util.Collections.emptySet()
         );
 
         req = requestRepository.save(req);

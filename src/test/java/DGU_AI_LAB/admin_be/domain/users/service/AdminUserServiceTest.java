@@ -333,7 +333,6 @@ class AdminUserServiceTest {
             Request req = Request.builder()
                     .ubuntuUsername("testuser")
                     .ubuntuPassword("pw")
-                    .ubuntuPasswordBase64("base64pw")
                     .volumeSizeGiB(50L)
                     .expiresAt(LocalDateTime.now().plusDays(30))
                     .usagePurpose("연구")

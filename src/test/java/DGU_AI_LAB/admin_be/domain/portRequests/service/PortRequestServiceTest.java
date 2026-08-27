@@ -39,7 +39,6 @@ class PortRequestServiceTest {
         Request request = Request.builder()
                 .ubuntuUsername("testuser")
                 .ubuntuPassword("password")
-                .ubuntuPasswordBase64("cGFzc3dvcmQ=")
                 .volumeSizeGiB(10L)
                 .usagePurpose("학습")
                 .formAnswers("{}")

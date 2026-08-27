@@ -1,20 +1,15 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
-import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
-import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PasswordUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PhoneUpdateRequestDTO;
-import DGU_AI_LAB.admin_be.domain.users.dto.request.UserAuthRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.MyInfoResponseDTO;
-import DGU_AI_LAB.admin_be.domain.users.dto.response.UserAuthResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
-import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -43,9 +38,6 @@ class UserServiceTest {
 
     @Mock
     private GroupRepository groupRepository;
-
-    @Mock
-    private RequestRepository requestRepository;
 
     @Mock
     private PasswordEncoder passwordEncoder;
@@ -185,37 +177,4 @@ class UserServiceTest {
         }
     }
 
-    @Nested
-    @DisplayName("userAuth (SSH 로그인)")
-    class UserAuth {
-
-        @Test
-        @DisplayName("올바른 username과 password로 인증하면 성공 응답을 반환한다")
-        void userAuth_success() {
-            String passwordBase64 = "dGVzdA==";
-
-            Request request = mock(Request.class);
-            when(request.getUbuntuUsername()).thenReturn("testuser");
-            when(requestRepository.findByUbuntuUsernameAndUbuntuPasswordBase64("testuser", passwordBase64))
-                    .thenReturn(Optional.of(request));
-
-            UserAuthRequestDTO dto = new UserAuthRequestDTO("testuser", passwordBase64);
-            UserAuthResponseDTO result = userService.userAuth(dto);
-
-            assertThat(result.success()).isTrue();
-            assertThat(result.authenticatedUsername()).isEqualTo("testuser");
-        }
-
-        @Test
-        @DisplayName("존재하지 않는 username으로 인증하면 UnauthorizedException을 던진다")
-        void userAuth_throwsException_whenUsernameNotFound() {
-            when(requestRepository.findByUbuntuUsernameAndUbuntuPasswordBase64(anyString(), anyString()))
-                    .thenReturn(Optional.empty());
-
-            UserAuthRequestDTO dto = new UserAuthRequestDTO("unknownuser", "dGVzdA==");
-
-            assertThatThrownBy(() -> userService.userAuth(dto))
-                    .isInstanceOf(UnauthorizedException.class);
-        }
-    }
 }

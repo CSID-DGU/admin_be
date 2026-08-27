@@ -237,8 +237,7 @@ class RequestCommandServiceTest {
             when(dto.resourceGroupId()).thenReturn(1);
             when(dto.ubuntuUsername()).thenReturn("newuser");
             when(dto.imageId()).thenReturn(1L);
-            when(dto.ubuntuPassword()).thenReturn("password");
-            when(dto.toEntity(any(), any(), any(), any(), any())).thenReturn(savedReq);
+            when(dto.toEntity(any(), any(), any(), any())).thenReturn(savedReq);
             when(requestRepository.save(any())).thenReturn(savedReq);
             // GID 2개 요청했지만 0개만 발견 → 예외 발생 (portRequests 도달 전)
             when(dto.ubuntuGids()).thenReturn(java.util.Set.of(1001L, 1002L));

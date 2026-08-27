@@ -21,15 +21,19 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     Optional<Request> findByUbuntuUsername(String username);
     List<Request> findAllByUser_UserId(Long userId);
     List<Request> findAllByStatus(Status status);
-    Optional<Request> findByUbuntuUsernameAndUbuntuPasswordBase64(String username, String passwordBase64);
     List<Request> findByUserUserIdAndStatus(Long userId, Status status);
     boolean existsByUbuntuUsername(String ubuntuUsername);
     boolean existsByUbuntuUsernameAndStatusIn(String ubuntuUsername, List<Status> statuses);
     List<Request> findAllByUser_UserIdAndStatus(Long userId, Status status);
     boolean existsByUbuntuUsernameAndUser_UserId(String ubuntuUsername, Long userId);
+    List<Request> findAllByStatusIn(List<Status> statuses);
+    List<Request> findAllByUser_UserIdAndStatusIn(Long userId, List<Status> statuses);
 
     @Query("SELECT r.ubuntuUsername FROM Request r WHERE r.status = :status")
     List<String> findUbuntuUsernamesByStatus(@Param("status") Status status);
+
+    @Query("SELECT r.ubuntuUsername FROM Request r WHERE r.status IN :statuses")
+    List<String> findUbuntuUsernamesByStatusIn(@Param("statuses") List<Status> statuses);
 
     /**
      * 승인 처리 중 상태 확인 → 변경 사이의 race condition을 막기 위한 행 잠금 조회.
@@ -49,8 +53,20 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
            "WHERE r.status = :status")
     List<Request> findAllByStatusWithAssociations(@Param("status") Status status);
 
+    @Query("SELECT DISTINCT r FROM Request r " +
+           "JOIN FETCH r.user " +
+           "LEFT JOIN FETCH r.resourceGroup " +
+           "LEFT JOIN FETCH r.containerImage " +
+           "LEFT JOIN FETCH r.requestGroups rg " +
+           "LEFT JOIN FETCH rg.group " +
+           "WHERE r.status IN :statuses")
+    List<Request> findAllByStatusInWithAssociations(@Param("statuses") List<Status> statuses);
+
     @Query("SELECT r FROM Request r JOIN FETCH r.user JOIN FETCH r.resourceGroup WHERE r.expiresAt BETWEEN :start AND :end AND r.status = :status")
     List<Request> findAllByExpiresAtBetweenAndStatus(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end, @Param("status") Status status);
+
+    @Query("SELECT r FROM Request r JOIN FETCH r.user JOIN FETCH r.resourceGroup WHERE r.expiresAt BETWEEN :start AND :end AND r.status IN :statuses")
+    List<Request> findAllByExpiresAtBetweenAndStatusIn(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end, @Param("statuses") List<Status> statuses);
 
 
     @Query("SELECT r FROM Request r JOIN FETCH r.user JOIN FETCH r.resourceGroup WHERE r.expiresAt < :now AND r.status = :status")

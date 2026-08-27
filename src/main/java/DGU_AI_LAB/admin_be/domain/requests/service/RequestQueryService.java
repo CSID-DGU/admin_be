@@ -73,34 +73,34 @@ public class RequestQueryService {
                 .toList();
     }
 
-    /** 승인 완료 자원 사용량 */
+    /** 승인 완료 자원 사용량 (마이그레이션 중에도 자원을 점유하므로 MIGRATING 포함) */
     public List<ResourceUsageDTO> getAllFulfilledResourceUsage() {
-        return requestRepository.findAllByStatus(Status.FULFILLED).stream()
+        return requestRepository.findAllByStatusIn(Status.activeStatuses()).stream()
                 .map(ResourceUsageDTO::fromEntity)
                 .toList();
     }
 
-    /** 활성 컨테이너 */
+    /** 활성 컨테이너 (마이그레이션 중에도 자원을 점유하므로 MIGRATING 포함) */
     public List<ContainerInfoDTO> getActiveContainers() {
-        return requestRepository.findAllByStatus(Status.FULFILLED).stream()
+        return requestRepository.findAllByStatusIn(Status.activeStatuses()).stream()
                 .map(ContainerInfoDTO::fromEntity)
                 .toList();
     }
 
 
     /**
-     * 승인 완료(FULFILLED)된 모든 요청의 ubuntuUsername 목록을 조회합니다.
+     * 승인 완료(FULFILLED) 또는 마이그레이션 중(MIGRATING)인 모든 요청의 ubuntuUsername 목록을 조회합니다.
      */
     public List<String> getAllFulfilledUsernames() {
-        return requestRepository.findUbuntuUsernamesByStatus(Status.FULFILLED);
+        return requestRepository.findUbuntuUsernamesByStatusIn(Status.activeStatuses());
     }
 
-    /** 내 신청 목록 중 승인 완료(FULFILLED) 상태만 조회 */
+    /** 내 신청 목록 중 승인 완료(FULFILLED) 또는 마이그레이션 중(MIGRATING)인 것만 조회 */
     public List<SaveRequestResponseDTO> getApprovedRequestsByUserId(Long userId) {
         if (!userRepository.existsById(userId)) {
             throw new BusinessException(ErrorCode.USER_NOT_FOUND);
         }
-        return toResponseDTOs(requestRepository.findAllByUser_UserIdAndStatus(userId, Status.FULFILLED));
+        return toResponseDTOs(requestRepository.findAllByUser_UserIdAndStatusIn(userId, Status.activeStatuses()));
     }
 
     /** 내 변경 요청 목록 조회 */

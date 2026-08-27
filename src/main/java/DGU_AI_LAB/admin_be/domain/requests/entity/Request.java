@@ -38,9 +38,6 @@ public class Request extends BaseTimeEntity {
     @Column(name = "ubuntu_password", nullable = false)
     private String ubuntuPassword;
 
-    @Column(name = "ubuntu_password_base64", nullable = false)
-    private String ubuntuPasswordBase64;
-
     @Column(name = "volume_size_GiB", nullable = false)
     private Long volumeSizeGiB;
 
@@ -91,10 +88,9 @@ public class Request extends BaseTimeEntity {
     private Set<RequestGroup> requestGroups = new LinkedHashSet<>();
 
     @Builder
-    public Request(String ubuntuUsername, String ubuntuPassword, String ubuntuPasswordBase64, Long volumeSizeGiB, LocalDateTime expiresAt, String usagePurpose, String formAnswers, User user, ResourceGroup resourceGroup, ContainerImage containerImage) {
+    public Request(String ubuntuUsername, String ubuntuPassword, Long volumeSizeGiB, LocalDateTime expiresAt, String usagePurpose, String formAnswers, User user, ResourceGroup resourceGroup, ContainerImage containerImage) {
         this.ubuntuUsername = ubuntuUsername;
         this.ubuntuPassword = ubuntuPassword;
-        this.ubuntuPasswordBase64 = ubuntuPasswordBase64;
         this.volumeSizeGiB = volumeSizeGiB;
         this.expiresAt = expiresAt;
         this.usagePurpose = usagePurpose;
@@ -186,6 +182,36 @@ public class Request extends BaseTimeEntity {
         this.nodeName = nodeName;
     }
 
+    /**
+     * infra(config-server) 계정 생성/조회 API가 요구하는 Base64 포맷으로 변환한다.
+     * DB에는 평문 한 벌만 보관하고, 전송 시점에만 인코딩해서 이중 저장을 피한다.
+     */
+    public String getUbuntuPasswordBase64() {
+        return java.util.Base64.getEncoder().encodeToString(this.ubuntuPassword.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Pod 마이그레이션 시작을 위해 FULFILLED -> MIGRATING으로 전환한다.
+     * 행 잠금 조회(findByIdForUpdate)와 같은 트랜잭션에서 호출해야
+     * 동시에 들어온 두 번째 마이그레이션 요청이 이 상태 검증에서 실제로 막힌다.
+     */
+    public void beginMigration() {
+        if (this.status != Status.FULFILLED) {
+            throw new BusinessException("이미 마이그레이션이 진행 중이거나 처리 가능한 상태가 아닙니다.", ErrorCode.INVALID_REQUEST_STATUS);
+        }
+        this.status = Status.MIGRATING;
+    }
+
+    /**
+     * 마이그레이션 시도가 끝나면(성공/스킵/실패 모두) MIGRATING -> FULFILLED로 되돌린다.
+     */
+    public void endMigration() {
+        if (this.status != Status.MIGRATING) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+        }
+        this.status = Status.FULFILLED;
+    }
+
     public void assignUbuntuIds(Long ubuntuUid, Long ubuntuGid) {
         if (ubuntuUid == null || ubuntuGid == null || ubuntuUid <= 0 || ubuntuGid <= 0) {
             throw new BusinessException(ErrorCode.UID_ALLOCATION_FAILED);
@@ -217,7 +243,7 @@ public class Request extends BaseTimeEntity {
         if (this.status == Status.DELETED) {
             throw new BusinessException("이미 삭제된 요청입니다.", ErrorCode.INVALID_REQUEST_STATUS);
         }
-        if (this.status == Status.FULFILLED) {
+        if (this.status == Status.FULFILLED || this.status == Status.MIGRATING) {
             throw new BusinessException("컨테이너가 실행 중입니다. 인프라 정리 후 삭제해주세요.", ErrorCode.INVALID_REQUEST_STATUS);
         }
         this.status = Status.DELETED;
