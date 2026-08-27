@@ -55,7 +55,7 @@ public class DashboardService {
 
         return requests.stream()
                 .map(request -> {
-                    String serverAddress = (request.getStatus() == Status.FULFILLED) ? "TBD (서버 할당 후 표시)" : null;
+                    String serverAddress = Status.activeStatuses().contains(request.getStatus()) ? "TBD (서버 할당 후 표시)" : null;
 
                     Integer cpuCoreCount = null;
                     Integer memoryGB = null;

@@ -54,12 +54,21 @@ class PodMigrationServiceTest {
         service = new PodMigrationService(requestRepository, podExternalPortRepository, podService, transactionManager, alarmService);
     }
 
-    /** 1단계는 findByIdForUpdate(행 잠금)로 상태 확인, migrated일 때만 실행되는 3단계는 findById로 재조회한다. */
+    /**
+     * 1단계는 findByIdForUpdate(행 잠금)로 조회한 뒤 beginMigration()으로 FULFILLED -> MIGRATING 전환,
+     * 3단계는 findById로 재조회해 결과 반영 후 endMigration()으로 되돌린다.
+     * mockRequest는 Mockito mock이라 beginMigration()의 실제 상태 검증 로직이 실행되지 않으므로,
+     * FULFILLED가 아닌 상태로 스텁할 때는 beginMigration() 호출 시 예외를 던지도록 명시적으로 재현한다.
+     */
     private void stubExistingRequest(Long requestId, Status status) {
         when(mockRequest.getStatus()).thenReturn(status);
         when(mockRequest.getUbuntuUsername()).thenReturn("testuser");
         when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(mockRequest));
         when(requestRepository.findById(requestId)).thenReturn(Optional.of(mockRequest));
+        if (status != Status.FULFILLED) {
+            doThrow(new BusinessException("이미 마이그레이션이 진행 중이거나 처리 가능한 상태가 아닙니다.", ErrorCode.INVALID_REQUEST_STATUS))
+                    .when(mockRequest).beginMigration();
+        }
     }
 
     @Nested
@@ -120,8 +129,8 @@ class PodMigrationServiceTest {
         }
 
         @Test
-        @DisplayName("행 잠금 조회(findByIdForUpdate)를 사용한다 — 동시 마이그레이션 요청으로 인한 고아 Pod 방지")
-        void migratePod_usesRowLock_notPlainFindById() {
+        @DisplayName("1단계는 행 잠금 조회(findByIdForUpdate)로 상태를 선점한다 — 동시 마이그레이션 요청으로 인한 고아 Pod 방지")
+        void migratePod_usesRowLock_forInitialClaim() {
             Long requestId = 7L;
             stubExistingRequest(requestId, Status.FULFILLED);
             when(podService.migratePod(any(), any(), any())).thenReturn(
@@ -131,7 +140,8 @@ class PodMigrationServiceTest {
             service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1"), null));
 
             verify(requestRepository).findByIdForUpdate(requestId);
-            verify(requestRepository, never()).findById(any());
+            verify(mockRequest).beginMigration();
+            verify(mockRequest).endMigration();
         }
 
         @Test

@@ -38,44 +38,60 @@ public class PodMigrationService {
     public MigratePodResponseDTO migratePod(Long requestId, MigratePodRequestDTO dto) {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
 
-        // 1. 대상 요청 조회 + 상태 검증 (짧은 트랜잭션, 이후 커넥션 반납)
-        // 행 잠금 조회: 동시에 같은 요청을 마이그레이션 시도하는 두 번째 호출은 여기서 대기하다가
-        // 첫 트랜잭션 커밋 후 바뀐 pod/node 상태를 보고 처리한다 (중복 마이그레이션으로 인한 고아 Pod 방지)
+        // 1. 대상 요청 조회 + FULFILLED -> MIGRATING 전환 (짧은 트랜잭션, 이후 커넥션 반납)
+        // 행 잠금 조회와 상태 전환을 같은 트랜잭션에서 커밋해야, 동시에 들어온 두 번째 호출이
+        // beginMigration()의 상태 검증에서 실제로 막힌다 (조회만으로는 막히지 않는다 —
+        // 아무것도 쓰지 않는 조회 트랜잭션은 두 번째 호출을 저지하지 못한다).
         final String[] usernameRef = {null};
         tx.execute(status -> {
             Request req = requestRepository.findByIdForUpdate(requestId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-            if (req.getStatus() != Status.FULFILLED) {
-                throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
-            }
+            req.beginMigration();
             usernameRef[0] = req.getUbuntuUsername();
             return null;
         });
         String username = usernameRef[0];
 
-        // 2. 외부 HTTP 호출 (DB 커넥션 미보유)
-        MigratePodResponseDTO response = podService.migratePod(username, dto.nodes(), dto.minImprovementRatio());
+        // 2. 외부 HTTP 호출 (DB 커넥션 미보유). 실패 시 MIGRATING에 갇히지 않도록 되돌린다.
+        MigratePodResponseDTO response;
+        try {
+            response = podService.migratePod(username, dto.nodes(), dto.minImprovementRatio());
+        } catch (RuntimeException e) {
+            revertToFulfilled(requestId);
+            throw e;
+        }
 
-        // 3. migrated인 경우에만 DB 반영 (새 트랜잭션, HTTP 완료 후 짧게만 커넥션 보유)
-        if (response.isMigrated()) {
+        // 3. 결과 반영 (새 트랜잭션, HTTP 완료 후 짧게만 커넥션 보유).
+        // migrated 여부와 무관하게 MIGRATING -> FULFILLED로 되돌려야 한다.
+        try {
             tx.execute(status -> {
                 Request req = requestRepository.findById(requestId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-                req.assignPodInfo(response.newPod(), response.to());
 
-                podExternalPortRepository.deleteByRequestRequestId(requestId);
-                if (response.ports() != null) {
-                    for (CreatePodResponseDTO.PortInfo port : response.ports()) {
-                        podExternalPortRepository.save(PodExternalPort.builder()
-                                .request(req)
-                                .internalPort(port.internalPort())
-                                .externalPort(port.externalPort())
-                                .usagePurpose(port.usagePurpose())
-                                .build());
+                if (response.isMigrated()) {
+                    req.assignPodInfo(response.newPod(), response.to());
+
+                    podExternalPortRepository.deleteByRequestRequestId(requestId);
+                    if (response.ports() != null) {
+                        for (CreatePodResponseDTO.PortInfo port : response.ports()) {
+                            podExternalPortRepository.save(PodExternalPort.builder()
+                                    .request(req)
+                                    .internalPort(port.internalPort())
+                                    .externalPort(port.externalPort())
+                                    .usagePurpose(port.usagePurpose())
+                                    .build());
+                        }
                     }
                 }
+                req.endMigration();
                 return null;
             });
+        } catch (RuntimeException e) {
+            revertToFulfilled(requestId);
+            throw e;
+        }
+
+        if (response.isMigrated()) {
             log.info("Pod 마이그레이션 완료: requestId={}, username={}, from={}, to={}, newPod={}",
                     requestId, username, response.from(), response.to(), response.newPod());
 
@@ -87,6 +103,34 @@ public class PodMigrationService {
         }
 
         return response;
+    }
+
+    /**
+     * 2단계(외부 호출) 또는 3단계(DB 반영) 실패 시 MIGRATING에 갇힌 요청을 FULFILLED로 되돌린다.
+     * 이 복구 자체가 실패하면(예: 그 사이 상태가 다른 경로로 바뀐 경우) 수동 확인이 필요하므로
+     * Slack 알림만 남기고, 원래 예외는 그대로 호출자에게 전파되도록 여기서 삼킨다.
+     */
+    private void revertToFulfilled(Long requestId) {
+        try {
+            TransactionTemplate tx = new TransactionTemplate(transactionManager);
+            tx.execute(status -> {
+                Request req = requestRepository.findById(requestId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                if (req.getStatus() == Status.MIGRATING) {
+                    req.endMigration();
+                }
+                return null;
+            });
+        } catch (Exception e) {
+            String msg = String.format(
+                    "[마이그레이션] MIGRATING 상태 복구 실패 - 수동 확인 필요: requestId=%d", requestId);
+            log.error(msg, e);
+            try {
+                alarmService.sendSlackAlert(msg, null);
+            } catch (Exception ignored) {
+                // 알림 발송 실패가 원래 예외 전파를 막으면 안 된다.
+            }
+        }
     }
 
     /**
