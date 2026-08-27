@@ -73,10 +73,9 @@ public class AdminRequestCommandService {
     private final @Qualifier("configWebClient") WebClient userCreationWebClient;
     private final PlatformTransactionManager transactionManager;
 
-    // podWebClient의 커넥션 풀 크기(WebClientConfig의 maxConnections(10))와 맞춘 동시 처리 한도.
-    // 이 이상 동시에 승인이 몰리면 Tomcat 스레드가 최대 pod-timeout-seconds(10분)씩 묶이는 대신
-    // 즉시 명확한 에러로 실패시킨다.
-    private final Semaphore podCreationSemaphore = new Semaphore(10);
+    // 동시 처리 한도. 이 이상 동시에 승인이 몰리면 Tomcat 스레드가 최대
+    // pod-timeout-seconds(10분)씩 묶이는 대신 즉시 명확한 에러로 실패시킨다.
+    private final Semaphore podCreationSemaphore = new Semaphore(3);
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SaveRequestResponseDTO approveRequest(ApproveRequestDTO dto) {

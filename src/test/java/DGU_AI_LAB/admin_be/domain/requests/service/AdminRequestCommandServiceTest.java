@@ -288,14 +288,14 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
-        @DisplayName("동시 처리 한도(10) 초과 시 createPod 호출 없이 즉시 실패하고 보상 트랜잭션이 실행된다")
+        @DisplayName("동시 처리 한도(3) 초과 시 createPod 호출 없이 즉시 실패하고 보상 트랜잭션이 실행된다")
         void approveRequest_concurrencyLimitExceeded_failsFastWithoutCallingCreatePod() throws InterruptedException {
             Long requestId = 20L;
             buildMockedRequest(requestId);
             stubWebClientPut();
 
             Semaphore semaphore = (Semaphore) ReflectionTestUtils.getField(service, "podCreationSemaphore");
-            semaphore.acquire(10); // 커넥션 풀 크기(10)만큼 permit을 모두 선점해 한도 초과 상황을 재현
+            semaphore.acquire(3); // 한도(3)만큼 permit을 모두 선점해 초과 상황을 재현
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
             try {
@@ -307,7 +307,7 @@ class AdminRequestCommandServiceTest {
                 verify(podService, never()).createPod(any());
                 verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
             } finally {
-                semaphore.release(10);
+                semaphore.release(3);
             }
         }
 
