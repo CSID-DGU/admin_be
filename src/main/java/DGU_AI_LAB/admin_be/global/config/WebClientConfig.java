@@ -35,7 +35,7 @@ public class WebClientConfig {
 
     @Bean
     public WebClient podWebClient(@Value("${config.base-url}") String baseUrl,
-                                  @Value("${config.pod-timeout-seconds:300}") int podTimeout) {
+                                  @Value("${config.pod-timeout-seconds:600}") int podTimeout) {
 
         ConnectionProvider provider = ConnectionProvider.builder("pod-connection-pool")
                 .maxConnections(10)
