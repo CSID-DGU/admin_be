@@ -37,6 +37,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -46,6 +47,7 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.Semaphore;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -283,6 +285,30 @@ class AdminRequestCommandServiceTest {
 
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
             verify(containerImageRepository, never()).findById(any());
+        }
+
+        @Test
+        @DisplayName("동시 처리 한도(3) 초과 시 createPod 호출 없이 즉시 실패하고 보상 트랜잭션이 실행된다")
+        void approveRequest_concurrencyLimitExceeded_failsFastWithoutCallingCreatePod() throws InterruptedException {
+            Long requestId = 20L;
+            buildMockedRequest(requestId);
+            stubWebClientPut();
+
+            Semaphore semaphore = (Semaphore) ReflectionTestUtils.getField(service, "podCreationSemaphore");
+            semaphore.acquire(3); // 한도(3)만큼 permit을 모두 선점해 초과 상황을 재현
+
+            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
+            try {
+                assertThatThrownBy(() -> service.approveRequest(dto))
+                        .isInstanceOf(BusinessException.class)
+                        .extracting(e -> ((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.POD_CREATION_CONCURRENCY_LIMIT);
+
+                verify(podService, never()).createPod(any());
+                verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
+            } finally {
+                semaphore.release(3);
+            }
         }
 
         @Test

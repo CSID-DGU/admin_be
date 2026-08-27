@@ -47,6 +47,7 @@ import reactor.core.publisher.Mono;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Semaphore;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -71,6 +72,10 @@ public class AdminRequestCommandService {
 
     private final @Qualifier("configWebClient") WebClient userCreationWebClient;
     private final PlatformTransactionManager transactionManager;
+
+    // 동시 처리 한도. 이 이상 동시에 승인이 몰리면 Tomcat 스레드가 최대
+    // pod-timeout-seconds(10분)씩 묶이는 대신 즉시 명확한 에러로 실패시킨다.
+    private final Semaphore podCreationSemaphore = new Semaphore(3);
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SaveRequestResponseDTO approveRequest(ApproveRequestDTO dto) {
@@ -112,7 +117,14 @@ public class AdminRequestCommandService {
 
         CreatePodResponseDTO podResponse;
         try {
-            podResponse = podService.createPod(username);
+            if (!podCreationSemaphore.tryAcquire()) {
+                throw new BusinessException(ErrorCode.POD_CREATION_CONCURRENCY_LIMIT);
+            }
+            try {
+                podResponse = podService.createPod(username);
+            } finally {
+                podCreationSemaphore.release();
+            }
         } catch (BusinessException e) {
             log.warn("[보상 트랜잭션] Pod 생성 실패 → 계정 삭제 및 상태 복구 시작: {}", username);
             tryCompensateDeleteUser(username);
