@@ -13,4 +13,6 @@ public interface PodExternalPortRepository extends JpaRepository<PodExternalPort
     List<PodExternalPort> findByRequestRequestId(Long requestId);
 
     List<PodExternalPort> findByRequestRequestIdIn(Collection<Long> requestIds);
+
+    void deleteByRequestRequestId(Long requestId);
 }

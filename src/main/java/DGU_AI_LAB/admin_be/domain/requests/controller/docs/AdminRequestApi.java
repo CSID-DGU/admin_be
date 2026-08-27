@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller.docs;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
 import DGU_AI_LAB.admin_be.error.dto.ErrorResponse;
@@ -52,4 +53,14 @@ public interface AdminRequestApi {
     @ApiResponse(responseCode = "400", description = "이미 거절/삭제된 상태",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     ResponseEntity<SuccessResponse<?>> rejectRequest(RejectRequestDTO dto);
+
+    @Operation(summary = "Pod GPU 노드 마이그레이션", description = "FULFILLED 상태 신청의 Pod를 더 나은 GPU 노드로 이동시킵니다. 개선 폭이 기준 미만이면 스킵됩니다.")
+    @ApiResponse(responseCode = "200", description = "마이그레이션 성공 또는 스킵")
+    @ApiResponse(responseCode = "404", description = "신청을 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "409", description = "FULFILLED 상태가 아님",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "502", description = "config-server 마이그레이션 API 호출 실패",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    ResponseEntity<SuccessResponse<?>> migratePod(Long requestId, MigratePodRequestDTO dto);
 }
