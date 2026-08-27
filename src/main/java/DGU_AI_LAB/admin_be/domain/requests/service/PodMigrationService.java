@@ -37,9 +37,11 @@ public class PodMigrationService {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
 
         // 1. 대상 요청 조회 + 상태 검증 (짧은 트랜잭션, 이후 커넥션 반납)
+        // 행 잠금 조회: 동시에 같은 요청을 마이그레이션 시도하는 두 번째 호출은 여기서 대기하다가
+        // 첫 트랜잭션 커밋 후 바뀐 pod/node 상태를 보고 처리한다 (중복 마이그레이션으로 인한 고아 Pod 방지)
         final String[] usernameRef = {null};
         tx.execute(status -> {
-            Request req = requestRepository.findById(requestId)
+            Request req = requestRepository.findByIdForUpdate(requestId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
             if (req.getStatus() != Status.FULFILLED) {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);

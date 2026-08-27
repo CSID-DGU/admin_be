@@ -52,9 +52,11 @@ class PodMigrationServiceTest {
         service = new PodMigrationService(requestRepository, podExternalPortRepository, podService, transactionManager);
     }
 
+    /** 1단계는 findByIdForUpdate(행 잠금)로 상태 확인, migrated일 때만 실행되는 3단계는 findById로 재조회한다. */
     private void stubExistingRequest(Long requestId, Status status) {
         when(mockRequest.getStatus()).thenReturn(status);
         when(mockRequest.getUbuntuUsername()).thenReturn("testuser");
+        when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(mockRequest));
         when(requestRepository.findById(requestId)).thenReturn(Optional.of(mockRequest));
     }
 
@@ -116,6 +118,21 @@ class PodMigrationServiceTest {
         }
 
         @Test
+        @DisplayName("행 잠금 조회(findByIdForUpdate)를 사용한다 — 동시 마이그레이션 요청으로 인한 고아 Pod 방지")
+        void migratePod_usesRowLock_notPlainFindById() {
+            Long requestId = 7L;
+            stubExistingRequest(requestId, Status.FULFILLED);
+            when(podService.migratePod(any(), any(), any())).thenReturn(
+                    new MigratePodResponseDTO("skipped", "no_candidate_node", null, null, null, null, null, null, null, null)
+            );
+
+            service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1"), null));
+
+            verify(requestRepository).findByIdForUpdate(requestId);
+            verify(requestRepository, never()).findById(any());
+        }
+
+        @Test
         @DisplayName("min_improvement_ratio를 생략하면 null로 config-server에 그대로 전달된다")
         void migratePod_passesNullRatio_whenOmitted() {
             Long requestId = 3L;
@@ -138,7 +155,7 @@ class PodMigrationServiceTest {
         @DisplayName("존재하지 않는 requestId면 RESOURCE_NOT_FOUND 예외가 발생하고 외부 API를 호출하지 않는다")
         void migratePod_requestNotFound_throwsAndSkipsExternalCall() {
             Long requestId = 99L;
-            when(requestRepository.findById(requestId)).thenReturn(Optional.empty());
+            when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1"), null)))
                     .isInstanceOf(BusinessException.class)
