@@ -2,9 +2,11 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.CreatePodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigratePodResponseDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.webclient.WebClientErrorHandler;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -12,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -25,6 +28,12 @@ public class PodService {
     private final @Qualifier("podWebClient") WebClient webClient;
 
     private record DeletePodRequest(@com.fasterxml.jackson.annotation.JsonProperty("pod_name") String podName) {}
+
+    private record MigratePodRequest(
+            String username,
+            List<String> nodes,
+            @JsonProperty("min_improvement_ratio") Double minImprovementRatio
+    ) {}
 
     public CreatePodResponseDTO createPod(String username) {
         try {
@@ -88,6 +97,35 @@ public class PodService {
         } catch (Exception e) {
             log.error("Pod 삭제 API 호출 중 예기치 않은 오류: {}", podName, e);
             throw new BusinessException("Pod 삭제 API 호출 오류", ErrorCode.POD_DELETION_FAILED);
+        }
+    }
+
+    public MigratePodResponseDTO migratePod(String username, List<String> nodes, Double minImprovementRatio) {
+        try {
+            log.info("Pod 마이그레이션 API 요청 시작: 사용자: {}, 후보 노드: {}", username, nodes);
+
+            MigratePodResponseDTO response = WebClientErrorHandler.onError(
+                            webClient.post()
+                                    .uri("/migrate")
+                                    .bodyValue(new MigratePodRequest(username, nodes, minImprovementRatio))
+                                    .retrieve(),
+                            (status, body) -> new BusinessException("Pod 마이그레이션 실패: " + body, ErrorCode.POD_MIGRATION_FAILED)
+                    )
+                    .bodyToMono(MigratePodResponseDTO.class)
+                    .block();
+
+            if (response == null || response.status() == null) {
+                log.error("Pod 마이그레이션 API가 빈 응답을 반환했습니다. 사용자: {}", username);
+                throw new BusinessException(ErrorCode.POD_MIGRATION_FAILED);
+            }
+            log.info("Pod 마이그레이션 API 요청 성공: 사용자: {}, 결과: {}", username, response.status());
+            return response;
+
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Pod 마이그레이션 API 호출 중 예기치 않은 오류 발생.", e);
+            throw new BusinessException(ErrorCode.POD_MIGRATION_FAILED);
         }
     }
 }

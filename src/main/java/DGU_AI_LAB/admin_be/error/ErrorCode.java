@@ -143,6 +143,7 @@ public enum ErrorCode {
     POD_CREATION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 생성 API 요청에 실패했습니다."),
     POD_DELETION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 삭제 API 요청에 실패했습니다."),
     POD_CREATION_CONCURRENCY_LIMIT(HttpStatus.TOO_MANY_REQUESTS, "현재 동시에 처리 중인 Pod 생성 요청이 많습니다. 잠시 후 다시 시도해주세요."),
+    POD_MIGRATION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 마이그레이션 API 요청에 실패했습니다."),
 
     ;
     private final HttpStatus httpStatus;
