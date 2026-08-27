@@ -125,7 +125,7 @@ class PodMigrationServiceTest {
             Long requestId = 7L;
             stubExistingRequest(requestId, Status.FULFILLED);
             when(podService.migratePod(any(), any(), any())).thenReturn(
-                    new MigratePodResponseDTO("skipped", "no_candidate_node", null, null, null, null, null, null, null, null)
+                    new MigratePodResponseDTO("skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null)
             );
 
             service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1"), null));
