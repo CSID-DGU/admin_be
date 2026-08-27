@@ -14,14 +14,16 @@ public record ResourceUsageDTO(
         @Schema(description = "리소스 그룹 ID", example = "1")
         Integer resourceGroupId,
         @Schema(description = "볼륨 크기 (GiB)", example = "20")
-        Long volumeSizeByte
+        Long volumeSizeGiB
 ) {
     public static ResourceUsageDTO fromEntity(Request request) {
         return ResourceUsageDTO.builder()
                 .userId(request.getUser().getUserId())
                 .userName(request.getUser().getName())
-                .resourceGroupId(request.getResourceGroup().getRsgroupId())
-                .volumeSizeByte(request.getVolumeSizeGiB())
+                .resourceGroupId(request.getResourceGroup() != null
+                        ? request.getResourceGroup().getRsgroupId()
+                        : null)
+                .volumeSizeGiB(request.getVolumeSizeGiB())
                 .build();
     }
 }

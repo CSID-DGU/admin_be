@@ -2,6 +2,8 @@ package DGU_AI_LAB.admin_be.domain.messageTemplate.service;
 
 import DGU_AI_LAB.admin_be.domain.messageTemplate.entity.MessageTemplate;
 import DGU_AI_LAB.admin_be.domain.messageTemplate.repository.MessageTemplateRepository;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.support.PropertiesLoaderUtils;
@@ -80,13 +82,23 @@ public class MessageTemplateService {
      *
      * @Transactional: 이 메서드 안에서 일어나는 모든 DB 작업이 하나의 트랜잭션.
      *   중간에 예외 터지면 전부 롤백됨.
+     *
+     * 키는 messages.properties에 정의된 것이거나 이미 DB에 오버라이드가 있는 것이어야 한다.
+     * 아무 키나 받아 새 row를 만들면 오타 키가 조용히 저장되고, 문서상 404 계약과도 어긋난다.
      */
     @Transactional
     public void update(String key, String value) {
         repository.findById(key)
                 .ifPresentOrElse(
                         t -> t.updateValue(value),
-                        () -> repository.save(new MessageTemplate(key, value))
+                        () -> {
+                            // DB에 오버라이드가 없다면 properties에 있는 키여야 한다.
+                            // (properties에 없고 DB에만 있는 키는 위 분기에서 이미 처리된다.)
+                            if (!loadDefaults().containsKey(key)) {
+                                throw new EntityNotFoundException(ErrorCode.RESOURCE_NOT_FOUND);
+                            }
+                            repository.save(new MessageTemplate(key, value));
+                        }
                 );
     }
 
