@@ -60,6 +60,9 @@ public record SingleChangeRequestDTO(
                     .reason(dto.reason())
                     .requestedBy(requestedBy)
                     .build();
+        } catch (BusinessException e) {
+            // 입력값 문제로 이미 판정된 예외는 그대로 올려보낸다. 여기서 삼키면 400이 500으로 나간다.
+            throw e;
         } catch (Exception e) {
             log.error("Failed to create ChangeRequest entity: {}", e.getMessage());
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
@@ -146,7 +149,11 @@ public record SingleChangeRequestDTO(
                     }
                 }
                 case EXPIRES_AT -> {
-                    LocalDateTime.parse(newValue.trim());
+                    // SaveRequestRequestDTO.expiresAt의 @Future 계약과 동일한 기준을 적용한다.
+                    LocalDateTime parsed = LocalDateTime.parse(newValue.trim());
+                    if (!parsed.isAfter(LocalDateTime.now())) {
+                        throw new BusinessException("만료 일시는 미래여야 합니다.", ErrorCode.INVALID_INPUT_VALUE);
+                    }
                 }
                 case GROUP -> {
                     Set<Long> groupIds = OBJECT_MAPPER.readValue(newValue, OBJECT_MAPPER.getTypeFactory().constructCollectionType(Set.class, Long.class));

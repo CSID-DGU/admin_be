@@ -33,6 +33,8 @@ public interface AdminMessageTemplateApi {
                     "키에 점(.)이 포함됩니다 (예: notification.expired.dm)."
     )
     @ApiResponse(responseCode = "200", description = "수정 성공")
+    @ApiResponse(responseCode = "400", description = "요청 본문에 value가 없거나 비어 있음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "403", description = "관리자 권한 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "404", description = "존재하지 않는 메시지 키",
