@@ -4,12 +4,13 @@ import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.security.Key;
-import java.util.Base64;
 import java.util.Date;
 
 @Getter
@@ -21,6 +22,13 @@ public class JwtProvider {
     private long ACCESS_TOKEN_EXPIRE_TIME;
     @Value("${jwt.refresh-token-expire-time}")
     private long REFRESH_TOKEN_EXPIRE_TIME;
+
+    private Key signingKey;
+
+    @PostConstruct
+    private void initSigningKey() {
+        this.signingKey = Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
+    }
 
     public String getIssueToken(Long userId, boolean isAccessToken) {
         if (isAccessToken) return generateToken(userId, ACCESS_TOKEN_EXPIRE_TIME);
@@ -78,8 +86,7 @@ public class JwtProvider {
     }
 
     private Key getSigningKey() {
-        String encoded = Base64.getEncoder().encodeToString(secretKey.getBytes());
-        return Keys.hmacShaKeyFor(encoded.getBytes());
+        return signingKey;
     }
 
 
