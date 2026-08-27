@@ -9,7 +9,6 @@ import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -18,6 +17,8 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+
+import java.util.List;
 
 @Tag(name = "2. 사용자 서버 신청", description = "서버 사용 신청 생성 및 조회 API")
 public interface RequestApi {
@@ -28,7 +29,7 @@ public interface RequestApi {
                     "ubuntuPassword는 클라이언트에서 평문을 Base64로 인코딩한 값으로 전송합니다."
     )
     @ApiResponse(responseCode = "201", description = "신청 생성 성공",
-            content = @Content(schema = @Schema(implementation = SaveRequestResponseDTO.class)))
+            content = @Content(schema = @Schema(implementation = SaveRequestResponseDoc.class)))
     @ApiResponse(responseCode = "400", description = "우분투 계정명 중복 또는 유효하지 않은 요청",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "404", description = "리소스 그룹 또는 컨테이너 이미지를 찾을 수 없음",
@@ -53,20 +54,34 @@ public interface RequestApi {
 
     @Operation(summary = "내 신청 목록 조회", description = "로그인된 사용자의 모든 신청 내역(전체 상태 포함)을 조회합니다.")
     @ApiResponse(responseCode = "200", description = "조회 성공",
-            content = @Content(array = @ArraySchema(schema = @Schema(implementation = SaveRequestResponseDTO.class))))
+            content = @Content(schema = @Schema(implementation = SaveRequestListResponseDoc.class)))
     ResponseEntity<SuccessResponse<?>> getMyRequests(@Parameter(hidden = true) CustomUserDetails user);
 
     @Operation(summary = "내 승인 완료 신청 목록 조회", description = "FULFILLED 상태인 신청 목록만 조회합니다.")
     @ApiResponse(responseCode = "200", description = "조회 성공",
-            content = @Content(array = @ArraySchema(schema = @Schema(implementation = SaveRequestResponseDTO.class))))
+            content = @Content(schema = @Schema(implementation = SaveRequestListResponseDoc.class)))
     ResponseEntity<SuccessResponse<?>> getMyApprovedRequests(@Parameter(hidden = true) CustomUserDetails user);
 
     @Operation(summary = "승인된 우분투 계정명 목록 조회", description = "FULFILLED 상태인 모든 신청의 ubuntuUsername 목록을 조회합니다. 그룹 생성 시 멤버 선택에 활용합니다.")
-    @ApiResponse(responseCode = "200", description = "조회 성공")
+    @ApiResponse(responseCode = "200", description = "조회 성공",
+            content = @Content(schema = @Schema(implementation = FulfilledUsernameListResponseDoc.class)))
     ResponseEntity<SuccessResponse<?>> getAllFulfilledUsernames();
 
     @Operation(summary = "내 변경 요청 목록 조회", description = "로그인된 사용자가 제출한 모든 변경 요청 내역(전체 상태 포함)을 조회합니다.")
     @ApiResponse(responseCode = "200", description = "조회 성공",
-            content = @Content(array = @ArraySchema(schema = @Schema(implementation = ChangeRequestResponseDTO.class))))
+            content = @Content(schema = @Schema(implementation = ChangeRequestListResponseDoc.class)))
     ResponseEntity<SuccessResponse<?>> getMyChangeRequests(@Parameter(hidden = true) CustomUserDetails user);
+
+    // 실제 응답은 SuccessResponse<T> 래퍼로 감싸져 나가므로, Swagger 스키마도 래퍼 형태로 노출한다.
+    @Schema(name = "SuccessResponseSaveRequestResponseDTO", description = "서버 사용 신청 생성 응답")
+    record SaveRequestResponseDoc(int status, String message, SaveRequestResponseDTO data) {}
+
+    @Schema(name = "SuccessResponseListSaveRequestResponseDTO", description = "서버 사용 신청 목록 응답")
+    record SaveRequestListResponseDoc(int status, String message, List<SaveRequestResponseDTO> data) {}
+
+    @Schema(name = "SuccessResponseListChangeRequestResponseDTO", description = "변경 요청 목록 응답")
+    record ChangeRequestListResponseDoc(int status, String message, List<ChangeRequestResponseDTO> data) {}
+
+    @Schema(name = "SuccessResponseListString", description = "승인된 우분투 계정명 목록 응답")
+    record FulfilledUsernameListResponseDoc(int status, String message, List<String> data) {}
 }

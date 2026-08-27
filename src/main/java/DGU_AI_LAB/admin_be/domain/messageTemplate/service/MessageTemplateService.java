@@ -2,6 +2,8 @@ package DGU_AI_LAB.admin_be.domain.messageTemplate.service;
 
 import DGU_AI_LAB.admin_be.domain.messageTemplate.entity.MessageTemplate;
 import DGU_AI_LAB.admin_be.domain.messageTemplate.repository.MessageTemplateRepository;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.support.PropertiesLoaderUtils;
@@ -74,9 +76,12 @@ public class MessageTemplateService {
     /**
      * 특정 키의 메시지를 수정한다 (DB에 오버라이드 저장).
      *
+     * 수정 가능한 키는 getAll()이 노출하는 키 집합(properties 기본값 ∪ DB 오버라이드)과 동일하다.
+     * 임의의 키를 새로 만들 수는 없고, 목록에 없는 키로 요청하면 404를 반환한다.
+     *
      * ifPresentOrElse 패턴:
      *   - DB에 이미 있으면 : updateValue()로 값만 변경 (JPA dirty checking이 UPDATE 쿼리 날림)
-     *   - DB에 없으면 : 새 row를 INSERT
+     *   - DB에 없으면(= properties에만 있는 기본값 키) : 오버라이드 row를 새로 INSERT
      *
      * @Transactional: 이 메서드 안에서 일어나는 모든 DB 작업이 하나의 트랜잭션.
      *   중간에 예외 터지면 전부 롤백됨.
@@ -86,7 +91,12 @@ public class MessageTemplateService {
         repository.findById(key)
                 .ifPresentOrElse(
                         t -> t.updateValue(value),
-                        () -> repository.save(new MessageTemplate(key, value))
+                        () -> {
+                            if (!loadDefaults().containsKey(key)) {
+                                throw new EntityNotFoundException(ErrorCode.MESSAGE_TEMPLATE_NOT_FOUND);
+                            }
+                            repository.save(new MessageTemplate(key, value));
+                        }
                 );
     }
 

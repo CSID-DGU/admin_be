@@ -15,7 +15,7 @@ import org.springframework.http.ResponseEntity;
 public interface AuthApi {
 
     @Operation(summary = "회원가입", description = "이메일 인증이 완료된 사용자가 계정을 생성합니다. 인증 미완료 시 401을 반환합니다.")
-    @ApiResponse(responseCode = "200", description = "회원가입 성공")
+    @ApiResponse(responseCode = "201", description = "회원가입 성공")
     @ApiResponse(responseCode = "400", description = "필수 필드 누락 또는 형식 오류",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "401", description = "이메일 인증이 완료되지 않은 경우",

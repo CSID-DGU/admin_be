@@ -2,6 +2,8 @@ package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserTokenRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import DGU_AI_LAB.admin_be.global.auth.jwt.JwtProvider;
@@ -20,6 +22,7 @@ public class TokenService {
 
     private final JwtProvider jwtProvider;
     private final RedisTemplate<String, String> redisTemplate;
+    private final UserRepository userRepository;
 
     @Value("${jwt.refresh-token-expire-time}")
     private long REFRESH_TOKEN_EXPIRE_TIME;
@@ -58,6 +61,13 @@ public class TokenService {
             userId = jwtProvider.getSubjectFromExpiredToken(userTokenRequest.accessToken());
         } catch (Exception e) {
             throw new UnauthorizedException(ErrorCode.INVALID_ACCESS_TOKEN_VALUE);
+        }
+
+        // 탈퇴·비활성화된 계정이 남아있는 리프레시 토큰으로 액세스 토큰을 계속 받아가지 못하도록 막는다.
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UnauthorizedException(ErrorCode.ACCOUNT_DISABLED));
+        if (!Boolean.TRUE.equals(user.getIsActive())) {
+            throw new UnauthorizedException(ErrorCode.ACCOUNT_DISABLED);
         }
 
         String refreshToken = userTokenRequest.refreshToken();
