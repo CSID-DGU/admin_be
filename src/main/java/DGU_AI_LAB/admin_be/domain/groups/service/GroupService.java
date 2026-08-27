@@ -13,6 +13,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -154,7 +155,12 @@ public class GroupService {
                     .ubuntuGid(finalGid)
                     .build();
             try {
-                return groupRepository.save(group);
+                // 1번의 사전 검사와 여기 사이에 다른 요청이 같은 이름으로 먼저 저장할 수 있다.
+                // unique 제약 위반은 커밋 시점이 아니라 여기서 잡히도록 flush까지 수행한다.
+                return groupRepository.saveAndFlush(group);
+            } catch (DataIntegrityViolationException e) {
+                log.warn("[createGroup] 그룹명 중복으로 DB 저장 실패: groupName={}, gid={}", dto.groupName(), finalGid);
+                throw new BusinessException(ErrorCode.DUPLICATE_GROUP_NAME);
             } catch (Exception e) {
                 log.error("[createGroup] 인프라에 그룹 생성됨, DB 저장 실패 — 수동 정리 필요: groupName={}, gid={}", dto.groupName(), finalGid, e);
                 throw new BusinessException(ErrorCode.GROUP_CREATION_FAILED);
