@@ -34,12 +34,12 @@ class JwtProviderTest {
         ReflectionTestUtils.setField(jwtProvider, "secretKey", SECRET);
         ReflectionTestUtils.setField(jwtProvider, "ACCESS_TOKEN_EXPIRE_TIME", ACCESS_TTL);
         ReflectionTestUtils.setField(jwtProvider, "REFRESH_TOKEN_EXPIRE_TIME", REFRESH_TTL);
+        ReflectionTestUtils.invokeMethod(jwtProvider, "initSigningKey");
     }
 
     // ─── 헬퍼: 이미 만료된 토큰 직접 생성 ───────────────────────────────────────
     private String buildExpiredToken(Long userId) {
-        String encoded = Base64.getEncoder().encodeToString(SECRET.getBytes());
-        Key key = Keys.hmacShaKeyFor(encoded.getBytes());
+        Key key = Keys.hmacShaKeyFor(SECRET.getBytes());
         Date past = new Date(System.currentTimeMillis() - 10_000);
         return Jwts.builder()
                 .setSubject(String.valueOf(userId))
@@ -52,8 +52,7 @@ class JwtProviderTest {
     // ─── 헬퍼: 완전히 다른 키로 서명된 위조 토큰 생성 ────────────────────────────
     private String buildTokenWithDifferentKey(Long userId) {
         String fakeSecret = "completely-different-secret-key-abcdefghijklmnop-xyz";
-        String encoded = Base64.getEncoder().encodeToString(fakeSecret.getBytes());
-        Key key = Keys.hmacShaKeyFor(encoded.getBytes());
+        Key key = Keys.hmacShaKeyFor(fakeSecret.getBytes());
         Date now = new Date();
         return Jwts.builder()
                 .setSubject(String.valueOf(userId))

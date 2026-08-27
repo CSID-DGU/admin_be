@@ -58,7 +58,7 @@ public class SlackApiService {
                 throw new BusinessException(ErrorCode.SLACK_SEND_FAILED);
             }
         } catch (Exception e) {
-            log.error("Slack Webhook 전송 실패 (URL: {}): {}", webhookUrl, e.getMessage());
+            log.error("Slack Webhook 전송 실패: {}", e.getClass().getSimpleName());
             throw new BusinessException(ErrorCode.SLACK_SEND_FAILED);
         }
     }

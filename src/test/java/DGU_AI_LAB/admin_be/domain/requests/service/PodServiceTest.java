@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigratePodResponseDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
@@ -190,6 +191,111 @@ class PodServiceTest {
             podService.createPod("myuser");
 
             verify(requestBodyUriSpec).uri("/create-pod");
+        }
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // migratePod
+    // ───────────────────────────────────────────────────────────────
+    @Nested
+    @DisplayName("migratePod")
+    class MigratePod {
+
+        @Test
+        @DisplayName("마이그레이션 성공 시 status=migrated 응답을 그대로 반환한다")
+        void migratePod_returnsMigratedResponse_whenApiSucceeds() {
+            MigratePodResponseDTO mockResponse = new MigratePodResponseDTO(
+                    "migrated", null, "farm1", "farm2", "pod-testuser-2",
+                    List.of(new CreatePodResponseDTO.PortInfo("ssh", 22, 30099)),
+                    null, null, null, null, null
+            );
+            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
+                    .thenReturn(Mono.just(mockResponse));
+
+            MigratePodResponseDTO result = podService.migratePod("testuser", List.of("farm1", "farm2"), 0.2);
+
+            assertThat(result).isEqualTo(mockResponse);
+            assertThat(result.isMigrated()).isTrue();
+            assertThat(result.newPod()).isEqualTo("pod-testuser-2");
+        }
+
+        @Test
+        @DisplayName("개선 폭이 기준 미만이면 status=skipped 응답을 그대로 반환한다")
+        void migratePod_returnsSkippedResponse_whenNoSignificantImprovement() {
+            MigratePodResponseDTO mockResponse = new MigratePodResponseDTO(
+                    "skipped", "no_significant_improvement", null, null, null, null, null,
+                    "farm1", 1.5, "farm2", 1.4
+            );
+            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
+                    .thenReturn(Mono.just(mockResponse));
+
+            MigratePodResponseDTO result = podService.migratePod("testuser", List.of("farm1", "farm2"), 0.2);
+
+            assertThat(result.isMigrated()).isFalse();
+            assertThat(result.reason()).isEqualTo("no_significant_improvement");
+        }
+
+        @Test
+        @DisplayName("API가 빈 응답(null)을 반환하면 POD_MIGRATION_FAILED 예외가 발생한다")
+        void migratePod_throwsBusinessException_whenApiReturnsEmpty() {
+            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
+                    .thenReturn(Mono.empty());
+
+            assertThatThrownBy(() -> podService.migratePod("testuser", List.of("farm1"), null))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_MIGRATION_FAILED);
+        }
+
+        @Test
+        @DisplayName("status가 null인 응답이면 POD_MIGRATION_FAILED 예외가 발생한다")
+        void migratePod_throwsBusinessException_whenStatusIsNull() {
+            MigratePodResponseDTO badResponse = new MigratePodResponseDTO(
+                    null, null, null, null, null, null, null, null, null, null, null
+            );
+            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
+                    .thenReturn(Mono.just(badResponse));
+
+            assertThatThrownBy(() -> podService.migratePod("testuser", List.of("farm1"), null))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_MIGRATION_FAILED);
+        }
+
+        @Test
+        @DisplayName("API 호출 중 BusinessException이 발생하면 그대로 전파한다")
+        void migratePod_propagatesBusinessException() {
+            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
+                    .thenReturn(Mono.error(new BusinessException("Pod 마이그레이션 실패", ErrorCode.POD_MIGRATION_FAILED)));
+
+            assertThatThrownBy(() -> podService.migratePod("testuser", List.of("farm1"), null))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("Pod 마이그레이션 실패");
+        }
+
+        @Test
+        @DisplayName("API 호출 중 일반 예외가 발생하면 BusinessException으로 래핑한다")
+        void migratePod_wrapsGeneralException_asBusinessException() {
+            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
+                    .thenReturn(Mono.error(new RuntimeException("network error")));
+
+            assertThatThrownBy(() -> podService.migratePod("testuser", List.of("farm1"), null))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_MIGRATION_FAILED);
+        }
+
+        @Test
+        @DisplayName("올바른 username/nodes로 /migrate URI에 요청한다")
+        void migratePod_callsCorrectUri() {
+            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
+                    .thenReturn(Mono.just(new MigratePodResponseDTO(
+                            "skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null
+                    )));
+
+            podService.migratePod("myuser", List.of("farm1"), 0.3);
+
+            verify(requestBodyUriSpec).uri("/migrate");
         }
     }
 }

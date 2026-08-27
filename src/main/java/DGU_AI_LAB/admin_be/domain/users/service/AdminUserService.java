@@ -86,6 +86,11 @@ public class AdminUserService {
                 } catch (Exception e) {
                     log.warn("[deleteUser] 삭제 안내 메일 발송 실패: ubuntuUsername={}", request.getUbuntuUsername(), e);
                 }
+            } else if (request.getStatus() == Status.MIGRATING) {
+                // 마이그레이션 진행 중인 요청은 건드리지 않는다 — delete()를 호출하면 예외가 발생해
+                // 이 유저의 나머지 Request 정리까지 트랜잭션 전체가 롤백된다. 마이그레이션이 끝난 뒤
+                // 관리자가 다시 삭제를 시도해야 한다.
+                log.warn("[deleteUser] 마이그레이션 진행 중인 요청은 건너뜁니다: requestId={}", request.getRequestId());
             } else if (request.getStatus() != Status.DELETED) {
                 request.delete();
             }

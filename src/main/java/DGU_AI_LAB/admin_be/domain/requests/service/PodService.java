@@ -2,17 +2,19 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.CreatePodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigratePodResponseDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.webclient.WebClientErrorHandler;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -27,21 +29,22 @@ public class PodService {
 
     private record DeletePodRequest(@com.fasterxml.jackson.annotation.JsonProperty("pod_name") String podName) {}
 
+    private record MigratePodRequest(
+            String username,
+            List<String> nodes,
+            @JsonProperty("min_improvement_ratio") Double minImprovementRatio
+    ) {}
+
     public CreatePodResponseDTO createPod(String username) {
         try {
             log.info("Pod 생성 API 요청 시작: 사용자: {}", username);
 
-            CreatePodResponseDTO response = webClient.post()
-                    .uri("/create-pod")
-                    .bodyValue(new CreatePodRequestDTO(username))
-                    .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
-                            clientResponse.bodyToMono(String.class)
-                                    .flatMap(body -> Mono.error(new BusinessException("Pod 생성 실패: " + body, ErrorCode.POD_CREATION_FAILED)))
-                    )
-                    .onStatus(HttpStatusCode::is5xxServerError, clientResponse ->
-                            clientResponse.bodyToMono(String.class)
-                                    .flatMap(body -> Mono.error(new BusinessException("Pod 생성 실패: " + body, ErrorCode.POD_CREATION_FAILED)))
+            CreatePodResponseDTO response = WebClientErrorHandler.onError(
+                            webClient.post()
+                                    .uri("/create-pod")
+                                    .bodyValue(new CreatePodRequestDTO(username))
+                                    .retrieve(),
+                            (status, body) -> new BusinessException("Pod 생성 실패: " + body, ErrorCode.POD_CREATION_FAILED)
                     )
                     .bodyToMono(CreatePodResponseDTO.class)
                     .block();
@@ -70,20 +73,19 @@ public class PodService {
         try {
             log.info("Pod 삭제 API 요청 시작: {}", podName);
 
-            webClient.post()
-                    .uri("/delete-pod")
-                    .bodyValue(new DeletePodRequest(podName))
-                    .retrieve()
-                    .onStatus(HttpStatusCode::isError, response ->
-                            response.bodyToMono(String.class)
-                                    .flatMap(body -> {
-                                        if (response.statusCode() == HttpStatus.NOT_FOUND) {
-                                            log.warn("Pod가 이미 존재하지 않음 (404): {}", podName);
-                                            return Mono.empty();
-                                        }
-                                        log.error("Pod 삭제 실패 ({}): {}", response.statusCode(), body);
-                                        return Mono.error(new BusinessException("Pod 삭제 실패: " + body, ErrorCode.POD_DELETION_FAILED));
-                                    })
+            WebClientErrorHandler.onError(
+                            webClient.post()
+                                    .uri("/delete-pod")
+                                    .bodyValue(new DeletePodRequest(podName))
+                                    .retrieve(),
+                            (status, body) -> {
+                                if (status == HttpStatus.NOT_FOUND) {
+                                    log.warn("Pod가 이미 존재하지 않음 (404): {}", podName);
+                                    return null;
+                                }
+                                log.error("Pod 삭제 실패 ({}): {}", status, body);
+                                return new BusinessException("Pod 삭제 실패: " + body, ErrorCode.POD_DELETION_FAILED);
+                            }
                     )
                     .bodyToMono(Map.class)
                     .block();
@@ -95,6 +97,35 @@ public class PodService {
         } catch (Exception e) {
             log.error("Pod 삭제 API 호출 중 예기치 않은 오류: {}", podName, e);
             throw new BusinessException("Pod 삭제 API 호출 오류", ErrorCode.POD_DELETION_FAILED);
+        }
+    }
+
+    public MigratePodResponseDTO migratePod(String username, List<String> nodes, Double minImprovementRatio) {
+        try {
+            log.info("Pod 마이그레이션 API 요청 시작: 사용자: {}, 후보 노드: {}", username, nodes);
+
+            MigratePodResponseDTO response = WebClientErrorHandler.onError(
+                            webClient.post()
+                                    .uri("/migrate")
+                                    .bodyValue(new MigratePodRequest(username, nodes, minImprovementRatio))
+                                    .retrieve(),
+                            (status, body) -> new BusinessException("Pod 마이그레이션 실패: " + body, ErrorCode.POD_MIGRATION_FAILED)
+                    )
+                    .bodyToMono(MigratePodResponseDTO.class)
+                    .block();
+
+            if (response == null || response.status() == null) {
+                log.error("Pod 마이그레이션 API가 빈 응답을 반환했습니다. 사용자: {}", username);
+                throw new BusinessException(ErrorCode.POD_MIGRATION_FAILED);
+            }
+            log.info("Pod 마이그레이션 API 요청 성공: 사용자: {}, 결과: {}", username, response.status());
+            return response;
+
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Pod 마이그레이션 API 호출 중 예기치 않은 오류 발생.", e);
+            throw new BusinessException(ErrorCode.POD_MIGRATION_FAILED);
         }
     }
 }

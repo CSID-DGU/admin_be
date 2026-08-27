@@ -2,12 +2,15 @@ package DGU_AI_LAB.admin_be.domain.requests.controller;
 
 import DGU_AI_LAB.admin_be.domain.requests.controller.docs.AdminRequestApi;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigratePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestQueryService;
+import DGU_AI_LAB.admin_be.domain.requests.service.PodMigrationService;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +26,7 @@ public class AdminRequestController implements AdminRequestApi {
 
     private final AdminRequestCommandService adminRequestCommandService;
     private final AdminRequestQueryService adminRequestQueryService;
+    private final PodMigrationService podMigrationService;
 
 
     /**
@@ -67,6 +71,12 @@ public class AdminRequestController implements AdminRequestApi {
     @PatchMapping("/reject")
     public ResponseEntity<SuccessResponse<?>> rejectRequest(@RequestBody @Valid RejectRequestDTO dto) {
         SaveRequestResponseDTO responseDto = adminRequestCommandService.rejectRequest(dto);
+        return SuccessResponse.ok(responseDto);
+    }
+
+    @PostMapping("/{requestId}/migrate")
+    public ResponseEntity<SuccessResponse<?>> migratePod(@PathVariable Long requestId, @RequestBody @Valid MigratePodRequestDTO dto) {
+        MigratePodResponseDTO responseDto = podMigrationService.migratePod(requestId, dto);
         return SuccessResponse.ok(responseDto);
     }
 }

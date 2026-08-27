@@ -91,13 +91,13 @@ class RequestNotificationServiceTest {
             LocalDateTime expectedStart = LocalDate.of(2025, 11, 17).atStartOfDay();
             LocalDateTime expectedEnd = LocalDate.of(2025, 11, 17).atTime(LocalTime.MAX);
 
-            when(requestRepository.findAllByExpiresAtBetweenAndStatus(any(), any(), any()))
+            when(requestRepository.findAllByExpiresAtBetweenAndStatusIn(any(), any(), any()))
                     .thenReturn(List.of());
 
             notificationService.sendPreExpiryNotification(targetDate, "7일");
 
-            verify(requestRepository).findAllByExpiresAtBetweenAndStatus(
-                    eq(expectedStart), eq(expectedEnd), eq(Status.FULFILLED)
+            verify(requestRepository).findAllByExpiresAtBetweenAndStatusIn(
+                    eq(expectedStart), eq(expectedEnd), eq(Status.activeStatuses())
             );
         }
 
@@ -107,7 +107,7 @@ class RequestNotificationServiceTest {
             LocalDateTime targetDate = LocalDateTime.of(2025, 11, 17, 10, 0, 0);
 
             ArgumentCaptor<LocalDateTime> endCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
-            when(requestRepository.findAllByExpiresAtBetweenAndStatus(any(), endCaptor.capture(), any()))
+            when(requestRepository.findAllByExpiresAtBetweenAndStatusIn(any(), endCaptor.capture(), any()))
                     .thenReturn(List.of());
 
             notificationService.sendPreExpiryNotification(targetDate, "7일");
@@ -118,7 +118,7 @@ class RequestNotificationServiceTest {
         @Test
         @DisplayName("조회된 요청이 없으면 알림을 발송하지 않는다")
         void doesNotSendAlert_whenNoRequests() {
-            when(requestRepository.findAllByExpiresAtBetweenAndStatus(any(), any(), any()))
+            when(requestRepository.findAllByExpiresAtBetweenAndStatusIn(any(), any(), any()))
                     .thenReturn(List.of());
 
             notificationService.sendPreExpiryNotification(LocalDateTime.now(), "7일");
@@ -133,7 +133,7 @@ class RequestNotificationServiceTest {
             Request req1 = buildRequest(1L, "유저A", "a@dgu.ac.kr", "FARM-01", "usera", expiresAt);
             Request req2 = buildRequest(2L, "유저B", "b@dgu.ac.kr", "LAB-01", "userb", expiresAt);
 
-            when(requestRepository.findAllByExpiresAtBetweenAndStatus(any(), any(), any()))
+            when(requestRepository.findAllByExpiresAtBetweenAndStatusIn(any(), any(), any()))
                     .thenReturn(List.of(req1, req2));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
@@ -148,7 +148,7 @@ class RequestNotificationServiceTest {
             LocalDateTime expiresAt = LocalDateTime.of(2025, 11, 14, 9, 0, 0);
             Request request = buildRequest(1L, "유저", "u@dgu.ac.kr", "FARM-01", "userx", expiresAt);
 
-            when(requestRepository.findAllByExpiresAtBetweenAndStatus(any(), any(), any()))
+            when(requestRepository.findAllByExpiresAtBetweenAndStatusIn(any(), any(), any()))
                     .thenReturn(List.of(request));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
@@ -165,7 +165,7 @@ class RequestNotificationServiceTest {
             LocalDateTime expiresAt = LocalDateTime.of(2025, 11, 14, 9, 0, 0);
             Request request = buildRequest(1L, "홍길동", "hong@dgu.ac.kr", "FARM-01", "hong", expiresAt);
 
-            when(requestRepository.findAllByExpiresAtBetweenAndStatus(any(), any(), any()))
+            when(requestRepository.findAllByExpiresAtBetweenAndStatusIn(any(), any(), any()))
                     .thenReturn(List.of(request));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
@@ -184,7 +184,7 @@ class RequestNotificationServiceTest {
 
             Request goodRequest = buildRequest(2L, "유저B", "b@dgu.ac.kr", "LAB-01", "userb", expiresAt);
 
-            when(requestRepository.findAllByExpiresAtBetweenAndStatus(any(), any(), any()))
+            when(requestRepository.findAllByExpiresAtBetweenAndStatusIn(any(), any(), any()))
                     .thenReturn(List.of(badRequest, goodRequest));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
@@ -201,7 +201,7 @@ class RequestNotificationServiceTest {
             Request badRequest2 = mock(Request.class);
             when(badRequest2.getUser()).thenThrow(new RuntimeException("error2"));
 
-            when(requestRepository.findAllByExpiresAtBetweenAndStatus(any(), any(), any()))
+            when(requestRepository.findAllByExpiresAtBetweenAndStatusIn(any(), any(), any()))
                     .thenReturn(List.of(badRequest1, badRequest2));
 
             notificationService.sendPreExpiryNotification(LocalDateTime.now(), "1일");
@@ -216,7 +216,7 @@ class RequestNotificationServiceTest {
             Request req1 = buildRequest(1L, "유저A", "a@dgu.ac.kr", "FARM-01", "usera", expiresAt);
             Request req2 = buildRequest(2L, "유저B", "b@dgu.ac.kr", "FARM-01", "userb", expiresAt);
 
-            when(requestRepository.findAllByExpiresAtBetweenAndStatus(any(), any(), any()))
+            when(requestRepository.findAllByExpiresAtBetweenAndStatusIn(any(), any(), any()))
                     .thenReturn(List.of(req1, req2));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
             doThrow(new RuntimeException("Slack error"))
@@ -234,7 +234,7 @@ class RequestNotificationServiceTest {
             LocalDateTime targetDateAtNoon = LocalDateTime.of(2025, 11, 20, 12, 30, 0);
             LocalDateTime targetDateAtMidnight = LocalDateTime.of(2025, 11, 20, 0, 0, 0);
 
-            when(requestRepository.findAllByExpiresAtBetweenAndStatus(any(), any(), any()))
+            when(requestRepository.findAllByExpiresAtBetweenAndStatusIn(any(), any(), any()))
                     .thenReturn(List.of());
 
             notificationService.sendPreExpiryNotification(targetDateAtNoon, "7일");
@@ -242,7 +242,7 @@ class RequestNotificationServiceTest {
 
             ArgumentCaptor<LocalDateTime> startCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
             verify(requestRepository, times(2))
-                    .findAllByExpiresAtBetweenAndStatus(startCaptor.capture(), any(), any());
+                    .findAllByExpiresAtBetweenAndStatusIn(startCaptor.capture(), any(), any());
 
             List<LocalDateTime> starts = startCaptor.getAllValues();
             assertThat(starts.get(0)).isEqualTo(starts.get(1));

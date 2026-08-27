@@ -173,7 +173,6 @@ class UserSchedulerServiceTest {
                 .user(user)
                 .ubuntuUsername("user_" + user.getUserId())
                 .ubuntuPassword("pw")
-                .ubuntuPasswordBase64("pwBase64")
                 .volumeSizeGiB(10L)
                 .expiresAt(expiresAt)
                 .usagePurpose("test")

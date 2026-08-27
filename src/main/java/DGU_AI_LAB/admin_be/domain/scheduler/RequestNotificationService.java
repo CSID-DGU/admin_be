@@ -32,7 +32,7 @@ public class RequestNotificationService {
         LocalDateTime start = targetDate.toLocalDate().atStartOfDay();
         LocalDateTime end = targetDate.toLocalDate().atTime(LocalTime.MAX);
 
-        List<Request> requests = requestRepository.findAllByExpiresAtBetweenAndStatus(start, end, Status.FULFILLED);
+        List<Request> requests = requestRepository.findAllByExpiresAtBetweenAndStatusIn(start, end, Status.activeStatuses());
         String today = targetDate.toLocalDate().toString();
 
         for (Request request : requests) {

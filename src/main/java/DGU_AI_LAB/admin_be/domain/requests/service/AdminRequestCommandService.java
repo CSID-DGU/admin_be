@@ -17,6 +17,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.request.UserCreationRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
+import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
@@ -46,7 +47,10 @@ import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Semaphore;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -71,6 +75,10 @@ public class AdminRequestCommandService {
 
     private final @Qualifier("configWebClient") WebClient userCreationWebClient;
     private final PlatformTransactionManager transactionManager;
+
+    // 동시 처리 한도. 이 이상 동시에 승인이 몰리면 Tomcat 스레드가 최대
+    // pod-timeout-seconds(10분)씩 묶이는 대신 즉시 명확한 에러로 실패시킨다.
+    private final Semaphore podCreationSemaphore = new Semaphore(3);
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SaveRequestResponseDTO approveRequest(ApproveRequestDTO dto) {
@@ -112,7 +120,14 @@ public class AdminRequestCommandService {
 
         CreatePodResponseDTO podResponse;
         try {
-            podResponse = podService.createPod(username);
+            if (!podCreationSemaphore.tryAcquire()) {
+                throw new BusinessException(ErrorCode.POD_CREATION_CONCURRENCY_LIMIT);
+            }
+            try {
+                podResponse = podService.createPod(username);
+            } finally {
+                podCreationSemaphore.release();
+            }
         } catch (BusinessException e) {
             log.warn("[보상 트랜잭션] Pod 생성 실패 → 계정 삭제 및 상태 복구 시작: {}", username);
             tryCompensateDeleteUser(username);
@@ -160,15 +175,14 @@ public class AdminRequestCommandService {
 
         // 4. 이메일 발송 (트랜잭션 종료 후, 실패해도 Pod·계정은 이미 생성됨)
         Request savedRequest = savedRequestRef[0];
-        try {
-            String sshPort = extractExternalPort(finalPodResponse, "ssh");
-            String jupyterPort = extractExternalPort(finalPodResponse, "jupyter");
-            alarmService.sendContainerCreatedEmail(savedRequest, sshPort, jupyterPort);
-            log.info("사용자 '{}'에게 컨테이너 배정 안내 메일을 발송했습니다.", savedRequest.getUser().getName());
-        } catch (Exception e) {
-            log.warn("사용자 '{}'에게 배정 안내 메일 발송 실패. (RequestId: {})",
-                    savedRequest.getUser().getName(), savedRequest.getRequestId(), e);
-        }
+        String sshPort = extractExternalPort(finalPodResponse, "ssh");
+        String jupyterPort = extractExternalPort(finalPodResponse, "jupyter");
+        sendNotificationSafely(
+                () -> alarmService.sendContainerCreatedEmail(savedRequest, sshPort, jupyterPort),
+                () -> log.info("사용자 '{}'에게 컨테이너 배정 안내 메일을 발송했습니다.", savedRequest.getUser().getName()),
+                e -> log.warn("사용자 '{}'에게 배정 안내 메일 발송 실패. (RequestId: {})",
+                        savedRequest.getUser().getName(), savedRequest.getRequestId(), e)
+        );
         return SaveRequestResponseDTO.fromEntity(savedRequest);
     }
 
@@ -225,11 +239,11 @@ public class AdminRequestCommandService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
         request.reject(dto.adminComment());
-        try {
-            alarmService.sendRequestRejectedEmail(request, dto.adminComment());
-        } catch (Exception e) {
-            log.warn("거절 안내 메일 발송 실패: requestId={}", dto.requestId(), e);
-        }
+        sendNotificationSafely(
+                () -> alarmService.sendRequestRejectedEmail(request, dto.adminComment()),
+                () -> {},
+                e -> log.warn("거절 안내 메일 발송 실패: requestId={}", dto.requestId(), e)
+        );
         return SaveRequestResponseDTO.fromEntity(request);
     }
 
@@ -247,11 +261,11 @@ public class AdminRequestCommandService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         changeRequest.deny(admin, dto.adminComment());
-        try {
-            alarmService.sendModificationRejectedEmail(changeRequest, dto.adminComment());
-        } catch (Exception e) {
-            log.warn("변경 요청 거절 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e);
-        }
+        sendNotificationSafely(
+                () -> alarmService.sendModificationRejectedEmail(changeRequest, dto.adminComment()),
+                () -> {},
+                e -> log.warn("변경 요청 거절 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e)
+        );
     }
 
     @Transactional
@@ -272,62 +286,14 @@ public class AdminRequestCommandService {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
 
-        LocalDateTime pendingExpiresAt = null;
-        LocalDateTime pendingOldExpiresAt = null;
-        try {
-            switch (changeRequest.getChangeType()) {
-                case VOLUME_SIZE:
-                    // ponytail: NFS 전환 후 PVC 없음 — DB 기록만 갱신, NAS 쿼터 필요 시 여기에 추가
-                    Long newVolumeSize = objectMapper.readValue(changeRequest.getNewValue(), Long.class);
-                    originalRequest.updateVolumeSize(newVolumeSize);
-                    break;
-                case EXPIRES_AT:
-                    LocalDateTime newExpiresAt = LocalDateTime.parse(objectMapper.readValue(changeRequest.getNewValue(), String.class));
-                    pendingOldExpiresAt = originalRequest.getExpiresAt();
-                    originalRequest.updateExpiresAt(newExpiresAt);
-                    pendingExpiresAt = newExpiresAt;
-                    break;
-                case GROUP:
-                    // 그룹 변경은 복잡하기 때문에, 엔티티가 아닌 서비스 레이어에서 처리합니다.
-                    originalRequest.getRequestGroups().clear();
-                    Set<Long> newGroupIds = objectMapper.readValue(changeRequest.getNewValue(),
-                            objectMapper.getTypeFactory().constructCollectionType(Set.class, Long.class));
-                    Set<Group> newGroups = newGroupIds.stream()
-                            .map(gid -> groupRepository.findByUbuntuGid(gid)
-                                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)))
-                            .collect(Collectors.toSet());
+        ChangeApplier applier = changeAppliers().get(changeRequest.getChangeType());
+        if (applier == null) {
+            throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
+        }
 
-                    for (Group g : newGroups) {
-                        originalRequest.addGroup(g);
-                    }
-                    break;
-                case RESOURCE_GROUP:
-                    Integer newResourceGroupId = objectMapper.readValue(changeRequest.getNewValue(), Integer.class);
-                    ResourceGroup newResourceGroup = resourceGroupRepository.findById(newResourceGroupId)
-                            .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-                    originalRequest.updateResourceGroup(newResourceGroup);
-                    break;
-                case CONTAINER_IMAGE:
-                    Long newImageId = objectMapper.readValue(changeRequest.getNewValue(), Long.class);
-                    ContainerImage newContainerImage = containerImageRepository.findById(newImageId)
-                            .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-                    originalRequest.updateContainerImage(newContainerImage);
-                    break;
-                case PORT:
-                    List<PortRequestDTO> newPorts = objectMapper.readValue(changeRequest.getNewValue(),
-                            objectMapper.getTypeFactory().constructCollectionType(List.class, PortRequestDTO.class));
-                    for (PortRequestDTO portRequestDTO : newPorts) {
-                        portRequestService.createPortRequest(
-                                originalRequest,
-                                originalRequest.getResourceGroup(),
-                                portRequestDTO.internalPort(),
-                                portRequestDTO.usagePurpose()
-                        );
-                    }
-                    break;
-                default:
-                    throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
-            }
+        ExpiryChangeResult expiryChange;
+        try {
+            expiryChange = applier.apply(originalRequest, changeRequest.getNewValue());
         } catch (JsonProcessingException e) {
             log.error("Failed to parse change request value: {}", e.getMessage());
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
@@ -335,20 +301,111 @@ public class AdminRequestCommandService {
 
         changeRequest.approve(admin, dto.adminComment());
 
-        if (pendingExpiresAt != null) {
-            try {
-                alarmService.sendContainerExtendedEmail(originalRequest, pendingOldExpiresAt, pendingExpiresAt);
-                log.info("사용자 '{}'에게 기간 연장 안내 메일을 발송했습니다.", originalRequest.getUser().getName());
-            } catch (Exception e) {
-                log.warn("기간 연장 안내 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e);
-            }
+        if (expiryChange != null) {
+            sendNotificationSafely(
+                    () -> alarmService.sendContainerExtendedEmail(originalRequest, expiryChange.oldExpiresAt(), expiryChange.newExpiresAt()),
+                    () -> log.info("사용자 '{}'에게 기간 연장 안내 메일을 발송했습니다.", originalRequest.getUser().getName()),
+                    e -> log.warn("기간 연장 안내 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e)
+            );
         } else {
-            try {
-                alarmService.sendModificationApprovedEmail(changeRequest, dto.adminComment());
-                log.info("사용자 '{}'에게 변경 요청 승인 안내 메일을 발송했습니다.", originalRequest.getUser().getName());
-            } catch (Exception e) {
-                log.warn("변경 요청 승인 안내 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e);
-            }
+            sendNotificationSafely(
+                    () -> alarmService.sendModificationApprovedEmail(changeRequest, dto.adminComment()),
+                    () -> log.info("사용자 '{}'에게 변경 요청 승인 안내 메일을 발송했습니다.", originalRequest.getUser().getName()),
+                    e -> log.warn("변경 요청 승인 안내 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e)
+            );
+        }
+    }
+
+    // ── approveModification: ChangeType별 적용 로직 ──────────────────────
+    // Map으로 등록해두면 새 ChangeType이 추가될 때 이 메서드 자체를 수정하지 않고
+    // applier 하나만 더 등록하면 된다 (개방-폐쇄 원칙).
+
+    private Map<ChangeType, ChangeApplier> changeAppliers() {
+        return Map.of(
+                ChangeType.VOLUME_SIZE, this::applyVolumeSizeChange,
+                ChangeType.EXPIRES_AT, this::applyExpiresAtChange,
+                ChangeType.GROUP, this::applyGroupChange,
+                ChangeType.RESOURCE_GROUP, this::applyResourceGroupChange,
+                ChangeType.CONTAINER_IMAGE, this::applyContainerImageChange,
+                ChangeType.PORT, this::applyPortChange
+        );
+    }
+
+    private ExpiryChangeResult applyVolumeSizeChange(Request originalRequest, String newValueJson) throws JsonProcessingException {
+        // ponytail: NFS 전환 후 PVC 없음 — DB 기록만 갱신, NAS 쿼터 필요 시 여기에 추가
+        Long newVolumeSize = objectMapper.readValue(newValueJson, Long.class);
+        originalRequest.updateVolumeSize(newVolumeSize);
+        return null;
+    }
+
+    private ExpiryChangeResult applyExpiresAtChange(Request originalRequest, String newValueJson) throws JsonProcessingException {
+        LocalDateTime newExpiresAt = LocalDateTime.parse(objectMapper.readValue(newValueJson, String.class));
+        LocalDateTime oldExpiresAt = originalRequest.getExpiresAt();
+        originalRequest.updateExpiresAt(newExpiresAt);
+        return new ExpiryChangeResult(oldExpiresAt, newExpiresAt);
+    }
+
+    private ExpiryChangeResult applyGroupChange(Request originalRequest, String newValueJson) throws JsonProcessingException {
+        // 그룹 변경은 복잡하기 때문에, 엔티티가 아닌 서비스 레이어에서 처리합니다.
+        originalRequest.getRequestGroups().clear();
+        Set<Long> newGroupIds = objectMapper.readValue(newValueJson,
+                objectMapper.getTypeFactory().constructCollectionType(Set.class, Long.class));
+        Set<Group> newGroups = newGroupIds.stream()
+                .map(gid -> groupRepository.findByUbuntuGid(gid)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)))
+                .collect(Collectors.toSet());
+
+        for (Group g : newGroups) {
+            originalRequest.addGroup(g);
+        }
+        return null;
+    }
+
+    private ExpiryChangeResult applyResourceGroupChange(Request originalRequest, String newValueJson) throws JsonProcessingException {
+        Integer newResourceGroupId = objectMapper.readValue(newValueJson, Integer.class);
+        ResourceGroup newResourceGroup = resourceGroupRepository.findById(newResourceGroupId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        originalRequest.updateResourceGroup(newResourceGroup);
+        return null;
+    }
+
+    private ExpiryChangeResult applyContainerImageChange(Request originalRequest, String newValueJson) throws JsonProcessingException {
+        Long newImageId = objectMapper.readValue(newValueJson, Long.class);
+        ContainerImage newContainerImage = containerImageRepository.findById(newImageId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        originalRequest.updateContainerImage(newContainerImage);
+        return null;
+    }
+
+    private ExpiryChangeResult applyPortChange(Request originalRequest, String newValueJson) throws JsonProcessingException {
+        List<PortRequestDTO> newPorts = objectMapper.readValue(newValueJson,
+                objectMapper.getTypeFactory().constructCollectionType(List.class, PortRequestDTO.class));
+        for (PortRequestDTO portRequestDTO : newPorts) {
+            portRequestService.createPortRequest(
+                    originalRequest,
+                    originalRequest.getResourceGroup(),
+                    portRequestDTO.internalPort(),
+                    portRequestDTO.usagePurpose()
+            );
+        }
+        return null;
+    }
+
+    @FunctionalInterface
+    private interface ChangeApplier {
+        /** newValueJson을 파싱해 originalRequest에 반영한다. EXPIRES_AT 변경일 때만 이전/이후 만료일을 담아 반환한다. */
+        ExpiryChangeResult apply(Request originalRequest, String newValueJson) throws JsonProcessingException;
+    }
+
+    private record ExpiryChangeResult(LocalDateTime oldExpiresAt, LocalDateTime newExpiresAt) {}
+
+    /** 알림 발송을 시도하고, 실패해도 예외를 전파하지 않는다 (알림은 부가 기능 — 실패해도 이미 반영된 상태 변경을 되돌리지 않는다). */
+    private void sendNotificationSafely(Runnable emailSend, Runnable onSuccess, Consumer<Exception> onFailure) {
+        try {
+            emailSend.run();
+            onSuccess.run();
+        } catch (Exception e) {
+            onFailure.accept(e);
         }
     }
 

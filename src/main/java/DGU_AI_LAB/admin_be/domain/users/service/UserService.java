@@ -1,20 +1,15 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
-import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
-import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PasswordUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PhoneUpdateRequestDTO;
-import DGU_AI_LAB.admin_be.domain.users.dto.request.UserAuthRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.MyInfoResponseDTO;
-import DGU_AI_LAB.admin_be.domain.users.dto.response.UserAuthResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
-import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -29,7 +24,6 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final GroupRepository groupRepository;
-    private final RequestRepository requestRepository;
     private final PasswordEncoder passwordEncoder;
 
     private static final long UID_BASE = 10000; // TODO: 이부분 시스템에 맞추어서 수정하기
@@ -52,27 +46,6 @@ public class UserService {
         log.debug("[getUserById] userId={}", userId);
         return UserResponseDTO.fromEntity(userRepository.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND)));
-    }
-
-    /** ssh 로그인 */
-    @Transactional
-    public UserAuthResponseDTO userAuth(UserAuthRequestDTO dto) {
-        // 1. 로그인 인증 처리 시작 로그
-        log.info("사용자 인증을 시작합니다. username: {}", dto.username());
-
-        // 2. 비밀번호 확인
-        String passwordBase64 = dto.passwordBase64();
-        log.debug("비밀번호를 확인합니다. username: {}", dto.username());
-
-        Request request = requestRepository.findByUbuntuUsernameAndUbuntuPasswordBase64(dto.username(), passwordBase64)
-                .orElseThrow(() -> {
-                    log.warn("사용자 '{}'를 찾을 수 없거나 비밀번호가 일치하지 않습니다.", dto.username());
-                    return new UnauthorizedException(ErrorCode.USER_NOT_FOUND);
-                });
-
-        log.info("사용자 '{}'의 인증이 성공적으로 완료되었습니다.", dto.username());
-
-        return new UserAuthResponseDTO(true, request.getUbuntuUsername());
     }
 
     /**

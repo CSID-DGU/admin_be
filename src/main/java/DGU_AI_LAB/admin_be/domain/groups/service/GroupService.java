@@ -7,13 +7,13 @@ import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.webclient.WebClientErrorHandler;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -22,7 +22,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
-import reactor.core.publisher.Mono;
 
 import java.util.Collections;
 import java.util.List;
@@ -91,33 +90,31 @@ public class GroupService {
         try {
             log.info("[createGroup] 외부 그룹 생성 API 호출 시작: {}", apiDto);
 
-            apiResponse = groupCreationWebClient
-                    .put()
-                    .uri("/accounts/groups")
-                    .bodyValue(apiDto)
-                    .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
-                            clientResponse.bodyToMono(String.class).flatMap(body -> {
-                                log.error("[createGroup] 외부 API 4xx 오류: 상태 코드={}, 응답={}", clientResponse.statusCode(), body);
-                                if (clientResponse.statusCode() == HttpStatus.BAD_REQUEST) {
-                                    if (body.contains("invalid members")) {
-                                        return Mono.error(new BusinessException(ErrorCode.INVALID_GROUP_MEMBER));
-                                    }
-                                    return Mono.error(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
-                                } else if (clientResponse.statusCode() == HttpStatus.CONFLICT) {
-                                    if (body.contains("group already exists")) {
-                                        return Mono.error(new BusinessException(ErrorCode.DUPLICATE_GROUP_NAME));
-                                    }
-                                    return Mono.error(new BusinessException(ErrorCode.DUPLICATE_GROUP_ID));
+            apiResponse = WebClientErrorHandler.onError(
+                            groupCreationWebClient
+                                    .put()
+                                    .uri("/accounts/groups")
+                                    .bodyValue(apiDto)
+                                    .retrieve(),
+                            (status, body) -> {
+                                if (status.is5xxServerError()) {
+                                    log.error("[createGroup] 외부 API 5xx 오류: 상태 코드={}, 응답={}", status, body);
+                                    return new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
                                 }
-                                return Mono.error(new BusinessException(ErrorCode.GROUP_CREATION_FAILED));
-                            })
-                    )
-                    .onStatus(HttpStatusCode::is5xxServerError, clientResponse ->
-                            clientResponse.bodyToMono(String.class).flatMap(body -> {
-                                log.error("[createGroup] 외부 API 5xx 오류: 상태 코드={}, 응답={}", clientResponse.statusCode(), body);
-                                return Mono.error(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
-                            })
+                                log.error("[createGroup] 외부 API 4xx 오류: 상태 코드={}, 응답={}", status, body);
+                                if (status == HttpStatus.BAD_REQUEST) {
+                                    if (body.contains("invalid members")) {
+                                        return new BusinessException(ErrorCode.INVALID_GROUP_MEMBER);
+                                    }
+                                    return new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+                                } else if (status == HttpStatus.CONFLICT) {
+                                    if (body.contains("group already exists")) {
+                                        return new BusinessException(ErrorCode.DUPLICATE_GROUP_NAME);
+                                    }
+                                    return new BusinessException(ErrorCode.DUPLICATE_GROUP_ID);
+                                }
+                                return new BusinessException(ErrorCode.GROUP_CREATION_FAILED);
+                            }
                     )
                     .bodyToMono(ConfigServerGroupResponse.class)
                     .block();

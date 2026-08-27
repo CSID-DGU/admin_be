@@ -1,13 +1,10 @@
 package DGU_AI_LAB.admin_be.domain.users.controller;
 
 import DGU_AI_LAB.admin_be.domain.users.controller.docs.AuthApi;
-import DGU_AI_LAB.admin_be.domain.users.dto.request.UserAuthRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
-import DGU_AI_LAB.admin_be.domain.users.dto.response.UserAuthResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.service.UserLoginService;
-import DGU_AI_LAB.admin_be.domain.users.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -23,7 +20,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController implements AuthApi {
 
     private final UserLoginService userLoginService;
-    private final UserService userService;
 
     /**
      * 3) 회원가입
@@ -41,11 +37,5 @@ public class AuthController implements AuthApi {
     @PostMapping("/login")
     public ResponseEntity<UserTokenResponseDTO> login(@RequestBody @Valid UserLoginRequestDTO request) {
         return ResponseEntity.ok(userLoginService.login(request));
-    }
-
-    /** ssh 로그인 */
-    @PostMapping("/users/password")
-    public ResponseEntity<UserAuthResponseDTO> userAuth(@RequestBody @Valid UserAuthRequestDTO dto) {
-        return ResponseEntity.ok(userService.userAuth(dto));
     }
 }
