@@ -50,7 +50,7 @@ public class UserLoginService {
         userRepository.save(user);
 
         redisTemplate.delete(redisKey);
-        log.info("회원가입 완료, VERIFIED:{} 키 삭제", request.email());
+        log.info("회원가입 완료 및 이메일 인증 키 삭제");
     }
 
 

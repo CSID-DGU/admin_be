@@ -46,7 +46,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             log.info("[JwtAuthFilter] 요청 URI: {}", request.getRequestURI());
 
             final String accessToken = getAccessTokenFromHttpServletRequest(request);
-            log.info("[JwtAuthFilter] 추출된 AccessToken: {}", accessToken);
 
             jwtProvider.validateAccessToken(accessToken);
             log.info("[JwtAuthFilter] AccessToken 유효성 검사 통과");
@@ -77,7 +76,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private String getAccessTokenFromHttpServletRequest(HttpServletRequest request) {
         String accessToken = request.getHeader(AUTHORIZATION);
-        log.info("[JwtAuthFilter] Authorization 헤더: {}", accessToken);
         if (StringUtils.hasText(accessToken) && accessToken.startsWith(BEARER)) {
             return accessToken.substring(BEARER.length());
         }

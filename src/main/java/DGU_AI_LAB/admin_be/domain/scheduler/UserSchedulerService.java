@@ -43,7 +43,7 @@ public class UserSchedulerService {
                 // 유저별 독립 트랜잭션으로 처리 — H-7(LazyInit), H-11(롤백 전파) 방지
                 userLifecycleService.processInactiveUser(user.getUserId(), now);
             } catch (Exception e) {
-                log.error("유저({}) 수명주기 처리 중 오류: {}", user.getEmail(), e.getMessage());
+                log.error("유저({}) 수명주기 처리 중 오류: {}", user.getUserId(), e.getMessage());
             }
         }
     }
