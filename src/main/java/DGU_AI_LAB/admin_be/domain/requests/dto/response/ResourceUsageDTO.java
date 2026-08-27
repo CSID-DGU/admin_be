@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.dto.response;
 
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 
@@ -14,14 +15,16 @@ public record ResourceUsageDTO(
         @Schema(description = "리소스 그룹 ID", example = "1")
         Integer resourceGroupId,
         @Schema(description = "볼륨 크기 (GiB)", example = "20")
-        Long volumeSizeByte
+        Long volumeSizeGiB
 ) {
     public static ResourceUsageDTO fromEntity(Request request) {
+        ResourceGroup resourceGroup = request.getResourceGroup();
+
         return ResourceUsageDTO.builder()
                 .userId(request.getUser().getUserId())
                 .userName(request.getUser().getName())
-                .resourceGroupId(request.getResourceGroup().getRsgroupId())
-                .volumeSizeByte(request.getVolumeSizeGiB())
+                .resourceGroupId(resourceGroup != null ? resourceGroup.getRsgroupId() : null)
+                .volumeSizeGiB(request.getVolumeSizeGiB())
                 .build();
     }
 }
