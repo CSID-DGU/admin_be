@@ -37,6 +37,7 @@ public class AdminUserService {
     private final AlarmService alarmService;
     private final PodExternalPortRepository podExternalPortRepository;
     private final MessageUtils messageUtils;
+    private final TokenService tokenService;
 
     /**
      * 전체 유저 조회
@@ -98,6 +99,8 @@ public class AdminUserService {
         log.info("[deleteUser] userId={}와 연결된 Request 정리 완료", userId);
 
         user.withdraw();
+        // 남아있는 리프레시 토큰으로 액세스 토큰을 계속 재발급받지 못하도록 함께 폐기한다.
+        tokenService.logout(userId);
         log.info("[deleteUser] userId={} 논리적 삭제 완료 (isActive=false)", userId);
 
         try {
@@ -166,6 +169,10 @@ public class AdminUserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
         user.updateUserInfo(request.password(), request.isActive());
+        if (!Boolean.TRUE.equals(user.getIsActive())) {
+            // 비활성화 처리된 계정은 리프레시 토큰도 함께 폐기한다.
+            tokenService.logout(userId);
+        }
         log.info("[updateUser] userId={} 정보 수정 완료", userId);
         return UserResponseDTO.fromEntity(user);
     }

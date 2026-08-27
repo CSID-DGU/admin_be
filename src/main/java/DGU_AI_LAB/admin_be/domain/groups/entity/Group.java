@@ -19,7 +19,8 @@ public class Group {
     @Column(name = "group_id")
     private Long groupId;
 
-    @Column(name = "group_name", nullable = false, length = 100)
+    // 그룹명은 인프라(우분투 그룹)와 1:1로 매칭되므로 DB에서도 유일해야 한다.
+    @Column(name = "group_name", unique = true, nullable = false, length = 100)
     private String groupName;
 
     @Column(name = "ubuntu_gid", unique = true, nullable = false)

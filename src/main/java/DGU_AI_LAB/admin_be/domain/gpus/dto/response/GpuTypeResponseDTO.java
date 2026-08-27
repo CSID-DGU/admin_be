@@ -20,9 +20,6 @@ public record GpuTypeResponseDTO(
         @Schema(description = "리소스 그룹 ID", example = "1")
         Integer rsgroupId,
 
-        @Schema(description = "노드 ID", example = "LAB1")
-        String nodeId,
-
         @Schema(description = "서버명", example = "서버01")
         String serverName,
 
@@ -33,49 +30,10 @@ public record GpuTypeResponseDTO(
         Boolean isAvailable
 ) {
     /**
-     * Object[] 형태의 쿼리 결과를 DTO로 변환하는 팩토리 메서드입니다.
-     * <p>
-     * 쿼리 결과의 순서는 다음과 같이 가정합니다:
-     * [0] ramGb
-     * [1] description
-     * [2] resourceGroupName
-     * [3] availableNodes
-     * [4] rsgroupId
-     * [5] nodeId
-     * [6] serverName
-     * </p>
-     *
-     * @param queryResult 쿼리 결과 객체 배열
-     * @return 변환된 GpuTypeResponseDTO
-     */
-    public static GpuTypeResponseDTO fromQueryResult(Object[] queryResult) {
-        if (queryResult == null || queryResult.length < 7) {
-            throw new IllegalArgumentException("Invalid query result format for GpuTypeResponseDTO. Expected at least 7 elements.");
-        }
-        Integer ramGb = (Integer) queryResult[0];
-        String description = (String) queryResult[1];
-        String resourceGroupName = (String) queryResult[2];
-        Long availableNodes = ((Number) queryResult[3]).longValue();
-        Integer rsgroupId = (Integer) queryResult[4];
-        String nodeId = (String) queryResult[5];
-        String serverName = (String) queryResult[6];
-
-        return GpuTypeResponseDTO.builder()
-                .ramGb(ramGb)
-                .description(description)
-                .resourceGroupName(resourceGroupName)
-                .availableNodes(availableNodes)
-                .rsgroupId(rsgroupId)
-                .nodeId(nodeId)
-                .serverName(serverName)
-                .isAvailable(true)
-                .build();
-    }
-
-    /**
      * GpuSummary 객체를 DTO로 변환하는 팩토리 메서드입니다.
      * <p>
-     * GpuSummary 인터페이스에 serverName을 가져오는 메서드가 있다고 가정합니다.
+     * GpuSummary는 리소스 그룹 · GPU 기종 단위로 집계된 결과이므로,
+     * availableNodes가 해당 기종에 속한 전체 노드 개수입니다.
      * </p>
      *
      * @param s GpuSummary 객체
@@ -88,7 +46,6 @@ public record GpuTypeResponseDTO(
                 .resourceGroupName(s.getResourceGroupName())
                 .availableNodes(s.getNodeCount())
                 .rsgroupId(s.getRsgroupId())
-                .nodeId(s.getNodeId())
                 .serverName(s.getServerName())
                 .build();
     }

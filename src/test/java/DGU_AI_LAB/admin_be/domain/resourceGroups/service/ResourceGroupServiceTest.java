@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.resourceGroups.service;
 
+import DGU_AI_LAB.admin_be.domain.gpus.dto.response.GpuTypeResponseDTO;
 import DGU_AI_LAB.admin_be.domain.gpus.repository.GpuRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.dto.response.ResourceGroupResponseDTO;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
@@ -78,19 +79,38 @@ class ResourceGroupServiceTest {
         @Test
         @DisplayName("findGpuSummary는 한 번만 호출된다 (중복 쿼리 제거 검증)")
         void getGpuTypeResources_callsFindGpuSummaryOnce() {
+            GpuRepository.GpuSummary summary = gpuSummary();
+            when(gpuRepository.findGpuSummary()).thenReturn(List.of(summary));
+
+            resourceGroupService.getGpuTypeResources();
+
+            verify(gpuRepository, times(1)).findGpuSummary();
+        }
+
+        @Test
+        @DisplayName("집계된 노드 개수를 availableNodes로 그대로 내려준다")
+        void getGpuTypeResources_mapsAggregatedNodeCount() {
+            GpuRepository.GpuSummary summary = gpuSummary();
+            when(gpuRepository.findGpuSummary()).thenReturn(List.of(summary));
+
+            List<GpuTypeResponseDTO> result = resourceGroupService.getGpuTypeResources();
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).availableNodes()).isEqualTo(4L);
+            assertThat(result.get(0).rsgroupId()).isEqualTo(1);
+            assertThat(result.get(0).ramGb()).isEqualTo(80);
+            assertThat(result.get(0).serverName()).isEqualTo("server-01");
+        }
+
+        private GpuRepository.GpuSummary gpuSummary() {
             GpuRepository.GpuSummary summary = mock(GpuRepository.GpuSummary.class);
             when(summary.getRamGb()).thenReturn(80);
             when(summary.getDescription()).thenReturn("A100 x4");
             when(summary.getResourceGroupName()).thenReturn("GPU-Server-A");
             when(summary.getNodeCount()).thenReturn(4L);
             when(summary.getRsgroupId()).thenReturn(1);
-            when(summary.getNodeId()).thenReturn("node-1");
             when(summary.getServerName()).thenReturn("server-01");
-            when(gpuRepository.findGpuSummary()).thenReturn(List.of(summary));
-
-            resourceGroupService.getGpuTypeResources();
-
-            verify(gpuRepository, times(1)).findGpuSummary();
+            return summary;
         }
     }
 }

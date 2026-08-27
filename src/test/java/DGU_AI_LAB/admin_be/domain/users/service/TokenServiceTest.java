@@ -2,6 +2,8 @@ package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserTokenRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import DGU_AI_LAB.admin_be.global.auth.jwt.JwtProvider;
 import io.jsonwebtoken.MalformedJwtException;
@@ -16,6 +18,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
+
+import java.util.Optional;
 
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 
@@ -38,6 +42,9 @@ class TokenServiceTest {
 
     @Mock
     private ValueOperations<String, String> valueOperations;
+
+    @Mock
+    private UserRepository userRepository;
 
     @Nested
     @DisplayName("issueToken")
@@ -100,6 +107,7 @@ class TokenServiceTest {
         void reissue_success() {
             ReflectionTestUtils.setField(tokenService, "REFRESH_TOKEN_EXPIRE_TIME", 604800L);
             when(jwtProvider.getSubjectFromExpiredToken("accessToken")).thenReturn(1L);
+            when(userRepository.findById(1L)).thenReturn(Optional.of(activeUser()));
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);
             when(valueOperations.get("RT:1")).thenReturn("storedRefreshToken");
             doNothing().when(jwtProvider).validateRefreshToken("refreshToken");
@@ -154,6 +162,7 @@ class TokenServiceTest {
         @DisplayName("Redis에 리프레시 토큰이 없으면(만료/로그아웃) EXPIRED_REFRESH_TOKEN 예외를 던진다")
         void reissue_throwsExpiredRefreshToken_whenRedisTokenIsNull() {
             when(jwtProvider.getSubjectFromExpiredToken("accessToken")).thenReturn(1L);
+            when(userRepository.findById(1L)).thenReturn(Optional.of(activeUser()));
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);
             when(valueOperations.get("RT:1")).thenReturn(null);
             doNothing().when(jwtProvider).validateRefreshToken("refreshToken");
@@ -167,10 +176,43 @@ class TokenServiceTest {
         }
 
         @Test
+        @DisplayName("비활성화된 계정이면 리프레시 토큰이 남아있어도 ACCOUNT_DISABLED 예외를 던진다")
+        void reissue_throwsAccountDisabled_whenUserIsInactive() {
+            User inactive = activeUser();
+            inactive.withdraw();
+            when(jwtProvider.getSubjectFromExpiredToken("accessToken")).thenReturn(1L);
+            when(userRepository.findById(1L)).thenReturn(Optional.of(inactive));
+
+            UserTokenRequestDTO dto = new UserTokenRequestDTO("accessToken", "refreshToken");
+
+            assertThatThrownBy(() -> tokenService.reissue(dto))
+                    .isInstanceOf(UnauthorizedException.class)
+                    .satisfies(e -> assertThat(((UnauthorizedException) e).getErrorCode())
+                            .isEqualTo(ErrorCode.ACCOUNT_DISABLED));
+            verify(jwtProvider, never()).getIssueToken(anyLong(), anyBoolean());
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 유저면 ACCOUNT_DISABLED 예외를 던진다")
+        void reissue_throwsAccountDisabled_whenUserNotFound() {
+            when(jwtProvider.getSubjectFromExpiredToken("accessToken")).thenReturn(1L);
+            when(userRepository.findById(1L)).thenReturn(Optional.empty());
+
+            UserTokenRequestDTO dto = new UserTokenRequestDTO("accessToken", "refreshToken");
+
+            assertThatThrownBy(() -> tokenService.reissue(dto))
+                    .isInstanceOf(UnauthorizedException.class)
+                    .satisfies(e -> assertThat(((UnauthorizedException) e).getErrorCode())
+                            .isEqualTo(ErrorCode.ACCOUNT_DISABLED));
+            verify(jwtProvider, never()).getIssueToken(anyLong(), anyBoolean());
+        }
+
+        @Test
         @DisplayName("재발급 시 getSubjectFromExpiredToken을 통해 서명 검증 후 userId를 추출한다")
         void reissue_usesGetSubjectFromExpiredToken() {
             ReflectionTestUtils.setField(tokenService, "REFRESH_TOKEN_EXPIRE_TIME", 604800L);
             when(jwtProvider.getSubjectFromExpiredToken("accessToken")).thenReturn(1L);
+            when(userRepository.findById(1L)).thenReturn(Optional.of(activeUser()));
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);
             when(valueOperations.get("RT:1")).thenReturn("storedRefreshToken");
             doNothing().when(jwtProvider).validateRefreshToken("refreshToken");
@@ -182,6 +224,17 @@ class TokenServiceTest {
 
             verify(jwtProvider).getSubjectFromExpiredToken("accessToken");
         }
+    }
+
+    private User activeUser() {
+        return User.builder()
+                .email("test@dgu.ac.kr")
+                .password("encoded")
+                .name("테스트유저")
+                .department("컴퓨터공학과")
+                .studentId("2023000001")
+                .phone("010-0000-0000")
+                .build();
     }
 
     @Nested

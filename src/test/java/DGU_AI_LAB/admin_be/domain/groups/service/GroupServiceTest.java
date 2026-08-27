@@ -15,6 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.http.HttpStatus;
@@ -116,7 +117,7 @@ class GroupServiceTest {
                     new GroupService.ConfigServerGroupInfo("developers", 2000L)));
 
             Group savedGroup = Group.builder().groupName("developers").ubuntuGid(2000L).build();
-            when(groupRepository.save(any(Group.class))).thenReturn(savedGroup);
+            when(groupRepository.saveAndFlush(any(Group.class))).thenReturn(savedGroup);
 
             CreateGroupRequestDTO dto = new CreateGroupRequestDTO("developers", null);
 
@@ -160,7 +161,7 @@ class GroupServiceTest {
 
             assertThatThrownBy(() -> groupService.createGroup(dto, 1L))
                     .isInstanceOf(BusinessException.class);
-            verify(groupRepository, never()).save(any(Group.class));
+            verify(groupRepository, never()).saveAndFlush(any(Group.class));
         }
 
         @Test
@@ -174,7 +175,7 @@ class GroupServiceTest {
 
             assertThatThrownBy(() -> groupService.createGroup(dto, 1L))
                     .isInstanceOf(BusinessException.class);
-            verify(groupRepository, never()).save(any(Group.class));
+            verify(groupRepository, never()).saveAndFlush(any(Group.class));
         }
 
         @Test
@@ -198,7 +199,7 @@ class GroupServiceTest {
 
             assertThatThrownBy(() -> groupService.createGroup(dto, 1L))
                     .isInstanceOf(BusinessException.class);
-            verify(groupRepository, never()).save(any(Group.class));
+            verify(groupRepository, never()).saveAndFlush(any(Group.class));
         }
 
         @Test
@@ -223,7 +224,7 @@ class GroupServiceTest {
 
             assertThatThrownBy(() -> groupService.createGroup(dto, 1L))
                     .isInstanceOf(BusinessException.class);
-            verify(groupRepository, never()).save(any(Group.class));
+            verify(groupRepository, never()).saveAndFlush(any(Group.class));
         }
 
         @Test
@@ -247,7 +248,7 @@ class GroupServiceTest {
 
             assertThatThrownBy(() -> groupService.createGroup(dto, 1L))
                     .isInstanceOf(BusinessException.class);
-            verify(groupRepository, never()).save(any(Group.class));
+            verify(groupRepository, never()).saveAndFlush(any(Group.class));
         }
 
         @Test
@@ -263,7 +264,7 @@ class GroupServiceTest {
 
             assertThatThrownBy(() -> groupService.createGroup(dto, 1L))
                     .isInstanceOf(BusinessException.class);
-            verify(groupRepository, never()).save(any(Group.class));
+            verify(groupRepository, never()).saveAndFlush(any(Group.class));
         }
 
         @Test
@@ -275,7 +276,7 @@ class GroupServiceTest {
             mockWebClientSuccess(new GroupService.ConfigServerGroupResponse(
                     new GroupService.ConfigServerGroupInfo("developers", 2000L)));
 
-            when(groupRepository.save(any(Group.class))).thenThrow(new RuntimeException("DB connection lost"));
+            when(groupRepository.saveAndFlush(any(Group.class))).thenThrow(new RuntimeException("DB connection lost"));
 
             CreateGroupRequestDTO dto = new CreateGroupRequestDTO("developers", null);
 
@@ -283,6 +284,26 @@ class GroupServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting("errorCode")
                     .isEqualTo(ErrorCode.GROUP_CREATION_FAILED);
+        }
+
+        @Test
+        @DisplayName("사전 검사 통과 후 다른 요청이 같은 그룹명을 먼저 저장하면 DUPLICATE_GROUP_NAME을 던진다")
+        void createGroup_throwsDuplicateGroupName_whenUniqueConstraintViolated() {
+            when(groupRepository.existsByGroupName("developers")).thenReturn(false);
+            when(groupRepository.existsByUbuntuGid(2000L)).thenReturn(false);
+
+            mockWebClientSuccess(new GroupService.ConfigServerGroupResponse(
+                    new GroupService.ConfigServerGroupInfo("developers", 2000L)));
+
+            when(groupRepository.saveAndFlush(any(Group.class)))
+                    .thenThrow(new DataIntegrityViolationException("duplicate key: group_name"));
+
+            CreateGroupRequestDTO dto = new CreateGroupRequestDTO("developers", null);
+
+            assertThatThrownBy(() -> groupService.createGroup(dto, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.DUPLICATE_GROUP_NAME);
         }
     }
 }

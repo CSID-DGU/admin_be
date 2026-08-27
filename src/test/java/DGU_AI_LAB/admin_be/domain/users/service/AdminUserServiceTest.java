@@ -59,6 +59,9 @@ class AdminUserServiceTest {
     @Mock
     private MessageUtils messageUtils;
 
+    @Mock
+    private TokenService tokenService;
+
     private User mockUser;
 
     @BeforeEach
@@ -123,6 +126,26 @@ class AdminUserServiceTest {
         }
 
         @Test
+        @DisplayName("계정을 비활성화하면 리프레시 토큰도 함께 폐기한다")
+        void updateUser_revokesRefreshToken_whenDeactivated() {
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+
+            adminUserService.updateUser(1L, new UserUpdateRequestDTO("newPw", false));
+
+            verify(tokenService).logout(1L);
+        }
+
+        @Test
+        @DisplayName("계정이 활성 상태로 유지되면 리프레시 토큰을 건드리지 않는다")
+        void updateUser_keepsRefreshToken_whenStillActive() {
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+
+            adminUserService.updateUser(1L, new UserUpdateRequestDTO("newPw", true));
+
+            verify(tokenService, never()).logout(anyLong());
+        }
+
+        @Test
         @DisplayName("유저가 없으면 EntityNotFoundException을 던진다")
         void updateUser_throwsException_whenUserNotFound() {
             when(userRepository.findById(99L)).thenReturn(Optional.empty());
@@ -151,6 +174,18 @@ class AdminUserServiceTest {
             assertThat(mockUser.getDeletedAt()).isNotNull();
             verifyNoInteractions(ubuntuAccountService);
             verify(alarmService).sendAllAlerts(eq("홍길동"), eq("test@dgu.ac.kr"), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("유저를 삭제하면 남아있는 리프레시 토큰도 함께 폐기한다")
+        void deleteUser_revokesRefreshToken() {
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
+
+            adminUserService.deleteUser(1L);
+
+            verify(tokenService).logout(1L);
         }
 
         @Test
