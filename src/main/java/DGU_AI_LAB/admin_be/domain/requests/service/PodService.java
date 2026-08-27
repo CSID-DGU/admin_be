@@ -4,14 +4,13 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.request.CreatePodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.webclient.WebClientErrorHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
 
 import java.util.Map;
 
@@ -31,17 +30,12 @@ public class PodService {
         try {
             log.info("Pod 생성 API 요청 시작: 사용자: {}", username);
 
-            CreatePodResponseDTO response = webClient.post()
-                    .uri("/create-pod")
-                    .bodyValue(new CreatePodRequestDTO(username))
-                    .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
-                            clientResponse.bodyToMono(String.class)
-                                    .flatMap(body -> Mono.error(new BusinessException("Pod 생성 실패: " + body, ErrorCode.POD_CREATION_FAILED)))
-                    )
-                    .onStatus(HttpStatusCode::is5xxServerError, clientResponse ->
-                            clientResponse.bodyToMono(String.class)
-                                    .flatMap(body -> Mono.error(new BusinessException("Pod 생성 실패: " + body, ErrorCode.POD_CREATION_FAILED)))
+            CreatePodResponseDTO response = WebClientErrorHandler.onError(
+                            webClient.post()
+                                    .uri("/create-pod")
+                                    .bodyValue(new CreatePodRequestDTO(username))
+                                    .retrieve(),
+                            (status, body) -> new BusinessException("Pod 생성 실패: " + body, ErrorCode.POD_CREATION_FAILED)
                     )
                     .bodyToMono(CreatePodResponseDTO.class)
                     .block();
@@ -70,20 +64,19 @@ public class PodService {
         try {
             log.info("Pod 삭제 API 요청 시작: {}", podName);
 
-            webClient.post()
-                    .uri("/delete-pod")
-                    .bodyValue(new DeletePodRequest(podName))
-                    .retrieve()
-                    .onStatus(HttpStatusCode::isError, response ->
-                            response.bodyToMono(String.class)
-                                    .flatMap(body -> {
-                                        if (response.statusCode() == HttpStatus.NOT_FOUND) {
-                                            log.warn("Pod가 이미 존재하지 않음 (404): {}", podName);
-                                            return Mono.empty();
-                                        }
-                                        log.error("Pod 삭제 실패 ({}): {}", response.statusCode(), body);
-                                        return Mono.error(new BusinessException("Pod 삭제 실패: " + body, ErrorCode.POD_DELETION_FAILED));
-                                    })
+            WebClientErrorHandler.onError(
+                            webClient.post()
+                                    .uri("/delete-pod")
+                                    .bodyValue(new DeletePodRequest(podName))
+                                    .retrieve(),
+                            (status, body) -> {
+                                if (status == HttpStatus.NOT_FOUND) {
+                                    log.warn("Pod가 이미 존재하지 않음 (404): {}", podName);
+                                    return null;
+                                }
+                                log.error("Pod 삭제 실패 ({}): {}", status, body);
+                                return new BusinessException("Pod 삭제 실패: " + body, ErrorCode.POD_DELETION_FAILED);
+                            }
                     )
                     .bodyToMono(Map.class)
                     .block();
