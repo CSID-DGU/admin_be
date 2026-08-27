@@ -239,6 +239,30 @@ class AdminRequestCommandServiceTest {
         verify(podService, times(1)).createPod("testuser");
     }
 
+    @Test
+    @DisplayName("배정 안내 메일 발송이 실패해도 예외가 전파되지 않고 정상 응답 DTO가 반환된다")
+    void approveRequest_containerCreatedEmailFails_doesNotPropagateAndStillReturnsDto() {
+        // Given
+        Long requestId = 4L;
+        buildMockedRequest(requestId);
+        stubWebClientPut();
+
+        CreatePodResponseDTO podResponse = new CreatePodResponseDTO(
+                "running", "farm1", "pod-testuser-mail-fail", List.of()
+        );
+        when(podService.createPod("testuser")).thenReturn(podResponse);
+        when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
+        when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
+        doThrow(new RuntimeException("SMTP 연결 실패"))
+                .when(alarmService).sendContainerCreatedEmail(any(), anyString(), anyString());
+
+        ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
+
+        // When / Then - 이메일 실패해도 예외 없이 정상 반환 (Pod·계정은 이미 생성된 상태이므로 롤백 안 함)
+        assertThat(service.approveRequest(dto)).isNotNull();
+        verify(ubuntuAccountService, never()).deleteUbuntuAccount(any());
+    }
+
     // ── C-3: Pod 생성 null 응답 / NPE 보상 트랜잭션 테스트 ─────────────────
 
     @Nested
@@ -806,6 +830,30 @@ class AdminRequestCommandServiceTest {
             assertThat(purposeCaptor.getAllValues()).containsExactly("웹 서버", "텐서보드");
             verify(changeRequest).approve(mockUser, "포트 추가 승인");
             verify(alarmService).sendModificationApprovedEmail(changeRequest, "포트 추가 승인");
+        }
+
+        @Test
+        @DisplayName("변경 값 JSON 파싱 실패 시 INTERNAL_SERVER_ERROR로 감싸서 던지고 상태를 변경하지 않는다")
+        void approveModification_invalidJson_wrapsAsInternalServerErrorAndDoesNotApply() throws Exception {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            Request originalRequest = buildMockedRequestWithStatus(26L, Status.FULFILLED);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.VOLUME_SIZE);
+            when(changeRequest.getNewValue()).thenReturn("이건-숫자가-아님");
+            when(changeRequest.getRequest()).thenReturn(originalRequest);
+            when(changeRequestRepository.findByIdForUpdate(15L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+
+            ApproveModificationDTO dto = new ApproveModificationDTO(15L, "승인");
+
+            assertThatThrownBy(() -> service.approveModification(100L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INTERNAL_SERVER_ERROR);
+
+            verify(originalRequest, never()).updateVolumeSize(any());
+            verify(changeRequest, never()).approve(any(), anyString());
+            verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
         }
 
         @Test
