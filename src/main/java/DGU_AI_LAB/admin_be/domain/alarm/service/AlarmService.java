@@ -87,9 +87,20 @@ public class AlarmService {
             message.setText(body);
             mailSender.send(message);
         } catch (Exception e) {
-            log.error("메일 전송 실패: 수신자={}", to, e);
-            sendSlackAlert("🚨 메일 전송 실패! 수신자: " + to, errorLogWebhookUrl);
+            log.error("메일 전송 실패: 수신자={}", maskEmail(to), e);
+            sendSlackAlert("🚨 메일 전송 실패! 수신자: " + maskEmail(to), errorLogWebhookUrl);
         }
+    }
+
+    private static String maskEmail(String email) {
+        if (email == null) {
+            return "unknown";
+        }
+        int at = email.indexOf('@');
+        if (at <= 1) {
+            return "***";
+        }
+        return email.charAt(0) + "***" + email.substring(at);
     }
 
     /**

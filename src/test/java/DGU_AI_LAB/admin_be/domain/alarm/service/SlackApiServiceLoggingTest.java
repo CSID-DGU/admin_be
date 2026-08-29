@@ -9,9 +9,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -32,6 +35,9 @@ class SlackApiServiceLoggingTest {
 
     @Mock
     private RestTemplate restTemplate;
+
+    @Mock
+    private ValueOperations<String, Object> valueOperations;
 
     private SlackApiService slackApiService;
 
@@ -58,6 +64,25 @@ class SlackApiServiceLoggingTest {
                     .doesNotContain("hooks.slack.com")
                     .doesNotContain("super-secret-token");
             assertThat(logs).contains("ResourceAccessException");
+        }
+    }
+
+    @Test
+    @DisplayName("Slack 사용자를 찾지 못했을 때 이메일을 로그로 남기지 않고 username만 남긴다")
+    void doesNotLogEmailWhenUserNotFound() {
+        String username = "no-such-user";
+        String email = "victim@dgu.ac.kr";
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(any())).thenReturn(List.of());
+
+        try (LogCaptor logCaptor = LogCaptor.forClass(SlackApiService.class)) {
+            assertThatThrownBy(() -> slackApiService.sendDM(username, email, "메시지"))
+                    .isInstanceOf(BusinessException.class);
+
+            String logs = logCaptor.joined();
+            assertThat(logs)
+                    .doesNotContain(email)
+                    .contains(username);
         }
     }
 }

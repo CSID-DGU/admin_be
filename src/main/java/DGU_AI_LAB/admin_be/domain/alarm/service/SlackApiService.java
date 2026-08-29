@@ -71,7 +71,7 @@ public class SlackApiService {
         String userId = getSlackUserId(username, email);
 
         if (userId == null) {
-            log.warn("Slack User Not Found: username={}, email={}", username, email);
+            log.warn("Slack User Not Found: username={}", username);
             throw new BusinessException(ErrorCode.SLACK_USER_NOT_FOUND);
         }
 
