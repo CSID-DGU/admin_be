@@ -87,7 +87,19 @@ public class PodMigrationService {
                 return null;
             });
         } catch (RuntimeException e) {
-            revertToFulfilled(requestId);
+            // 이 시점엔 podService.migratePod() 응답을 이미 받은 뒤(물리적으로는 이미 마이그레이션이
+            // 끝났을 수 있음)라서, FULFILLED로 되돌리면 실제 Pod/포트 상태와 DB가 어긋난 채로
+            // "정상"처럼 보이게 된다. MIGRATING으로 남겨 beginMigration() 가드가 재마이그레이션을
+            // 막도록 하고, 관리자가 직접 대조해 수동으로 정리하도록 알림만 남긴다.
+            String msg = String.format(
+                    "[마이그레이션] 결과 DB 반영 실패 - Pod/포트 상태 수동 확인 필요: requestId=%d, username=%s",
+                    requestId, username);
+            log.error(msg, e);
+            try {
+                alarmService.sendSlackAlert(msg, null);
+            } catch (Exception ignored) {
+                // 알림 발송 실패가 원래 예외 전파를 막으면 안 된다.
+            }
             throw e;
         }
 

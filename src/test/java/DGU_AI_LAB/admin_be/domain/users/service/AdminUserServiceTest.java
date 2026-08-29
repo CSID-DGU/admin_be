@@ -281,6 +281,27 @@ class AdminUserServiceTest {
         }
 
         @Test
+        @DisplayName("MIGRATING 상태 Request가 있으면 삭제 자체를 거부하고 유저를 건드리지 않는다")
+        void deleteUser_withMigratingRequest_rejectsAndLeavesUserUntouched() {
+            Request migrating = mock(Request.class);
+            when(migrating.getStatus()).thenReturn(Status.MIGRATING);
+
+            Request fulfilled = mock(Request.class);
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(migrating, fulfilled));
+
+            assertThatThrownBy(() -> adminUserService.deleteUser(1L))
+                    .isInstanceOf(ConflictException.class)
+                    .extracting(e -> ((ConflictException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.REQUEST_MIGRATION_IN_PROGRESS);
+
+            assertThat(mockUser.getIsActive()).isNotEqualTo(false);
+            verify(fulfilled, never()).deleteAfterCleanup();
+            verifyNoInteractions(ubuntuAccountService, tokenService);
+        }
+
+        @Test
         @DisplayName("FULFILLED 요청이 여러 개여도 포트 배치 쿼리는 1회만 실행된다")
         void deleteUser_multipleFullfilledRequests_batchQueriesPorts() {
             Request req1 = mock(Request.class);
