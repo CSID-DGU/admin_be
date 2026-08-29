@@ -255,6 +255,8 @@ public class Request extends BaseTimeEntity {
             throw new BusinessException("컨테이너가 실행 중입니다. 인프라 정리 후 삭제해주세요.", ErrorCode.INVALID_REQUEST_STATUS);
         }
         this.status = Status.DELETED;
+        this.ubuntuUid = null;
+        this.ubuntuGid = null;
     }
 
     /**
@@ -266,6 +268,12 @@ public class Request extends BaseTimeEntity {
             throw new BusinessException("인프라 정리 후 삭제는 FULFILLED 상태에서만 가능합니다.", ErrorCode.INVALID_REQUEST_STATUS);
         }
         this.status = Status.DELETED;
+        // ubuntu_uid는 unique 제약이 걸려 있다. 계정이 삭제되면 그 UID는 재사용 가능해지는데,
+        // 여기서 지우지 않으면 DELETED로 끝난 과거 요청이 그 UID를 영구히 붙잡아, 나중에
+        // 같은 UID를 받은 다른 사용자의 승인이 uk_requests_ubuntu_uid 위반으로 실패한다.
+        // podName/nodeName은 어느 노드에서 운영됐는지 이력 조회에 쓰일 수 있어 남겨둔다.
+        this.ubuntuUid = null;
+        this.ubuntuGid = null;
     }
 
 }
