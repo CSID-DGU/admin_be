@@ -180,6 +180,7 @@ public class AdminRequestCommandService {
         } catch (Exception e) {
             log.error("[보상 트랜잭션] DB 업데이트 실패 → 전체 infra 리소스 삭제 시작: {}", username, e);
             tryCompensateAll(username, finalPodResponse.podName());
+            revertToPendingIfStillProcessing(dto.requestId());
             throw e;
         }
 
@@ -442,6 +443,24 @@ public class AdminRequestCommandService {
             log.info("[보상 트랜잭션 완료] 계정 삭제: {}", username);
         } catch (Exception e) {
             log.error("[보상 트랜잭션 실패] 계정 삭제 실패 - 수동 정리 필요: {}", username, e);
+        }
+    }
+
+    // DB 반영 단계 실패는 두 가지 경우로 갈린다: ① 동시 거절로 상태가 이미 DENIED 등
+    // 최종 상태로 바뀐 경우(3e6b31f가 의도한 정상 동작 — 건드리지 않는다) ② 그 외 원인(이미지/
+    // 리소스그룹 조회 실패, 저장 오류 등)으로 여전히 PROCESSING인 채 실패한 경우. ②를 그대로 두면
+    // 위 tryCompensateAll이 인프라(계정/Pod)는 이미 정리했는데도 요청은 재승인도 거절도 못 하는
+    // PROCESSING 상태에 영구히 갇힌다.
+    private void revertToPendingIfStillProcessing(Long requestId) {
+        try {
+            new TransactionTemplate(transactionManager).execute(status -> {
+                requestRepository.findById(requestId)
+                        .filter(req -> req.getStatus() == Status.PROCESSING)
+                        .ifPresent(Request::revertToPending);
+                return null;
+            });
+        } catch (Exception e) {
+            log.error("[보상 트랜잭션 실패] 요청 상태 복구 실패 — 수동 확인 필요: requestId={}", requestId, e);
         }
     }
 
