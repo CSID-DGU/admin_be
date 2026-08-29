@@ -412,6 +412,41 @@ class AdminRequestCommandServiceTest {
             verify(podService).deletePod("pod-testuser-race");
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
             verify(request, never()).approve(any(), any(), any(), any());
+            // 이미 DENIED로 정상 종료된 요청이므로 PENDING으로 되돌리지 않는다
+            verify(request, never()).revertToPending();
+        }
+
+        @Test
+        @DisplayName("DB 반영 단계가 상태 변경이 아닌 다른 이유로 실패하면 PENDING으로 되돌려 재승인 가능하게 한다")
+        void approveRequest_dbSaveFailsWhileStillProcessing_revertsToPending() {
+            Long requestId = 16L;
+            Request request = mock(Request.class);
+            // 1단계 PENDING(승인 시작), 3단계 재확인 시점엔 여전히 PROCESSING(동시 거절 없음)
+            // — 그런데도 이미지 조회 실패 같은 다른 이유로 DB 반영이 실패하는 상황을 재현한다.
+            when(request.getStatus()).thenReturn(Status.PENDING, Status.PROCESSING, Status.PROCESSING);
+            when(request.getUbuntuUsername()).thenReturn("testuser");
+            when(request.getUbuntuPasswordBase64()).thenReturn("cGxhaW5fdGV4dF9wdw==");
+            when(request.getUser()).thenReturn(mockUser);
+            when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
+            when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+            stubWebClientPut();
+
+            CreatePodResponseDTO podResponse = new CreatePodResponseDTO(
+                    "running", "farm1", "pod-testuser-orphan", List.of()
+            );
+            when(podService.createPod("testuser")).thenReturn(podResponse);
+            when(containerImageRepository.findById(1L)).thenReturn(Optional.empty());
+
+            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
+
+            assertThatThrownBy(() -> service.approveRequest(dto))
+                    .isInstanceOf(BusinessException.class);
+
+            // 인프라는 정리하고, 여전히 PROCESSING이었던 요청은 PENDING으로 되돌려
+            // 재승인/재거절이 막힌 채 영구히 갇히지 않게 한다
+            verify(podService).deletePod("pod-testuser-orphan");
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
+            verify(request).revertToPending();
         }
 
         @Test
