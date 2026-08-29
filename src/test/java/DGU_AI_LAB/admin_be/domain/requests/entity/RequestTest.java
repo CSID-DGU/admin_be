@@ -57,6 +57,27 @@ class RequestTest {
     }
 
     @Nested
+    @DisplayName("revertToPending")
+    class RevertToPending {
+
+        @Test
+        @DisplayName("PENDING으로 되돌리면 uid/gid/podName/nodeName이 함께 지워진다")
+        void revertToPending_clearsUidGidAndPodInfo() {
+            request.markAsProcessing();
+            request.assignUbuntuIds(20001L, 20001L);
+            request.assignPodInfo("ailab-testuser-abcd1234", "farm1");
+
+            request.revertToPending();
+
+            assertThat(request.getStatus()).isEqualTo(Status.PENDING);
+            assertThat(request.getUbuntuUid()).isNull();
+            assertThat(request.getUbuntuGid()).isNull();
+            assertThat(request.getPodName()).isNull();
+            assertThat(request.getNodeName()).isNull();
+        }
+    }
+
+    @Nested
     @DisplayName("reject")
     class Reject {
 
