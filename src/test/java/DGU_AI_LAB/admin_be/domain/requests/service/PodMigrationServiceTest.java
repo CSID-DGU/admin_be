@@ -209,6 +209,33 @@ class PodMigrationServiceTest {
         }
 
         @Test
+        @DisplayName("DB 반영(3단계)이 실패하면 FULFILLED로 되돌리지 않고 MIGRATING으로 남긴 채 Slack 알림만 보낸다")
+        void migratePod_dbReconciliationFails_doesNotRevertAndAlertsInstead() {
+            Long requestId = 10L;
+            stubExistingRequest(requestId, Status.FULFILLED);
+            MigratePodResponseDTO response = new MigratePodResponseDTO(
+                    "migrated", null, "farm1", "farm2", "pod-testuser-7", List.of(), null,
+                    null, null, null, null
+            );
+            when(podService.migratePod(any(), any(), any())).thenReturn(response);
+            doThrow(new RuntimeException("db error")).when(mockRequest).endMigration();
+
+            assertThatThrownBy(() -> service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1", "farm2"), null)))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessage("db error");
+
+            // revertToFulfilled()가 호출되지 않았다면 findById는 3단계 tx.execute 안에서 딱 한 번만
+            // 호출된다. 되돌리기를 시도했다면 복구용 findById가 추가로 한 번 더 호출됐을 것이다.
+            verify(requestRepository, times(1)).findById(requestId);
+
+            ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
+            verify(alarmService, times(1)).sendSlackAlert(messageCaptor.capture(), eq(null));
+            assertThat(messageCaptor.getValue())
+                    .contains("requestId=10")
+                    .contains("username=testuser");
+        }
+
+        @Test
         @DisplayName("migrated 응답인데 ports가 비어있으면 기존 포트만 삭제하고 새로 저장하지 않는다")
         void migratePod_migratedWithEmptyPorts_deletesOldPortsOnly() {
             Long requestId = 6L;
