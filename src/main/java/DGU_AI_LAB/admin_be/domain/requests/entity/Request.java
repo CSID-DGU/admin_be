@@ -136,6 +136,14 @@ public class Request extends BaseTimeEntity {
 
     public void revertToPending() {
         this.status = Status.PENDING;
+        // 보상 트랜잭션으로 계정/Pod가 이미 정리된 뒤에만 호출된다. ubuntu_uid는 unique
+        // 제약이 걸려 있는데, 계정 삭제로 풀린 UID는 나중에 다른 사용자에게 재할당될 수
+        // 있다 — 여기서 지우지 않으면 그 UID를 받은 다른 요청의 승인이 제약 위반으로
+        // 실패한다. podName/nodeName도 더 이상 유효한 리소스를 가리키지 않으므로 함께 지운다.
+        this.ubuntuUid = null;
+        this.ubuntuGid = null;
+        this.podName = null;
+        this.nodeName = null;
     }
 
     public void approve(ContainerImage image, ResourceGroup resourceGroup, Long volumeSizeGiB, String adminComment) {
