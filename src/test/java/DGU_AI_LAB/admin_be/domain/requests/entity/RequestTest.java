@@ -132,6 +132,17 @@ class RequestTest {
             assertThatThrownBy(request::delete)
                     .isInstanceOf(BusinessException.class);
         }
+
+        @Test
+        @DisplayName("삭제하면 uid/gid가 함께 지워져 나중에 재사용되는 uid와 충돌하지 않는다")
+        void delete_clearsUidAndGid() {
+            request.assignUbuntuIds(20001L, 20001L);
+
+            request.delete();
+
+            assertThat(request.getUbuntuUid()).isNull();
+            assertThat(request.getUbuntuGid()).isNull();
+        }
     }
 
     @Nested
@@ -155,6 +166,24 @@ class RequestTest {
         void deleteAfterCleanup_throwsException_whenNotFulfilled() {
             assertThatThrownBy(request::deleteAfterCleanup)
                     .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("인프라 정리 후 삭제하면 uid/gid가 함께 지워져 재사용되는 uid와 충돌하지 않는다")
+        void deleteAfterCleanup_clearsUidAndGid() {
+            ContainerImage image = mock(ContainerImage.class);
+            ResourceGroup rg = mock(ResourceGroup.class);
+            request.approve(image, rg, 50L, null);
+            request.assignUbuntuIds(20001L, 20001L);
+            request.assignPodInfo("ailab-testuser-abcd1234", "farm1");
+
+            request.deleteAfterCleanup();
+
+            assertThat(request.getUbuntuUid()).isNull();
+            assertThat(request.getUbuntuGid()).isNull();
+            // podName/nodeName은 이력 조회용으로 남겨둔다
+            assertThat(request.getPodName()).isEqualTo("ailab-testuser-abcd1234");
+            assertThat(request.getNodeName()).isEqualTo("farm1");
         }
 
         @Test
