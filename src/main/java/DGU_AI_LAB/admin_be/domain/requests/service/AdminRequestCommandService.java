@@ -142,8 +142,18 @@ public class AdminRequestCommandService {
         final Request[] savedRequestRef = {null};
         try {
             tx.execute(status -> {
-                Request req = requestRepository.findById(dto.requestId())
+                // 행 잠금 + 상태 재확인: 외부 호출(계정/Pod 생성) 도중 다른 관리자가 거절을
+                // 눌러 상태가 이미 바뀌었을 수 있다. 여기서 다시 확인하지 않고 무조건
+                // approve()로 덮어쓰면, 거절됐는데도 방금 만든 계정/Pod가 FULFILLED로
+                // 살아남는 정합성 문제가 생긴다 (rejectRequest도 findByIdForUpdate로
+                // 행 잠금을 쓰므로 여기서 걸리면 그 커밋이 끝난 뒤의 최신 상태를 본다).
+                Request req = requestRepository.findByIdForUpdate(dto.requestId())
                         .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                if (req.getStatus() != Status.PROCESSING) {
+                    log.warn("[보상 트랜잭션] 승인 처리 중 상태가 변경됨(다른 관리자가 거절했을 수 있음) - " +
+                            "requestId={}, 현재 상태={}", dto.requestId(), req.getStatus());
+                    throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+                }
                 ContainerImage image = containerImageRepository.findById(dto.imageId())
                         .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
                 ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
@@ -233,7 +243,10 @@ public class AdminRequestCommandService {
 
     @Transactional
     public SaveRequestResponseDTO rejectRequest(RejectRequestDTO dto) {
-        Request request = requestRepository.findById(dto.requestId())
+        // 행 잠금: PROCESSING 상태를 거절하는 동안 approveRequest의 마지막 DB 반영
+        // 트랜잭션과 순서가 뒤섞이지 않게 한다. 잠금만으로는 충분하지 않아서
+        // approveRequest 쪽에도 반영 직전 상태 재확인이 함께 필요하다 — 아래 참고.
+        Request request = requestRepository.findByIdForUpdate(dto.requestId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
         if (!(request.getStatus() == Status.PENDING || request.getStatus() == Status.PROCESSING || request.getStatus() == Status.FULFILLED)) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);

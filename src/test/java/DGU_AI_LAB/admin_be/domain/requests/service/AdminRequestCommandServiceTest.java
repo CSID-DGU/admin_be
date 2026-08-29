@@ -123,7 +123,10 @@ class AdminRequestCommandServiceTest {
     /** 공통 Request mock 설정 */
     private Request buildMockedRequest(Long requestId) {
         Request request = mock(Request.class);
-        when(request.getStatus()).thenReturn(Status.PENDING);
+        // 1단계(승인 시작)에서는 PENDING을 확인하고, 3단계(외부 호출 완료 후 DB 반영)에서는
+        // markAsProcessing()으로 바뀐 PROCESSING을 재확인한다. mock이라 실제로 상태가
+        // 바뀌진 않으므로, 호출 순서에 맞춰 반환값을 순차 지정한다.
+        when(request.getStatus()).thenReturn(Status.PENDING, Status.PROCESSING);
         when(request.getUbuntuUsername()).thenReturn("testuser");
         when(request.getUbuntuPassword()).thenReturn("encoded_pw");
         when(request.getUbuntuPasswordBase64()).thenReturn("cGxhaW5fdGV4dF9wdw==");
@@ -375,6 +378,40 @@ class AdminRequestCommandServiceTest {
 
             verify(ubuntuAccountService, never()).deleteUbuntuAccount(any());
             verify(podService, never()).deletePod(any());
+        }
+
+        @Test
+        @DisplayName("외부 호출 도중 다른 관리자가 거절해 상태가 바뀌면, 방금 만든 계정/Pod를 정리하고 승인을 덮어쓰지 않는다")
+        void approveRequest_statusChangedDuringExternalCalls_compensatesInsteadOfOverwriting() {
+            Long requestId = 15L;
+            Request request = mock(Request.class);
+            // 1단계에서는 PENDING(승인 시작 허용), 3단계 재확인 시점엔 DENIED(그 사이 다른
+            // 관리자가 거절함)를 반환하도록 순차 스텁한다 — mock이라 markAsProcessing()이
+            // 실제 상태를 바꾸지 않으므로, 여기서 "그 사이 거절됨" 상황을 직접 흉내낸다.
+            when(request.getStatus()).thenReturn(Status.PENDING, Status.DENIED);
+            when(request.getUbuntuUsername()).thenReturn("testuser");
+            when(request.getUbuntuPasswordBase64()).thenReturn("cGxhaW5fdGV4dF9wdw==");
+            when(request.getUser()).thenReturn(mockUser);
+            when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
+            when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+            stubWebClientPut();
+
+            CreatePodResponseDTO podResponse = new CreatePodResponseDTO(
+                    "running", "farm1", "pod-testuser-race", List.of()
+            );
+            when(podService.createPod("testuser")).thenReturn(podResponse);
+
+            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
+
+            assertThatThrownBy(() -> service.approveRequest(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+
+            // 이미 만든 계정/Pod는 정리하되, 거절된 요청의 상태를 승인으로 덮어쓰지 않는다
+            verify(podService).deletePod("pod-testuser-race");
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
+            verify(request, never()).approve(any(), any(), any(), any());
         }
 
         @Test
@@ -921,6 +958,7 @@ class AdminRequestCommandServiceTest {
         when(request.getResourceGroup()).thenReturn(mockRg);
         when(request.getContainerImage()).thenReturn(mockImage);
         when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
+        when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
         return request;
     }
 }
