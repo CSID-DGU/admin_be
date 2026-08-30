@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigratePodResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.PodCreationStatusResponseDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
@@ -9,7 +10,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -33,7 +33,6 @@ import static org.mockito.Mockito.*;
 @DisplayName("PodService")
 class PodServiceTest {
 
-    @InjectMocks
     private PodService podService;
 
     @Mock private WebClient webClient;
@@ -42,14 +41,22 @@ class PodServiceTest {
     @Mock private WebClient.RequestHeadersSpec<?> requestHeadersSpec;
     @Mock private WebClient.ResponseSpec responseSpec;
 
+    @Mock private WebClient configWebClient;
+    @Mock private WebClient.RequestHeadersUriSpec<?> requestHeadersUriSpec;
+
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setUp() {
+        podService = new PodService(webClient, configWebClient);
+
         when(webClient.post()).thenReturn(requestBodyUriSpec);
         when(requestBodyUriSpec.uri(anyString())).thenReturn(requestBodySpec);
         doReturn(requestHeadersSpec).when(requestBodySpec).bodyValue(any());
         when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
         when(responseSpec.onStatus(any(), any())).thenReturn(responseSpec);
+
+        doReturn(requestHeadersUriSpec).when(configWebClient).get();
+        doReturn(requestHeadersSpec).when(requestHeadersUriSpec).uri(anyString());
     }
 
     // ───────────────────────────────────────────────────────────────
@@ -296,6 +303,78 @@ class PodServiceTest {
             podService.migratePod("myuser", List.of("farm1"), 0.3);
 
             verify(requestBodyUriSpec).uri("/migrate");
+        }
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // getPodCreationStatus
+    // ───────────────────────────────────────────────────────────────
+    @Nested
+    @DisplayName("getPodCreationStatus")
+    class GetPodCreationStatus {
+
+        @Test
+        @DisplayName("정상 응답이면 상태 DTO를 그대로 반환한다")
+        void getPodCreationStatus_returnsDto_whenApiSucceeds() {
+            PodCreationStatusResponseDTO mockResponse = new PodCreationStatusResponseDTO(
+                    "testuser", "waiting_ready", "이미지 pull / 컨테이너 기동 대기 중", "2026-08-27T17:56:17.862769+00:00"
+            );
+            when(responseSpec.bodyToMono(PodCreationStatusResponseDTO.class))
+                    .thenReturn(Mono.just(mockResponse));
+
+            PodCreationStatusResponseDTO result = podService.getPodCreationStatus("testuser");
+
+            assertThat(result).isEqualTo(mockResponse);
+            assertThat(result.stage()).isEqualTo("waiting_ready");
+        }
+
+        @Test
+        @DisplayName("생성 이력이 없으면 stage=unknown 응답을 그대로 반환한다")
+        void getPodCreationStatus_returnsUnknown_whenNoHistory() {
+            PodCreationStatusResponseDTO mockResponse = new PodCreationStatusResponseDTO(
+                    "testuser", "unknown", "생성 이력 없음", null
+            );
+            when(responseSpec.bodyToMono(PodCreationStatusResponseDTO.class))
+                    .thenReturn(Mono.just(mockResponse));
+
+            PodCreationStatusResponseDTO result = podService.getPodCreationStatus("testuser");
+
+            assertThat(result.stage()).isEqualTo("unknown");
+        }
+
+        @Test
+        @DisplayName("API가 빈 응답(null)을 반환하면 EXTERNAL_API_ERROR 예외가 발생한다")
+        void getPodCreationStatus_throwsBusinessException_whenApiReturnsEmpty() {
+            when(responseSpec.bodyToMono(PodCreationStatusResponseDTO.class))
+                    .thenReturn(Mono.empty());
+
+            assertThatThrownBy(() -> podService.getPodCreationStatus("testuser"))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.EXTERNAL_API_ERROR);
+        }
+
+        @Test
+        @DisplayName("API 호출 중 일반 예외가 발생하면 BusinessException으로 래핑한다")
+        void getPodCreationStatus_wrapsGeneralException_asBusinessException() {
+            when(responseSpec.bodyToMono(PodCreationStatusResponseDTO.class))
+                    .thenReturn(Mono.error(new RuntimeException("connection timeout")));
+
+            assertThatThrownBy(() -> podService.getPodCreationStatus("testuser"))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.EXTERNAL_API_ERROR);
+        }
+
+        @Test
+        @DisplayName("올바른 username으로 /pods/{username}/status URI에 요청한다")
+        void getPodCreationStatus_callsCorrectUri() {
+            when(responseSpec.bodyToMono(PodCreationStatusResponseDTO.class))
+                    .thenReturn(Mono.just(new PodCreationStatusResponseDTO("myuser", "ready", "생성 완료", "2026-08-27T00:00:00Z")));
+
+            podService.getPodCreationStatus("myuser");
+
+            verify(requestHeadersUriSpec).uri("/pods/myuser/status");
         }
     }
 }
