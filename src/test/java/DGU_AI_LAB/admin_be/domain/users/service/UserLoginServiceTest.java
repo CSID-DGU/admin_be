@@ -205,6 +205,53 @@ class UserLoginServiceTest {
         }
 
         @Test
+        @DisplayName("실패 횟수가 임계값 미만이면 잠기지 않고 정상적으로 비밀번호를 검증한다")
+        void login_doesNotLockOut_whenAttemptsBelowThreshold() {
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.get("LOGIN_FAIL:test@dgu.ac.kr")).thenReturn("4");
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
+            when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
+            when(jwtProvider.getIssueToken(any(), eq(true))).thenReturn("accessToken");
+            when(jwtProvider.getIssueToken(any(), eq(false))).thenReturn("refreshToken");
+
+            UserLoginRequestDTO dto = new UserLoginRequestDTO("test@dgu.ac.kr", "password123");
+            UserTokenResponseDTO result = userLoginService.login(dto);
+
+            assertThat(result).isNotNull();
+            verify(passwordEncoder, times(1)).matches("password123", "encodedPassword");
+        }
+
+        @Test
+        @DisplayName("실패 카운터가 처음 1로 증가할 때만 TTL을 설정한다")
+        void login_setsExpireOnlyOnFirstFailure() {
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.increment("LOGIN_FAIL:test@dgu.ac.kr")).thenReturn(1L);
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
+            when(passwordEncoder.matches("wrongPw", "encodedPassword")).thenReturn(false);
+
+            UserLoginRequestDTO dto = new UserLoginRequestDTO("test@dgu.ac.kr", "wrongPw");
+
+            assertThatThrownBy(() -> userLoginService.login(dto))
+                    .isInstanceOf(UnauthorizedException.class);
+            verify(redisTemplate).expire(eq("LOGIN_FAIL:test@dgu.ac.kr"), eq(900L), eq(TimeUnit.SECONDS));
+        }
+
+        @Test
+        @DisplayName("실패 카운터가 이미 1보다 크게 증가하면 TTL을 다시 설정하지 않는다")
+        void login_doesNotResetExpire_onSubsequentFailures() {
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.increment("LOGIN_FAIL:test@dgu.ac.kr")).thenReturn(2L);
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
+            when(passwordEncoder.matches("wrongPw", "encodedPassword")).thenReturn(false);
+
+            UserLoginRequestDTO dto = new UserLoginRequestDTO("test@dgu.ac.kr", "wrongPw");
+
+            assertThatThrownBy(() -> userLoginService.login(dto))
+                    .isInstanceOf(UnauthorizedException.class);
+            verify(redisTemplate, never()).expire(anyString(), anyLong(), any(TimeUnit.class));
+        }
+
+        @Test
         @DisplayName("로그인 성공 시 실패 카운터를 삭제한다")
         void login_success_clearsFailedAttemptCounter() {
             when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));

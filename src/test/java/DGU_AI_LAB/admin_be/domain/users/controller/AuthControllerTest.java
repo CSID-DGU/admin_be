@@ -121,5 +121,20 @@ class AuthControllerTest extends WebMvcTestSupport {
                             .content(objectMapper.writeValueAsString(dto)))
                     .andExpect(status().isBadRequest());
         }
+
+        @Test
+        @DisplayName("로그인 시도 횟수를 초과하면 429 Too Many Requests를 반환한다")
+        void login_returns429_whenTooManyAttempts() throws Exception {
+            when(userLoginService.login(any()))
+                    .thenThrow(new BusinessException(ErrorCode.TOO_MANY_LOGIN_ATTEMPTS));
+
+            UserLoginRequestDTO dto = new UserLoginRequestDTO("test@dgu.ac.kr", "wrongPw");
+
+            mockMvc.perform(post("/api/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(dto)))
+                    .andExpect(status().isTooManyRequests())
+                    .andExpect(jsonPath("$.message").value(ErrorCode.TOO_MANY_LOGIN_ATTEMPTS.getMessage()));
+        }
     }
 }
