@@ -49,4 +49,32 @@ class NodeQueryServiceTest {
         assertThat(result.get(0).resourceGroupName()).isEqualTo("3090ti");
         assertThat(result.get(0).numberGpu()).isZero();
     }
+
+    @Test
+    @DisplayName("노드가 없으면 빈 리스트를 반환한다")
+    void getAllNodes_returnsEmptyList_whenNoNodes() {
+        when(nodeRepository.findAll()).thenReturn(List.of());
+
+        List<NodeResponseDTO> result = nodeQueryService.getAllNodes();
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("여러 노드가 있으면 전부 매핑해 반환한다")
+    void getAllNodes_returnsAllMappedNodes_whenMultipleNodes() {
+        ResourceGroup rg1 = ResourceGroup.builder()
+                .resourceGroupName("3090ti").description("desc").serverName("farm1").build();
+        ResourceGroup rg2 = ResourceGroup.builder()
+                .resourceGroupName("a100").description("desc").serverName("farm2").build();
+        Node node1 = Node.builder().nodeId("farm1").resourceGroup(rg1).memorySizeGB(128).cpuCoreCount(32).build();
+        Node node2 = Node.builder().nodeId("farm2").resourceGroup(rg2).memorySizeGB(256).cpuCoreCount(64).build();
+
+        when(nodeRepository.findAll()).thenReturn(List.of(node1, node2));
+
+        List<NodeResponseDTO> result = nodeQueryService.getAllNodes();
+
+        assertThat(result).hasSize(2);
+        assertThat(result).extracting(NodeResponseDTO::nodeId).containsExactly("farm1", "farm2");
+    }
 }
