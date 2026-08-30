@@ -158,6 +158,24 @@ class AdminUserServiceTest {
         }
     }
 
+    /**
+     * FULFILLED 상태이며 우분투 계정/Pod 정리 대상인 Request 목을 만든다.
+     * deleteUser/deactivateUser 테스트가 공유한다.
+     */
+    private Request mockFulfilledRequest(String username, long requestId) {
+        Request request = mock(Request.class);
+        when(request.getStatus()).thenReturn(Status.FULFILLED);
+        when(request.getUbuntuUsername()).thenReturn(username);
+        when(request.getRequestId()).thenReturn(requestId);
+        return request;
+    }
+
+    private Request mockRequestWithStatus(Status status) {
+        Request request = mock(Request.class);
+        when(request.getStatus()).thenReturn(status);
+        return request;
+    }
+
     @Nested
     @DisplayName("deleteUser")
     class DeleteUser {
@@ -201,10 +219,7 @@ class AdminUserServiceTest {
         @Test
         @DisplayName("FULFILLED 상태 Request가 있으면 외부 계정 삭제 후 deleteAfterCleanup을 호출한다")
         void deleteUser_withFulfilledRequest_callsUbuntuDelete() {
-            Request fulfilledRequest = mock(Request.class);
-            when(fulfilledRequest.getStatus()).thenReturn(Status.FULFILLED);
-            when(fulfilledRequest.getUbuntuUsername()).thenReturn("testuser");
-            when(fulfilledRequest.getRequestId()).thenReturn(1L);
+            Request fulfilledRequest = mockFulfilledRequest("testuser", 1L);
             when(podExternalPortRepository.findByRequestRequestIdIn(anyList())).thenReturn(List.of());
 
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
@@ -222,8 +237,7 @@ class AdminUserServiceTest {
         @Test
         @DisplayName("PENDING 상태 Request가 있으면 delete()를 호출한다 (외부 API 미호출)")
         void deleteUser_withPendingRequest_callsDelete() {
-            Request pendingRequest = mock(Request.class);
-            when(pendingRequest.getStatus()).thenReturn(Status.PENDING);
+            Request pendingRequest = mockRequestWithStatus(Status.PENDING);
 
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(pendingRequest));
@@ -238,8 +252,7 @@ class AdminUserServiceTest {
         @Test
         @DisplayName("DELETED 상태 Request는 아무 처리도 하지 않는다")
         void deleteUser_withDeletedRequest_skips() {
-            Request deletedRequest = mock(Request.class);
-            when(deletedRequest.getStatus()).thenReturn(Status.DELETED);
+            Request deletedRequest = mockRequestWithStatus(Status.DELETED);
 
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(deletedRequest));
@@ -255,17 +268,11 @@ class AdminUserServiceTest {
         @Test
         @DisplayName("여러 상태의 Request가 혼합되면 각각 적절히 처리한다")
         void deleteUser_withMixedRequests_handlesEachCorrectly() {
-            Request fulfilled = mock(Request.class);
-            when(fulfilled.getStatus()).thenReturn(Status.FULFILLED);
-            when(fulfilled.getUbuntuUsername()).thenReturn("fuser");
-            when(fulfilled.getRequestId()).thenReturn(10L);
+            Request fulfilled = mockFulfilledRequest("fuser", 10L);
             when(podExternalPortRepository.findByRequestRequestIdIn(anyList())).thenReturn(List.of());
 
-            Request pending = mock(Request.class);
-            when(pending.getStatus()).thenReturn(Status.PENDING);
-
-            Request deleted = mock(Request.class);
-            when(deleted.getStatus()).thenReturn(Status.DELETED);
+            Request pending = mockRequestWithStatus(Status.PENDING);
+            Request deleted = mockRequestWithStatus(Status.DELETED);
 
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(fulfilled, pending, deleted));
@@ -284,9 +291,7 @@ class AdminUserServiceTest {
         @Test
         @DisplayName("MIGRATING 상태 Request가 있으면 삭제 자체를 거부하고 유저를 건드리지 않는다")
         void deleteUser_withMigratingRequest_rejectsAndLeavesUserUntouched() {
-            Request migrating = mock(Request.class);
-            when(migrating.getStatus()).thenReturn(Status.MIGRATING);
-
+            Request migrating = mockRequestWithStatus(Status.MIGRATING);
             Request fulfilled = mock(Request.class);
 
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
@@ -305,20 +310,9 @@ class AdminUserServiceTest {
         @Test
         @DisplayName("FULFILLED 요청이 여러 개여도 포트 배치 쿼리는 1회만 실행된다")
         void deleteUser_multipleFullfilledRequests_batchQueriesPorts() {
-            Request req1 = mock(Request.class);
-            when(req1.getStatus()).thenReturn(Status.FULFILLED);
-            when(req1.getUbuntuUsername()).thenReturn("user1");
-            when(req1.getRequestId()).thenReturn(1L);
-
-            Request req2 = mock(Request.class);
-            when(req2.getStatus()).thenReturn(Status.FULFILLED);
-            when(req2.getUbuntuUsername()).thenReturn("user2");
-            when(req2.getRequestId()).thenReturn(2L);
-
-            Request req3 = mock(Request.class);
-            when(req3.getStatus()).thenReturn(Status.FULFILLED);
-            when(req3.getUbuntuUsername()).thenReturn("user3");
-            when(req3.getRequestId()).thenReturn(3L);
+            Request req1 = mockFulfilledRequest("user1", 1L);
+            Request req2 = mockFulfilledRequest("user2", 2L);
+            Request req3 = mockFulfilledRequest("user3", 3L);
 
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(req1, req2, req3));
@@ -331,6 +325,28 @@ class AdminUserServiceTest {
             verify(podExternalPortRepository, never()).findByRequestRequestId(any());
             verify(podExternalPortRepository, times(1)).findByRequestRequestIdIn(anyList());
             verify(alarmService, times(3)).sendContainerDeletedEmail(any(Request.class), anyList());
+        }
+
+        @Test
+        @DisplayName("컨테이너 삭제 안내 메일 발송이 실패해도 계정 삭제와 탈퇴는 계속 진행된다")
+        void deleteUser_continuesCleanup_whenContainerEmailFails() {
+            Request req1 = mockFulfilledRequest("user1", 1L);
+            Request req2 = mockFulfilledRequest("user2", 2L);
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(req1, req2));
+            when(podExternalPortRepository.findByRequestRequestIdIn(anyList())).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
+            doThrow(new RuntimeException("메일 서버 오류"))
+                    .when(alarmService).sendContainerDeletedEmail(eq(req1), anyList());
+
+            adminUserService.deleteUser(1L);
+
+            verify(ubuntuAccountService).deleteUbuntuAccount("user1");
+            verify(ubuntuAccountService).deleteUbuntuAccount("user2");
+            verify(req1).deleteAfterCleanup();
+            verify(req2).deleteAfterCleanup();
+            assertThat(mockUser.getIsActive()).isFalse();
         }
     }
 
@@ -376,16 +392,19 @@ class AdminUserServiceTest {
     class DeactivateUser {
 
         @Test
-        @DisplayName("활성화된 유저를 비활성화하면 isActive가 false가 되고, 우분투 계정/컨테이너는 건드리지 않는다")
-        void deactivateUser_success() {
+        @DisplayName("연결된 Request가 없는 유저를 비활성화하면 isActive가 false, deletedAt은 null로 유지된다")
+        void deactivateUser_withNoRequests_success() {
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
             UserSummaryDTO result = adminUserService.deactivateUser(1L);
 
             assertThat(mockUser.getIsActive()).isFalse();
+            assertThat(mockUser.getDeletedAt()).isNull();
             assertThat(result.isActive()).isFalse();
             verifyNoInteractions(ubuntuAccountService);
-            verify(requestRepository, never()).findAllByUser(any());
+            verify(alarmService).sendAllAlerts(eq("홍길동"), eq("test@dgu.ac.kr"), anyString(), anyString());
         }
 
         @Test
@@ -406,6 +425,168 @@ class AdminUserServiceTest {
             assertThatThrownBy(() -> adminUserService.deactivateUser(1L))
                     .isInstanceOf(ConflictException.class)
                     .hasMessageContaining(ErrorCode.USER_ALREADY_INACTIVE.getMessage());
+        }
+
+        @Test
+        @DisplayName("유저를 비활성화하면 남아있는 리프레시 토큰도 함께 폐기한다")
+        void deactivateUser_revokesRefreshToken() {
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
+
+            adminUserService.deactivateUser(1L);
+
+            verify(tokenService).logout(1L);
+        }
+
+        @Test
+        @DisplayName("FULFILLED 상태 Request가 있으면 deleteUser와 동일하게 외부 계정을 삭제한다")
+        void deactivateUser_withFulfilledRequest_callsUbuntuDelete() {
+            Request fulfilledRequest = mockFulfilledRequest("testuser", 1L);
+            when(podExternalPortRepository.findByRequestRequestIdIn(anyList())).thenReturn(List.of());
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(fulfilledRequest));
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
+
+            adminUserService.deactivateUser(1L);
+
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
+            verify(fulfilledRequest).deleteAfterCleanup();
+            verify(alarmService).sendContainerDeletedEmail(eq(fulfilledRequest), anyList());
+            assertThat(mockUser.getIsActive()).isFalse();
+            assertThat(mockUser.getDeletedAt()).isNull();
+        }
+
+        @Test
+        @DisplayName("PENDING 상태 Request가 있으면 delete()를 호출한다 (외부 API 미호출)")
+        void deactivateUser_withPendingRequest_callsDelete() {
+            Request pendingRequest = mockRequestWithStatus(Status.PENDING);
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(pendingRequest));
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
+
+            adminUserService.deactivateUser(1L);
+
+            verify(pendingRequest).delete();
+            verifyNoInteractions(ubuntuAccountService);
+        }
+
+        @Test
+        @DisplayName("MIGRATING 상태 Request가 있으면 비활성화 자체를 거부하고 유저를 건드리지 않는다")
+        void deactivateUser_withMigratingRequest_rejectsAndLeavesUserUntouched() {
+            Request migrating = mockRequestWithStatus(Status.MIGRATING);
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(migrating));
+
+            assertThatThrownBy(() -> adminUserService.deactivateUser(1L))
+                    .isInstanceOf(ConflictException.class)
+                    .extracting(e -> ((ConflictException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.REQUEST_MIGRATION_IN_PROGRESS);
+
+            assertThat(mockUser.getIsActive()).isTrue();
+            verifyNoInteractions(ubuntuAccountService, tokenService);
+        }
+
+        @Test
+        @DisplayName("DELETED 상태 Request는 아무 처리도 하지 않는다")
+        void deactivateUser_withDeletedRequest_skips() {
+            Request deletedRequest = mockRequestWithStatus(Status.DELETED);
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(deletedRequest));
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
+
+            adminUserService.deactivateUser(1L);
+
+            verify(deletedRequest, never()).delete();
+            verify(deletedRequest, never()).deleteAfterCleanup();
+            verifyNoInteractions(ubuntuAccountService);
+        }
+
+        @Test
+        @DisplayName("여러 상태의 Request가 혼합되면 각각 적절히 처리한다")
+        void deactivateUser_withMixedRequests_handlesEachCorrectly() {
+            Request fulfilled = mockFulfilledRequest("fuser", 10L);
+            when(podExternalPortRepository.findByRequestRequestIdIn(anyList())).thenReturn(List.of());
+
+            Request pending = mockRequestWithStatus(Status.PENDING);
+            Request deleted = mockRequestWithStatus(Status.DELETED);
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(fulfilled, pending, deleted));
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
+
+            adminUserService.deactivateUser(1L);
+
+            verify(ubuntuAccountService).deleteUbuntuAccount("fuser");
+            verify(fulfilled).deleteAfterCleanup();
+            verify(alarmService).sendContainerDeletedEmail(eq(fulfilled), anyList());
+            verify(pending).delete();
+            verify(deleted, never()).delete();
+            verify(deleted, never()).deleteAfterCleanup();
+            assertThat(mockUser.getIsActive()).isFalse();
+        }
+
+        @Test
+        @DisplayName("FULFILLED 요청이 여러 개여도 포트 배치 쿼리는 1회만 실행된다")
+        void deactivateUser_multipleFulfilledRequests_batchQueriesPorts() {
+            Request req1 = mockFulfilledRequest("user1", 1L);
+            Request req2 = mockFulfilledRequest("user2", 2L);
+            Request req3 = mockFulfilledRequest("user3", 3L);
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(req1, req2, req3));
+            when(podExternalPortRepository.findByRequestRequestIdIn(anyList())).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
+
+            adminUserService.deactivateUser(1L);
+
+            verify(podExternalPortRepository, never()).findByRequestRequestId(any());
+            verify(podExternalPortRepository, times(1)).findByRequestRequestIdIn(anyList());
+            verify(alarmService, times(3)).sendContainerDeletedEmail(any(Request.class), anyList());
+            verify(ubuntuAccountService, times(3)).deleteUbuntuAccount(anyString());
+        }
+
+        @Test
+        @DisplayName("컨테이너 삭제 안내 메일 발송이 실패해도 계정 삭제와 비활성화는 계속 진행된다")
+        void deactivateUser_continuesCleanup_whenContainerEmailFails() {
+            Request req1 = mockFulfilledRequest("user1", 1L);
+            Request req2 = mockFulfilledRequest("user2", 2L);
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(req1, req2));
+            when(podExternalPortRepository.findByRequestRequestIdIn(anyList())).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
+            doThrow(new RuntimeException("메일 서버 오류"))
+                    .when(alarmService).sendContainerDeletedEmail(eq(req1), anyList());
+
+            adminUserService.deactivateUser(1L);
+
+            verify(ubuntuAccountService).deleteUbuntuAccount("user1");
+            verify(ubuntuAccountService).deleteUbuntuAccount("user2");
+            verify(req1).deleteAfterCleanup();
+            verify(req2).deleteAfterCleanup();
+            verify(alarmService).sendContainerDeletedEmail(eq(req2), anyList());
+            assertThat(mockUser.getIsActive()).isFalse();
+        }
+
+        @Test
+        @DisplayName("최종 비활성화 안내 메일 발송이 실패해도 비활성화 자체는 완료된다")
+        void deactivateUser_completes_whenFinalNotificationEmailFails() {
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
+            doThrow(new RuntimeException("Slack/메일 발송 실패"))
+                    .when(alarmService).sendAllAlerts(anyString(), anyString(), anyString(), anyString());
+
+            UserSummaryDTO result = adminUserService.deactivateUser(1L);
+
+            assertThat(mockUser.getIsActive()).isFalse();
+            assertThat(result.isActive()).isFalse();
+            verify(tokenService).logout(1L);
         }
     }
 
