@@ -143,12 +143,14 @@ class UserLoginServiceTest {
         @Test
         @DisplayName("존재하지 않는 이메일로 로그인하면 UnauthorizedException을 던진다")
         void login_throwsException_whenEmailNotFound() {
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
             when(userRepository.findByEmail("notexist@dgu.ac.kr")).thenReturn(Optional.empty());
 
             UserLoginRequestDTO dto = new UserLoginRequestDTO("notexist@dgu.ac.kr", "password");
 
             assertThatThrownBy(() -> userLoginService.login(dto))
                     .isInstanceOf(UnauthorizedException.class);
+            verify(valueOperations).increment("LOGIN_FAIL:notexist@dgu.ac.kr");
         }
 
         @Test
@@ -164,6 +166,7 @@ class UserLoginServiceTest {
                     .build();
             inactiveUser.withdraw(); // isActive = false
 
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
             when(userRepository.findByEmail("inactive@dgu.ac.kr")).thenReturn(Optional.of(inactiveUser));
 
             UserLoginRequestDTO dto = new UserLoginRequestDTO("inactive@dgu.ac.kr", "password");
@@ -175,6 +178,7 @@ class UserLoginServiceTest {
         @Test
         @DisplayName("비밀번호가 틀리면 UnauthorizedException을 던지고 BCrypt 검증은 정확히 1회 실행된다")
         void login_throwsException_whenPasswordWrong() {
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
             when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
             when(passwordEncoder.matches("wrongPw", "encodedPassword")).thenReturn(false);
 
@@ -183,6 +187,36 @@ class UserLoginServiceTest {
             assertThatThrownBy(() -> userLoginService.login(dto))
                     .isInstanceOf(UnauthorizedException.class);
             verify(passwordEncoder, times(1)).matches("wrongPw", "encodedPassword");
+            verify(valueOperations).increment("LOGIN_FAIL:test@dgu.ac.kr");
+        }
+
+        @Test
+        @DisplayName("15분 내 5회 실패하면 이후 로그인 시도는 비밀번호 확인 없이 잠긴다")
+        void login_locksOut_afterMaxFailedAttempts() {
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.get("LOGIN_FAIL:test@dgu.ac.kr")).thenReturn("5");
+
+            UserLoginRequestDTO dto = new UserLoginRequestDTO("test@dgu.ac.kr", "password123");
+
+            assertThatThrownBy(() -> userLoginService.login(dto))
+                    .isInstanceOf(BusinessException.class);
+            verifyNoInteractions(passwordEncoder);
+            verify(userRepository, never()).findByEmail(anyString());
+        }
+
+        @Test
+        @DisplayName("로그인 성공 시 실패 카운터를 삭제한다")
+        void login_success_clearsFailedAttemptCounter() {
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
+            when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
+            when(jwtProvider.getIssueToken(any(), eq(true))).thenReturn("accessToken");
+            when(jwtProvider.getIssueToken(any(), eq(false))).thenReturn("refreshToken");
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+            UserLoginRequestDTO dto = new UserLoginRequestDTO("test@dgu.ac.kr", "password123");
+            userLoginService.login(dto);
+
+            verify(redisTemplate).delete("LOGIN_FAIL:test@dgu.ac.kr");
         }
 
         @Test
