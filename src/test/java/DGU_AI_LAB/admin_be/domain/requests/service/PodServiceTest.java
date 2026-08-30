@@ -4,11 +4,14 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigratePodResponseDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -296,6 +299,40 @@ class PodServiceTest {
             podService.migratePod("myuser", List.of("farm1"), 0.3);
 
             verify(requestBodyUriSpec).uri("/migrate");
+        }
+
+        @Test
+        @DisplayName("minImprovementRatio가 null이면 min_improvement_ratio 키 자체를 요청 본문에서 뺀다 (config-server 기본값 사용)")
+        void migratePod_omitsMinImprovementRatioKey_whenNull() throws Exception {
+            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
+                    .thenReturn(Mono.just(new MigratePodResponseDTO(
+                            "skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null
+                    )));
+
+            podService.migratePod("myuser", List.of("farm1"), null);
+
+            ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+            verify(requestBodySpec).bodyValue(bodyCaptor.capture());
+            JsonNode json = new ObjectMapper().valueToTree(bodyCaptor.getValue());
+
+            assertThat(json.has("min_improvement_ratio")).isFalse();
+        }
+
+        @Test
+        @DisplayName("minImprovementRatio가 있으면 min_improvement_ratio 키로 그대로 전달한다")
+        void migratePod_includesMinImprovementRatioKey_whenPresent() throws Exception {
+            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
+                    .thenReturn(Mono.just(new MigratePodResponseDTO(
+                            "skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null
+                    )));
+
+            podService.migratePod("myuser", List.of("farm1"), 0.3);
+
+            ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+            verify(requestBodySpec).bodyValue(bodyCaptor.capture());
+            JsonNode json = new ObjectMapper().valueToTree(bodyCaptor.getValue());
+
+            assertThat(json.get("min_improvement_ratio").asDouble()).isEqualTo(0.3);
         }
     }
 }
