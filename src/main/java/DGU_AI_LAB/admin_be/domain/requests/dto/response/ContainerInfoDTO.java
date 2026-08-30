@@ -10,6 +10,8 @@ import java.util.List;
 @Schema(description = "컨테이너 정보 응답 DTO")
 @Builder
 public record ContainerInfoDTO(
+        @Schema(description = "Request 고유 ID (마이그레이션 등 요청 단위 API에 사용)", example = "1")
+        Long requestId,
         @Schema(description = "사용자 고유 ID", example = "1")
         Long userId,
         @Schema(description = "사용자 이름", example = "이수아")
@@ -33,6 +35,7 @@ public record ContainerInfoDTO(
 ) {
     public static ContainerInfoDTO fromEntity(Request request) {
         return ContainerInfoDTO.builder()
+                .requestId(request.getRequestId())
                 .userId(request.getUser().getUserId())
                 .userName(request.getUser().getName())
                 .ubuntuUsername(request.getUbuntuUsername())
