@@ -1,9 +1,11 @@
 package DGU_AI_LAB.admin_be.domain.users.controller;
 
 import DGU_AI_LAB.admin_be.domain.users.controller.docs.AdminUserApi;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.ChangeRoleRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.service.AdminUserService;
 import DGU_AI_LAB.admin_be.domain.users.service.UserService;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -41,5 +43,15 @@ public class AdminUserController implements AdminUserApi {
     @PatchMapping("/{id}/reactivate")
     public ResponseEntity<SuccessResponse<?>> reactivateUser(@PathVariable Long id) {
         return SuccessResponse.ok(adminUserService.reactivateUser(id));
+    }
+
+    @PatchMapping("/{id}/deactivate")
+    public ResponseEntity<SuccessResponse<?>> deactivateUser(@PathVariable Long id) {
+        return SuccessResponse.ok(adminUserService.deactivateUser(id));
+    }
+
+    @PatchMapping("/{id}/role")
+    public ResponseEntity<SuccessResponse<?>> changeUserRole(@PathVariable Long id, @RequestBody @Valid ChangeRoleRequestDTO dto) {
+        return SuccessResponse.ok(adminUserService.changeUserRole(id, dto.role()));
     }
 }

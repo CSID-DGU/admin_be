@@ -82,6 +82,8 @@ public enum ErrorCode {
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."),
     USER_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 가입된 사용자입니다."),
     USER_ALREADY_ACTIVE(HttpStatus.CONFLICT, "이미 활성화된 사용자입니다."),
+    USER_ALREADY_INACTIVE(HttpStatus.CONFLICT, "이미 비활성화된 사용자입니다."),
+    USER_ALREADY_HAS_ROLE(HttpStatus.CONFLICT, "이미 해당 권한을 가진 사용자입니다."),
     DUPLICATE_NAME(HttpStatus.CONFLICT, "중복된 닉네임입니다."),
     INVALID_LOGIN_INFO(HttpStatus.BAD_REQUEST, "잘못된 로그인 입력값입니다."),
     INVALID_AUTH_CODE(HttpStatus.BAD_REQUEST, "올바르지 않은 인증 코드입니다."),
