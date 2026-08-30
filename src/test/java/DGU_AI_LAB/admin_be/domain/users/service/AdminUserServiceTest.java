@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.requests.service.PodService;
 import DGU_AI_LAB.admin_be.domain.requests.service.UbuntuAccountService;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserUpdateRequestDTO;
@@ -50,6 +51,9 @@ class AdminUserServiceTest {
 
     @Mock
     private UbuntuAccountService ubuntuAccountService;
+
+    @Mock
+    private PodService podService;
 
     @Mock
     private AlarmService alarmService;
@@ -167,6 +171,7 @@ class AdminUserServiceTest {
         when(request.getStatus()).thenReturn(Status.FULFILLED);
         when(request.getUbuntuUsername()).thenReturn(username);
         when(request.getRequestId()).thenReturn(requestId);
+        when(request.getPodName()).thenReturn("pod-" + username);
         return request;
     }
 
@@ -191,7 +196,7 @@ class AdminUserServiceTest {
 
             assertThat(mockUser.getIsActive()).isFalse();
             assertThat(mockUser.getDeletedAt()).isNotNull();
-            verifyNoInteractions(ubuntuAccountService);
+            verifyNoInteractions(ubuntuAccountService, podService);
             verify(alarmService).sendAllAlerts(eq("홍길동"), eq("test@dgu.ac.kr"), anyString(), anyString());
         }
 
@@ -228,6 +233,7 @@ class AdminUserServiceTest {
 
             adminUserService.deleteUser(1L);
 
+            verify(podService).deletePod("pod-testuser");
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
             verify(fulfilledRequest).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(eq(fulfilledRequest), anyList());
@@ -246,7 +252,7 @@ class AdminUserServiceTest {
             adminUserService.deleteUser(1L);
 
             verify(pendingRequest).delete();
-            verifyNoInteractions(ubuntuAccountService);
+            verifyNoInteractions(ubuntuAccountService, podService);
         }
 
         @Test
@@ -262,7 +268,7 @@ class AdminUserServiceTest {
 
             verify(deletedRequest, never()).delete();
             verify(deletedRequest, never()).deleteAfterCleanup();
-            verifyNoInteractions(ubuntuAccountService);
+            verifyNoInteractions(ubuntuAccountService, podService);
         }
 
         @Test
@@ -280,6 +286,7 @@ class AdminUserServiceTest {
 
             adminUserService.deleteUser(1L);
 
+            verify(podService).deletePod("pod-fuser");
             verify(ubuntuAccountService).deleteUbuntuAccount("fuser");
             verify(fulfilled).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(eq(fulfilled), anyList());
@@ -304,7 +311,7 @@ class AdminUserServiceTest {
 
             assertThat(mockUser.getIsActive()).isNotEqualTo(false);
             verify(fulfilled, never()).deleteAfterCleanup();
-            verifyNoInteractions(ubuntuAccountService, tokenService);
+            verifyNoInteractions(ubuntuAccountService, podService, tokenService);
         }
 
         @Test
@@ -325,6 +332,7 @@ class AdminUserServiceTest {
             verify(podExternalPortRepository, never()).findByRequestRequestId(any());
             verify(podExternalPortRepository, times(1)).findByRequestRequestIdIn(anyList());
             verify(alarmService, times(3)).sendContainerDeletedEmail(any(Request.class), anyList());
+            verify(podService, times(3)).deletePod(anyString());
         }
 
         @Test
@@ -342,6 +350,8 @@ class AdminUserServiceTest {
 
             adminUserService.deleteUser(1L);
 
+            verify(podService).deletePod("pod-user1");
+            verify(podService).deletePod("pod-user2");
             verify(ubuntuAccountService).deleteUbuntuAccount("user1");
             verify(ubuntuAccountService).deleteUbuntuAccount("user2");
             verify(req1).deleteAfterCleanup();
@@ -403,7 +413,7 @@ class AdminUserServiceTest {
             assertThat(mockUser.getIsActive()).isFalse();
             assertThat(mockUser.getDeletedAt()).isNull();
             assertThat(result.isActive()).isFalse();
-            verifyNoInteractions(ubuntuAccountService);
+            verifyNoInteractions(ubuntuAccountService, podService);
             verify(alarmService).sendAllAlerts(eq("홍길동"), eq("test@dgu.ac.kr"), anyString(), anyString());
         }
 
@@ -451,6 +461,7 @@ class AdminUserServiceTest {
 
             adminUserService.deactivateUser(1L);
 
+            verify(podService).deletePod("pod-testuser");
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
             verify(fulfilledRequest).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(eq(fulfilledRequest), anyList());
@@ -470,7 +481,7 @@ class AdminUserServiceTest {
             adminUserService.deactivateUser(1L);
 
             verify(pendingRequest).delete();
-            verifyNoInteractions(ubuntuAccountService);
+            verifyNoInteractions(ubuntuAccountService, podService);
         }
 
         @Test
@@ -487,7 +498,7 @@ class AdminUserServiceTest {
                     .isEqualTo(ErrorCode.REQUEST_MIGRATION_IN_PROGRESS);
 
             assertThat(mockUser.getIsActive()).isTrue();
-            verifyNoInteractions(ubuntuAccountService, tokenService);
+            verifyNoInteractions(ubuntuAccountService, podService, tokenService);
         }
 
         @Test
@@ -503,7 +514,7 @@ class AdminUserServiceTest {
 
             verify(deletedRequest, never()).delete();
             verify(deletedRequest, never()).deleteAfterCleanup();
-            verifyNoInteractions(ubuntuAccountService);
+            verifyNoInteractions(ubuntuAccountService, podService);
         }
 
         @Test
@@ -521,6 +532,7 @@ class AdminUserServiceTest {
 
             adminUserService.deactivateUser(1L);
 
+            verify(podService).deletePod("pod-fuser");
             verify(ubuntuAccountService).deleteUbuntuAccount("fuser");
             verify(fulfilled).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(eq(fulfilled), anyList());
@@ -548,6 +560,7 @@ class AdminUserServiceTest {
             verify(podExternalPortRepository, times(1)).findByRequestRequestIdIn(anyList());
             verify(alarmService, times(3)).sendContainerDeletedEmail(any(Request.class), anyList());
             verify(ubuntuAccountService, times(3)).deleteUbuntuAccount(anyString());
+            verify(podService, times(3)).deletePod(anyString());
         }
 
         @Test
@@ -565,6 +578,8 @@ class AdminUserServiceTest {
 
             adminUserService.deactivateUser(1L);
 
+            verify(podService).deletePod("pod-user1");
+            verify(podService).deletePod("pod-user2");
             verify(ubuntuAccountService).deleteUbuntuAccount("user1");
             verify(ubuntuAccountService).deleteUbuntuAccount("user2");
             verify(req1).deleteAfterCleanup();
@@ -664,6 +679,7 @@ class AdminUserServiceTest {
 
             adminUserService.deleteUbuntuAccount("testuser");
 
+            verify(podService).deletePod(null);
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
             assertThat(request.getStatus()).isEqualTo(Status.DELETED);
             verify(alarmService).sendContainerDeletedEmail(request);
@@ -677,7 +693,7 @@ class AdminUserServiceTest {
             assertThatThrownBy(() -> adminUserService.deleteUbuntuAccount("nobody"))
                     .isInstanceOf(EntityNotFoundException.class);
 
-            verifyNoInteractions(ubuntuAccountService);
+            verifyNoInteractions(ubuntuAccountService, podService);
         }
     }
 }
