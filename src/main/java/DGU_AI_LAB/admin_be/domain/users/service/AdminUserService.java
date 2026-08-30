@@ -10,6 +10,7 @@ import DGU_AI_LAB.admin_be.domain.requests.service.UbuntuAccountService;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserSummaryDTO;
+import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -162,6 +163,45 @@ public class AdminUserService {
 
         user.reactivate();
         log.info("[reactivateUser] userId={} 재활성화 완료", userId);
+        return UserSummaryDTO.fromEntity(user);
+    }
+
+    /**
+     * 유저 임시 비활성화 (deleteUser와 달리 계정/컨테이너는 그대로 둔다 — 로그인만 막는다)
+     */
+    @Transactional
+    public UserSummaryDTO deactivateUser(Long userId) {
+        log.info("[deactivateUser] userId={} 비활성화 시도", userId);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
+
+        if (!user.getIsActive()) {
+            log.warn("[deactivateUser] userId={} 이미 비활성화 상태", userId);
+            throw new ConflictException(ErrorCode.USER_ALREADY_INACTIVE);
+        }
+
+        user.deactivate();
+        tokenService.logout(userId);
+        log.info("[deactivateUser] userId={} 비활성화 완료", userId);
+        return UserSummaryDTO.fromEntity(user);
+    }
+
+    /**
+     * 유저 권한 변경 (ADMIN <-> USER)
+     */
+    @Transactional
+    public UserSummaryDTO changeUserRole(Long userId, Role newRole) {
+        log.info("[changeUserRole] userId={} role={} 변경 시도", userId, newRole);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
+
+        if (user.getRole() == newRole) {
+            log.warn("[changeUserRole] userId={} 이미 {} 권한", userId, newRole);
+            throw new ConflictException(ErrorCode.USER_ALREADY_HAS_ROLE);
+        }
+
+        user.changeRole(newRole);
+        log.info("[changeUserRole] userId={} role={} 변경 완료", userId, newRole);
         return UserSummaryDTO.fromEntity(user);
     }
 

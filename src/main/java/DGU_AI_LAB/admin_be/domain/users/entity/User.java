@@ -94,4 +94,16 @@ public class User extends BaseTimeEntity {
         this.isActive = true;
         this.deletedAt = null;
     }
+
+    /**
+     * withdraw()와 달리 계정/컨테이너를 정리하지 않는 가벼운 비활성화.
+     * 관리자가 로그인만 임시로 막고 싶을 때 사용한다 (삭제와는 다른 동작).
+     */
+    public void deactivate() {
+        this.isActive = false;
+    }
+
+    public void changeRole(Role newRole) {
+        this.role = newRole;
+    }
 }

@@ -11,6 +11,7 @@ import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserSummaryDTO;
+import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -367,6 +368,79 @@ class AdminUserServiceTest {
             assertThatThrownBy(() -> adminUserService.reactivateUser(1L))
                     .isInstanceOf(ConflictException.class)
                     .hasMessageContaining(ErrorCode.USER_ALREADY_ACTIVE.getMessage());
+        }
+    }
+
+    @Nested
+    @DisplayName("deactivateUser")
+    class DeactivateUser {
+
+        @Test
+        @DisplayName("활성화된 유저를 비활성화하면 isActive가 false가 되고, 우분투 계정/컨테이너는 건드리지 않는다")
+        void deactivateUser_success() {
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+
+            UserSummaryDTO result = adminUserService.deactivateUser(1L);
+
+            assertThat(mockUser.getIsActive()).isFalse();
+            assertThat(result.isActive()).isFalse();
+            verifyNoInteractions(ubuntuAccountService);
+            verify(requestRepository, never()).findAllByUser(any());
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 유저면 EntityNotFoundException을 던진다")
+        void deactivateUser_throwsWhenUserNotFound() {
+            when(userRepository.findById(99L)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> adminUserService.deactivateUser(99L))
+                    .isInstanceOf(EntityNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("이미 비활성화된 유저면 ConflictException을 던진다")
+        void deactivateUser_throwsWhenAlreadyInactive() {
+            mockUser.withdraw();
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+
+            assertThatThrownBy(() -> adminUserService.deactivateUser(1L))
+                    .isInstanceOf(ConflictException.class)
+                    .hasMessageContaining(ErrorCode.USER_ALREADY_INACTIVE.getMessage());
+        }
+    }
+
+    @Nested
+    @DisplayName("changeUserRole")
+    class ChangeUserRole {
+
+        @Test
+        @DisplayName("USER를 ADMIN으로 변경한다")
+        void changeUserRole_userToAdmin_success() {
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+
+            UserSummaryDTO result = adminUserService.changeUserRole(1L, Role.ADMIN);
+
+            assertThat(mockUser.getRole()).isEqualTo(Role.ADMIN);
+            assertThat(result.role()).isEqualTo("ADMIN");
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 유저면 EntityNotFoundException을 던진다")
+        void changeUserRole_throwsWhenUserNotFound() {
+            when(userRepository.findById(99L)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> adminUserService.changeUserRole(99L, Role.ADMIN))
+                    .isInstanceOf(EntityNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("이미 같은 권한이면 ConflictException을 던진다")
+        void changeUserRole_throwsWhenAlreadyHasRole() {
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+
+            assertThatThrownBy(() -> adminUserService.changeUserRole(1L, Role.USER))
+                    .isInstanceOf(ConflictException.class)
+                    .hasMessageContaining(ErrorCode.USER_ALREADY_HAS_ROLE.getMessage());
         }
     }
 
