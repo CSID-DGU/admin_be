@@ -32,6 +32,9 @@ public class UserLoginService {
     @Value("${jwt.refresh-token-expire-time}")
     private long REFRESH_TOKEN_EXPIRE_TIME;
 
+    private static final int MAX_LOGIN_ATTEMPTS = 5;
+    private static final long LOGIN_LOCKOUT_SECONDS = 900; // 15분
+
     /** 회원가입 */
     @Transactional
     public void register(UserRegisterRequestDTO request) {
@@ -57,17 +60,27 @@ public class UserLoginService {
 
     /** 로그인 */
     public UserTokenResponseDTO login(UserLoginRequestDTO request) {
+        String attemptKey = "LOGIN_FAIL:" + request.email();
+        if (isLockedOut(attemptKey)) {
+            throw new BusinessException(ErrorCode.TOO_MANY_LOGIN_ATTEMPTS);
+        }
+
         User user = userRepository.findByEmail(request.email())
-                .orElseThrow(() -> new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO));
+                .orElseThrow(() -> {
+                    recordFailedAttempt(attemptKey);
+                    return new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO);
+                });
 
         if (!user.getIsActive()) {
             throw new UnauthorizedException(ErrorCode.ACCOUNT_DISABLED);
         }
 
         if (!passwordEncoder.matches(request.password(), user.getPassword())) {
+            recordFailedAttempt(attemptKey);
             throw new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO);
         }
 
+        redisTemplate.delete(attemptKey);
         user.recordLogin();
 
         String accessToken = jwtProvider.getIssueToken(user.getUserId(), true);
@@ -78,6 +91,19 @@ public class UserLoginService {
         );
 
         return UserTokenResponseDTO.of(accessToken, refreshToken);
+    }
+
+    /** 이메일당 15분 내 5회 실패 시 잠금 — 브루트포스 방지 */
+    private boolean isLockedOut(String attemptKey) {
+        String attempts = redisTemplate.opsForValue().get(attemptKey);
+        return attempts != null && Integer.parseInt(attempts) >= MAX_LOGIN_ATTEMPTS;
+    }
+
+    private void recordFailedAttempt(String attemptKey) {
+        Long count = redisTemplate.opsForValue().increment(attemptKey);
+        if (count != null && count == 1L) {
+            redisTemplate.expire(attemptKey, LOGIN_LOCKOUT_SECONDS, TimeUnit.SECONDS);
+        }
     }
 
 }
