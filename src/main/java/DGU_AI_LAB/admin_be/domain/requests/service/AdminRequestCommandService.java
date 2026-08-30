@@ -454,7 +454,7 @@ public class AdminRequestCommandService {
     private void revertToPendingIfStillProcessing(Long requestId) {
         try {
             new TransactionTemplate(transactionManager).execute(status -> {
-                requestRepository.findById(requestId)
+                requestRepository.findByIdForUpdate(requestId)
                         .filter(req -> req.getStatus() == Status.PROCESSING)
                         .ifPresent(Request::revertToPending);
                 return null;
