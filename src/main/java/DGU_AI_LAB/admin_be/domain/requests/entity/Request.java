@@ -163,6 +163,11 @@ public class Request extends BaseTimeEntity {
     public void reject(String comment) {
         this.status = Status.DENIED;
         this.adminComment = comment;
+        // rejectRequest는 FULFILLED 상태(이미 uid가 배정된 요청)도 거절을 허용한다.
+        // 여기서 지우지 않으면 DENIED로 끝난 요청이 uid를 영구히 붙잡아, 재사용된 같은
+        // uid로 승인하는 다른 사용자가 uk_requests_ubuntu_uid 위반으로 계속 실패한다.
+        this.ubuntuUid = null;
+        this.ubuntuGid = null;
     }
 
     /**

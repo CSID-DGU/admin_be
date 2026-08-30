@@ -89,6 +89,21 @@ class RequestTest {
             assertThat(request.getStatus()).isEqualTo(Status.DENIED);
             assertThat(request.getAdminComment()).isEqualTo("리소스 부족");
         }
+
+        @Test
+        @DisplayName("이미 uid가 배정된 FULFILLED 요청을 거절하면 uid/gid가 함께 지워진다")
+        void reject_clearsUidAndGid_whenAlreadyFulfilled() {
+            ContainerImage image = mock(ContainerImage.class);
+            ResourceGroup rg = mock(ResourceGroup.class);
+            request.approve(image, rg, 50L, null);
+            request.assignUbuntuIds(20001L, 20001L);
+
+            request.reject("승인 취소");
+
+            assertThat(request.getStatus()).isEqualTo(Status.DENIED);
+            assertThat(request.getUbuntuUid()).isNull();
+            assertThat(request.getUbuntuGid()).isNull();
+        }
     }
 
     @Nested
