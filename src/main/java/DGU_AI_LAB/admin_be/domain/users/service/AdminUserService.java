@@ -51,28 +51,20 @@ public class AdminUserService {
     }
 
     /**
-     * 유저 삭제 (soft delete 적용)
-     * 이와 동시에 해당 유저가 소유한 모든 Request(우분투 계정)의 상태를 'DELETED'로 변경하고 외부 시스템에서도 삭제합니다.
+     * 유저가 소유한 모든 Request(우분투 계정/컨테이너)를 정리한다.
+     * FULFILLED 상태는 외부 계정/Pod를 삭제하고, 나머지는 논리 삭제한다.
+     * MIGRATING 중인 요청이 하나라도 있으면 정리 자체를 거부한다 — 마이그레이션 결과가
+     * 반영될 Request의 소유자가 이미 정리된 상태로 남아 정합성이 깨지는 것을 막기 위함이다.
+     * deleteUser(완전 탈퇴)와 deactivateUser(soft-delete와 동일 효과의 임시 비활성화)가
+     * 이 정리 로직을 공유한다.
      */
-    @Transactional
-    public void deleteUser(Long userId) {
-        log.warn("[deleteUser] userId={} 논리적 삭제 시도", userId);
-
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> {
-                    log.error("[deleteUser] userId={} 존재하지 않음", userId);
-                    return new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND);
-                });
-
+    private void cleanupUserRequests(User user, String logPrefix) {
         List<Request> userRequests = requestRepository.findAllByUser(user);
 
         boolean hasMigratingRequest = userRequests.stream()
                 .anyMatch(r -> r.getStatus() == Status.MIGRATING);
         if (hasMigratingRequest) {
-            // 마이그레이션 진행 중인 요청이 하나라도 있으면 유저 탈퇴 자체를 거부한다.
-            // 여기서 나머지 Request만 정리하고 유저를 탈퇴시키면, 마이그레이션 결과가 반영될
-            // Request의 소유자가 이미 비활성화된 상태로 남아 정합성이 깨진다.
-            log.warn("[deleteUser] userId={} 마이그레이션 진행 중인 요청이 있어 삭제를 거부합니다.", userId);
+            log.warn("[{}] userId={} 마이그레이션 진행 중인 요청이 있어 정리를 거부합니다.", logPrefix, user.getUserId());
             throw new ConflictException(ErrorCode.REQUEST_MIGRATION_IN_PROGRESS);
         }
 
@@ -96,13 +88,30 @@ public class AdminUserService {
                     List<PodExternalPort> ports = portsMap.getOrDefault(request.getRequestId(), List.of());
                     alarmService.sendContainerDeletedEmail(request, ports);
                 } catch (Exception e) {
-                    log.warn("[deleteUser] 삭제 안내 메일 발송 실패: ubuntuUsername={}", request.getUbuntuUsername(), e);
+                    log.warn("[{}] 삭제 안내 메일 발송 실패: ubuntuUsername={}", logPrefix, request.getUbuntuUsername(), e);
                 }
             } else if (request.getStatus() != Status.DELETED) {
                 request.delete();
             }
         }
-        log.info("[deleteUser] userId={}와 연결된 Request 정리 완료", userId);
+        log.info("[{}] userId={}와 연결된 Request 정리 완료", logPrefix, user.getUserId());
+    }
+
+    /**
+     * 유저 삭제 (soft delete 적용)
+     * 이와 동시에 해당 유저가 소유한 모든 Request(우분투 계정)의 상태를 'DELETED'로 변경하고 외부 시스템에서도 삭제합니다.
+     */
+    @Transactional
+    public void deleteUser(Long userId) {
+        log.warn("[deleteUser] userId={} 논리적 삭제 시도", userId);
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> {
+                    log.error("[deleteUser] userId={} 존재하지 않음", userId);
+                    return new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND);
+                });
+
+        cleanupUserRequests(user, "deleteUser");
 
         user.withdraw();
         // 남아있는 리프레시 토큰으로 액세스 토큰을 계속 재발급받지 못하도록 함께 폐기한다.
@@ -167,7 +176,10 @@ public class AdminUserService {
     }
 
     /**
-     * 유저 임시 비활성화 (deleteUser와 달리 계정/컨테이너는 그대로 둔다 — 로그인만 막는다)
+     * 유저 임시 비활성화. deleteUser(withdraw)와 동일하게 소유한 모든 Request의 우분투
+     * 계정/Pod를 정리하지만(soft-delete와 동일한 효과), User 엔티티 자체는 withdraw()가 아닌
+     * deactivate()로 처리해 deletedAt을 남기지 않는다 — reactivateUser로 로그인만 되돌릴 수
+     * 있으며, 컨테이너는 이미 정리되었으므로 사용자가 다시 신청해야 한다.
      */
     @Transactional
     public UserSummaryDTO deactivateUser(Long userId) {
@@ -180,9 +192,20 @@ public class AdminUserService {
             throw new ConflictException(ErrorCode.USER_ALREADY_INACTIVE);
         }
 
+        cleanupUserRequests(user, "deactivateUser");
+
         user.deactivate();
         tokenService.logout(userId);
-        log.info("[deactivateUser] userId={} 비활성화 완료", userId);
+        log.info("[deactivateUser] userId={} 비활성화 완료 (컨테이너 정리 포함)", userId);
+
+        try {
+            String subject = messageUtils.get("notification.user.admin-delete.subject");
+            String body = messageUtils.get("notification.user.admin-delete.body", user.getName());
+            alarmService.sendAllAlerts(user.getName(), user.getEmail(), subject, body);
+        } catch (Exception e) {
+            log.warn("[deactivateUser] 계정 비활성화 안내 메일 발송 실패: userId={}", userId, e);
+        }
+
         return UserSummaryDTO.fromEntity(user);
     }
 
