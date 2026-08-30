@@ -15,6 +15,7 @@ spec:
         app: admin-prod
         forceReload: "{{ .Values.forceReload }}"
     spec:
+      serviceAccountName: admin-prod
       containers:
         - name: admin-prod
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

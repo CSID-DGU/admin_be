@@ -1,0 +1,28 @@
+# ~/admin_be/helm/admin-prod/templates/rbac.yaml
+#
+# PodQueryService(KubernetesClient)가 /api/admin/pods/**에서 ailab-infra 네임스페이스의
+# Pod를 직접 조회한다(namespace/hostIP/creationTimestamp 등). admin-prod ServiceAccount에
+# 아무 RBAC도 없어서 이 조회가 매번 403으로 실패해 프론트에 "—"로만 표시되던 문제 수정.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: admin-prod-pod-reader
+  namespace: ailab-infra
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: admin-prod-pod-reader-binding
+  namespace: ailab-infra
+subjects:
+  - kind: ServiceAccount
+    name: admin-prod
+    namespace: default
+roleRef:
+  kind: Role
+  name: admin-prod-pod-reader
+  apiGroup: rbac.authorization.k8s.io
