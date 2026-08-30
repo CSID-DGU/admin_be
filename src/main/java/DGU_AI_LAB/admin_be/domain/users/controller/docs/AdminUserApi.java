@@ -1,15 +1,18 @@
 package DGU_AI_LAB.admin_be.domain.users.controller.docs;
 
+import DGU_AI_LAB.admin_be.domain.users.dto.request.ChangeRoleRequestDTO;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 
 @Tag(name = "3. 관리자 유저 관리", description = "사용자 계정 조회 및 삭제 API")
 public interface AdminUserApi {
@@ -56,5 +59,30 @@ public interface AdminUserApi {
     @PatchMapping("/{id}/reactivate")
     ResponseEntity<SuccessResponse<?>> reactivateUser(
             @PathVariable @Parameter(description = "사용자 ID") Long id
+    );
+
+    @Operation(
+            summary = "사용자 계정 임시 비활성화",
+            description = "deleteUser와 달리 우분투 계정/컨테이너는 그대로 두고 로그인만 막는다. isActive를 false로 전환한다."
+    )
+    @ApiResponse(responseCode = "200", description = "성공")
+    @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음")
+    @ApiResponse(responseCode = "409", description = "이미 비활성화된 사용자")
+    @PatchMapping("/{id}/deactivate")
+    ResponseEntity<SuccessResponse<?>> deactivateUser(
+            @PathVariable @Parameter(description = "사용자 ID") Long id
+    );
+
+    @Operation(
+            summary = "사용자 권한 변경",
+            description = "사용자의 권한(ADMIN/USER)을 변경한다."
+    )
+    @ApiResponse(responseCode = "200", description = "성공")
+    @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음")
+    @ApiResponse(responseCode = "409", description = "이미 해당 권한을 가진 사용자")
+    @PatchMapping("/{id}/role")
+    ResponseEntity<SuccessResponse<?>> changeUserRole(
+            @PathVariable @Parameter(description = "사용자 ID") Long id,
+            @RequestBody @Valid ChangeRoleRequestDTO dto
     );
 }
