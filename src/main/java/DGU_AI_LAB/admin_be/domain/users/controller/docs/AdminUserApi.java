@@ -63,11 +63,14 @@ public interface AdminUserApi {
 
     @Operation(
             summary = "사용자 계정 임시 비활성화",
-            description = "deleteUser와 달리 우분투 계정/컨테이너는 그대로 두고 로그인만 막는다. isActive를 false로 전환한다."
+            description = "soft-delete(deleteUser)와 동일하게 소유한 모든 우분투 계정/컨테이너를 삭제하지만, "
+                    + "User 엔티티는 deletedAt 없이 isActive만 false로 전환해 재활성화가 가능하다. "
+                    + "단, 컨테이너는 이미 삭제되었으므로 재활성화 후에는 다시 신청해야 한다."
     )
     @ApiResponse(responseCode = "200", description = "성공")
     @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음")
     @ApiResponse(responseCode = "409", description = "이미 비활성화된 사용자")
+    @ApiResponse(responseCode = "409", description = "마이그레이션이 진행 중인 요청이 있어 정리할 수 없음")
     @PatchMapping("/{id}/deactivate")
     ResponseEntity<SuccessResponse<?>> deactivateUser(
             @PathVariable @Parameter(description = "사용자 ID") Long id

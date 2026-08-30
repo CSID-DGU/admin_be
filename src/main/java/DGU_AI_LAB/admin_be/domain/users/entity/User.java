@@ -96,8 +96,9 @@ public class User extends BaseTimeEntity {
     }
 
     /**
-     * withdraw()와 달리 계정/컨테이너를 정리하지 않는 가벼운 비활성화.
-     * 관리자가 로그인만 임시로 막고 싶을 때 사용한다 (삭제와는 다른 동작).
+     * withdraw()와 달리 deletedAt은 남기지 않는 임시 비활성화 — 로그인 차단 여부만 관리한다.
+     * 소유 Request(우분투 계정/컨테이너) 정리는 AdminUserService.deactivateUser()가
+     * withdraw()와 동일하게 별도로 수행하므로, 재활성화 후에는 컨테이너를 다시 신청해야 한다.
      */
     public void deactivate() {
         this.isActive = false;
