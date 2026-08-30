@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.requests.service.PodService;
 import DGU_AI_LAB.admin_be.domain.requests.service.UbuntuAccountService;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
@@ -35,6 +36,7 @@ public class AdminUserService {
     private final UserRepository userRepository;
     private final RequestRepository requestRepository;
     private final UbuntuAccountService ubuntuAccountService;
+    private final PodService podService;
     private final AlarmService alarmService;
     private final PodExternalPortRepository podExternalPortRepository;
     private final MessageUtils messageUtils;
@@ -81,6 +83,7 @@ public class AdminUserService {
 
         for (Request request : userRequests) {
             if (fulfilledIds.contains(request.getRequestId())) {
+                podService.deletePod(request.getPodName());
                 ubuntuAccountService.deleteUbuntuAccount(request.getUbuntuUsername());
                 request.deleteAfterCleanup();
                 requestRepository.save(request);
@@ -145,6 +148,7 @@ public class AdminUserService {
             throw new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND);
         }
 
+        podService.deletePod(request.getPodName());
         ubuntuAccountService.deleteUbuntuAccount(username);
         request.deleteAfterCleanup();
         requestRepository.save(request);

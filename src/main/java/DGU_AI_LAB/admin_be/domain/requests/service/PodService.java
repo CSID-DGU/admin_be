@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigratePodResponseDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.webclient.WebClientErrorHandler;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +30,10 @@ public class PodService {
 
     private record DeletePodRequest(@com.fasterxml.jackson.annotation.JsonProperty("pod_name") String podName) {}
 
+    // config-server는 min_improvement_ratio 키가 아예 없어야 자체 기본값(0.2)을 쓴다.
+    // null을 그대로 보내면 data.get(key, default)가 "키는 있지만 값이 None"이라 default가
+    // 적용되지 않고 그대로 None을 반환해 마이그레이션이 500으로 실패한다.
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     private record MigratePodRequest(
             String username,
             List<String> nodes,
