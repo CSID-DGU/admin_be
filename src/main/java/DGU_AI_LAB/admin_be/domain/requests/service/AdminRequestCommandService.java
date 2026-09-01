@@ -299,6 +299,12 @@ public class AdminRequestCommandService {
         if (originalRequest == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
+        // ChangeRequest는 FULFILLED 상태를 전제로 신청된다. 그 사이 원본 Request가 삭제되거나
+        // 마이그레이션/재승인 처리 중으로 넘어갔는데 상태 확인 없이 그대로 적용하면, 이미 죽었거나
+        // 다른 트랜잭션이 다루고 있는 Request의 필드를 조용히 덮어써 정합성이 깨진다.
+        if (originalRequest.getStatus() != Status.FULFILLED) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+        }
 
         ChangeApplier applier = changeAppliers().get(changeRequest.getChangeType());
         if (applier == null) {
@@ -431,6 +437,18 @@ public class AdminRequestCommandService {
             log.info("[보상 트랜잭션 완료] 계정 삭제: {}", username);
         } catch (Exception e) {
             log.error("[보상 트랜잭션 실패] 계정 삭제 실패 - 수동 정리 필요: {}", username, e);
+            alertCompensationFailure(String.format("[보상 트랜잭션 실패] 계정 삭제 실패 - 수동 정리 필요: username=%s", username));
+        }
+    }
+
+    // 보상 트랜잭션 자체의 실패는 로그만 남기면 관리자가 직접 읽기 전까지 아무도 모른다 —
+    // 원래 실패(계정/Pod 생성 실패 등) 위에 이 정리마저 실패했다는 건 인프라와 DB가 어긋난
+    // 채로 방치된다는 뜻이라 즉시 알림이 필요하다.
+    private void alertCompensationFailure(String message) {
+        try {
+            alarmService.sendSlackAlert(message, null);
+        } catch (Exception ignored) {
+            // 알림 발송 실패가 원래 예외 전파를 막으면 안 된다.
         }
     }
 
@@ -454,6 +472,7 @@ public class AdminRequestCommandService {
             });
         } catch (Exception e) {
             log.error("[보상 트랜잭션 실패] 요청 상태 복구 실패 — 수동 확인 필요: requestId={}", requestId, e);
+            alertCompensationFailure(String.format("[보상 트랜잭션 실패] 요청 상태 복구 실패 - 수동 확인 필요: requestId=%d", requestId));
         }
     }
 
@@ -463,6 +482,7 @@ public class AdminRequestCommandService {
             log.info("[보상 트랜잭션 완료] Pod 삭제: {}", podName);
         } catch (Exception e) {
             log.error("[보상 트랜잭션 실패] Pod 삭제 실패 - 수동 정리 필요: {}", podName, e);
+            alertCompensationFailure(String.format("[보상 트랜잭션 실패] Pod 삭제 실패 - 수동 정리 필요: podName=%s", podName));
         }
         tryCompensateDeleteUser(username);
     }

@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.groups.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.groups.dto.request.CreateGroupRequestDTO;
 import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupResponseDTO;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
@@ -53,6 +54,9 @@ class GroupServiceTest {
 
     @Mock
     private TransactionStatus transactionStatus;
+
+    @Mock
+    private AlarmService alarmService;
 
     @BeforeEach
     void setUp() {
@@ -284,6 +288,10 @@ class GroupServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting("errorCode")
                     .isEqualTo(ErrorCode.GROUP_CREATION_FAILED);
+
+            // 인프라엔 이미 그룹이 만들어졌는데 DB 저장만 실패한 상태라 수동 정리가 필요하다 —
+            // 로그만 남기면 아무도 모르므로 Slack 알림이 반드시 나가야 한다.
+            verify(alarmService).sendSlackAlert(contains("developers"), isNull());
         }
 
         @Test
@@ -304,6 +312,9 @@ class GroupServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting("errorCode")
                     .isEqualTo(ErrorCode.DUPLICATE_GROUP_NAME);
+
+            // 이 경로도 외부 API 호출은 이미 성공한 뒤라 인프라에 고아 그룹이 남는다 — 동일하게 알림 필요.
+            verify(alarmService).sendSlackAlert(contains("developers"), isNull());
         }
     }
 }

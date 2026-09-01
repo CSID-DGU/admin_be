@@ -341,7 +341,7 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
-        @DisplayName("createPod() 실패 시 보상 Ubuntu 계정 삭제 자체가 실패해도 원래 예외가 전파된다")
+        @DisplayName("createPod() 실패 시 보상 Ubuntu 계정 삭제 자체가 실패해도 원래 예외가 전파되고, 정리 실패를 Slack으로 알린다")
         void approveRequest_podFails_compensationAlsoFails_originalExceptionPropagates() {
             Long requestId = 12L;
             buildMockedRequest(requestId);
@@ -358,6 +358,10 @@ class AdminRequestCommandServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_CREATION_FAILED);
+
+            // 보상 트랜잭션 자체의 실패는 로그만 남으면 아무도 모른다 — 실무에서 이런 이중 실패는
+            // 인프라와 DB가 어긋난 채로 방치되는 경우라 즉시 Slack 알림이 필요하다.
+            verify(alarmService).sendSlackAlert(contains("testuser"), isNull());
         }
 
         @Test
@@ -981,6 +985,28 @@ class AdminRequestCommandServiceTest {
 
             assertThatThrownBy(() -> service.approveModification(100L, dto))
                     .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("originalRequest가 FULFILLED가 아니면(DELETED 등) 필드를 건드리지 않고 BusinessException을 던진다")
+        void approveModification_originalRequestNotFulfilled_throwsAndDoesNotApply() {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            Request originalRequest = buildMockedRequestWithStatus(22L, Status.DELETED);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.VOLUME_SIZE);
+            when(changeRequest.getRequest()).thenReturn(originalRequest);
+            when(changeRequestRepository.findByIdForUpdate(8L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+
+            ApproveModificationDTO dto = new ApproveModificationDTO(8L, "승인");
+
+            assertThatThrownBy(() -> service.approveModification(100L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+
+            verify(originalRequest, never()).updateVolumeSize(anyLong());
+            verify(changeRequest, never()).approve(any(), any());
         }
     }
 
