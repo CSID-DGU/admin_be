@@ -35,6 +35,15 @@ public class PodMigrationService {
     private final PlatformTransactionManager transactionManager;
     private final AlarmService alarmService;
 
+    // config-server는 개선 비율 전용 파라미터만 받고 별도의 force 플래그가 없다 —
+    // best_score > current_score * (1 - min_ratio) 를 만족하면 스킵하는데, score는 노드 GPU
+    // 사용률(음수 없음)이라 ratio를 큰 음수로 주면 우변이 항상 best_score보다 커져
+    // 사실상 개선 비율 검사를 무력화한다(둘 다 정확히 0인 극단적 동률만 예외 — 실사용에서
+    // 무의미한 케이스). config-server 자체는 건드리지 않고 이미 있는 계약만 활용한다.
+    // Double(래퍼)로 선언 — 삼항연산자에서 한쪽이 primitive double이면 다른 쪽 Double이
+    // null이어도 타입 프로모션 때문에 무조건 언박싱되어 NPE가 난다.
+    private static final Double FORCE_MIGRATION_RATIO = -1000.0;
+
     public MigratePodResponseDTO migratePod(Long requestId, MigratePodRequestDTO dto) {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
 
@@ -52,10 +61,12 @@ public class PodMigrationService {
         });
         String username = usernameRef[0];
 
+        Double effectiveRatio = Boolean.TRUE.equals(dto.force()) ? FORCE_MIGRATION_RATIO : dto.minImprovementRatio();
+
         // 2. 외부 HTTP 호출 (DB 커넥션 미보유). 실패 시 MIGRATING에 갇히지 않도록 되돌린다.
         MigratePodResponseDTO response;
         try {
-            response = podService.migratePod(username, dto.nodes(), dto.minImprovementRatio());
+            response = podService.migratePod(username, dto.nodes(), effectiveRatio);
         } catch (RuntimeException e) {
             revertToFulfilled(requestId);
             throw e;
