@@ -276,7 +276,7 @@ class AdminRequestCommandServiceTest {
         @DisplayName("createPod()가 BusinessException을 던지면 Ubuntu 계정 삭제 및 상태 복구가 호출된다")
         void approveRequest_podThrowsBusinessException_compensatesWithAccountDeletion() {
             Long requestId = 10L;
-            buildMockedRequest(requestId);
+            Request request = buildMockedRequest(requestId);
             stubWebClientPut();
 
             when(podService.createPod("testuser"))
@@ -290,9 +290,11 @@ class AdminRequestCommandServiceTest {
                     .isEqualTo(ErrorCode.POD_CREATION_FAILED);
 
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
-            // 1단계는 findByIdForUpdate(행 잠금)로 상태 확인, 보상 트랜잭션은 findById로 재조회 후 revertToPending 호출
-            verify(requestRepository).findByIdForUpdate(requestId);
-            verify(requestRepository).findById(requestId);
+            // 1단계(승인 시작)와 보상 트랜잭션 모두 findByIdForUpdate(행 잠금)로 조회한다 —
+            // 락 없는 findById 재조회는 동시 거절 결과를 덮어쓸 수 있어 더 이상 쓰지 않는다.
+            verify(requestRepository, times(2)).findByIdForUpdate(requestId);
+            verify(requestRepository, never()).findById(requestId);
+            verify(request).revertToPending();
         }
 
         @Test

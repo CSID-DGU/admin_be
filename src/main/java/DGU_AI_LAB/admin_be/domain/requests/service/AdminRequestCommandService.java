@@ -114,7 +114,7 @@ public class AdminRequestCommandService {
             userResponse = callUserCreationApi(creationDtoRef[0]);
         } catch (Exception e) {
             log.warn("[보상 트랜잭션] 사용자 생성 실패 → 상태 복구 시작: {}", username);
-            revertRequestToPending(dto.requestId());
+            revertToPendingIfStillProcessing(dto.requestId());
             throw e;
         }
 
@@ -131,7 +131,7 @@ public class AdminRequestCommandService {
         } catch (BusinessException e) {
             log.warn("[보상 트랜잭션] Pod 생성 실패 → 계정 삭제 및 상태 복구 시작: {}", username);
             tryCompensateDeleteUser(username);
-            revertRequestToPending(dto.requestId());
+            revertToPendingIfStillProcessing(dto.requestId());
             throw e;
         }
 
@@ -425,18 +425,6 @@ public class AdminRequestCommandService {
 
     // ── 보상 트랜잭션 헬퍼 ─────────────────────────────────────────────
 
-    private void revertRequestToPending(Long requestId) {
-        try {
-            new TransactionTemplate(transactionManager).execute(status -> {
-                requestRepository.findById(requestId).ifPresent(Request::revertToPending);
-                return null;
-            });
-            log.info("[보상 트랜잭션 완료] 요청 상태 PENDING 복구: requestId={}", requestId);
-        } catch (Exception e) {
-            log.error("[보상 트랜잭션 실패] 요청 상태 복구 실패 — 수동 확인 필요: requestId={}", requestId, e);
-        }
-    }
-
     private void tryCompensateDeleteUser(String username) {
         try {
             ubuntuAccountService.deleteUbuntuAccount(username);
@@ -446,11 +434,14 @@ public class AdminRequestCommandService {
         }
     }
 
-    // DB 반영 단계 실패는 두 가지 경우로 갈린다: ① 동시 거절로 상태가 이미 DENIED 등
-    // 최종 상태로 바뀐 경우(3e6b31f가 의도한 정상 동작 — 건드리지 않는다) ② 그 외 원인(이미지/
-    // 리소스그룹 조회 실패, 저장 오류 등)으로 여전히 PROCESSING인 채 실패한 경우. ②를 그대로 두면
-    // 위 tryCompensateAll이 인프라(계정/Pod)는 이미 정리했는데도 요청은 재승인도 거절도 못 하는
-    // PROCESSING 상태에 영구히 갇힌다.
+    // approveRequest의 세 실패 지점(계정 생성 실패/Pod 생성 실패/DB 반영 실패) 모두 같은 문제를
+    // 가진다: 실패는 두 가지 경우로 갈린다. ① 그 사이 다른 관리자가 거절해서 상태가 이미 DENIED
+    // 등 최종 상태로 바뀐 경우(정상 동작 — 건드리지 않는다) ② 그 외 원인(외부 API 오류, 이미지/
+    // 리소스그룹 조회 실패, 저장 오류 등)으로 여전히 PROCESSING인 채 실패한 경우. 상태 확인 없이
+    // 무조건 PENDING으로 덮어쓰면 ①에서 다른 관리자의 거절 결정을 조용히 지워버리고, 반대로
+    // ②를 그대로 두면 인프라(계정/Pod)는 이미 정리됐는데 요청은 재승인도 거절도 못 하는
+    // PROCESSING 상태에 영구히 갇힌다. 그래서 세 지점 모두 락 + 상태 재확인을 거치는 이 메서드로
+    // 통일한다.
     private void revertToPendingIfStillProcessing(Long requestId) {
         try {
             new TransactionTemplate(transactionManager).execute(status -> {

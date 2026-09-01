@@ -153,7 +153,7 @@ class DashboardServiceTest {
                     .collect(Collectors.toSet());
 
             assertThat(names).contains("ALL");
-            assertThat(names).containsExactlyInAnyOrder("PENDING", "DENIED", "FULFILLED", "DELETED", "ALL");
+            assertThat(names).containsExactlyInAnyOrder("PENDING", "PROCESSING", "DENIED", "FULFILLED", "MIGRATING", "DELETED", "ALL");
         }
     }
 }

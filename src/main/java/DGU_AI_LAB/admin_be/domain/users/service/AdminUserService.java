@@ -63,10 +63,13 @@ public class AdminUserService {
     private void cleanupUserRequests(User user, String logPrefix) {
         List<Request> userRequests = requestRepository.findAllByUser(user);
 
-        boolean hasMigratingRequest = userRequests.stream()
-                .anyMatch(r -> r.getStatus() == Status.MIGRATING);
-        if (hasMigratingRequest) {
-            log.warn("[{}] userId={} 마이그레이션 진행 중인 요청이 있어 정리를 거부합니다.", logPrefix, user.getUserId());
+        // MIGRATING뿐 아니라 PROCESSING(승인 처리 중)도 막는다 — 승인 트랜잭션이 진행 중인
+        // 사이에 요청이 delete()로 넘어가면, 그 승인이 나중에 완료될 때 이미 소유자가 정리된
+        // Request를 FULFILLED로 덮어써 정합성이 깨진다.
+        boolean hasInFlightRequest = userRequests.stream()
+                .anyMatch(r -> r.getStatus() == Status.MIGRATING || r.getStatus() == Status.PROCESSING);
+        if (hasInFlightRequest) {
+            log.warn("[{}] userId={} 승인/마이그레이션 진행 중인 요청이 있어 정리를 거부합니다.", logPrefix, user.getUserId());
             throw new ConflictException(ErrorCode.REQUEST_MIGRATION_IN_PROGRESS);
         }
 
