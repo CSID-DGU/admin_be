@@ -12,6 +12,9 @@ public record MigratePodRequestDTO(
         @NotEmpty(message = "후보 노드 목록은 필수로 입력해야 합니다.")
         List<String> nodes,
 
-        @Schema(description = "마이그레이션을 실행할 최소 개선 비율 (생략 시 config-server 기본값 사용)", example = "0.2")
-        Double minImprovementRatio
+        @Schema(description = "마이그레이션을 실행할 최소 개선 비율 (생략 시 config-server 기본값 사용, force=true면 무시됨)", example = "0.2")
+        Double minImprovementRatio,
+
+        @Schema(description = "true면 개선 비율과 무관하게 마이그레이션을 강제 실행", example = "false")
+        Boolean force
 ) {}
