@@ -315,6 +315,25 @@ class AdminUserServiceTest {
         }
 
         @Test
+        @DisplayName("PROCESSING 상태 Request가 있으면 삭제 자체를 거부하고 유저를 건드리지 않는다")
+        void deleteUser_withProcessingRequest_rejectsAndLeavesUserUntouched() {
+            Request processing = mockRequestWithStatus(Status.PROCESSING);
+            Request fulfilled = mock(Request.class);
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(processing, fulfilled));
+
+            assertThatThrownBy(() -> adminUserService.deleteUser(1L))
+                    .isInstanceOf(ConflictException.class)
+                    .extracting(e -> ((ConflictException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.REQUEST_MIGRATION_IN_PROGRESS);
+
+            assertThat(mockUser.getIsActive()).isNotEqualTo(false);
+            verify(fulfilled, never()).deleteAfterCleanup();
+            verifyNoInteractions(ubuntuAccountService, podService, tokenService);
+        }
+
+        @Test
         @DisplayName("FULFILLED 요청이 여러 개여도 포트 배치 쿼리는 1회만 실행된다")
         void deleteUser_multipleFullfilledRequests_batchQueriesPorts() {
             Request req1 = mockFulfilledRequest("user1", 1L);
@@ -491,6 +510,23 @@ class AdminUserServiceTest {
 
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(migrating));
+
+            assertThatThrownBy(() -> adminUserService.deactivateUser(1L))
+                    .isInstanceOf(ConflictException.class)
+                    .extracting(e -> ((ConflictException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.REQUEST_MIGRATION_IN_PROGRESS);
+
+            assertThat(mockUser.getIsActive()).isTrue();
+            verifyNoInteractions(ubuntuAccountService, podService, tokenService);
+        }
+
+        @Test
+        @DisplayName("PROCESSING 상태 Request가 있으면 비활성화 자체를 거부하고 유저를 건드리지 않는다")
+        void deactivateUser_withProcessingRequest_rejectsAndLeavesUserUntouched() {
+            Request processing = mockRequestWithStatus(Status.PROCESSING);
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(processing));
 
             assertThatThrownBy(() -> adminUserService.deactivateUser(1L))
                     .isInstanceOf(ConflictException.class)
