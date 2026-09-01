@@ -16,6 +16,7 @@ import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.ConflictException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
@@ -27,6 +28,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -67,7 +70,14 @@ class AdminUserServiceTest {
     @Mock
     private TokenService tokenService;
 
+    @Mock
+    private PlatformTransactionManager transactionManager;
+
+    @Mock
+    private TransactionStatus transactionStatus;
+
     private User mockUser;
+    private long nextRequestId = 1000L;
 
     @BeforeEach
     void setUp() {
@@ -79,6 +89,7 @@ class AdminUserServiceTest {
                 .phone("010-1234-5678")
                 .department("컴퓨터공학과")
                 .build();
+        lenient().when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
     }
 
     @Nested
@@ -172,12 +183,19 @@ class AdminUserServiceTest {
         when(request.getUbuntuUsername()).thenReturn(username);
         when(request.getRequestId()).thenReturn(requestId);
         when(request.getPodName()).thenReturn("pod-" + username);
+        // cleanupUserRequests가 REQUIRES_NEW 트랜잭션 안에서 findById로 다시 조회한 뒤
+        // deleteAfterCleanup()을 호출하므로, 같은 mock을 반환하도록 스텁해야 이후 verify가
+        // 이 인스턴스에 대해 성립한다. lenient — 이 경로를 안 타는 테스트에서도 헬퍼는 공유된다.
+        lenient().when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
         return request;
     }
 
     private Request mockRequestWithStatus(Status status) {
         Request request = mock(Request.class);
         when(request.getStatus()).thenReturn(status);
+        long requestId = nextRequestId++;
+        lenient().when(request.getRequestId()).thenReturn(requestId);
+        lenient().when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
         return request;
     }
 
@@ -293,6 +311,42 @@ class AdminUserServiceTest {
             verify(pending).delete();
             verify(deleted, never()).delete();
             verify(deleted, never()).deleteAfterCleanup();
+        }
+
+        @Test
+        @DisplayName("FULFILLED 요청이 여러 개일 때 하나의 Pod/계정 삭제가 실패해도, 이미 정리된 다른 요청의 DB 반영은 롤백되지 않는다")
+        void deleteUser_oneOfMultipleFulfilledFails_doesNotRollbackAlreadyCleanedOnes() {
+            Request ok = mockFulfilledRequest("okuser", 30L);
+            Request broken = mockFulfilledRequest("brokenuser", 31L);
+            when(podExternalPortRepository.findByRequestRequestIdIn(anyList())).thenReturn(List.of());
+            // deleteUser는 cleanupUserRequests가 예외를 던지면 user.withdraw()/알림 발송까지
+            // 도달하지 않으므로 messageUtils는 이 테스트에서 쓰이지 않는다.
+            // strict stubbing 하에서 exact-arg doThrow는 다른 인자로 들어오는 "ok" 쪽 호출까지
+            // PotentialStubbingProblem으로 오탐하므로, anyString()에 answer로 분기한다.
+            doAnswer(invocation -> {
+                String podName = invocation.getArgument(0);
+                if ("pod-brokenuser".equals(podName)) {
+                    throw new RuntimeException("config-server 통신 오류");
+                }
+                return null;
+            }).when(podService).deletePod(anyString());
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(ok, broken));
+
+            assertThatThrownBy(() -> adminUserService.deleteUser(1L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.USER_REQUEST_CLEANUP_PARTIALLY_FAILED);
+
+            // ok는 REQUIRES_NEW로 독립 커밋되므로, broken이 실패해서 메서드 전체가 예외로
+            // 끝나도 이미 실행된 deleteAfterCleanup()은 그대로 유지돼야 한다(고아 방지의 핵심).
+            verify(ok).deleteAfterCleanup();
+            verify(ubuntuAccountService).deleteUbuntuAccount("okuser");
+            // broken은 Pod 삭제가 실패했으니 계정 삭제를 시도하면 안 되고, DB도 FULFILLED로 남아야 한다.
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount("brokenuser");
+            verify(broken, never()).deleteAfterCleanup();
+            verify(alarmService).sendSlackAlert(contains("brokenuser"), isNull());
         }
 
         @Test

@@ -15,14 +15,19 @@ import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.ConflictException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -41,6 +46,7 @@ public class AdminUserService {
     private final PodExternalPortRepository podExternalPortRepository;
     private final MessageUtils messageUtils;
     private final TokenService tokenService;
+    private final PlatformTransactionManager transactionManager;
 
     /**
      * 전체 유저 조회
@@ -59,6 +65,12 @@ public class AdminUserService {
      * 반영될 Request의 소유자가 이미 정리된 상태로 남아 정합성이 깨지는 것을 막기 위함이다.
      * deleteUser(완전 탈퇴)와 deactivateUser(soft-delete와 동일 효과의 임시 비활성화)가
      * 이 정리 로직을 공유한다.
+     *
+     * 요청 하나마다 REQUIRES_NEW로 독립 커밋한다 — 이 메서드는 호출자(deleteUser/
+     * deactivateUser)의 @Transactional 안에서 실행되는데, 그 트랜잭션 하나로 묶여 있으면
+     * 사용자가 컨테이너를 여러 개 가진 경우 뒤쪽 요청의 Pod/계정 삭제가 실패했을 때 이미
+     * 물리적으로 삭제된(롤백 불가능한) 앞쪽 요청들의 DB 반영까지 통째로 롤백돼버려서, DB엔
+     * FULFILLED로 남아있는데 실제 Pod/계정은 사라진 고아 레코드가 생긴다.
      */
     private void cleanupUserRequests(User user, String logPrefix) {
         List<Request> userRequests = requestRepository.findAllByUser(user);
@@ -84,21 +96,53 @@ public class AdminUserService {
                         .stream()
                         .collect(Collectors.groupingBy(p -> p.getRequest().getRequestId()));
 
+        TransactionTemplate newTx = new TransactionTemplate(transactionManager);
+        newTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
+        List<Long> failedRequestIds = new ArrayList<>();
         for (Request request : userRequests) {
-            if (fulfilledIds.contains(request.getRequestId())) {
-                podService.deletePod(request.getPodName());
-                ubuntuAccountService.deleteUbuntuAccount(request.getUbuntuUsername());
-                request.deleteAfterCleanup();
-                requestRepository.save(request);
+            Long requestId = request.getRequestId();
+            if (fulfilledIds.contains(requestId)) {
                 try {
-                    List<PodExternalPort> ports = portsMap.getOrDefault(request.getRequestId(), List.of());
+                    podService.deletePod(request.getPodName());
+                    ubuntuAccountService.deleteUbuntuAccount(request.getUbuntuUsername());
+                } catch (Exception e) {
+                    log.error("[{}] userId={} requestId={} Pod/계정 삭제 실패 — 이 요청은 FULFILLED로 남기고 다음 요청을 계속 정리합니다: {}",
+                            logPrefix, user.getUserId(), requestId, e.getMessage());
+                    failedRequestIds.add(requestId);
+                    try {
+                        alarmService.sendSlackAlert(String.format(
+                                "[%s] userId=%d 정리 중 Pod/계정 삭제 실패 - 수동 확인 필요: requestId=%d, ubuntuUsername=%s",
+                                logPrefix, user.getUserId(), requestId, request.getUbuntuUsername()), null);
+                    } catch (Exception ignored) {
+                        // 알림 발송 실패가 다른 요청 정리를 막으면 안 된다.
+                    }
+                    continue;
+                }
+                newTx.execute(status -> {
+                    Request managed = requestRepository.findById(requestId)
+                            .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
+                    managed.deleteAfterCleanup();
+                    return null;
+                });
+                try {
+                    List<PodExternalPort> ports = portsMap.getOrDefault(requestId, List.of());
                     alarmService.sendContainerDeletedEmail(request, ports);
                 } catch (Exception e) {
                     log.warn("[{}] 삭제 안내 메일 발송 실패: ubuntuUsername={}", logPrefix, request.getUbuntuUsername(), e);
                 }
             } else if (request.getStatus() != Status.DELETED) {
-                request.delete();
+                newTx.execute(status -> {
+                    Request managed = requestRepository.findById(requestId)
+                            .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
+                    managed.delete();
+                    return null;
+                });
             }
+        }
+
+        if (!failedRequestIds.isEmpty()) {
+            throw new BusinessException(ErrorCode.USER_REQUEST_CLEANUP_PARTIALLY_FAILED);
         }
         log.info("[{}] userId={}와 연결된 Request 정리 완료", logPrefix, user.getUserId());
     }

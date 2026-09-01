@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.groups.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.groups.dto.request.CreateGroupRequestDTO;
 import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupResponseDTO;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
@@ -38,6 +39,7 @@ public class GroupService {
     private final RequestRepository requestRepository;
     private final @Qualifier("configWebClient") WebClient groupCreationWebClient;
     private final PlatformTransactionManager transactionManager;
+    private final AlarmService alarmService;
 
     /**
      * 모든 그룹 정보를 조회하는 API
@@ -159,16 +161,31 @@ public class GroupService {
                 // unique 제약 위반은 커밋 시점이 아니라 여기서 잡히도록 flush까지 수행한다.
                 return groupRepository.saveAndFlush(group);
             } catch (DataIntegrityViolationException e) {
+                // 사전 검사(1번)와 여기 사이 다른 요청이 같은 이름으로 먼저 커밋한 경우 — 이 요청이
+                // 호출한 외부 API도 이미 성공해 별도 GID로 그룹을 만들어버린 뒤라, DB엔 안 남아도
+                // 인프라에는 고아 그룹이 남는다.
                 log.warn("[createGroup] 그룹명 중복으로 DB 저장 실패: groupName={}, gid={}", dto.groupName(), finalGid);
+                alertOrphanedInfraGroup(dto.groupName(), finalGid, "그룹명 중복");
                 throw new BusinessException(ErrorCode.DUPLICATE_GROUP_NAME);
             } catch (Exception e) {
                 log.error("[createGroup] 인프라에 그룹 생성됨, DB 저장 실패 — 수동 정리 필요: groupName={}, gid={}", dto.groupName(), finalGid, e);
+                alertOrphanedInfraGroup(dto.groupName(), finalGid, e.getMessage());
                 throw new BusinessException(ErrorCode.GROUP_CREATION_FAILED);
             }
         });
 
         log.info("[createGroup] 그룹 생성 및 로컬 DB 저장 완료: id={}, name={}", savedGroup.getGroupId(), savedGroup.getGroupName());
         return GroupResponseDTO.fromEntity(savedGroup);
+    }
+
+    private void alertOrphanedInfraGroup(String groupName, Long gid, String cause) {
+        try {
+            alarmService.sendSlackAlert(String.format(
+                    "[createGroup] 인프라에 그룹 생성됨, DB 저장 실패 - 수동 정리 필요: groupName=%s, gid=%d, cause=%s",
+                    groupName, gid, cause), null);
+        } catch (Exception ignored) {
+            // 알림 발송 실패가 원래 예외 전파를 막으면 안 된다.
+        }
     }
 
     // GroupService에서만 사용하는 infra API 요청/응답 DTO입니다. 테스트 검증을 위해 패키지 범위로 둡니다.
