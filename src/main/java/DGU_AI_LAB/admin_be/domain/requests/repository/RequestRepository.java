@@ -71,4 +71,10 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
 
     @Query("SELECT r FROM Request r JOIN FETCH r.user JOIN FETCH r.resourceGroup WHERE r.expiresAt < :now AND r.status = :status")
     List<Request> findAllWithUserByExpiredDateBefore(@Param("now") LocalDateTime now, @Param("status") Status status);
+
+    /**
+     * 정지된(stale) PROCESSING/MIGRATING 요청 재조정 스케줄러용 — 마지막 갱신이
+     * updatedAt 이전인, 즉 threshold보다 오래 방치된 요청을 찾는다.
+     */
+    List<Request> findAllByStatusAndUpdatedAtBefore(Status status, LocalDateTime updatedAt);
 }

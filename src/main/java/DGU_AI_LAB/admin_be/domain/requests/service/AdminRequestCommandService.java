@@ -441,8 +441,10 @@ public class AdminRequestCommandService {
     // 무조건 PENDING으로 덮어쓰면 ①에서 다른 관리자의 거절 결정을 조용히 지워버리고, 반대로
     // ②를 그대로 두면 인프라(계정/Pod)는 이미 정리됐는데 요청은 재승인도 거절도 못 하는
     // PROCESSING 상태에 영구히 갇힌다. 그래서 세 지점 모두 락 + 상태 재확인을 거치는 이 메서드로
-    // 통일한다.
-    private void revertToPendingIfStillProcessing(Long requestId) {
+    // 통일한다. approveRequest 내부의 즉시 실패 보상뿐 아니라, admin_be 프로세스 자체가 승인
+    // 처리 도중 죽어서(강제 재배포, OOM 등) catch 블록조차 실행 못 한 경우를 쓸어담는
+    // RequestSchedulerService의 재조정(reconciliation) 잡에서도 재사용한다.
+    public void revertToPendingIfStillProcessing(Long requestId) {
         try {
             new TransactionTemplate(transactionManager).execute(status -> {
                 requestRepository.findByIdForUpdate(requestId)

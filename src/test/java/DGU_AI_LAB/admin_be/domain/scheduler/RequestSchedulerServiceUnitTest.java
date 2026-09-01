@@ -4,6 +4,7 @@ import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
@@ -37,6 +38,7 @@ class RequestSchedulerServiceUnitTest {
     @Mock private RequestExpiryService requestExpiryService;
     @Mock private MessageUtils messageUtils;
     @Mock private RequestNotificationService requestNotificationService;
+    @Mock private AdminRequestCommandService adminRequestCommandService;
 
     @Mock private ResourceGroup mockRg;
 
@@ -45,7 +47,8 @@ class RequestSchedulerServiceUnitTest {
     @BeforeEach
     void setUp() {
         service = new RequestSchedulerService(
-                requestRepository, alarmService, requestExpiryService, messageUtils, requestNotificationService
+                requestRepository, alarmService, requestExpiryService, messageUtils, requestNotificationService,
+                adminRequestCommandService
         );
         when(mockRg.getServerName()).thenReturn("FARM-01");
     }
@@ -118,5 +121,47 @@ class RequestSchedulerServiceUnitTest {
 
         verify(requestExpiryService, never()).deleteExpiredRequest(any());
         verify(alarmService, never()).sendAdminSlackNotification(any(), any());
+    }
+
+    @Test
+    @DisplayName("정지된 PROCESSING 요청은 revertToPendingIfStillProcessing으로 복구를 시도한다")
+    void reconcile_staleProcessing_delegatesToRevert() {
+        Request request = buildMockedRequest(10L);
+        when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.PROCESSING), any()))
+                .thenReturn(List.of(request));
+        when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.MIGRATING), any()))
+                .thenReturn(List.of());
+
+        service.reconcileStaleInFlightRequests();
+
+        verify(adminRequestCommandService).revertToPendingIfStillProcessing(10L);
+        verify(alarmService).sendSlackAlert(any(), any());
+    }
+
+    @Test
+    @DisplayName("정지된 MIGRATING 요청은 자동 복구를 시도하지 않고 알림만 보낸다")
+    void reconcile_staleMigrating_alertsWithoutAutoRevert() {
+        Request request = buildMockedRequest(20L);
+        when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.PROCESSING), any()))
+                .thenReturn(List.of());
+        when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.MIGRATING), any()))
+                .thenReturn(List.of(request));
+
+        service.reconcileStaleInFlightRequests();
+
+        verify(adminRequestCommandService, never()).revertToPendingIfStillProcessing(any());
+        verify(alarmService).sendSlackAlert(any(), any());
+    }
+
+    @Test
+    @DisplayName("정지된 요청이 없으면 알림도 복구 시도도 없다")
+    void reconcile_noStaleRequests_doesNothing() {
+        when(requestRepository.findAllByStatusAndUpdatedAtBefore(any(), any()))
+                .thenReturn(List.of());
+
+        service.reconcileStaleInFlightRequests();
+
+        verify(adminRequestCommandService, never()).revertToPendingIfStillProcessing(any());
+        verify(alarmService, never()).sendSlackAlert(any(), any());
     }
 }

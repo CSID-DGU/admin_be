@@ -13,6 +13,10 @@ import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupReposit
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,6 +30,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -53,6 +58,12 @@ public class RequestSchedulerServiceTest {
     @Autowired private UserRepository userRepository;
     @Autowired private ResourceGroupRepository resourceGroupRepository;
     @Autowired private ContainerImageRepository containerImageRepository;
+
+    @PersistenceContext
+    private EntityManager em;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     private final LocalDateTime MOCK_NOW = LocalDateTime.of(2025, 11, 10, 10, 30, 0);
 
@@ -171,6 +182,80 @@ public class RequestSchedulerServiceTest {
         verify(alarmService, times(4)).sendAllAlerts(anyString(), anyString(), anyString(), anyString());
         // 관리자 알림: 삭제1회
         verify(alarmService, times(1)).sendAdminSlackNotification(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("정지된 PROCESSING 요청은 PENDING으로 복구되고, MIGRATING 요청은 자동 복구 없이 알림만 발송된다")
+    void reconcileStaleInFlightRequests_recoversProcessingAndAlertsMigratingOnly() {
+        User testUser = userRepository.save(User.builder()
+                .email("test@dgu.ac.kr")
+                .name("테스트유저")
+                .password("encoded_pw")
+                .studentId("2020111111")
+                .phone("010-1234-5678")
+                .department("AI융합학부")
+                .build());
+
+        ResourceGroup testRg = resourceGroupRepository.save(ResourceGroup.builder()
+                .serverName("FARM-01")
+                .resourceGroupName("RTX 3090")
+                .build());
+
+        ContainerImage testImage = containerImageRepository.save(ContainerImage.builder()
+                .imageName("cuda")
+                .imageVersion("11.8")
+                .cudaVersion("11.8")
+                .description("Test Image")
+                .build());
+
+        // (1) 10분 넘게 방치된 PROCESSING — PENDING으로 복구돼야 한다
+        Request staleProcessing = createTestRequest(MOCK_NOW.plusDays(30), Status.FULFILLED, "user-stale-processing", testUser, testRg, testImage);
+        staleProcessing.markAsProcessing();
+        requestRepository.saveAndFlush(staleProcessing);
+
+        // (2) 10분 넘게 방치된 MIGRATING — 인프라 충돌 위험 때문에 자동 복구 없이 알림만
+        Request staleMigrating = createTestRequest(MOCK_NOW.plusDays(30), Status.FULFILLED, "user-stale-migrating", testUser, testRg, testImage);
+        staleMigrating.beginMigration();
+        requestRepository.saveAndFlush(staleMigrating);
+
+        // (3) 방금 PROCESSING이 된 요청(임계치 이내) — 정상 처리 중이므로 건드리면 안 된다
+        Request freshProcessing = createTestRequest(MOCK_NOW.plusDays(30), Status.FULFILLED, "user-fresh-processing", testUser, testRg, testImage);
+        freshProcessing.markAsProcessing();
+        requestRepository.saveAndFlush(freshProcessing);
+
+        // updatedAt은 @LastModifiedDate라 일반 save로는 과거로 되돌릴 수 없다 — 벌크 JPQL
+        // UPDATE로 감사(auditing) 리스너를 우회해 (1),(2)만 임계치 밖으로 되돌린다. 이 테스트
+        // 클래스엔 @Transactional이 없어 벌크 update/delete 쿼리는 명시적 트랜잭션이 필요하다.
+        new TransactionTemplate(transactionManager).execute(status -> {
+            em.createQuery("UPDATE Request r SET r.updatedAt = :ts WHERE r.requestId IN :ids")
+                    .setParameter("ts", MOCK_NOW.minusMinutes(30))
+                    .setParameter("ids", List.of(staleProcessing.getRequestId(), staleMigrating.getRequestId()))
+                    .executeUpdate();
+            return null;
+        });
+        em.clear();
+
+        try (MockedStatic<LocalDateTime> mockedTime = Mockito.mockStatic(LocalDateTime.class, Mockito.CALLS_REAL_METHODS)) {
+            mockedTime.when(LocalDateTime::now).thenReturn(MOCK_NOW);
+            mockedTime.when(() -> LocalDateTime.now(any(ZoneId.class))).thenReturn(MOCK_NOW);
+
+            requestSchedulerService.reconcileStaleInFlightRequests();
+        }
+
+        assertThat(requestRepository.findById(staleProcessing.getRequestId()).orElseThrow().getStatus())
+                .isEqualTo(Status.PENDING);
+        assertThat(requestRepository.findById(staleMigrating.getRequestId()).orElseThrow().getStatus())
+                .isEqualTo(Status.MIGRATING);
+        assertThat(requestRepository.findById(freshProcessing.getRequestId()).orElseThrow().getStatus())
+                .isEqualTo(Status.PROCESSING);
+
+        String expectedProcessingMsg = messageUtils.get("notification.admin.request.stale-processing",
+                staleProcessing.getRequestId(), "user-stale-processing", 10L);
+        verify(alarmService).sendSlackAlert(eq(expectedProcessingMsg), isNull());
+
+        String expectedMigratingMsg = messageUtils.get("notification.admin.request.stale-migrating",
+                staleMigrating.getRequestId(), "user-stale-migrating", 10L);
+        verify(alarmService).sendSlackAlert(eq(expectedMigratingMsg), isNull());
     }
 
     // [헬퍼] 만료 예고 알림 검증 로직 분리
