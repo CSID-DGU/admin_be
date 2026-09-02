@@ -28,7 +28,6 @@ class RequestTest {
         request = Request.builder()
                 .ubuntuUsername("testuser")
                 .ubuntuPassword("hashedPassword")
-                .volumeSizeGiB(50L)
                 .expiresAt(LocalDateTime.now().plusDays(30))
                 .usagePurpose("딥러닝 연구")
                 .formAnswers("{}")
@@ -48,10 +47,9 @@ class RequestTest {
             ContainerImage newImage = mock(ContainerImage.class);
             ResourceGroup newRg = mock(ResourceGroup.class);
 
-            request.approve(newImage, newRg, 100L, "승인합니다");
+            request.approve(newImage, newRg, "승인합니다");
 
             assertThat(request.getStatus()).isEqualTo(Status.FULFILLED);
-            assertThat(request.getVolumeSizeGiB()).isEqualTo(100L);
             assertThat(request.getApprovedAt()).isNotNull();
         }
     }
@@ -95,7 +93,7 @@ class RequestTest {
         void reject_clearsUidAndGid_whenAlreadyFulfilled() {
             ContainerImage image = mock(ContainerImage.class);
             ResourceGroup rg = mock(ResourceGroup.class);
-            request.approve(image, rg, 50L, null);
+            request.approve(image, rg, null);
             request.assignUbuntuIds(20001L, 20001L);
 
             request.reject("승인 취소");
@@ -142,7 +140,7 @@ class RequestTest {
         void delete_throwsException_whenFulfilled() {
             ContainerImage image = mock(ContainerImage.class);
             ResourceGroup rg = mock(ResourceGroup.class);
-            request.approve(image, rg, 50L, null);
+            request.approve(image, rg, null);
 
             assertThatThrownBy(request::delete)
                     .isInstanceOf(BusinessException.class);
@@ -169,7 +167,7 @@ class RequestTest {
         void deleteAfterCleanup_changesStatusToDeleted_whenFulfilled() {
             ContainerImage image = mock(ContainerImage.class);
             ResourceGroup rg = mock(ResourceGroup.class);
-            request.approve(image, rg, 50L, null);
+            request.approve(image, rg, null);
 
             request.deleteAfterCleanup();
 
@@ -188,7 +186,7 @@ class RequestTest {
         void deleteAfterCleanup_clearsUidAndGid() {
             ContainerImage image = mock(ContainerImage.class);
             ResourceGroup rg = mock(ResourceGroup.class);
-            request.approve(image, rg, 50L, null);
+            request.approve(image, rg, null);
             request.assignUbuntuIds(20001L, 20001L);
             request.assignPodInfo("ailab-testuser-abcd1234", "farm1");
 
@@ -208,27 +206,6 @@ class RequestTest {
 
             assertThatThrownBy(request::deleteAfterCleanup)
                     .isInstanceOf(BusinessException.class);
-        }
-    }
-
-    @Nested
-    @DisplayName("updateVolumeSize")
-    class UpdateVolumeSize {
-
-        @Test
-        @DisplayName("null이 아닌 값으로 볼륨 크기를 업데이트한다")
-        void updateVolumeSize_updatesWhenNotNull() {
-            request.updateVolumeSize(200L);
-
-            assertThat(request.getVolumeSizeGiB()).isEqualTo(200L);
-        }
-
-        @Test
-        @DisplayName("null이면 볼륨 크기를 변경하지 않는다")
-        void updateVolumeSize_doesNotUpdateWhenNull() {
-            request.updateVolumeSize(null);
-
-            assertThat(request.getVolumeSizeGiB()).isEqualTo(50L);
         }
     }
 
@@ -253,7 +230,7 @@ class RequestTest {
         @Test
         @DisplayName("FULFILLED 상태가 아닌 요청을 수정하면 BusinessException을 던진다")
         void update_throwsException_whenNotFulfilled() {
-            assertThatThrownBy(() -> request.update(100L, null, "이유"))
+            assertThatThrownBy(() -> request.update(null, "이유"))
                     .isInstanceOf(BusinessException.class);
         }
 
@@ -262,12 +239,11 @@ class RequestTest {
         void update_success_whenFulfilled() {
             ContainerImage image = mock(ContainerImage.class);
             ResourceGroup rg = mock(ResourceGroup.class);
-            request.approve(image, rg, 50L, null);
+            request.approve(image, rg, null);
 
             LocalDateTime newDate = LocalDateTime.now().plusDays(90);
-            request.update(200L, newDate, "용량 증가 필요");
+            request.update(newDate, "용량 증가 필요");
 
-            assertThat(request.getVolumeSizeGiB()).isEqualTo(200L);
             assertThat(request.getExpiresAt()).isEqualTo(newDate);
         }
     }

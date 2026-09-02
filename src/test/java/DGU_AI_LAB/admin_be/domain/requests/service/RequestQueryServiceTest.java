@@ -221,7 +221,6 @@ class RequestQueryServiceTest {
         when(containerImage.getImageName()).thenReturn("cuda");
         when(containerImage.getImageVersion()).thenReturn("11.8");
         when(request.getRequestGroups()).thenReturn(java.util.Set.of());
-        when(request.getVolumeSizeGiB()).thenReturn(20L);
         when(request.getUsagePurpose()).thenReturn("학습");
         when(request.getFormAnswers()).thenReturn("{}");
         when(request.getStatus()).thenReturn(Status.FULFILLED);

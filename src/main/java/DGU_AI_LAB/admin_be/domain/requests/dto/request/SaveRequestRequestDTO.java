@@ -13,7 +13,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import lombok.Builder;
 
@@ -40,11 +39,6 @@ public record SaveRequestRequestDTO(
         @Schema(description = "Ubuntu 비밀번호", example = "strongPassword123!")
         @NotBlank(message = "Ubuntu Password cannot be blank")
         String ubuntuPassword,
-
-        @Schema(description = "볼륨 사이즈 (GiB)", example = "20")
-        @NotNull(message = "Volume size cannot be null")
-        @Positive(message = "Volume size must be positive")
-        Long volumeSizeGiB,
 
         @Schema(description = "사용 목적", example = "딥러닝 모델 학습")
         @NotBlank(message = "Usage purpose cannot be blank")
@@ -82,7 +76,6 @@ public record SaveRequestRequestDTO(
                 .containerImage(image)
                 .ubuntuUsername(ubuntuUsername)
                 .ubuntuPassword(ubuntuPassword)
-                .volumeSizeGiB(volumeSizeGiB)
                 .usagePurpose(usagePurpose)
                 .formAnswers(formAnswersJson)
                 .expiresAt(expiresAt)

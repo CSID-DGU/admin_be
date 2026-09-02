@@ -24,7 +24,7 @@ import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 @Schema(description = "단일 변경 요청 DTO")
 public record SingleChangeRequestDTO(
 
-        @Schema(description = "변경 타입", example = "VOLUME_SIZE")
+        @Schema(description = "변경 타입", example = "EXPIRES_AT")
         @NotNull(message = "변경 타입은 필수입니다.")
         ChangeType changeType,
 
@@ -75,7 +75,6 @@ public record SingleChangeRequestDTO(
     private static String extractOldValue(Request originalRequest, ChangeType changeType, ObjectMapper objectMapper, PortRequestService portRequestService) {
         try {
             return switch (changeType) {
-                case VOLUME_SIZE -> objectMapper.writeValueAsString(originalRequest.getVolumeSizeGiB());
                 case EXPIRES_AT -> objectMapper.writeValueAsString(originalRequest.getExpiresAt());
                 case GROUP -> {
                     Set<Long> oldGroupIds = originalRequest.getRequestGroups().stream()
@@ -142,12 +141,6 @@ public record SingleChangeRequestDTO(
     private void validateValueFormat() {
         try {
             switch (changeType) {
-                case VOLUME_SIZE -> {
-                    Long volumeSize = Long.parseLong(newValue.trim());
-                    if (volumeSize <= 0) {
-                        throw new BusinessException("볼륨 크기는 양수여야 합니다.", ErrorCode.INVALID_INPUT_VALUE);
-                    }
-                }
                 case EXPIRES_AT -> {
                     // SaveRequestRequestDTO.expiresAt의 @Future 계약과 동일한 기준을 적용한다.
                     LocalDateTime parsed = LocalDateTime.parse(newValue.trim());

@@ -285,7 +285,6 @@ public class RequestSchedulerServiceTest {
         Request req = Request.builder()
                 .ubuntuUsername(ubuntuUsername)
                 .ubuntuPassword("password")
-                .volumeSizeGiB(10L)
                 .expiresAt(expiresAt)
                 .usagePurpose("test")
                 .formAnswers("{}")
@@ -295,7 +294,7 @@ public class RequestSchedulerServiceTest {
                 .build();
 
         if (status == Status.FULFILLED || status == Status.DELETED) {
-            req.approve(testImage, testRg, 10L, "approved");
+            req.approve(testImage, testRg, "approved");
         }
 
         if (status == Status.DELETED) {

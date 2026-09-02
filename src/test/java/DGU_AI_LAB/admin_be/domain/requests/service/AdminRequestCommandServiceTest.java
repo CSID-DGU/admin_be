@@ -160,7 +160,7 @@ class AdminRequestCommandServiceTest {
         when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
         when(podExternalPortRepository.save(any(PodExternalPort.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인합니다");
+        ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인합니다");
 
         // When
         service.approveRequest(dto);
@@ -191,6 +191,51 @@ class AdminRequestCommandServiceTest {
         assertThat(userCreationRequest.gecos()).isEqualTo("테스트유저");
         assertThat(userCreationRequest.primaryGroupName()).isEqualTo("testuser");
         assertThat(userCreationRequest.enableSudo()).isFalse();
+        assertThat(userCreationRequest.supplementaryGroups()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("승인 시 Request에 딸린 그룹이 supplementary_groups로 계정 생성 API에 전달된다")
+    void approveRequest_sendsRequestGroupsAsSupplementaryGroups() {
+        // Given
+        Long requestId = 17L;
+        Request request = mock(Request.class);
+        when(request.getStatus()).thenReturn(Status.PENDING, Status.PROCESSING);
+        when(request.getUbuntuUsername()).thenReturn("testuser");
+        when(request.getUbuntuPasswordBase64()).thenReturn("cGxhaW5fdGV4dF9wdw==");
+
+        Group ascp = mock(Group.class);
+        when(ascp.getGroupName()).thenReturn("ASCP");
+        when(ascp.getUbuntuGid()).thenReturn(20004L);
+        DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup requestGroup =
+                mock(DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup.class);
+        when(requestGroup.getGroup()).thenReturn(ascp);
+        when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>(List.of(requestGroup)));
+
+        when(request.getUser()).thenReturn(mockUser);
+        when(request.getResourceGroup()).thenReturn(mockRg);
+        when(request.getContainerImage()).thenReturn(mockImage);
+        when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
+        when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+        stubWebClientPut();
+
+        CreatePodResponseDTO podResponse = new CreatePodResponseDTO("running", "farm1", "pod-testuser-xxxx", List.of());
+        when(podService.createPod("testuser")).thenReturn(podResponse);
+        when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
+        when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
+
+        ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인합니다");
+
+        // When
+        service.approveRequest(dto);
+
+        // Then
+        ArgumentCaptor<UserCreationRequestDTO> userCreationCaptor = ArgumentCaptor.forClass(UserCreationRequestDTO.class);
+        verify(putBodySpec).bodyValue(userCreationCaptor.capture());
+        List<UserCreationRequestDTO.SupplementaryGroup> supplementaryGroups = userCreationCaptor.getValue().supplementaryGroups();
+        assertThat(supplementaryGroups).hasSize(1);
+        assertThat(supplementaryGroups.get(0).name()).isEqualTo("ASCP");
+        assertThat(supplementaryGroups.get(0).gid()).isEqualTo(20004L);
     }
 
     @Test
@@ -209,7 +254,7 @@ class AdminRequestCommandServiceTest {
         when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
         when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
 
-        ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인합니다");
+        ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인합니다");
 
         // When
         service.approveRequest(dto);
@@ -233,7 +278,7 @@ class AdminRequestCommandServiceTest {
         when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
         when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
 
-        ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, null);
+        ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, null);
 
         // When
         service.approveRequest(dto);
@@ -259,7 +304,7 @@ class AdminRequestCommandServiceTest {
         doThrow(new RuntimeException("SMTP 연결 실패"))
                 .when(alarmService).sendContainerCreatedEmail(any(), anyString(), anyString());
 
-        ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
+        ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
         // When / Then - 이메일 실패해도 예외 없이 정상 반환 (Pod·계정은 이미 생성된 상태이므로 롤백 안 함)
         assertThat(service.approveRequest(dto)).isNotNull();
@@ -282,7 +327,7 @@ class AdminRequestCommandServiceTest {
             when(podService.createPod("testuser"))
                     .thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED));
 
-            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
+            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
             assertThatThrownBy(() -> service.approveRequest(dto))
                     .isInstanceOf(BusinessException.class)
@@ -307,7 +352,7 @@ class AdminRequestCommandServiceTest {
             when(podService.createPod("testuser"))
                     .thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED));
 
-            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
+            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
             assertThatThrownBy(() -> service.approveRequest(dto))
                     .isInstanceOf(BusinessException.class);
@@ -326,7 +371,7 @@ class AdminRequestCommandServiceTest {
             Semaphore semaphore = (Semaphore) ReflectionTestUtils.getField(service, "podCreationSemaphore");
             semaphore.acquire(3); // 한도(3)만큼 permit을 모두 선점해 초과 상황을 재현
 
-            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
+            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
             try {
                 assertThatThrownBy(() -> service.approveRequest(dto))
                         .isInstanceOf(BusinessException.class)
@@ -352,7 +397,7 @@ class AdminRequestCommandServiceTest {
             doThrow(new RuntimeException("계정 삭제 실패"))
                     .when(ubuntuAccountService).deleteUbuntuAccount("testuser");
 
-            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
+            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
             assertThatThrownBy(() -> service.approveRequest(dto))
                     .isInstanceOf(BusinessException.class)
@@ -378,7 +423,7 @@ class AdminRequestCommandServiceTest {
             when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
             when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
 
-            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
+            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
             service.approveRequest(dto);
 
@@ -407,7 +452,7 @@ class AdminRequestCommandServiceTest {
             );
             when(podService.createPod("testuser")).thenReturn(podResponse);
 
-            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
+            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
             assertThatThrownBy(() -> service.approveRequest(dto))
                     .isInstanceOf(BusinessException.class)
@@ -417,7 +462,7 @@ class AdminRequestCommandServiceTest {
             // 이미 만든 계정/Pod는 정리하되, 거절된 요청의 상태를 승인으로 덮어쓰지 않는다
             verify(podService).deletePod("pod-testuser-race");
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
-            verify(request, never()).approve(any(), any(), any(), any());
+            verify(request, never()).approve(any(), any(), any());
             // 이미 DENIED로 정상 종료된 요청이므로 PENDING으로 되돌리지 않는다
             verify(request, never()).revertToPending();
         }
@@ -443,7 +488,7 @@ class AdminRequestCommandServiceTest {
             when(podService.createPod("testuser")).thenReturn(podResponse);
             when(containerImageRepository.findById(1L)).thenReturn(Optional.empty());
 
-            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
+            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
             assertThatThrownBy(() -> service.approveRequest(dto))
                     .isInstanceOf(BusinessException.class);
@@ -463,7 +508,7 @@ class AdminRequestCommandServiceTest {
             when(request.getStatus()).thenReturn(Status.FULFILLED);
             when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
 
-            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, 10L, "승인");
+            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
             assertThatThrownBy(() -> service.approveRequest(dto))
                     .isInstanceOf(BusinessException.class)
@@ -478,7 +523,7 @@ class AdminRequestCommandServiceTest {
         void approveRequest_requestNotFound_throwsBusinessException() {
             when(requestRepository.findByIdForUpdate(999L)).thenReturn(Optional.empty());
 
-            ApproveRequestDTO dto = new ApproveRequestDTO(999L, 1L, 1, 10L, "승인");
+            ApproveRequestDTO dto = new ApproveRequestDTO(999L, 1L, 1, "승인");
 
             assertThatThrownBy(() -> service.approveRequest(dto))
                     .isInstanceOf(BusinessException.class)
@@ -768,26 +813,6 @@ class AdminRequestCommandServiceTest {
     class ApproveModification {
 
         @Test
-        @DisplayName("VOLUME_SIZE 변경 요청 승인 시 originalRequest.updateVolumeSize()가 호출된다")
-        void approveModification_volumeSize_success() throws Exception {
-            ChangeRequest changeRequest = mock(ChangeRequest.class);
-            Request originalRequest = buildMockedRequestWithStatus(20L, Status.FULFILLED);
-            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
-            when(changeRequest.getChangeType()).thenReturn(ChangeType.VOLUME_SIZE);
-            when(changeRequest.getNewValue()).thenReturn("200");
-            when(changeRequest.getRequest()).thenReturn(originalRequest);
-            when(changeRequestRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(changeRequest));
-            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
-
-            ApproveModificationDTO dto = new ApproveModificationDTO(1L, "승인합니다");
-            service.approveModification(100L, dto);
-
-            verify(originalRequest).updateVolumeSize(200L);
-            verify(changeRequest).approve(mockUser, "승인합니다");
-            verify(alarmService).sendModificationApprovedEmail(changeRequest, "승인합니다");
-        }
-
-        @Test
         @DisplayName("EXPIRES_AT 변경 요청 승인 시 이전 만료일 캡처 후 updateExpiresAt()가 호출된다")
         void approveModification_expiresAt_success() throws Exception {
             LocalDateTime oldExpiry = LocalDateTime.of(2026, 6, 30, 23, 59, 59);
@@ -916,8 +941,8 @@ class AdminRequestCommandServiceTest {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             Request originalRequest = buildMockedRequestWithStatus(26L, Status.FULFILLED);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
-            when(changeRequest.getChangeType()).thenReturn(ChangeType.VOLUME_SIZE);
-            when(changeRequest.getNewValue()).thenReturn("이건-숫자가-아님");
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.EXPIRES_AT);
+            when(changeRequest.getNewValue()).thenReturn("이건-날짜가-아님");
             when(changeRequest.getRequest()).thenReturn(originalRequest);
             when(changeRequestRepository.findByIdForUpdate(15L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
@@ -929,7 +954,7 @@ class AdminRequestCommandServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.INTERNAL_SERVER_ERROR);
 
-            verify(originalRequest, never()).updateVolumeSize(any());
+            verify(originalRequest, never()).updateExpiresAt(any());
             verify(changeRequest, never()).approve(any(), anyString());
             verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
         }
@@ -993,7 +1018,7 @@ class AdminRequestCommandServiceTest {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             Request originalRequest = buildMockedRequestWithStatus(22L, Status.DELETED);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
-            when(changeRequest.getChangeType()).thenReturn(ChangeType.VOLUME_SIZE);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.EXPIRES_AT);
             when(changeRequest.getRequest()).thenReturn(originalRequest);
             when(changeRequestRepository.findByIdForUpdate(8L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
@@ -1005,7 +1030,7 @@ class AdminRequestCommandServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
 
-            verify(originalRequest, never()).updateVolumeSize(anyLong());
+            verify(originalRequest, never()).updateExpiresAt(any());
             verify(changeRequest, never()).approve(any(), any());
         }
     }

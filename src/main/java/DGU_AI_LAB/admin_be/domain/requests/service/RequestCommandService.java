@@ -68,12 +68,6 @@ public class RequestCommandService {
 
         User requestedBy = originalRequest.getUser();
 
-        // 저장공간 크기 변경
-        if (dto.requestedVolumeSizeGiB() != null) {
-            createAndSaveChangeRequest(originalRequest, requestedBy, ChangeType.VOLUME_SIZE,
-                    originalRequest.getVolumeSizeGiB(), dto.requestedVolumeSizeGiB(), dto.reason());
-        }
-
         // 만료 기한 변경
         if (dto.requestedExpiresAt() != null) {
             createAndSaveChangeRequest(originalRequest, requestedBy, ChangeType.EXPIRES_AT,
