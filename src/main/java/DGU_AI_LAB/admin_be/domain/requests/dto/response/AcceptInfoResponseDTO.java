@@ -18,8 +18,6 @@ public record AcceptInfoResponseDTO(
         String image,
         @Schema(description = "그룹 목록 (GID + 그룹명)")
         List<GroupDTO> groups,
-        @Schema(description = "볼륨 크기 (GiB)", example = "20")
-        Long volume_size,
         @Schema(description = "GPU 노드 목록")
         List<GpuNodeDTO> gpu_nodes,
         @Schema(description = "추가 포트 목록")
@@ -88,7 +86,6 @@ public record AcceptInfoResponseDTO(
                 .username(request.getUbuntuUsername())
                 .image(image.getImageName() + ":" + image.getImageVersion())
                 .groups(groupDTOList)
-                .volume_size(request.getVolumeSizeGiB())
                 .gpu_nodes(gpuNodeDTOList)
                 .additional_ports(additionalPortDTOList)
                 .passwd_base64(request.getUbuntuPasswordBase64())

@@ -51,7 +51,6 @@ class ConfigRequestServiceTest {
         when(request.getUbuntuUsername()).thenReturn(username);
         when(request.getContainerImage()).thenReturn(image);
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
-        when(request.getVolumeSizeGiB()).thenReturn(20L);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
 
         when(requestRepository.findByUbuntuUsername(username)).thenReturn(Optional.of(request));
@@ -91,7 +90,6 @@ class ConfigRequestServiceTest {
         when(request.getUbuntuUsername()).thenReturn(username);
         when(request.getContainerImage()).thenReturn(image);
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>(Set.of(rg1, rg2)));
-        when(request.getVolumeSizeGiB()).thenReturn(20L);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
 
         when(requestRepository.findByUbuntuUsername(username)).thenReturn(Optional.of(request));
@@ -131,7 +129,6 @@ class ConfigRequestServiceTest {
         when(request.getUbuntuUsername()).thenReturn(username);
         when(request.getContainerImage()).thenReturn(image);
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
-        when(request.getVolumeSizeGiB()).thenReturn(20L);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
 
         when(requestRepository.findByUbuntuUsername(username)).thenReturn(Optional.of(request));
@@ -166,7 +163,6 @@ class ConfigRequestServiceTest {
         when(request.getUbuntuUsername()).thenReturn(username);
         when(request.getContainerImage()).thenReturn(image);
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
-        when(request.getVolumeSizeGiB()).thenReturn(20L);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
 
         when(requestRepository.findByUbuntuUsername(username)).thenReturn(Optional.of(request));
@@ -215,7 +211,6 @@ class ConfigRequestServiceTest {
         when(request.getUbuntuUsername()).thenReturn(username);
         when(request.getContainerImage()).thenReturn(image);
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
-        when(request.getVolumeSizeGiB()).thenReturn(10L);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
 
         when(requestRepository.findByUbuntuUsername(username)).thenReturn(Optional.of(request));

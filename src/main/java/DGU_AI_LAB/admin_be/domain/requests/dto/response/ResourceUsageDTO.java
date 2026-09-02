@@ -13,9 +13,7 @@ public record ResourceUsageDTO(
         @Schema(description = "사용자 이름", example = "이수아")
         String userName,
         @Schema(description = "리소스 그룹 ID", example = "1")
-        Integer resourceGroupId,
-        @Schema(description = "볼륨 크기 (GiB)", example = "20")
-        Long volumeSizeGiB
+        Integer resourceGroupId
 ) {
     public static ResourceUsageDTO fromEntity(Request request) {
         ResourceGroup resourceGroup = request.getResourceGroup();
@@ -24,7 +22,6 @@ public record ResourceUsageDTO(
                 .userId(request.getUser().getUserId())
                 .userName(request.getUser().getName())
                 .resourceGroupId(resourceGroup != null ? resourceGroup.getRsgroupId() : null)
-                .volumeSizeGiB(request.getVolumeSizeGiB())
                 .build();
     }
 }

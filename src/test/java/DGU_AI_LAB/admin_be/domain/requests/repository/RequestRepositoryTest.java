@@ -71,7 +71,6 @@ class RequestRepositoryTest {
         pendingRequest = requestRepository.save(Request.builder()
                 .ubuntuUsername("pendinguser")
                 .ubuntuPassword("hashedPw1")
-                .volumeSizeGiB(50L)
                 .expiresAt(LocalDateTime.now().plusDays(30))
                 .usagePurpose("연구 목적")
                 .formAnswers("{}")
@@ -83,7 +82,6 @@ class RequestRepositoryTest {
         Request req2 = Request.builder()
                 .ubuntuUsername("fulfilleduser")
                 .ubuntuPassword("hashedPw2")
-                .volumeSizeGiB(100L)
                 .expiresAt(LocalDateTime.now().plusDays(60))
                 .usagePurpose("머신러닝")
                 .formAnswers("{}")
@@ -91,7 +89,7 @@ class RequestRepositoryTest {
                 .resourceGroup(resourceGroup)
                 .containerImage(containerImage)
                 .build();
-        req2.approve(containerImage, resourceGroup, 100L, null);
+        req2.approve(containerImage, resourceGroup, null);
         fulfilledRequest = requestRepository.save(req2);
     }
 

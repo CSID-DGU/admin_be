@@ -39,8 +39,6 @@ public record SaveRequestResponseDTO(
         Long ubuntuGid,
         @Schema(description = "Ubuntu GID 목록", example = "[1005, 1006]")
         List<Long> ubuntuGids,
-        @Schema(description = "볼륨 크기 (GiB)", example = "20")
-        Long volumeSizeGiB,
         @Schema(description = "사용 목적", example = "딥러닝 모델 학습")
         String usagePurpose,
         @Schema(description = "폼 응답 (JSON)", example = "{\"question\": \"answer\"}")
@@ -155,7 +153,6 @@ public record SaveRequestResponseDTO(
                                 .map(rg -> rg.getGroup().getUbuntuGid())
                                 .toList()
                 )
-                .volumeSizeGiB(request.getVolumeSizeGiB())
                 .usagePurpose(request.getUsagePurpose())
                 .formAnswers(request.getFormAnswers())
                 .expiresAt(request.getExpiresAt())

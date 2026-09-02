@@ -749,7 +749,6 @@ class AdminUserServiceTest {
             Request req = Request.builder()
                     .ubuntuUsername("testuser")
                     .ubuntuPassword("pw")
-                    .volumeSizeGiB(50L)
                     .expiresAt(LocalDateTime.now().plusDays(30))
                     .usagePurpose("연구")
                     .formAnswers("{}")
@@ -757,7 +756,7 @@ class AdminUserServiceTest {
                     .resourceGroup(rg)
                     .containerImage(image)
                     .build();
-            req.approve(image, rg, 100L, null);
+            req.approve(image, rg, null);
             return req;
         }
 

@@ -289,7 +289,7 @@ public class AlarmService {
     }
 
     /**
-     * [변경 요청 승인 안내 메일] EXPIRES_AT 외 타입(VOLUME_SIZE/GROUP/RESOURCE_GROUP/CONTAINER_IMAGE/PORT) 공통.
+     * [변경 요청 승인 안내 메일] EXPIRES_AT 외 타입(GROUP/RESOURCE_GROUP/CONTAINER_IMAGE/PORT) 공통.
      * EXPIRES_AT은 sendContainerExtendedEmail로 별도의 상세 메일을 보낸다.
      */
     public void sendModificationApprovedEmail(ChangeRequest changeRequest, String adminComment) {
