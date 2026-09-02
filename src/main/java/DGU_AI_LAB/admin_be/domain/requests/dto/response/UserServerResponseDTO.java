@@ -17,8 +17,6 @@ public record UserServerResponseDTO(
         String serverAddress,
         @Schema(description = "서버 사용 만료일", example = "2025-12-31T23:59:59")
         LocalDateTime expiresAt,
-        @Schema(description = "할당된 볼륨 크기 (GiB)", example = "100")
-        Long volumeSizeGiB,
         @Schema(description = "할당된 CPU 코어 수", example = "8")
         Integer cpuCoreCount,
         // TODO: 용도가 무엇인지 모르겠으나 GiB로 통일하는 것이 좋아보임.
@@ -36,7 +34,6 @@ public record UserServerResponseDTO(
                 .requestId(request.getRequestId())
                 .serverAddress(serverAddress)
                 .expiresAt(request.getExpiresAt())
-                .volumeSizeGiB(request.getVolumeSizeGiB())
                 .cpuCoreCount(cpuCoreCount)
                 .memoryGB(memoryGB)
                 .resourceGroupName(resourceGroupName)

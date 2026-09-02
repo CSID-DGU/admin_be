@@ -84,7 +84,6 @@ class RequestRepositoryLockingTest {
         Request request = requestRepository.save(Request.builder()
                 .ubuntuUsername("lockingtestuser")
                 .ubuntuPassword("hashedPw")
-                .volumeSizeGiB(50L)
                 .expiresAt(LocalDateTime.now().plusDays(30))
                 .usagePurpose("동시성 테스트")
                 .formAnswers("{}")

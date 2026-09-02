@@ -38,9 +38,6 @@ public class Request extends BaseTimeEntity {
     @Column(name = "ubuntu_password", nullable = false)
     private String ubuntuPassword;
 
-    @Column(name = "volume_size_GiB", nullable = false)
-    private Long volumeSizeGiB;
-
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 
@@ -88,10 +85,9 @@ public class Request extends BaseTimeEntity {
     private Set<RequestGroup> requestGroups = new LinkedHashSet<>();
 
     @Builder
-    public Request(String ubuntuUsername, String ubuntuPassword, Long volumeSizeGiB, LocalDateTime expiresAt, String usagePurpose, String formAnswers, User user, ResourceGroup resourceGroup, ContainerImage containerImage) {
+    public Request(String ubuntuUsername, String ubuntuPassword, LocalDateTime expiresAt, String usagePurpose, String formAnswers, User user, ResourceGroup resourceGroup, ContainerImage containerImage) {
         this.ubuntuUsername = ubuntuUsername;
         this.ubuntuPassword = ubuntuPassword;
-        this.volumeSizeGiB = volumeSizeGiB;
         this.expiresAt = expiresAt;
         this.usagePurpose = usagePurpose;
         this.formAnswers = formAnswers;
@@ -105,12 +101,6 @@ public class Request extends BaseTimeEntity {
     /**
      * 변경 요청을 반영하여 엔티티의 속성을 업데이트합니다.
      */
-
-    public void updateVolumeSize(Long newVolumeSize) {
-        if (newVolumeSize != null) {
-            this.volumeSizeGiB = newVolumeSize;
-        }
-    }
 
     public void updateExpiresAt(LocalDateTime newExpiresAt) {
         if (newExpiresAt != null) {
@@ -146,12 +136,9 @@ public class Request extends BaseTimeEntity {
         this.nodeName = null;
     }
 
-    public void approve(ContainerImage image, ResourceGroup resourceGroup, Long volumeSizeGiB, String adminComment) {
+    public void approve(ContainerImage image, ResourceGroup resourceGroup, String adminComment) {
         this.containerImage = image;
         this.resourceGroup = resourceGroup;
-        if (volumeSizeGiB != null) {
-            this.volumeSizeGiB = volumeSizeGiB;
-        }
         this.status = Status.FULFILLED;
         this.approvedAt = LocalDateTime.now();
 
@@ -173,15 +160,12 @@ public class Request extends BaseTimeEntity {
     /**
      * 사용자의 변경 요청을 엔티티에 반영합니다.
      */
-    public void update(Long newVolumeSizeGiB, LocalDateTime newExpiresAt, String reason) {
+    public void update(LocalDateTime newExpiresAt, String reason) {
         // 변경 요청은 FULFILLED 상태에서만 가능
         if (this.status != Status.FULFILLED) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
         // null이 아닐 때만 업데이트
-        if (newVolumeSizeGiB != null) {
-            this.volumeSizeGiB = newVolumeSizeGiB;
-        }
         if (newExpiresAt != null) {
             this.expiresAt = newExpiresAt;
         }

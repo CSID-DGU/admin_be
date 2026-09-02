@@ -173,7 +173,6 @@ class UserSchedulerServiceTest {
                 .user(user)
                 .ubuntuUsername("user_" + user.getUserId())
                 .ubuntuPassword("pw")
-                .volumeSizeGiB(10L)
                 .expiresAt(expiresAt)
                 .usagePurpose("test")
                 .formAnswers("{}")
@@ -181,7 +180,7 @@ class UserSchedulerServiceTest {
                 .containerImage(img)
                 .build();
 
-        req.approve(img, rg, 10L, "approved");
+        req.approve(img, rg, "approved");
         requestRepository.saveAndFlush(req);
     }
 }

@@ -97,12 +97,16 @@ public class AdminRequestCommandService {
             }
             req.markAsProcessing(); // 다른 관리자의 중복 승인 시도 차단
             usernameRef[0] = req.getUbuntuUsername();
+            List<UserCreationRequestDTO.SupplementaryGroup> supplementaryGroups = req.getRequestGroups().stream()
+                    .map(rg -> new UserCreationRequestDTO.SupplementaryGroup(rg.getGroup().getGroupName(), rg.getGroup().getUbuntuGid()))
+                    .toList();
             creationDtoRef[0] = new UserCreationRequestDTO(
                     req.getUbuntuUsername(),
                     req.getUbuntuPasswordBase64(),
                     req.getUser().getName(),
                     req.getUbuntuUsername(),
-                    false
+                    false,
+                    supplementaryGroups
             );
             return null;
         });
@@ -159,7 +163,7 @@ public class AdminRequestCommandService {
                 ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
                         .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
                 req.assignUbuntuIds(finalUserResponse.uid(), finalUserResponse.gid());
-                req.approve(image, rg, dto.volumeSizeGiB(), dto.adminComment());
+                req.approve(image, rg, dto.adminComment());
                 req.assignPodInfo(finalPodResponse.podName(), finalPodResponse.node());
                 for (CreatePodResponseDTO.PortInfo port : finalPodResponse.ports()) {
                     podExternalPortRepository.save(PodExternalPort.builder()
@@ -342,20 +346,12 @@ public class AdminRequestCommandService {
 
     private Map<ChangeType, ChangeApplier> changeAppliers() {
         return Map.of(
-                ChangeType.VOLUME_SIZE, this::applyVolumeSizeChange,
                 ChangeType.EXPIRES_AT, this::applyExpiresAtChange,
                 ChangeType.GROUP, this::applyGroupChange,
                 ChangeType.RESOURCE_GROUP, this::applyResourceGroupChange,
                 ChangeType.CONTAINER_IMAGE, this::applyContainerImageChange,
                 ChangeType.PORT, this::applyPortChange
         );
-    }
-
-    private ExpiryChangeResult applyVolumeSizeChange(Request originalRequest, String newValueJson) throws JsonProcessingException {
-        // ponytail: NFS 전환 후 PVC 없음 — DB 기록만 갱신, NAS 쿼터 필요 시 여기에 추가
-        Long newVolumeSize = objectMapper.readValue(newValueJson, Long.class);
-        originalRequest.updateVolumeSize(newVolumeSize);
-        return null;
     }
 
     private ExpiryChangeResult applyExpiresAtChange(Request originalRequest, String newValueJson) throws JsonProcessingException {

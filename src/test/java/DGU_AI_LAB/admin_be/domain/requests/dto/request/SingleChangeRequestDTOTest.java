@@ -50,16 +50,6 @@ class SingleChangeRequestDTOTest {
     }
 
     @Test
-    @DisplayName("VOLUME_SIZE 타입에 음수를 전달하면 BusinessException을 던진다")
-    void createValidatedChangeRequest_volumeSize_negative_throws() {
-        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.VOLUME_SIZE, "-1", "reason");
-
-        assertThatThrownBy(() ->
-                SingleChangeRequestDTO.createValidatedChangeRequest(dto, null, null, null, null))
-                .isInstanceOf(BusinessException.class);
-    }
-
-    @Test
     @DisplayName("EXPIRES_AT의 생 날짜 문자열은 JSON 인코딩되어 저장되고 승인 파서와 round-trip 된다 (#367)")
     void createValidatedChangeRequest_expiresAt_storesJsonEncodedValue() throws Exception {
         // 운영에서는 Spring 주입 ObjectMapper에 JavaTimeModule이 등록돼 있다
@@ -85,18 +75,17 @@ class SingleChangeRequestDTOTest {
 
     @Test
     @DisplayName("EXPIRES_AT 이외 타입의 newValue는 그대로 저장된다")
-    void createValidatedChangeRequest_volumeSize_keepsRawNewValue() {
+    void createValidatedChangeRequest_group_keepsRawNewValue() {
         // 운영에서는 Spring 주입 ObjectMapper에 JavaTimeModule이 등록돼 있다
         ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         Request originalRequest = Request.builder()
-                .volumeSizeGiB(20L)
                 .build();
-        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.VOLUME_SIZE, "100", "reason");
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005,1006]", "reason");
 
         ChangeRequest changeRequest = SingleChangeRequestDTO.createValidatedChangeRequest(
                 dto, originalRequest, null, objectMapper, null);
 
-        assertThat(changeRequest.getNewValue()).isEqualTo("100");
+        assertThat(changeRequest.getNewValue()).isEqualTo("[1005,1006]");
     }
 
     @Test

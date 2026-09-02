@@ -437,16 +437,16 @@ class AlarmServiceTest {
         @Test
         @DisplayName("변경 유형이 이메일 제목에 포함된다")
         void sendModificationRejectedEmail_includesChangeTypeInSubject() {
-            ChangeRequest changeRequest = mockChangeRequest("김철수", "kim@dgu.ac.kr", ChangeType.VOLUME_SIZE);
-            when(messageUtils.get(eq("email.modification.rejected.subject"), eq("VOLUME_SIZE")))
-                    .thenReturn("[DGU AILab] 서버 변경 요청 거절 안내 (VOLUME_SIZE)");
+            ChangeRequest changeRequest = mockChangeRequest("김철수", "kim@dgu.ac.kr", ChangeType.RESOURCE_GROUP);
+            when(messageUtils.get(eq("email.modification.rejected.subject"), eq("RESOURCE_GROUP")))
+                    .thenReturn("[DGU AILab] 서버 변경 요청 거절 안내 (RESOURCE_GROUP)");
             when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("본문");
 
-            alarmService.sendModificationRejectedEmail(changeRequest, "볼륨 변경 불가");
+            alarmService.sendModificationRejectedEmail(changeRequest, "리소스 그룹 변경 불가");
 
             ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
             verify(mailSender).send(captor.capture());
-            assertThat(captor.getValue().getSubject()).contains("VOLUME_SIZE");
+            assertThat(captor.getValue().getSubject()).contains("RESOURCE_GROUP");
         }
 
         @Test

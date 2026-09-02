@@ -17,7 +17,7 @@ public record ChangeRequestResponseDTO(
         Long changeRequestId,
         @Schema(description = "원본 서버 신청 ID", example = "42")
         Long originalRequestId,
-        @Schema(description = "변경 타입", example = "VOLUME_SIZE", allowableValues = {"VOLUME_SIZE", "EXPIRES_AT", "GROUP", "RESOURCE_GROUP", "CONTAINER_IMAGE", "PORT"})
+        @Schema(description = "변경 타입", example = "EXPIRES_AT", allowableValues = {"EXPIRES_AT", "GROUP", "RESOURCE_GROUP", "CONTAINER_IMAGE", "PORT"})
         ChangeType changeType,
         @Schema(description = "변경 전 값 (JSON)", example = "20")
         @JsonRawValue String oldValue,
