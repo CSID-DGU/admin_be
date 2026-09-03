@@ -24,12 +24,26 @@ public class UbuntuAccountService {
     private final @Qualifier("configWebClient") WebClient webClient;
 
     public void deleteUbuntuAccount(String username) {
+        deleteUbuntuAccount(username, null);
+    }
+
+    /**
+     * @param nodeName 이 계정의 keytab이 실제로 배포된(또는 배포를 시도한) farm 노드.
+     *                 알고 있으면 반드시 넘겨야 한다 — 안 넘기면 config-server가 설정된
+     *                 모든 farm 노드를 무차별로 훑어서, 같은 유저네임을 쓰는 무관한
+     *                 레거시 계정까지 잘못 지울 수 있다.
+     */
+    public void deleteUbuntuAccount(String username, String nodeName) {
 
         try {
-            log.info("사용자 삭제 API 호출 시작: {}", username);
+            log.info("사용자 삭제 API 호출 시작: {}, node={}", username, nodeName);
+            String uri = "/accounts/users/" + username;
+            if (nodeName != null && !nodeName.isBlank()) {
+                uri += "?node_name=" + nodeName;
+            }
             WebClientErrorHandler.onError(
                             webClient.delete()
-                                    .uri("/accounts/users/" + username)
+                                    .uri(uri)
                                     .retrieve(),
                             (status, body) -> {
                                 if (status == HttpStatus.NOT_FOUND) {
