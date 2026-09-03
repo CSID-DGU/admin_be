@@ -134,7 +134,8 @@ public class AdminRequestCommandService {
             }
         } catch (BusinessException e) {
             log.warn("[보상 트랜잭션] Pod 생성 실패 → 계정 삭제 및 상태 복구 시작: {}", username);
-            tryCompensateDeleteUser(username);
+            String failedNode = (e instanceof PodCreationFailedException pcfe) ? pcfe.getNode() : null;
+            tryCompensateDeleteUser(username, failedNode);
             revertToPendingIfStillProcessing(dto.requestId());
             throw e;
         }
@@ -183,7 +184,7 @@ public class AdminRequestCommandService {
             });
         } catch (Exception e) {
             log.error("[보상 트랜잭션] DB 업데이트 실패 → 전체 infra 리소스 삭제 시작: {}", username, e);
-            tryCompensateAll(username, finalPodResponse.podName());
+            tryCompensateAll(username, finalPodResponse.podName(), finalPodResponse.node());
             revertToPendingIfStillProcessing(dto.requestId());
             throw e;
         }
@@ -427,10 +428,10 @@ public class AdminRequestCommandService {
 
     // ── 보상 트랜잭션 헬퍼 ─────────────────────────────────────────────
 
-    private void tryCompensateDeleteUser(String username) {
+    private void tryCompensateDeleteUser(String username, String nodeName) {
         try {
-            ubuntuAccountService.deleteUbuntuAccount(username);
-            log.info("[보상 트랜잭션 완료] 계정 삭제: {}", username);
+            ubuntuAccountService.deleteUbuntuAccount(username, nodeName);
+            log.info("[보상 트랜잭션 완료] 계정 삭제: {}, node={}", username, nodeName);
         } catch (Exception e) {
             log.error("[보상 트랜잭션 실패] 계정 삭제 실패 - 수동 정리 필요: {}", username, e);
             alertCompensationFailure(String.format("[보상 트랜잭션 실패] 계정 삭제 실패 - 수동 정리 필요: username=%s", username));
@@ -472,7 +473,7 @@ public class AdminRequestCommandService {
         }
     }
 
-    private void tryCompensateAll(String username, String podName) {
+    private void tryCompensateAll(String username, String podName, String nodeName) {
         try {
             podService.deletePod(podName);
             log.info("[보상 트랜잭션 완료] Pod 삭제: {}", podName);
@@ -480,7 +481,7 @@ public class AdminRequestCommandService {
             log.error("[보상 트랜잭션 실패] Pod 삭제 실패 - 수동 정리 필요: {}", podName, e);
             alertCompensationFailure(String.format("[보상 트랜잭션 실패] Pod 삭제 실패 - 수동 정리 필요: podName=%s", podName));
         }
-        tryCompensateDeleteUser(username);
+        tryCompensateDeleteUser(username, nodeName);
     }
 
     record UserCreationResponse(
