@@ -136,7 +136,7 @@ public class RequestSchedulerServiceTest {
         // 1. [삭제 검증] reqExpired
         Request deletedResult = requestRepository.findById(reqExpired.getRequestId()).orElseThrow();
         assertThat(deletedResult.getStatus()).isEqualTo(Status.DELETED);
-        verify(ubuntuAccountService, times(1)).deleteUbuntuAccount("user-expired");
+        verify(ubuntuAccountService, times(1)).deleteUbuntuAccount("user-expired", null);
 
         // [이벤트 리스너 검증] -> 삭제 완료 알림 (MessageUtils 사용 검증)
         // subject: notification.expired.detail.subject
