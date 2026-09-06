@@ -252,7 +252,7 @@ class AdminUserServiceTest {
             adminUserService.deleteUser(1L);
 
             verify(podService).deletePod("pod-testuser");
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
             verify(fulfilledRequest).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(eq(fulfilledRequest), anyList());
             assertThat(mockUser.getIsActive()).isFalse();
@@ -305,7 +305,7 @@ class AdminUserServiceTest {
             adminUserService.deleteUser(1L);
 
             verify(podService).deletePod("pod-fuser");
-            verify(ubuntuAccountService).deleteUbuntuAccount("fuser");
+            verify(ubuntuAccountService).deleteUbuntuAccount("fuser", null);
             verify(fulfilled).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(eq(fulfilled), anyList());
             verify(pending).delete();
@@ -342,9 +342,9 @@ class AdminUserServiceTest {
             // ok는 REQUIRES_NEW로 독립 커밋되므로, broken이 실패해서 메서드 전체가 예외로
             // 끝나도 이미 실행된 deleteAfterCleanup()은 그대로 유지돼야 한다(고아 방지의 핵심).
             verify(ok).deleteAfterCleanup();
-            verify(ubuntuAccountService).deleteUbuntuAccount("okuser");
+            verify(ubuntuAccountService).deleteUbuntuAccount("okuser", null);
             // broken은 Pod 삭제가 실패했으니 계정 삭제를 시도하면 안 되고, DB도 FULFILLED로 남아야 한다.
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount("brokenuser");
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount("brokenuser", null);
             verify(broken, never()).deleteAfterCleanup();
             verify(alarmService).sendSlackAlert(contains("brokenuser"), isNull());
         }
@@ -425,8 +425,8 @@ class AdminUserServiceTest {
 
             verify(podService).deletePod("pod-user1");
             verify(podService).deletePod("pod-user2");
-            verify(ubuntuAccountService).deleteUbuntuAccount("user1");
-            verify(ubuntuAccountService).deleteUbuntuAccount("user2");
+            verify(ubuntuAccountService).deleteUbuntuAccount("user1", null);
+            verify(ubuntuAccountService).deleteUbuntuAccount("user2", null);
             verify(req1).deleteAfterCleanup();
             verify(req2).deleteAfterCleanup();
             assertThat(mockUser.getIsActive()).isFalse();
@@ -535,7 +535,7 @@ class AdminUserServiceTest {
             adminUserService.deactivateUser(1L);
 
             verify(podService).deletePod("pod-testuser");
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
             verify(fulfilledRequest).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(eq(fulfilledRequest), anyList());
             assertThat(mockUser.getIsActive()).isFalse();
@@ -623,7 +623,7 @@ class AdminUserServiceTest {
             adminUserService.deactivateUser(1L);
 
             verify(podService).deletePod("pod-fuser");
-            verify(ubuntuAccountService).deleteUbuntuAccount("fuser");
+            verify(ubuntuAccountService).deleteUbuntuAccount("fuser", null);
             verify(fulfilled).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(eq(fulfilled), anyList());
             verify(pending).delete();
@@ -649,7 +649,7 @@ class AdminUserServiceTest {
             verify(podExternalPortRepository, never()).findByRequestRequestId(any());
             verify(podExternalPortRepository, times(1)).findByRequestRequestIdIn(anyList());
             verify(alarmService, times(3)).sendContainerDeletedEmail(any(Request.class), anyList());
-            verify(ubuntuAccountService, times(3)).deleteUbuntuAccount(anyString());
+            verify(ubuntuAccountService, times(3)).deleteUbuntuAccount(anyString(), any());
             verify(podService, times(3)).deletePod(anyString());
         }
 
@@ -670,8 +670,8 @@ class AdminUserServiceTest {
 
             verify(podService).deletePod("pod-user1");
             verify(podService).deletePod("pod-user2");
-            verify(ubuntuAccountService).deleteUbuntuAccount("user1");
-            verify(ubuntuAccountService).deleteUbuntuAccount("user2");
+            verify(ubuntuAccountService).deleteUbuntuAccount("user1", null);
+            verify(ubuntuAccountService).deleteUbuntuAccount("user2", null);
             verify(req1).deleteAfterCleanup();
             verify(req2).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(eq(req2), anyList());
@@ -769,7 +769,7 @@ class AdminUserServiceTest {
             adminUserService.deleteUbuntuAccount("testuser");
 
             verify(podService).deletePod(null);
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
             assertThat(request.getStatus()).isEqualTo(Status.DELETED);
             verify(alarmService).sendContainerDeletedEmail(request);
         }
