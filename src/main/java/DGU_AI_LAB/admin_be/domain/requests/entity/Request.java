@@ -243,6 +243,11 @@ public class Request extends BaseTimeEntity {
         if (this.status == Status.FULFILLED || this.status == Status.MIGRATING) {
             throw new BusinessException("컨테이너가 실행 중입니다. 인프라 정리 후 삭제해주세요.", ErrorCode.INVALID_REQUEST_STATUS);
         }
+        if (this.status == Status.PROCESSING) {
+            // 승인 처리(AD 계정/Pod 생성)가 백그라운드에서 진행 중인 요청을 여기서
+            // 삭제하면, 처리가 끝난 뒤 DB에 전혀 추적되지 않는 고아 계정/Pod가 생긴다.
+            throw new BusinessException("요청이 처리 중입니다. 처리가 완료된 후 다시 시도해주세요.", ErrorCode.INVALID_REQUEST_STATUS);
+        }
         this.status = Status.DELETED;
         this.ubuntuUid = null;
         this.ubuntuGid = null;

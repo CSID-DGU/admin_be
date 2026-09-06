@@ -49,6 +49,23 @@ public class RequestCommandService {
     private final AlarmService alarmService;
 
     /**
+     * 사용자가 자신의 대기 중(PENDING) 또는 거절된(DENIED) 신청을 취소한다.
+     * FULFILLED/MIGRATING 상태는 Request.delete()가 자체적으로 거부한다 — 실행 중인
+     * 컨테이너가 있는 신청은 인프라 정리 없이 그냥 지울 수 없기 때문.
+     */
+    @Transactional
+    public void cancelRequest(Long userId, Long requestId) {
+        Request request = requestRepository.findById(requestId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        if (!request.getUser().getUserId().equals(userId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN_REQUEST);
+        }
+
+        request.delete();
+    }
+
+    /**
      * 사용 신청 변경 요청
      */
     @Transactional
