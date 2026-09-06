@@ -134,7 +134,7 @@ class RequestSchedulerServiceUnitTest {
 
         service.reconcileStaleInFlightRequests();
 
-        verify(adminRequestCommandService).revertToPendingIfStillProcessing(10L);
+        verify(adminRequestCommandService).revertToPendingIfStillProcessing(10L, "FARM-01");
         verify(alarmService).sendSlackAlert(any(), any());
     }
 
@@ -149,7 +149,7 @@ class RequestSchedulerServiceUnitTest {
 
         service.reconcileStaleInFlightRequests();
 
-        verify(adminRequestCommandService, never()).revertToPendingIfStillProcessing(any());
+        verify(adminRequestCommandService, never()).revertToPendingIfStillProcessing(any(), any());
         verify(alarmService).sendSlackAlert(any(), any());
     }
 
@@ -161,7 +161,7 @@ class RequestSchedulerServiceUnitTest {
 
         service.reconcileStaleInFlightRequests();
 
-        verify(adminRequestCommandService, never()).revertToPendingIfStillProcessing(any());
+        verify(adminRequestCommandService, never()).revertToPendingIfStillProcessing(any(), any());
         verify(alarmService, never()).sendSlackAlert(any(), any());
     }
 }

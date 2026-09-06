@@ -74,7 +74,10 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
 
     /**
      * 정지된(stale) PROCESSING/MIGRATING 요청 재조정 스케줄러용 — 마지막 갱신이
-     * updatedAt 이전인, 즉 threshold보다 오래 방치된 요청을 찾는다.
+     * updatedAt 이전인, 즉 threshold보다 오래 방치된 요청을 찾는다. 스케줄러 메서드에는
+     * 트랜잭션이 안 걸려있어 resourceGroup(보상 트랜잭션 알림을 farm/lab 채널로 보내는 데 씀)을
+     * 지연 로딩하면 LazyInitializationException이 나므로 함께 즉시 로딩한다.
      */
-    List<Request> findAllByStatusAndUpdatedAtBefore(Status status, LocalDateTime updatedAt);
+    @Query("SELECT r FROM Request r JOIN FETCH r.resourceGroup WHERE r.status = :status AND r.updatedAt < :updatedAt")
+    List<Request> findAllByStatusAndUpdatedAtBefore(@Param("status") Status status, @Param("updatedAt") LocalDateTime updatedAt);
 }
