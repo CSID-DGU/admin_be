@@ -33,7 +33,7 @@ public class RequestExpiryService {
 
     private record ExpiryContext(
             String serverName, String ubuntuUsername, String userName, String userEmail,
-            String podName, String expiresAt, String portSummary
+            String podName, String expiresAt, String portSummary, String nodeName
     ) {}
 
     public void deleteExpiredRequest(Long requestId) {
@@ -57,7 +57,8 @@ public class RequestExpiryService {
                     request.getUser().getEmail(),
                     request.getPodName(),
                     request.getExpiresAt() != null ? request.getExpiresAt().toLocalDate().toString() : "",
-                    PodPortUtils.formatPortSummary(ports)
+                    PodPortUtils.formatPortSummary(ports),
+                    request.getNodeName()
             );
             return null;
         });
@@ -79,7 +80,7 @@ public class RequestExpiryService {
         }
 
         try {
-            ubuntuAccountService.deleteUbuntuAccount(ctx.ubuntuUsername());
+            ubuntuAccountService.deleteUbuntuAccount(ctx.ubuntuUsername(), ctx.nodeName());
         } catch (Exception e) {
             log.error("[deleteExpiredRequest] 우분투 계정 삭제 실패 — DELETED로 전환하지 않음: requestId={}, username={}, error={}", requestId, ctx.ubuntuUsername(), e.getMessage());
             throw new BusinessException("만료 리소스 정리 중 계정 삭제 실패: " + e.getMessage(), ErrorCode.UBUNTU_USER_DELETION_FAILED);

@@ -8,6 +8,8 @@ import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.webclient.WebClientErrorHandler;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -27,6 +29,23 @@ import java.util.Map;
 public class PodService {
 
     private final @Qualifier("podWebClient") WebClient webClient;
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    /**
+     * config-server 에러 응답 바디(JSON 문자열)에서 "node" 필드만 뽑아낸다. 실패 응답에
+     * 어느 farm에 배포를 시도했는지가 담겨있는데, 그래야 계정 삭제 보상 트랜잭션이 그
+     * 노드로만 정리를 좁힐 수 있다. 파싱 실패나 필드 부재는 흔한 경우(모든 에러 응답에
+     * node가 있는 건 아님)이므로 조용히 null을 반환한다.
+     */
+    private static String extractNode(String body) {
+        try {
+            JsonNode json = OBJECT_MAPPER.readTree(body);
+            JsonNode node = json.get("node");
+            return (node != null && !node.isNull()) ? node.asText() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     private record DeletePodRequest(@com.fasterxml.jackson.annotation.JsonProperty("pod_name") String podName) {}
 
@@ -49,7 +68,7 @@ public class PodService {
                                     .uri("/create-pod")
                                     .bodyValue(new CreatePodRequestDTO(username))
                                     .retrieve(),
-                            (status, body) -> new BusinessException("Pod 생성 실패: " + body, ErrorCode.POD_CREATION_FAILED)
+                            (status, body) -> new PodCreationFailedException("Pod 생성 실패: " + body, ErrorCode.POD_CREATION_FAILED, extractNode(body))
                     )
                     .bodyToMono(CreatePodResponseDTO.class)
                     .block();
