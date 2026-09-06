@@ -15,7 +15,10 @@ import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+
+import java.time.LocalDateTime;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -28,6 +31,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -244,6 +248,120 @@ class RequestCommandServiceTest {
             when(groupRepository.findAllByUbuntuGidIn(any())).thenReturn(List.of());
 
             assertThatThrownBy(() -> requestCommandService.createRequest(1L, dto))
+                    .isInstanceOf(BusinessException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("cancelRequest")
+    class CancelRequest {
+
+        private Request buildRequest() {
+            User owner = mock(User.class);
+            when(owner.getUserId()).thenReturn(1L);
+
+            return Request.builder()
+                    .ubuntuUsername("cancelUser")
+                    .ubuntuPassword("hashedPassword")
+                    .expiresAt(LocalDateTime.now().plusDays(30))
+                    .usagePurpose("딥러닝 연구")
+                    .formAnswers("{}")
+                    .user(owner)
+                    .resourceGroup(mock(ResourceGroup.class))
+                    .containerImage(mock(ContainerImage.class))
+                    .build();
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 requestId면 BusinessException을 던진다")
+        void cancelRequest_throwsException_whenRequestNotFound() {
+            when(requestRepository.findById(99L)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> requestCommandService.cancelRequest(1L, 99L))
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("본인 소유의 신청이 아니면 BusinessException을 던진다")
+        void cancelRequest_throwsException_whenNotOwner() {
+            Request request = buildRequest();
+            when(requestRepository.findById(10L)).thenReturn(Optional.of(request));
+
+            // userId=2 로 취소 시도 → 소유자 userId=1 과 불일치
+            assertThatThrownBy(() -> requestCommandService.cancelRequest(2L, 10L))
+                    .isInstanceOf(BusinessException.class);
+            assertThat(request.getStatus()).isEqualTo(Status.PENDING);
+        }
+
+        @Test
+        @DisplayName("PENDING 상태의 본인 신청을 취소하면 DELETED로 바뀐다")
+        void cancelRequest_succeeds_whenPending() {
+            Request request = buildRequest();
+            when(requestRepository.findById(11L)).thenReturn(Optional.of(request));
+
+            requestCommandService.cancelRequest(1L, 11L);
+
+            assertThat(request.getStatus()).isEqualTo(Status.DELETED);
+        }
+
+        @Test
+        @DisplayName("DENIED 상태의 본인 신청을 취소하면 DELETED로 바뀐다")
+        void cancelRequest_succeeds_whenDenied() {
+            Request request = buildRequest();
+            request.reject("리소스 부족");
+            when(requestRepository.findById(12L)).thenReturn(Optional.of(request));
+
+            requestCommandService.cancelRequest(1L, 12L);
+
+            assertThat(request.getStatus()).isEqualTo(Status.DELETED);
+        }
+
+        @Test
+        @DisplayName("FULFILLED 상태의 신청을 취소하려 하면 BusinessException을 던지고 상태를 바꾸지 않는다")
+        void cancelRequest_throwsException_whenFulfilled() {
+            Request request = buildRequest();
+            request.approve(mock(ContainerImage.class), mock(ResourceGroup.class), null);
+            when(requestRepository.findById(13L)).thenReturn(Optional.of(request));
+
+            assertThatThrownBy(() -> requestCommandService.cancelRequest(1L, 13L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REQUEST_STATUS);
+            assertThat(request.getStatus()).isEqualTo(Status.FULFILLED);
+        }
+
+        @Test
+        @DisplayName("MIGRATING 상태의 신청을 취소하려 하면 BusinessException을 던지고 상태를 바꾸지 않는다")
+        void cancelRequest_throwsException_whenMigrating() {
+            Request request = buildRequest();
+            request.approve(mock(ContainerImage.class), mock(ResourceGroup.class), null);
+            request.beginMigration();
+            when(requestRepository.findById(14L)).thenReturn(Optional.of(request));
+
+            assertThatThrownBy(() -> requestCommandService.cancelRequest(1L, 14L))
+                    .isInstanceOf(BusinessException.class);
+            assertThat(request.getStatus()).isEqualTo(Status.MIGRATING);
+        }
+
+        @Test
+        @DisplayName("PROCESSING 상태(승인 처리 중)의 신청을 취소하려 하면 BusinessException을 던지고 상태를 바꾸지 않는다 — 안 막으면 처리 완료 후 DB에 추적 안 되는 고아 계정/Pod가 남는다")
+        void cancelRequest_throwsException_whenProcessing() {
+            Request request = buildRequest();
+            request.markAsProcessing();
+            when(requestRepository.findById(15L)).thenReturn(Optional.of(request));
+
+            assertThatThrownBy(() -> requestCommandService.cancelRequest(1L, 15L))
+                    .isInstanceOf(BusinessException.class);
+            assertThat(request.getStatus()).isEqualTo(Status.PROCESSING);
+        }
+
+        @Test
+        @DisplayName("이미 삭제된 신청을 다시 취소하려 하면 BusinessException을 던진다")
+        void cancelRequest_throwsException_whenAlreadyDeleted() {
+            Request request = buildRequest();
+            request.delete();
+            when(requestRepository.findById(16L)).thenReturn(Optional.of(request));
+
+            assertThatThrownBy(() -> requestCommandService.cancelRequest(1L, 16L))
                     .isInstanceOf(BusinessException.class);
         }
     }

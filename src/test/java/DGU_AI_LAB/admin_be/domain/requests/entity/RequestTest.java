@@ -156,6 +156,30 @@ class RequestTest {
             assertThat(request.getUbuntuUid()).isNull();
             assertThat(request.getUbuntuGid()).isNull();
         }
+
+        @Test
+        @DisplayName("MIGRATING 상태의 Request를 delete()로 삭제하면 BusinessException을 던진다")
+        void delete_throwsException_whenMigrating() {
+            ContainerImage image = mock(ContainerImage.class);
+            ResourceGroup rg = mock(ResourceGroup.class);
+            request.approve(image, rg, null);
+            request.beginMigration();
+
+            assertThatThrownBy(request::delete)
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("PROCESSING 상태의 Request를 delete()로 삭제하면 BusinessException을 던진다")
+        void delete_throwsException_whenProcessing() {
+            // 관리자가 승인 처리 중(AD 계정/Pod 생성이 백그라운드에서 진행 중)인 요청을
+            // 사용자가 취소하면, 처리 완료 시점에 DB에 추적되지 않는 고아 계정/Pod가
+            // 생길 수 있다. delete()는 이 상태도 반드시 막아야 한다.
+            request.markAsProcessing();
+
+            assertThatThrownBy(request::delete)
+                    .isInstanceOf(BusinessException.class);
+        }
     }
 
     @Nested
