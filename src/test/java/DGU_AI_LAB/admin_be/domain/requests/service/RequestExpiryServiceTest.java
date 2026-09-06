@@ -94,7 +94,7 @@ class RequestExpiryServiceTest {
             service.deleteExpiredRequest(requestId);
 
             verify(podService).deletePod("pod-testuser-xxxx");
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser");
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
             verify(request).deleteAfterCleanup();
 
             ArgumentCaptor<RequestExpiredEvent> captor = ArgumentCaptor.forClass(RequestExpiredEvent.class);
@@ -113,7 +113,7 @@ class RequestExpiryServiceTest {
             service.deleteExpiredRequest(requestId);
 
             verify(podService, never()).deletePod(any());
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount(any());
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(any(), any());
             verify(request, never()).deleteAfterCleanup();
             verify(eventPublisher, never()).publishEvent(any());
         }
@@ -128,7 +128,7 @@ class RequestExpiryServiceTest {
             service.deleteExpiredRequest(requestId);
 
             verify(podService, never()).deletePod(any());
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount(any());
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(any(), any());
             verify(eventPublisher, never()).publishEvent(any());
         }
 
@@ -142,7 +142,7 @@ class RequestExpiryServiceTest {
             service.deleteExpiredRequest(requestId);
 
             verify(podService, never()).deletePod(any());
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount(any());
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(any(), any());
             verify(eventPublisher, never()).publishEvent(any());
         }
 
@@ -179,7 +179,7 @@ class RequestExpiryServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_DELETION_FAILED);
 
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount(any());
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(any(), any());
             verify(request, never()).deleteAfterCleanup();
             verify(eventPublisher, never()).publishEvent(any());
         }
@@ -192,7 +192,7 @@ class RequestExpiryServiceTest {
             when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
             when(podExternalPortRepository.findByRequestRequestId(requestId)).thenReturn(List.of());
             doThrow(new RuntimeException("WAS 연결 실패"))
-                    .when(ubuntuAccountService).deleteUbuntuAccount("testuser");
+                    .when(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
 
             assertThatThrownBy(() -> service.deleteExpiredRequest(requestId))
                     .isInstanceOf(BusinessException.class)
@@ -219,7 +219,7 @@ class RequestExpiryServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_DELETION_FAILED);
 
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount(any());
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(any(), any());
         }
     }
 }
