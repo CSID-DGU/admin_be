@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.pod.controller.docs;
 
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodEventDTO;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.PodCreationStatusResponseDTO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -41,5 +42,13 @@ public interface PodApi {
             content = @Content(schema = @Schema(implementation = PodEventDTO.class)))
     List<PodEventDTO> getPodEvents(
             @Parameter(description = "Pod 이름") String podName
+    );
+
+    @Operation(summary = "Pod 생성 진행 상태 조회", description = "사용자명으로 Pod 생성 진행 단계(stage)를 조회합니다.")
+    @ApiResponse(responseCode = "200", description = "조회 성공",
+            content = @Content(schema = @Schema(implementation = PodCreationStatusResponseDTO.class)))
+    @ApiResponse(responseCode = "502", description = "config-server 연동 오류", content = @Content)
+    PodCreationStatusResponseDTO getPodCreationStatus(
+            @Parameter(description = "사용자명") String username
     );
 }
