@@ -405,8 +405,9 @@ class AdminRequestCommandServiceTest {
                     .isEqualTo(ErrorCode.POD_CREATION_FAILED);
 
             // 보상 트랜잭션 자체의 실패는 로그만 남으면 아무도 모른다 — 실무에서 이런 이중 실패는
-            // 인프라와 DB가 어긋난 채로 방치되는 경우라 즉시 Slack 알림이 필요하다.
-            verify(alarmService).sendSlackAlert(contains("testuser"), isNull());
+            // 인프라와 DB가 어긋난 채로 방치되는 경우라 즉시 Slack 알림이 필요하다. 관리자가
+            // 실제로 보는 farm/lab 채널로 보낸다 (serverName은 이 테스트에서 스텁 안 해 null).
+            verify(alarmService).sendAdminSlackNotification(isNull(), contains("testuser"));
         }
 
         @Test
@@ -443,6 +444,7 @@ class AdminRequestCommandServiceTest {
             when(request.getUbuntuUsername()).thenReturn("testuser");
             when(request.getUbuntuPasswordBase64()).thenReturn("cGxhaW5fdGV4dF9wdw==");
             when(request.getUser()).thenReturn(mockUser);
+            when(request.getResourceGroup()).thenReturn(mockRg);
             when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
             when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
             stubWebClientPut();
@@ -478,6 +480,7 @@ class AdminRequestCommandServiceTest {
             when(request.getUbuntuUsername()).thenReturn("testuser");
             when(request.getUbuntuPasswordBase64()).thenReturn("cGxhaW5fdGV4dF9wdw==");
             when(request.getUser()).thenReturn(mockUser);
+            when(request.getResourceGroup()).thenReturn(mockRg);
             when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
             when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
             stubWebClientPut();

@@ -76,7 +76,8 @@ public class RequestSchedulerService {
                 STALE_IN_FLIGHT_THRESHOLD_MINUTES, request.getRequestId());
         // 락 + 상태 재확인은 revertToPendingIfStillProcessing 내부에서 수행 — 그 사이 정상
         // 처리(승인/거절)됐으면 건드리지 않는다.
-        adminRequestCommandService.revertToPendingIfStillProcessing(request.getRequestId());
+        adminRequestCommandService.revertToPendingIfStillProcessing(
+                request.getRequestId(), request.getResourceGroup().getServerName());
         try {
             String msg = messageUtils.get("notification.admin.request.stale-processing",
                     request.getRequestId(), request.getUbuntuUsername(), STALE_IN_FLIGHT_THRESHOLD_MINUTES);
