@@ -87,6 +87,9 @@ public class AdminRequestCommandService {
         // 1. 상태 검증 + HTTP 요청 데이터 추출 (짧은 트랜잭션, 이후 커넥션 반납)
         final UserCreationRequestDTO[] creationDtoRef = {null};
         final String[] usernameRef = {null};
+        // 보상 트랜잭션 실패 알림을 관리자가 실제로 보는 farm/lab 채널로 보내기 위해
+        // 승인 시점의 서버 구분을 미리 떼어둔다 (resourceGroup은 신청 시점부터 항상 존재).
+        final String[] serverNameRef = {null};
         tx.execute(status -> {
             // 행 잠금 조회: 동시에 같은 요청을 승인 시도하는 두 번째 트랜잭션은 여기서 대기하다가
             // 첫 트랜잭션 커밋 후 PROCESSING 상태를 보고 아래에서 실패한다 (중복 승인/중복 provisioning 방지)
@@ -97,6 +100,7 @@ public class AdminRequestCommandService {
             }
             req.markAsProcessing(); // 다른 관리자의 중복 승인 시도 차단
             usernameRef[0] = req.getUbuntuUsername();
+            serverNameRef[0] = req.getResourceGroup().getServerName();
             List<UserCreationRequestDTO.SupplementaryGroup> supplementaryGroups = req.getRequestGroups().stream()
                     .map(rg -> new UserCreationRequestDTO.SupplementaryGroup(rg.getGroup().getGroupName(), rg.getGroup().getUbuntuGid()))
                     .toList();
@@ -118,7 +122,7 @@ public class AdminRequestCommandService {
             userResponse = callUserCreationApi(creationDtoRef[0]);
         } catch (Exception e) {
             log.warn("[보상 트랜잭션] 사용자 생성 실패 → 상태 복구 시작: {}", username);
-            revertToPendingIfStillProcessing(dto.requestId());
+            revertToPendingIfStillProcessing(dto.requestId(), serverNameRef[0]);
             throw e;
         }
 
@@ -134,8 +138,9 @@ public class AdminRequestCommandService {
             }
         } catch (BusinessException e) {
             log.warn("[보상 트랜잭션] Pod 생성 실패 → 계정 삭제 및 상태 복구 시작: {}", username);
-            tryCompensateDeleteUser(username);
-            revertToPendingIfStillProcessing(dto.requestId());
+            String failedNode = (e instanceof PodCreationFailedException pcfe) ? pcfe.getNode() : null;
+            tryCompensateDeleteUser(username, failedNode, serverNameRef[0]);
+            revertToPendingIfStillProcessing(dto.requestId(), serverNameRef[0]);
             throw e;
         }
 
@@ -183,8 +188,8 @@ public class AdminRequestCommandService {
             });
         } catch (Exception e) {
             log.error("[보상 트랜잭션] DB 업데이트 실패 → 전체 infra 리소스 삭제 시작: {}", username, e);
-            tryCompensateAll(username, finalPodResponse.podName());
-            revertToPendingIfStillProcessing(dto.requestId());
+            tryCompensateAll(username, finalPodResponse.podName(), finalPodResponse.node(), serverNameRef[0]);
+            revertToPendingIfStillProcessing(dto.requestId(), serverNameRef[0]);
             throw e;
         }
 
@@ -427,22 +432,23 @@ public class AdminRequestCommandService {
 
     // ── 보상 트랜잭션 헬퍼 ─────────────────────────────────────────────
 
-    private void tryCompensateDeleteUser(String username) {
+    private void tryCompensateDeleteUser(String username, String nodeName, String serverName) {
         try {
-            ubuntuAccountService.deleteUbuntuAccount(username);
-            log.info("[보상 트랜잭션 완료] 계정 삭제: {}", username);
+            ubuntuAccountService.deleteUbuntuAccount(username, nodeName);
+            log.info("[보상 트랜잭션 완료] 계정 삭제: {}, node={}", username, nodeName);
         } catch (Exception e) {
             log.error("[보상 트랜잭션 실패] 계정 삭제 실패 - 수동 정리 필요: {}", username, e);
-            alertCompensationFailure(String.format("[보상 트랜잭션 실패] 계정 삭제 실패 - 수동 정리 필요: username=%s", username));
+            alertCompensationFailure(String.format("[보상 트랜잭션 실패] 계정 삭제 실패 - 수동 정리 필요: username=%s", username), serverName);
         }
     }
 
     // 보상 트랜잭션 자체의 실패는 로그만 남기면 관리자가 직접 읽기 전까지 아무도 모른다 —
     // 원래 실패(계정/Pod 생성 실패 등) 위에 이 정리마저 실패했다는 건 인프라와 DB가 어긋난
-    // 채로 방치된다는 뜻이라 즉시 알림이 필요하다.
-    private void alertCompensationFailure(String message) {
+    // 채로 방치된다는 뜻이라 즉시 알림이 필요하다. 관리자가 "새로운 서버 사용 신청" 알림을
+    // 실제로 보는 farm/lab 채널로 보내야 놓치지 않는다 — 범용 에러 채널은 잘 안 보게 된다.
+    private void alertCompensationFailure(String message, String serverName) {
         try {
-            alarmService.sendSlackAlert(message, null);
+            alarmService.sendAdminSlackNotification(serverName, message);
         } catch (Exception ignored) {
             // 알림 발송 실패가 원래 예외 전파를 막으면 안 된다.
         }
@@ -458,7 +464,7 @@ public class AdminRequestCommandService {
     // 통일한다. approveRequest 내부의 즉시 실패 보상뿐 아니라, admin_be 프로세스 자체가 승인
     // 처리 도중 죽어서(강제 재배포, OOM 등) catch 블록조차 실행 못 한 경우를 쓸어담는
     // RequestSchedulerService의 재조정(reconciliation) 잡에서도 재사용한다.
-    public void revertToPendingIfStillProcessing(Long requestId) {
+    public void revertToPendingIfStillProcessing(Long requestId, String serverName) {
         try {
             new TransactionTemplate(transactionManager).execute(status -> {
                 requestRepository.findByIdForUpdate(requestId)
@@ -468,19 +474,19 @@ public class AdminRequestCommandService {
             });
         } catch (Exception e) {
             log.error("[보상 트랜잭션 실패] 요청 상태 복구 실패 — 수동 확인 필요: requestId={}", requestId, e);
-            alertCompensationFailure(String.format("[보상 트랜잭션 실패] 요청 상태 복구 실패 - 수동 확인 필요: requestId=%d", requestId));
+            alertCompensationFailure(String.format("[보상 트랜잭션 실패] 요청 상태 복구 실패 - 수동 확인 필요: requestId=%d", requestId), serverName);
         }
     }
 
-    private void tryCompensateAll(String username, String podName) {
+    private void tryCompensateAll(String username, String podName, String nodeName, String serverName) {
         try {
             podService.deletePod(podName);
             log.info("[보상 트랜잭션 완료] Pod 삭제: {}", podName);
         } catch (Exception e) {
             log.error("[보상 트랜잭션 실패] Pod 삭제 실패 - 수동 정리 필요: {}", podName, e);
-            alertCompensationFailure(String.format("[보상 트랜잭션 실패] Pod 삭제 실패 - 수동 정리 필요: podName=%s", podName));
+            alertCompensationFailure(String.format("[보상 트랜잭션 실패] Pod 삭제 실패 - 수동 정리 필요: podName=%s", podName), serverName);
         }
-        tryCompensateDeleteUser(username);
+        tryCompensateDeleteUser(username, nodeName, serverName);
     }
 
     record UserCreationResponse(

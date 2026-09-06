@@ -105,7 +105,7 @@ public class AdminUserService {
             if (fulfilledIds.contains(requestId)) {
                 try {
                     podService.deletePod(request.getPodName());
-                    ubuntuAccountService.deleteUbuntuAccount(request.getUbuntuUsername());
+                    ubuntuAccountService.deleteUbuntuAccount(request.getUbuntuUsername(), request.getNodeName());
                 } catch (Exception e) {
                     log.error("[{}] userId={} requestId={} Pod/계정 삭제 실패 — 이 요청은 FULFILLED로 남기고 다음 요청을 계속 정리합니다: {}",
                             logPrefix, user.getUserId(), requestId, e.getMessage());
@@ -196,7 +196,7 @@ public class AdminUserService {
         }
 
         podService.deletePod(request.getPodName());
-        ubuntuAccountService.deleteUbuntuAccount(username);
+        ubuntuAccountService.deleteUbuntuAccount(username, request.getNodeName());
         request.deleteAfterCleanup();
         requestRepository.save(request);
         log.info("[deleteUbuntuAccount] {} 계정 삭제 및 DB 상태 업데이트 완료", username);

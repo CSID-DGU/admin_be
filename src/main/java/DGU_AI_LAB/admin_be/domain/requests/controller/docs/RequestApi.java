@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 
@@ -37,6 +38,20 @@ public interface RequestApi {
     ResponseEntity<SuccessResponse<?>> createRequest(
             @Parameter(hidden = true) Long userId,
             @Valid SaveRequestRequestDTO dto
+    );
+
+    @Operation(summary = "내 신청 취소", description = "PENDING 또는 DENIED 상태인 나의 신청을 취소(삭제)합니다. 이미 승인되어 컨테이너가 떠 있는 신청은 취소할 수 없습니다.")
+    @ApiResponse(responseCode = "200", description = "취소 성공")
+    @ApiResponse(responseCode = "400", description = "취소할 수 없는 상태(FULFILLED/MIGRATING 등)",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "403", description = "본인 소유의 신청이 아님",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "404", description = "신청을 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @DeleteMapping("/{requestId}")
+    ResponseEntity<SuccessResponse<?>> cancelRequest(
+            @Parameter(hidden = true) Long userId,
+            @PathVariable @Parameter(description = "취소할 신청 ID") Long requestId
     );
 
     @Operation(summary = "서버 설정 단건 변경 요청 생성", description = "승인된 신청에 대해 볼륨 크기, 만료 기한 등 단일 항목 변경을 요청합니다.")
