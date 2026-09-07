@@ -171,7 +171,10 @@ public class AdminRequestCommandService {
             CreatePodResponseDTO podResponse;
             try {
                 podResponse = podService.createPod(username);
-            } catch (BusinessException e) {
+            } catch (Exception e) {
+                // BusinessException뿐 아니라 WebClient 타임아웃 등 예기치 않은 예외도
+                // 여기서 잡아야 한다 — 안 그러면 바깥쪽 catch-all까지 새어나가 상태
+                // 복구는 되어도 방금 만든 Ubuntu 계정이 정리되지 않은 채 남는다.
                 log.warn("[보상 트랜잭션] Pod 생성 실패 → 계정 삭제 및 상태 복구 시작: {}", username);
                 String failedNode = (e instanceof PodCreationFailedException pcfe) ? pcfe.getNode() : null;
                 tryCompensateDeleteUser(username, failedNode, serverName);
