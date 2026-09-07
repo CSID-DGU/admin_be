@@ -5,5 +5,5 @@ package DGU_AI_LAB.admin_be.domain.requests.entity;
  * ALL은 "모든 상태 조회" 의미의 sentinel 값입니다.
  */
 public enum StatusFilter {
-    PENDING, PROCESSING, DENIED, FULFILLED, MIGRATING, DELETED, ALL
+    PENDING, PROCESSING, DENIED, FULFILLED, MIGRATING, EXPIRING, DELETED, ALL
 }
