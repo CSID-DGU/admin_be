@@ -151,6 +151,7 @@ public enum ErrorCode {
     POD_MIGRATION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 마이그레이션 API 요청에 실패했습니다."),
     POD_REBOOT_CONCURRENCY_LIMIT(HttpStatus.TOO_MANY_REQUESTS, "현재 동시에 처리 중인 컨테이너 재시작 요청이 많습니다. 잠시 후 다시 시도해주세요."),
     POD_NODE_NOT_ASSIGNED(HttpStatus.CONFLICT, "컨테이너가 배치된 노드 정보가 없어 재시작할 수 없습니다. 관리자에게 문의해주세요."),
+    POD_REBOOT_COOLDOWN(HttpStatus.TOO_MANY_REQUESTS, "최근에 재시작한 컨테이너입니다. 잠시 후 다시 시도해주세요."),
 
     /**
      * Message Template Error

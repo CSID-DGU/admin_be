@@ -10,6 +10,7 @@ import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -72,6 +73,9 @@ public class Request extends BaseTimeEntity {
 
     @Column(name = "node_name", length = 100)
     private String nodeName;
+
+    @Column(name = "last_rebooted_at")
+    private LocalDateTime lastRebootedAt;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "rsgroup_id", nullable = false)
@@ -210,6 +214,13 @@ public class Request extends BaseTimeEntity {
     }
 
     /**
+     * 재시작 1회마다 config-server가 컨테이너 전체 파일시스템을 NFS에 tar로 떠서 저장하므로
+     * (같은 파일을 덮어쓰긴 하지만) 매번 실질적인 I/O 비용이 든다. 연타로 인한 반복 실행을
+     * 막기 위해 마지막 재시작 시도 이후 이 시간 동안은 재시도를 막는다.
+     */
+    private static final long REBOOT_COOLDOWN_MINUTES = 10;
+
+    /**
      * 사용자 셀프 재시작 시작을 위해 FULFILLED -> REBOOTING으로 전환한다.
      * beginMigration()과 같은 이유로 행 잠금 조회(findByIdForUpdate)와 같은 트랜잭션에서
      * 호출해야 동시에 들어온 두 번째 재시작 요청이 이 상태 검증에서 실제로 막힌다.
@@ -218,7 +229,17 @@ public class Request extends BaseTimeEntity {
         if (this.status != Status.FULFILLED) {
             throw new BusinessException("컨테이너가 실행 중일 때만 재시작할 수 있습니다. 이미 다른 작업이 진행 중입니다.", ErrorCode.INVALID_REQUEST_STATUS);
         }
+        if (this.lastRebootedAt != null) {
+            LocalDateTime cooldownEnd = this.lastRebootedAt.plusMinutes(REBOOT_COOLDOWN_MINUTES);
+            if (cooldownEnd.isAfter(LocalDateTime.now())) {
+                long remainingMinutes = Duration.between(LocalDateTime.now(), cooldownEnd).toMinutes() + 1;
+                throw new BusinessException(
+                        String.format("최근에 재시작한 컨테이너입니다. %d분 후 다시 시도해주세요.", remainingMinutes),
+                        ErrorCode.POD_REBOOT_COOLDOWN);
+            }
+        }
         this.status = Status.REBOOTING;
+        this.lastRebootedAt = LocalDateTime.now();
     }
 
     /**

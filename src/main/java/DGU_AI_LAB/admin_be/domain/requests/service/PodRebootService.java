@@ -124,7 +124,7 @@ public class PodRebootService {
 
         try {
             new TransactionTemplate(transactionManager).execute(status -> {
-                Request req = requestRepository.findById(requestId)
+                Request req = requestRepository.findByIdForUpdate(requestId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
                 if (response.isMigrated()) {
                     podMigrationService.applyMigratedPodInfo(requestId, req, response);
@@ -171,7 +171,7 @@ public class PodRebootService {
     private void revertToFulfilled(Long requestId) {
         try {
             new TransactionTemplate(transactionManager).execute(status -> {
-                requestRepository.findById(requestId)
+                requestRepository.findByIdForUpdate(requestId)
                         .filter(req -> req.getStatus() == Status.REBOOTING)
                         .ifPresent(Request::endReboot);
                 return null;

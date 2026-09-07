@@ -241,6 +241,21 @@ class PodRebootServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting("errorCode").isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
         }
+
+        @Test
+        @DisplayName("쿨다운 시간 이내 재시작이면 executor 제출 전에 거부된다")
+        void rebootPod_withinCooldown_rejectedBeforeSubmit() {
+            when(mockRequest.getStatus()).thenReturn(Status.FULFILLED);
+            doThrow(new BusinessException("최근에 재시작한 컨테이너입니다. 3분 후 다시 시도해주세요.",
+                    ErrorCode.POD_REBOOT_COOLDOWN)).when(mockRequest).beginReboot();
+
+            assertThatThrownBy(() -> service.rebootPod(REQUEST_ID, OWNER_ID))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCode.POD_REBOOT_COOLDOWN);
+
+            verify(rebootExecutor, never()).execute(any());
+            verifyNoInteractions(podService);
+        }
     }
 
     @Nested
