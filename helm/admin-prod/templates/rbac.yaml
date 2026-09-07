@@ -7,6 +7,10 @@
 # events 리소스도 같은 이유로 필요하다 — PodQueryService.getPodEvents가
 # client.v1().events().inNamespace(...).list()로 Pod 이벤트를 조회하는데, 이 권한이
 # 빠져있어 이벤트 패널이 403으로 계속 실패하던 문제도 함께 수정.
+#
+# pods/log는 pods와 별개의 서브리소스라 pods 권한만으로는 로그 조회(getPodLogs)가
+# 계속 403으로 실패한다 — 컨테이너 상세 페이지의 로그 탭이 항상 빈 화면으로 보이던
+# 원인이 이것이었다 (#... 마이그레이션된 pod 로그/이벤트 조회 실패 건).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -16,6 +20,9 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["get", "list"]
