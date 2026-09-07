@@ -14,6 +14,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.UserCreationRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
@@ -37,7 +38,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
-import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.core.task.TaskRejectedException;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -47,7 +49,6 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.Semaphore;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -73,6 +74,7 @@ class AdminRequestCommandServiceTest {
     @Mock private WebClient mockWebClient;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
+    @Mock private ThreadPoolTaskExecutor approvalExecutor;
 
     // WebClient 체이닝 mock
     @Mock private WebClient.RequestBodyUriSpec putUriSpec;
@@ -96,12 +98,22 @@ class AdminRequestCommandServiceTest {
                 alarmService, requestRepository, userRepository, containerImageRepository,
                 resourceGroupRepository, changeRequestRepository,
                 groupRepository, podExternalPortRepository, podService, ubuntuAccountService, portRequestService, new ObjectMapper(),
-                mockWebClient, transactionManager
+                mockWebClient, transactionManager, approvalExecutor
         );
         // 공유 엔티티 기본 설정
         when(mockUser.getName()).thenReturn("테스트유저");
         when(mockImage.getImageId()).thenReturn(1L);
         when(mockRg.getRsgroupId()).thenReturn(1);
+
+        // approvalExecutor.execute(...)는 실제 스레드풀 없이 제출된 작업을 그 자리에서
+        // 동기 실행한다 — 유닛 테스트에는 별도 스레드가 필요 없고, 이렇게 해야 기존
+        // 테스트들이 approveRequest() 호출 직후 바로 부수효과를 검증할 수 있다. 동시
+        // 처리 한도 초과 테스트만 이 stub을 덮어써서 TaskRejectedException을 던지게 한다.
+        doAnswer(invocation -> {
+            Runnable task = invocation.getArgument(0);
+            task.run();
+            return null;
+        }).when(approvalExecutor).execute(any());
     }
 
     /** 사용자 생성 PUT 요청 WebClient 모킹
@@ -329,10 +341,11 @@ class AdminRequestCommandServiceTest {
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
-            assertThatThrownBy(() -> service.approveRequest(dto))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.POD_CREATION_FAILED);
+            // 후처리는 비동기(테스트에서는 approvalExecutor mock이 즉시 동기 실행)라, 실패해도
+            // 이미 응답을 반환한 approveRequest() 자체는 예외를 던지지 않는다 — 보상 트랜잭션이
+            // 내부적으로 처리됐는지를 검증한다.
+            SaveRequestResponseDTO response = service.approveRequest(dto);
+            assertThat(response).isNotNull();
 
             // createPod가 던진 게 PodCreationFailedException이 아닌 평범한 BusinessException이라
             // 실패 노드를 못 얻으므로 node=null로 전체 farm을 훑는 기존 방식으로 정리한다.
@@ -345,7 +358,7 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
-        @DisplayName("createPod()가 null을 반환하면 BusinessException이 발생하고 Ubuntu 계정이 삭제된다")
+        @DisplayName("createPod()가 실패하면 Ubuntu 계정이 삭제되고 상태가 복구된다")
         void approveRequest_podReturnsNull_throwsAndCompensates() {
             Long requestId = 11L;
             buildMockedRequest(requestId);
@@ -356,39 +369,40 @@ class AdminRequestCommandServiceTest {
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
-            assertThatThrownBy(() -> service.approveRequest(dto))
-                    .isInstanceOf(BusinessException.class);
+            assertThat(service.approveRequest(dto)).isNotNull();
 
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
             verify(containerImageRepository, never()).findById(any());
         }
 
         @Test
-        @DisplayName("동시 처리 한도(3) 초과 시 createPod 호출 없이 즉시 실패하고 보상 트랜잭션이 실행된다")
-        void approveRequest_concurrencyLimitExceeded_failsFastWithoutCallingCreatePod() throws InterruptedException {
+        @DisplayName("동시 처리 한도(3) 초과 시 승인 후처리 제출 자체가 즉시 실패하고 보상 트랜잭션이 실행된다")
+        void approveRequest_concurrencyLimitExceeded_failsFastWithoutCallingCreatePod() {
             Long requestId = 20L;
             buildMockedRequest(requestId);
             stubWebClientPut();
 
-            Semaphore semaphore = (Semaphore) ReflectionTestUtils.getField(service, "podCreationSemaphore");
-            semaphore.acquire(3); // 한도(3)만큼 permit을 모두 선점해 초과 상황을 재현
+            // executor 큐가 꽉 차서(동시 3건 초과) 거부되는 상황을 재현 — 제출 자체가
+            // TaskRejectedException을 던지므로 processApproval은 아예 실행되지 않는다.
+            doThrow(new TaskRejectedException("executor saturated"))
+                    .when(approvalExecutor).execute(any());
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
-            try {
-                assertThatThrownBy(() -> service.approveRequest(dto))
-                        .isInstanceOf(BusinessException.class)
-                        .extracting(e -> ((BusinessException) e).getErrorCode())
-                        .isEqualTo(ErrorCode.POD_CREATION_CONCURRENCY_LIMIT);
 
-                verify(podService, never()).createPod(any());
-                verify(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
-            } finally {
-                semaphore.release(3);
-            }
+            assertThatThrownBy(() -> service.approveRequest(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_CREATION_CONCURRENCY_LIMIT);
+
+            // 제출 자체가 거부됐으므로 계정 생성 API 호출도, Pod 생성도 전혀 일어나지 않는다 —
+            // 오늘의 3-한도가 Pod 생성뿐 아니라 계정 생성까지 함께 가드하도록 넓어진 부분이다.
+            verify(putBodySpec, never()).bodyValue(any());
+            verify(podService, never()).createPod(any());
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(any(), any());
         }
 
         @Test
-        @DisplayName("createPod() 실패 시 보상 Ubuntu 계정 삭제 자체가 실패해도 원래 예외가 전파되고, 정리 실패를 Slack으로 알린다")
+        @DisplayName("createPod() 실패 시 보상 Ubuntu 계정 삭제 자체가 실패해도 처리는 종료되고, 정리 실패를 Slack으로 알린다")
         void approveRequest_podFails_compensationAlsoFails_originalExceptionPropagates() {
             Long requestId = 12L;
             buildMockedRequest(requestId);
@@ -401,10 +415,7 @@ class AdminRequestCommandServiceTest {
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
-            assertThatThrownBy(() -> service.approveRequest(dto))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.POD_CREATION_FAILED);
+            assertThat(service.approveRequest(dto)).isNotNull();
 
             // 보상 트랜잭션 자체의 실패는 로그만 남으면 아무도 모른다 — 실무에서 이런 이중 실패는
             // 인프라와 DB가 어긋난 채로 방치되는 경우라 즉시 Slack 알림이 필요하다. 관리자가
@@ -447,6 +458,7 @@ class AdminRequestCommandServiceTest {
             when(request.getUbuntuPasswordBase64()).thenReturn("cGxhaW5fdGV4dF9wdw==");
             when(request.getUser()).thenReturn(mockUser);
             when(request.getResourceGroup()).thenReturn(mockRg);
+            when(request.getContainerImage()).thenReturn(mockImage);
             when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
             when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
             stubWebClientPut();
@@ -458,10 +470,9 @@ class AdminRequestCommandServiceTest {
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
-            assertThatThrownBy(() -> service.approveRequest(dto))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+            // 후처리는 비동기라 그 안에서 발생하는 INVALID_REQUEST_STATUS는 approveRequest()
+            // 밖으로 전파되지 않는다 — 보상 트랜잭션(계정/Pod 정리)이 내부적으로 수행됐는지 검증한다.
+            assertThat(service.approveRequest(dto)).isNotNull();
 
             // 이미 만든 계정/Pod는 정리하되, 거절된 요청의 상태를 승인으로 덮어쓰지 않는다
             verify(podService).deletePod("pod-testuser-race");
@@ -484,6 +495,7 @@ class AdminRequestCommandServiceTest {
             when(request.getUbuntuPasswordBase64()).thenReturn("cGxhaW5fdGV4dF9wdw==");
             when(request.getUser()).thenReturn(mockUser);
             when(request.getResourceGroup()).thenReturn(mockRg);
+            when(request.getContainerImage()).thenReturn(mockImage);
             when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
             when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
             stubWebClientPut();
@@ -496,8 +508,7 @@ class AdminRequestCommandServiceTest {
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
-            assertThatThrownBy(() -> service.approveRequest(dto))
-                    .isInstanceOf(BusinessException.class);
+            assertThat(service.approveRequest(dto)).isNotNull();
 
             // 인프라는 정리하고, 여전히 PROCESSING이었던 요청은 PENDING으로 되돌려
             // 재승인/재거절이 막힌 채 영구히 갇히지 않게 한다
