@@ -35,8 +35,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -49,7 +51,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.Semaphore;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -76,20 +77,27 @@ public class AdminRequestCommandService {
     private final @Qualifier("configWebClient") WebClient userCreationWebClient;
     private final PlatformTransactionManager transactionManager;
 
-    // 동시 처리 한도. 이 이상 동시에 승인이 몰리면 Tomcat 스레드가 최대
-    // pod-timeout-seconds(10분)씩 묶이는 대신 즉시 명확한 에러로 실패시킨다.
-    private final Semaphore podCreationSemaphore = new Semaphore(3);
+    // 계정 생성·Pod 생성을 포함한 승인 후처리 전체를 이 executor로 비동기 실행한다.
+    // corePoolSize=maxPoolSize=3, queueCapacity=0(AsyncConfig 참고) — 이 이상 동시에 승인이
+    // 몰리면 큐잉하지 않고 즉시 TaskRejectedException으로 거부해, 관리자에게 명확한 에러로
+    // 실패시킨다 (기존 Semaphore(3) fail-fast 정책과 동일한 사용자 체감 동작 유지).
+    private final ThreadPoolTaskExecutor approvalExecutor;
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SaveRequestResponseDTO approveRequest(ApproveRequestDTO dto) {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
 
-        // 1. 상태 검증 + HTTP 요청 데이터 추출 (짧은 트랜잭션, 이후 커넥션 반납)
+        // 1. 상태 검증 + HTTP 요청 데이터 추출 + 즉시 응답 DTO 준비 (짧은 트랜잭션, 이후 커넥션 반납)
+        // 계정/Pod 생성(최대 10분)은 아래에서 비동기로 넘기므로, 관리자 HTTP 요청은 이 짧은
+        // 트랜잭션만 기다리면 된다. 실제 처리 완료 여부는 기존 Pod 생성 진행 상태 폴링
+        // API(/pod-status/pods/{username}/status)로 확인한다 — 승인/일반 Pod 생성 모두
+        // config-server가 같은 stage 체계를 쓰므로 별도 API 없이 그대로 재사용된다.
         final UserCreationRequestDTO[] creationDtoRef = {null};
         final String[] usernameRef = {null};
         // 보상 트랜잭션 실패 알림을 관리자가 실제로 보는 farm/lab 채널로 보내기 위해
         // 승인 시점의 서버 구분을 미리 떼어둔다 (resourceGroup은 신청 시점부터 항상 존재).
         final String[] serverNameRef = {null};
+        final SaveRequestResponseDTO[] responseRef = {null};
         tx.execute(status -> {
             // 행 잠금 조회: 동시에 같은 요청을 승인 시도하는 두 번째 트랜잭션은 여기서 대기하다가
             // 첫 트랜잭션 커밋 후 PROCESSING 상태를 보고 아래에서 실패한다 (중복 승인/중복 provisioning 방지)
@@ -112,98 +120,128 @@ public class AdminRequestCommandService {
                     false,
                     supplementaryGroups
             );
+            // 트랜잭션 종료 후 사용되는 모든 lazy 연관 초기화 (즉시 응답 DTO 빌드용)
+            req.getUser().getEmail();
+            req.getContainerImage().getImageName();
+            req.getResourceGroup().getServerName();
+            req.getRequestGroups().size();
+            responseRef[0] = SaveRequestResponseDTO.fromEntity(req);
             return null;
         });
         String username = usernameRef[0];
+        Long requestId = dto.requestId();
+        String serverName = serverNameRef[0];
+        UserCreationRequestDTO creationDto = creationDtoRef[0];
 
-        // 2. 외부 HTTP 호출 (DB 커넥션 미보유, status=PROCESSING으로 중복 승인 차단된 상태)
-        UserCreationResponse userResponse;
+        // 2~4단계(계정 생성, Pod 생성, DB 반영, 메일)를 비동기로 넘긴다. executor 큐가
+        // 꽉 차서(동시 3건 초과) 거부되면 제출 시점에 곧바로 TaskRejectedException이
+        // 던져지므로(작업 실행 자체가 아니라 제출이 동기 호출이라 그렇다), 여기서 잡아서
+        // 기존과 동일하게 즉시 실패시킨다.
         try {
-            userResponse = callUserCreationApi(creationDtoRef[0]);
-        } catch (Exception e) {
-            log.warn("[보상 트랜잭션] 사용자 생성 실패 → 상태 복구 시작: {}", username);
-            revertToPendingIfStillProcessing(dto.requestId(), serverNameRef[0]);
-            throw e;
+            approvalExecutor.execute(() -> processApproval(requestId, username, creationDto, dto, serverName));
+        } catch (TaskRejectedException e) {
+            log.warn("[동시 처리 한도 초과] 승인 후처리 제출 거부 → 상태 복구 시작: {}", username);
+            revertToPendingIfStillProcessing(requestId, serverName);
+            throw new BusinessException(ErrorCode.POD_CREATION_CONCURRENCY_LIMIT);
         }
 
-        CreatePodResponseDTO podResponse;
+        return responseRef[0];
+    }
+
+    /**
+     * approveRequest의 후처리(계정 생성 → Pod 생성 → DB 반영 → 메일)를 approvalExecutor
+     * 스레드에서 실행한다. 각 단계의 실패는 기존과 동일하게 자체적으로 보상 트랜잭션을 수행하고
+     * 조용히 종료한다 — 이 메서드를 호출한 쪽(관리자 HTTP 요청)은 이미 응답을 반환하고 떠난
+     * 상태라 예외를 던져봐야 아무도 받지 않는다. 바깥 try/catch는 각 단계 내부에서 처리하지
+     * 못한 예기치 않은 예외가 executor 스레드에서 조용히 사라지는 것을 막는 최후의 안전망이다.
+     */
+    private void processApproval(Long requestId, String username, UserCreationRequestDTO creationDto,
+                                  ApproveRequestDTO dto, String serverName) {
         try {
-            if (!podCreationSemaphore.tryAcquire()) {
-                throw new BusinessException(ErrorCode.POD_CREATION_CONCURRENCY_LIMIT);
+            // 2. 외부 HTTP 호출
+            UserCreationResponse userResponse;
+            try {
+                userResponse = callUserCreationApi(creationDto);
+            } catch (Exception e) {
+                log.warn("[보상 트랜잭션] 사용자 생성 실패 → 상태 복구 시작: {}", username);
+                revertToPendingIfStillProcessing(requestId, serverName);
+                return;
             }
+
+            CreatePodResponseDTO podResponse;
             try {
                 podResponse = podService.createPod(username);
-            } finally {
-                podCreationSemaphore.release();
+            } catch (BusinessException e) {
+                log.warn("[보상 트랜잭션] Pod 생성 실패 → 계정 삭제 및 상태 복구 시작: {}", username);
+                String failedNode = (e instanceof PodCreationFailedException pcfe) ? pcfe.getNode() : null;
+                tryCompensateDeleteUser(username, failedNode, serverName);
+                revertToPendingIfStillProcessing(requestId, serverName);
+                return;
             }
-        } catch (BusinessException e) {
-            log.warn("[보상 트랜잭션] Pod 생성 실패 → 계정 삭제 및 상태 복구 시작: {}", username);
-            String failedNode = (e instanceof PodCreationFailedException pcfe) ? pcfe.getNode() : null;
-            tryCompensateDeleteUser(username, failedNode, serverNameRef[0]);
-            revertToPendingIfStillProcessing(dto.requestId(), serverNameRef[0]);
-            throw e;
-        }
 
-        final CreatePodResponseDTO finalPodResponse = podResponse;
-        final UserCreationResponse finalUserResponse = userResponse;
+            // 3. DB 저장 (새 트랜잭션)
+            TransactionTemplate tx = new TransactionTemplate(transactionManager);
+            final Request[] savedRequestRef = {null};
+            try {
+                tx.execute(status -> {
+                    // 행 잠금 + 상태 재확인: 외부 호출(계정/Pod 생성) 도중 다른 관리자가 거절을
+                    // 눌러 상태가 이미 바뀌었을 수 있다. 여기서 다시 확인하지 않고 무조건
+                    // approve()로 덮어쓰면, 거절됐는데도 방금 만든 계정/Pod가 FULFILLED로
+                    // 살아남는 정합성 문제가 생긴다 (rejectRequest도 findByIdForUpdate로
+                    // 행 잠금을 쓰므로 여기서 걸리면 그 커밋이 끝난 뒤의 최신 상태를 본다).
+                    Request req = requestRepository.findByIdForUpdate(requestId)
+                            .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                    if (req.getStatus() != Status.PROCESSING) {
+                        log.warn("[보상 트랜잭션] 승인 처리 중 상태가 변경됨(다른 관리자가 거절했을 수 있음) - " +
+                                "requestId={}, 현재 상태={}", requestId, req.getStatus());
+                        throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+                    }
+                    ContainerImage image = containerImageRepository.findById(dto.imageId())
+                            .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                    ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
+                            .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                    req.assignUbuntuIds(userResponse.uid(), userResponse.gid());
+                    req.approve(image, rg, dto.adminComment());
+                    req.assignPodInfo(podResponse.podName(), podResponse.node());
+                    for (CreatePodResponseDTO.PortInfo port : podResponse.ports()) {
+                        podExternalPortRepository.save(PodExternalPort.builder()
+                                .request(req)
+                                .internalPort(port.internalPort())
+                                .externalPort(port.externalPort())
+                                .usagePurpose(port.usagePurpose())
+                                .build());
+                    }
+                    // 트랜잭션 종료 후 사용되는 모든 lazy 연관 초기화
+                    req.getUser().getEmail();
+                    req.getContainerImage().getImageName();
+                    req.getResourceGroup().getServerName();
+                    req.getRequestGroups().size();
+                    savedRequestRef[0] = req;
+                    return null;
+                });
+            } catch (Exception e) {
+                log.error("[보상 트랜잭션] DB 업데이트 실패 → 전체 infra 리소스 삭제 시작: {}", username, e);
+                tryCompensateAll(username, podResponse.podName(), podResponse.node(), serverName);
+                revertToPendingIfStillProcessing(requestId, serverName);
+                return;
+            }
 
-        // 3. DB 저장 (새 트랜잭션, HTTP 완료 후 짧게만 커넥션 보유)
-        final Request[] savedRequestRef = {null};
-        try {
-            tx.execute(status -> {
-                // 행 잠금 + 상태 재확인: 외부 호출(계정/Pod 생성) 도중 다른 관리자가 거절을
-                // 눌러 상태가 이미 바뀌었을 수 있다. 여기서 다시 확인하지 않고 무조건
-                // approve()로 덮어쓰면, 거절됐는데도 방금 만든 계정/Pod가 FULFILLED로
-                // 살아남는 정합성 문제가 생긴다 (rejectRequest도 findByIdForUpdate로
-                // 행 잠금을 쓰므로 여기서 걸리면 그 커밋이 끝난 뒤의 최신 상태를 본다).
-                Request req = requestRepository.findByIdForUpdate(dto.requestId())
-                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-                if (req.getStatus() != Status.PROCESSING) {
-                    log.warn("[보상 트랜잭션] 승인 처리 중 상태가 변경됨(다른 관리자가 거절했을 수 있음) - " +
-                            "requestId={}, 현재 상태={}", dto.requestId(), req.getStatus());
-                    throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
-                }
-                ContainerImage image = containerImageRepository.findById(dto.imageId())
-                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-                ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
-                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-                req.assignUbuntuIds(finalUserResponse.uid(), finalUserResponse.gid());
-                req.approve(image, rg, dto.adminComment());
-                req.assignPodInfo(finalPodResponse.podName(), finalPodResponse.node());
-                for (CreatePodResponseDTO.PortInfo port : finalPodResponse.ports()) {
-                    podExternalPortRepository.save(PodExternalPort.builder()
-                            .request(req)
-                            .internalPort(port.internalPort())
-                            .externalPort(port.externalPort())
-                            .usagePurpose(port.usagePurpose())
-                            .build());
-                }
-                // 트랜잭션 종료 후 사용되는 모든 lazy 연관 초기화
-                req.getUser().getEmail();
-                req.getContainerImage().getImageName();
-                req.getResourceGroup().getServerName();
-                req.getRequestGroups().size();
-                savedRequestRef[0] = req;
-                return null;
-            });
+            // 4. 이메일 발송 (트랜잭션 종료 후, 실패해도 Pod·계정은 이미 생성됨)
+            Request savedRequest = savedRequestRef[0];
+            String sshPort = extractExternalPort(podResponse, "ssh");
+            String jupyterPort = extractExternalPort(podResponse, "jupyter");
+            sendNotificationSafely(
+                    () -> alarmService.sendContainerCreatedEmail(savedRequest, sshPort, jupyterPort),
+                    () -> log.info("사용자 '{}'에게 컨테이너 배정 안내 메일을 발송했습니다.", savedRequest.getUser().getName()),
+                    e -> log.warn("사용자 '{}'에게 배정 안내 메일 발송 실패. (RequestId: {})",
+                            savedRequest.getUser().getName(), savedRequest.getRequestId(), e)
+            );
         } catch (Exception e) {
-            log.error("[보상 트랜잭션] DB 업데이트 실패 → 전체 infra 리소스 삭제 시작: {}", username, e);
-            tryCompensateAll(username, finalPodResponse.podName(), finalPodResponse.node(), serverNameRef[0]);
-            revertToPendingIfStillProcessing(dto.requestId(), serverNameRef[0]);
-            throw e;
+            // executor 스레드에서 여기까지 예외가 올라오면 아무도 받지 않고 조용히 사라진다 —
+            // 최소한 로그를 남기고 요청이 PROCESSING에 영구히 갇히지 않도록 상태를 복구한다.
+            log.error("[승인 후처리] 예기치 않은 오류로 처리 중단 → 상태 복구 시도: {}", username, e);
+            revertToPendingIfStillProcessing(requestId, serverName);
         }
-
-        // 4. 이메일 발송 (트랜잭션 종료 후, 실패해도 Pod·계정은 이미 생성됨)
-        Request savedRequest = savedRequestRef[0];
-        String sshPort = extractExternalPort(finalPodResponse, "ssh");
-        String jupyterPort = extractExternalPort(finalPodResponse, "jupyter");
-        sendNotificationSafely(
-                () -> alarmService.sendContainerCreatedEmail(savedRequest, sshPort, jupyterPort),
-                () -> log.info("사용자 '{}'에게 컨테이너 배정 안내 메일을 발송했습니다.", savedRequest.getUser().getName()),
-                e -> log.warn("사용자 '{}'에게 배정 안내 메일 발송 실패. (RequestId: {})",
-                        savedRequest.getUser().getName(), savedRequest.getRequestId(), e)
-        );
-        return SaveRequestResponseDTO.fromEntity(savedRequest);
     }
 
     private UserCreationResponse callUserCreationApi(UserCreationRequestDTO userCreationDto) {
