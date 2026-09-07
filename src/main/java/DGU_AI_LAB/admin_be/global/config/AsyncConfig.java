@@ -34,6 +34,26 @@ public class AsyncConfig {
         return executor;
     }
 
+    /**
+     * 사용자 셀프 컨테이너 재시작 전용 executor. approvalExecutor와 분리한 이유는
+     * 재시작은 관리자가 아니라 일반 사용자가 아무 때나 누르는 요청이라, 같은 풀을 쓰면
+     * 재시작이 몰렸을 때 관리자 승인 처리량까지 함께 굶어버리기 때문이다.
+     * 재시작 1건도 새 Pod 생성 대기(최대 10분)를 포함하므로 풀은 작게 잡고,
+     * 넘치면 큐잉 없이 AbortPolicy로 즉시 거부해 사용자에게 명확한 재시도 안내를 준다.
+     */
+    @Bean
+    public ThreadPoolTaskExecutor rebootExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(0);
+        executor.setThreadNamePrefix("reboot-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.setTaskDecorator(new MdcTaskDecorator());
+        executor.initialize();
+        return executor;
+    }
+
     private static class MdcTaskDecorator implements TaskDecorator {
         @Override
         public Runnable decorate(Runnable runnable) {

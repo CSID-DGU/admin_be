@@ -70,7 +70,7 @@ public interface AdminUserApi {
     @ApiResponse(responseCode = "200", description = "성공")
     @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음")
     @ApiResponse(responseCode = "409", description = "이미 비활성화된 사용자")
-    @ApiResponse(responseCode = "409", description = "마이그레이션이 진행 중인 요청이 있어 정리할 수 없음")
+    @ApiResponse(responseCode = "409", description = "승인/마이그레이션/재시작이 진행 중인 요청이 있어 정리할 수 없음")
     @PatchMapping("/{id}/deactivate")
     ResponseEntity<SuccessResponse<?>> deactivateUser(
             @PathVariable @Parameter(description = "사용자 ID") Long id

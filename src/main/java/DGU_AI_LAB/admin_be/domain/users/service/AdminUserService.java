@@ -79,9 +79,10 @@ public class AdminUserService {
         // 사이에 요청이 delete()로 넘어가면, 그 승인이 나중에 완료될 때 이미 소유자가 정리된
         // Request를 FULFILLED로 덮어써 정합성이 깨진다.
         boolean hasInFlightRequest = userRequests.stream()
-                .anyMatch(r -> r.getStatus() == Status.MIGRATING || r.getStatus() == Status.PROCESSING);
+                .anyMatch(r -> r.getStatus() == Status.MIGRATING || r.getStatus() == Status.PROCESSING
+                        || r.getStatus() == Status.REBOOTING);
         if (hasInFlightRequest) {
-            log.warn("[{}] userId={} 승인/마이그레이션 진행 중인 요청이 있어 정리를 거부합니다.", logPrefix, user.getUserId());
+            log.warn("[{}] userId={} 승인/마이그레이션/재시작 진행 중인 요청이 있어 정리를 거부합니다.", logPrefix, user.getUserId());
             throw new ConflictException(ErrorCode.REQUEST_MIGRATION_IN_PROGRESS);
         }
 

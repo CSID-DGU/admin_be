@@ -45,7 +45,7 @@ public record SaveRequestResponseDTO(
         @JsonRawValue String formAnswers,
         @Schema(description = "서버 만료 일시", example = "2026-03-02T06:17:29")
         LocalDateTime expiresAt,
-        @Schema(description = "처리 상태", example = "PENDING", allowableValues = {"PENDING", "FULFILLED", "DENIED", "MODIFICATION_REQUESTED", "MODIFICATION_APPROVED", "MODIFICATION_REJECTED"})
+        @Schema(description = "처리 상태", example = "PENDING", allowableValues = {"PENDING", "PROCESSING", "DENIED", "FULFILLED", "MIGRATING", "REBOOTING", "DELETED"})
         Status status,
         @Schema(description = "승인 일시", example = "2026-03-02T15:36:29", nullable = true)
         LocalDateTime approvedAt,

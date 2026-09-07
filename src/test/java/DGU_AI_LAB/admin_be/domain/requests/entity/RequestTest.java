@@ -8,11 +8,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 import static org.mockito.Mockito.mock;
 
 class RequestTest {
@@ -296,6 +299,76 @@ class RequestTest {
                     .isInstanceOf(BusinessException.class);
             assertThatThrownBy(() -> request.assignUbuntuIds(2001L, -1L))
                     .isInstanceOf(BusinessException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("beginReboot / endReboot")
+    class RebootLifecycle {
+
+        @BeforeEach
+        void approveFirst() {
+            ContainerImage newImage = mock(ContainerImage.class);
+            ResourceGroup newRg = mock(ResourceGroup.class);
+            request.approve(newImage, newRg, "승인합니다");
+        }
+
+        @Test
+        @DisplayName("FULFILLED 상태에서 재시작을 시작하면 REBOOTING으로 바뀌고 마지막 재시작 시각이 기록된다")
+        void beginReboot_movesToRebooting_andRecordsTimestamp() {
+            request.beginReboot();
+
+            assertThat(request.getStatus()).isEqualTo(Status.REBOOTING);
+            assertThat(request.getLastRebootedAt()).isNotNull();
+            assertThat(request.getLastRebootedAt()).isCloseTo(LocalDateTime.now(), within(5, ChronoUnit.SECONDS));
+        }
+
+        @Test
+        @DisplayName("FULFILLED 상태가 아니면 재시작을 거부한다")
+        void beginReboot_throwsException_whenNotFulfilled() {
+            request.beginReboot();
+
+            assertThatThrownBy(() -> request.beginReboot())
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("재시작이 끝나면 FULFILLED로 되돌아간다")
+        void endReboot_returnsToFulfilled() {
+            request.beginReboot();
+
+            request.endReboot();
+
+            assertThat(request.getStatus()).isEqualTo(Status.FULFILLED);
+        }
+
+        @Test
+        @DisplayName("REBOOTING이 아닌 상태에서 endReboot을 호출하면 BusinessException을 던진다")
+        void endReboot_throwsException_whenNotRebooting() {
+            assertThatThrownBy(() -> request.endReboot())
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("직전 재시작으로부터 쿨다운 시간 이내면 재시작을 거부한다")
+        void beginReboot_throwsException_withinCooldown() {
+            request.beginReboot();
+            request.endReboot();
+
+            assertThatThrownBy(() -> request.beginReboot())
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("쿨다운 시간이 지나면 다시 재시작할 수 있다")
+        void beginReboot_allowed_afterCooldownElapsed() {
+            request.beginReboot();
+            request.endReboot();
+            ReflectionTestUtils.setField(request, "lastRebootedAt", LocalDateTime.now().minusMinutes(11));
+
+            request.beginReboot();
+
+            assertThat(request.getStatus()).isEqualTo(Status.REBOOTING);
         }
     }
 }

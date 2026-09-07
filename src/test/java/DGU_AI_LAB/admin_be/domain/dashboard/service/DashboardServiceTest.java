@@ -141,7 +141,7 @@ class DashboardServiceTest {
                     .map(Enum::name)
                     .collect(Collectors.toSet());
 
-            assertThat(names).containsExactlyInAnyOrder("PENDING", "PROCESSING", "DENIED", "FULFILLED", "MIGRATING", "DELETED");
+            assertThat(names).containsExactlyInAnyOrder("PENDING", "PROCESSING", "DENIED", "FULFILLED", "MIGRATING", "REBOOTING", "DELETED");
             assertThat(names).doesNotContain("ALL");
         }
 
@@ -153,7 +153,7 @@ class DashboardServiceTest {
                     .collect(Collectors.toSet());
 
             assertThat(names).contains("ALL");
-            assertThat(names).containsExactlyInAnyOrder("PENDING", "PROCESSING", "DENIED", "FULFILLED", "MIGRATING", "DELETED", "ALL");
+            assertThat(names).containsExactlyInAnyOrder("PENDING", "PROCESSING", "DENIED", "FULFILLED", "MIGRATING", "REBOOTING", "DELETED", "ALL");
         }
     }
 }
