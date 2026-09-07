@@ -700,7 +700,7 @@ class AdminRequestCommandServiceTest {
         void rejectModification_success_whenStatusIsPending() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
-            when(changeRequestRepository.findById(1L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
 
             RejectModificationDTO dto = new RejectModificationDTO(1L, "변경 사유 불충분");
@@ -712,7 +712,7 @@ class AdminRequestCommandServiceTest {
         @Test
         @DisplayName("존재하지 않는 변경 요청 ID로 거절하면 BusinessException을 던진다")
         void rejectModification_throwsException_whenChangeRequestNotFound() {
-            when(changeRequestRepository.findById(999L)).thenReturn(Optional.empty());
+            when(changeRequestRepository.findByIdForUpdate(999L)).thenReturn(Optional.empty());
 
             RejectModificationDTO dto = new RejectModificationDTO(999L, "사유");
 
@@ -725,7 +725,7 @@ class AdminRequestCommandServiceTest {
         void rejectModification_throwsException_whenStatusIsNotPending() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             when(changeRequest.getStatus()).thenReturn(Status.FULFILLED);
-            when(changeRequestRepository.findById(2L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(changeRequest));
 
             RejectModificationDTO dto = new RejectModificationDTO(2L, "사유");
 
@@ -739,7 +739,7 @@ class AdminRequestCommandServiceTest {
         void rejectModification_throwsException_whenAdminNotFound() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
-            when(changeRequestRepository.findById(3L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(3L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(999L)).thenReturn(Optional.empty());
 
             RejectModificationDTO dto = new RejectModificationDTO(3L, "사유");
@@ -753,7 +753,7 @@ class AdminRequestCommandServiceTest {
         void rejectModification_sendsRejectionEmail_onSuccess() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
-            when(changeRequestRepository.findById(10L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
 
             RejectModificationDTO dto = new RejectModificationDTO(10L, "변경 사유 불충분");
@@ -767,7 +767,7 @@ class AdminRequestCommandServiceTest {
         void rejectModification_passesAdminCommentToEmail() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
-            when(changeRequestRepository.findById(11L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(11L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
             String comment = "리소스 여유 없음";
 
@@ -781,7 +781,7 @@ class AdminRequestCommandServiceTest {
         void rejectModification_doesNotSendEmail_whenStatusIsNotPending() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             when(changeRequest.getStatus()).thenReturn(Status.FULFILLED);
-            when(changeRequestRepository.findById(12L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(12L)).thenReturn(Optional.of(changeRequest));
 
             assertThatThrownBy(() -> service.rejectModification(100L, new RejectModificationDTO(12L, "사유")))
                     .isInstanceOf(BusinessException.class);
@@ -794,7 +794,7 @@ class AdminRequestCommandServiceTest {
         void rejectModification_emailFailure_doesNotPropagateException() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
-            when(changeRequestRepository.findById(13L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(13L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
             doThrow(new RuntimeException("SMTP 연결 실패"))
                     .when(alarmService).sendModificationRejectedEmail(any(), anyString());
@@ -810,7 +810,7 @@ class AdminRequestCommandServiceTest {
         void rejectModification_emailThrowsRuntimeException_denyStillCalled() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
-            when(changeRequestRepository.findById(14L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(14L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
             doThrow(new IllegalStateException("MessageUtils 키 없음"))
                     .when(alarmService).sendModificationRejectedEmail(any(), anyString());
@@ -1054,6 +1054,7 @@ class AdminRequestCommandServiceTest {
 
     private Request buildMockedRequestWithStatus(Long requestId, Status status) {
         Request request = mock(Request.class);
+        when(request.getRequestId()).thenReturn(requestId);
         when(request.getStatus()).thenReturn(status);
         when(request.getUbuntuUsername()).thenReturn("testuser");
         when(request.getUbuntuPassword()).thenReturn("encoded_pw");

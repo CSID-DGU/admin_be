@@ -5,7 +5,9 @@ import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import org.springframework.dao.DataIntegrityViolationException;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import DGU_AI_LAB.admin_be.global.auth.jwt.JwtProvider;
 import org.junit.jupiter.api.BeforeEach;
@@ -85,8 +87,30 @@ class UserLoginServiceTest {
 
             userLoginService.register(dto);
 
-            verify(userRepository, times(1)).save(any(User.class));
+            verify(userRepository, times(1)).saveAndFlush(any(User.class));
             verify(redisTemplate, times(1)).delete("VERIFIED:test@dgu.ac.kr");
+        }
+
+        @Test
+        @DisplayName("중복 검사 통과 후 email unique 제약에 걸리면 500이 아니라 USER_ALREADY_EXISTS(409)로 변환한다")
+        void register_mapsUniqueViolationToAlreadyExists() {
+            when(redisTemplate.hasKey("VERIFIED:test@dgu.ac.kr")).thenReturn(true);
+            // 사전 검사는 통과한다 — 그 직후 같은 이메일로 다른 가입이 먼저 커밋된 상황
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.empty());
+            when(passwordEncoder.encode(anyString())).thenReturn("encodedPw");
+            when(userRepository.saveAndFlush(any(User.class)))
+                    .thenThrow(new DataIntegrityViolationException("uk_users_email"));
+
+            UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678"
+            );
+
+            assertThatThrownBy(() -> userLoginService.register(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_ALREADY_EXISTS);
+
+            // 가입이 실패했으므로 이메일 인증 키를 소비하면 안 된다 (재시도 가능해야 한다)
+            verify(redisTemplate, never()).delete("VERIFIED:test@dgu.ac.kr");
         }
 
         @Test

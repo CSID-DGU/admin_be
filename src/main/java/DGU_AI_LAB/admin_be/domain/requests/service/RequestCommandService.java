@@ -25,6 +25,7 @@ import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -55,7 +56,11 @@ public class RequestCommandService {
      */
     @Transactional
     public void cancelRequest(Long userId, Long requestId) {
-        Request request = requestRepository.findById(requestId)
+        // 행 잠금 조회: delete()의 PROCESSING 가드는 로드 시점의 엔티티 상태를 보므로,
+        // 잠그지 않으면 승인이 PENDING -> PROCESSING을 커밋하는 사이에 읽은 낡은 PENDING을
+        // 근거로 통과해 DELETED로 덮어쓴다. 그러면 승인 후처리가 상태 재확인에서 실패해
+        // 불필요한 보상 트랜잭션과 관리자 알림이 발생한다.
+        Request request = requestRepository.findByIdForUpdate(requestId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
         if (!request.getUser().getUserId().equals(userId)) {
@@ -195,8 +200,15 @@ public class RequestCommandService {
                 java.util.Collections.emptySet()
         );
 
-        req = requestRepository.save(req);
-        requestRepository.flush();
+        try {
+            // 위 existsBy... 사전 검사와 여기 사이에 다른 요청이 같은 username으로 먼저 저장할 수
+            // 있다. 실제 방어선은 uk_requests_ubuntu_username 제약이므로, 그 위반을 잡아
+            // 사전 검사와 같은 409로 변환한다 (안 잡으면 그대로 500으로 새어나간다).
+            req = requestRepository.saveAndFlush(req);
+        } catch (DataIntegrityViolationException e) {
+            log.warn("[createRequest] username 중복으로 저장 실패: ubuntuUsername={}", dto.ubuntuUsername());
+            throw new BusinessException(ErrorCode.DUPLICATE_USERNAME);
+        }
 
         if (dto.ubuntuGids() != null && !dto.ubuntuGids().isEmpty()) {
             Set<Group> found = new java.util.HashSet<>(groupRepository.findAllByUbuntuGidIn(dto.ubuntuGids()));

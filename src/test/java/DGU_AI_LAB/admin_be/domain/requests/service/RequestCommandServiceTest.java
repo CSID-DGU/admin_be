@@ -16,6 +16,7 @@ import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupReposit
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
+import org.springframework.dao.DataIntegrityViolationException;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 
 import java.time.LocalDateTime;
@@ -242,13 +243,41 @@ class RequestCommandServiceTest {
             when(dto.ubuntuUsername()).thenReturn("newuser");
             when(dto.imageId()).thenReturn(1L);
             when(dto.toEntity(any(), any(), any(), any())).thenReturn(savedReq);
-            when(requestRepository.save(any())).thenReturn(savedReq);
+            when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
             // GID 2개 요청했지만 0개만 발견 → 예외 발생 (portRequests 도달 전)
             when(dto.ubuntuGids()).thenReturn(java.util.Set.of(1001L, 1002L));
             when(groupRepository.findAllByUbuntuGidIn(any())).thenReturn(List.of());
 
             assertThatThrownBy(() -> requestCommandService.createRequest(1L, dto))
                     .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("사전 검사 통과 후 username unique 제약에 걸리면 500이 아니라 DUPLICATE_USERNAME(409)으로 변환한다")
+        void createRequest_mapsUniqueViolationToDuplicateUsername() {
+            User user = User.builder()
+                    .email("test@dgu.ac.kr").password("pw").name("홍길동").build();
+            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
+            ContainerImage img = ContainerImage.builder()
+                    .imageName("cuda").imageVersion("11.8").cudaVersion("11.8").description("test").build();
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+            when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
+            // 사전 검사는 통과한다 — 그 직후 다른 요청이 같은 username을 먼저 커밋한 상황
+            when(requestRepository.existsByUbuntuUsernameAndStatusIn(any(), anyList())).thenReturn(false);
+            when(containerImageRepository.findById(any())).thenReturn(Optional.of(img));
+
+            SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
+            when(dto.resourceGroupId()).thenReturn(1);
+            when(dto.ubuntuUsername()).thenReturn("raceuser");
+            when(dto.imageId()).thenReturn(1L);
+            when(dto.toEntity(any(), any(), any(), any())).thenReturn(mock(Request.class));
+            when(requestRepository.saveAndFlush(any()))
+                    .thenThrow(new DataIntegrityViolationException("uk_requests_ubuntu_username"));
+
+            assertThatThrownBy(() -> requestCommandService.createRequest(1L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DUPLICATE_USERNAME);
         }
     }
 
@@ -275,7 +304,7 @@ class RequestCommandServiceTest {
         @Test
         @DisplayName("존재하지 않는 requestId면 BusinessException을 던진다")
         void cancelRequest_throwsException_whenRequestNotFound() {
-            when(requestRepository.findById(99L)).thenReturn(Optional.empty());
+            when(requestRepository.findByIdForUpdate(99L)).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> requestCommandService.cancelRequest(1L, 99L))
                     .isInstanceOf(BusinessException.class);
@@ -285,7 +314,7 @@ class RequestCommandServiceTest {
         @DisplayName("본인 소유의 신청이 아니면 BusinessException을 던진다")
         void cancelRequest_throwsException_whenNotOwner() {
             Request request = buildRequest();
-            when(requestRepository.findById(10L)).thenReturn(Optional.of(request));
+            when(requestRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(request));
 
             // userId=2 로 취소 시도 → 소유자 userId=1 과 불일치
             assertThatThrownBy(() -> requestCommandService.cancelRequest(2L, 10L))
@@ -297,7 +326,7 @@ class RequestCommandServiceTest {
         @DisplayName("PENDING 상태의 본인 신청을 취소하면 DELETED로 바뀐다")
         void cancelRequest_succeeds_whenPending() {
             Request request = buildRequest();
-            when(requestRepository.findById(11L)).thenReturn(Optional.of(request));
+            when(requestRepository.findByIdForUpdate(11L)).thenReturn(Optional.of(request));
 
             requestCommandService.cancelRequest(1L, 11L);
 
@@ -309,7 +338,7 @@ class RequestCommandServiceTest {
         void cancelRequest_succeeds_whenDenied() {
             Request request = buildRequest();
             request.reject("리소스 부족");
-            when(requestRepository.findById(12L)).thenReturn(Optional.of(request));
+            when(requestRepository.findByIdForUpdate(12L)).thenReturn(Optional.of(request));
 
             requestCommandService.cancelRequest(1L, 12L);
 
@@ -321,7 +350,7 @@ class RequestCommandServiceTest {
         void cancelRequest_throwsException_whenFulfilled() {
             Request request = buildRequest();
             request.approve(mock(ContainerImage.class), mock(ResourceGroup.class), null);
-            when(requestRepository.findById(13L)).thenReturn(Optional.of(request));
+            when(requestRepository.findByIdForUpdate(13L)).thenReturn(Optional.of(request));
 
             assertThatThrownBy(() -> requestCommandService.cancelRequest(1L, 13L))
                     .isInstanceOf(BusinessException.class)
@@ -335,7 +364,7 @@ class RequestCommandServiceTest {
             Request request = buildRequest();
             request.approve(mock(ContainerImage.class), mock(ResourceGroup.class), null);
             request.beginMigration();
-            when(requestRepository.findById(14L)).thenReturn(Optional.of(request));
+            when(requestRepository.findByIdForUpdate(14L)).thenReturn(Optional.of(request));
 
             assertThatThrownBy(() -> requestCommandService.cancelRequest(1L, 14L))
                     .isInstanceOf(BusinessException.class);
@@ -347,7 +376,7 @@ class RequestCommandServiceTest {
         void cancelRequest_throwsException_whenProcessing() {
             Request request = buildRequest();
             request.markAsProcessing();
-            when(requestRepository.findById(15L)).thenReturn(Optional.of(request));
+            when(requestRepository.findByIdForUpdate(15L)).thenReturn(Optional.of(request));
 
             assertThatThrownBy(() -> requestCommandService.cancelRequest(1L, 15L))
                     .isInstanceOf(BusinessException.class);
@@ -359,10 +388,22 @@ class RequestCommandServiceTest {
         void cancelRequest_throwsException_whenAlreadyDeleted() {
             Request request = buildRequest();
             request.delete();
-            when(requestRepository.findById(16L)).thenReturn(Optional.of(request));
+            when(requestRepository.findByIdForUpdate(16L)).thenReturn(Optional.of(request));
 
             assertThatThrownBy(() -> requestCommandService.cancelRequest(1L, 16L))
                     .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("취소 대상은 행 잠금(findByIdForUpdate)으로 조회한다 — 잠그지 않으면 동시 승인이 커밋한 PROCESSING을 DELETED로 덮어쓴다")
+        void cancelRequest_locksRowForUpdate() {
+            Request request = buildRequest();
+            when(requestRepository.findByIdForUpdate(17L)).thenReturn(Optional.of(request));
+
+            requestCommandService.cancelRequest(1L, 17L);
+
+            verify(requestRepository).findByIdForUpdate(17L);
+            verify(requestRepository, never()).findById(17L);
         }
     }
 }

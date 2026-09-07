@@ -314,7 +314,9 @@ public class AdminRequestCommandService {
 
     @Transactional
     public void rejectModification(Long adminId, RejectModificationDTO dto) {
-        ChangeRequest changeRequest = changeRequestRepository.findById(dto.changeRequestId())
+        // approveModification과 동일하게 행 잠금으로 조회한다 — 같은 행에 대한 같은 PENDING
+        // 검증인데 한쪽만 잠그면, 승인과 거절이 동시에 들어왔을 때 둘 다 검증을 통과한다.
+        ChangeRequest changeRequest = changeRequestRepository.findByIdForUpdate(dto.changeRequestId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
         if (changeRequest.getStatus() != Status.PENDING) {
@@ -345,13 +347,19 @@ public class AdminRequestCommandService {
         User admin = userRepository.findById(adminId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
-        Request originalRequest = changeRequest.getRequest();
-        if (originalRequest == null) {
+        Request lazyOriginalRequest = changeRequest.getRequest();
+        if (lazyOriginalRequest == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
+        // 실제로 필드를 덮어쓰는 대상은 ChangeRequest가 아니라 이 Request다. 잠금이 걸린 건
+        // ChangeRequest 행뿐이므로, 여기서 Request 행도 직접 잠가야 한다 — 그러지 않으면
+        // 마이그레이션/만료 정리가 이 행을 동시에 다루는 중에도 검증을 통과한다.
+        Request originalRequest = requestRepository.findByIdForUpdate(lazyOriginalRequest.getRequestId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
         // ChangeRequest는 FULFILLED 상태를 전제로 신청된다. 그 사이 원본 Request가 삭제되거나
         // 마이그레이션/재승인 처리 중으로 넘어갔는데 상태 확인 없이 그대로 적용하면, 이미 죽었거나
         // 다른 트랜잭션이 다루고 있는 Request의 필드를 조용히 덮어써 정합성이 깨진다.
+        // 잠금을 잡은 뒤에 다시 확인해야 잠금 대기 중 커밋된 최신 상태를 본다.
         if (originalRequest.getStatus() != Status.FULFILLED) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }

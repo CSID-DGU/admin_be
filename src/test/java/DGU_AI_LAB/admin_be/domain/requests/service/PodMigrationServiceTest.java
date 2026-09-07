@@ -139,7 +139,9 @@ class PodMigrationServiceTest {
 
             service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1"), null, null));
 
-            verify(requestRepository).findByIdForUpdate(requestId);
+            // 1단계(선점)와 3단계(결과 반영) 모두 행 잠금으로 조회한다.
+            verify(requestRepository, times(2)).findByIdForUpdate(requestId);
+            verify(requestRepository, never()).findById(requestId);
             verify(mockRequest).beginMigration();
             verify(mockRequest).endMigration();
         }
@@ -240,9 +242,9 @@ class PodMigrationServiceTest {
                     .isInstanceOf(RuntimeException.class)
                     .hasMessage("db error");
 
-            // revertToFulfilled()가 호출되지 않았다면 findById는 3단계 tx.execute 안에서 딱 한 번만
-            // 호출된다. 되돌리기를 시도했다면 복구용 findById가 추가로 한 번 더 호출됐을 것이다.
-            verify(requestRepository, times(1)).findById(requestId);
+            // revertToFulfilled()가 호출되지 않았다면 행 잠금 조회는 1단계와 3단계에서 두 번만
+            // 일어난다. 되돌리기를 시도했다면 복구용 조회가 한 번 더 있었을 것이다.
+            verify(requestRepository, times(2)).findByIdForUpdate(requestId);
 
             ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
             verify(alarmService, times(1)).sendSlackAlert(messageCaptor.capture(), eq(null));
