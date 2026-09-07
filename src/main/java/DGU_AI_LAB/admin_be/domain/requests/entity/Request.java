@@ -209,6 +209,33 @@ public class Request extends BaseTimeEntity {
         this.status = Status.FULFILLED;
     }
 
+    /**
+     * 인프라(Pod/우분투 계정) 정리 시작을 위해 FULFILLED -> EXPIRING으로 전환한다.
+     * beginMigration과 마찬가지로 행 잠금 조회(findByIdForUpdate)와 같은 트랜잭션에서
+     * 호출해야 동시에 들어온 두 번째 정리 시도가 이 상태 검증에서 실제로 막힌다.
+     *
+     * 정리 도중임을 PROCESSING으로 표현하면 안 된다 — RequestSchedulerService의 재조정
+     * 잡이 오래된 PROCESSING을 PENDING으로 되돌리기 때문에, Pod/계정이 삭제되는 중인
+     * 요청이 재승인 가능한 상태로 되살아난다.
+     */
+    public void beginExpiry() {
+        if (this.status != Status.FULFILLED) {
+            throw new BusinessException("이미 정리가 진행 중이거나 정리 가능한 상태가 아닙니다.", ErrorCode.INVALID_REQUEST_STATUS);
+        }
+        this.status = Status.EXPIRING;
+    }
+
+    /**
+     * 인프라 정리에 실패하면 EXPIRING -> FULFILLED로 되돌린다.
+     * 되돌려야 다음 만료 스케줄 실행에서 다시 정리 대상(FULFILLED)으로 잡혀 재시도된다.
+     */
+    public void endExpiry() {
+        if (this.status != Status.EXPIRING) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+        }
+        this.status = Status.FULFILLED;
+    }
+
     public void assignUbuntuIds(Long ubuntuUid, Long ubuntuGid) {
         if (ubuntuUid == null || ubuntuGid == null || ubuntuUid <= 0 || ubuntuGid <= 0) {
             throw new BusinessException(ErrorCode.UID_ALLOCATION_FAILED);
@@ -240,7 +267,7 @@ public class Request extends BaseTimeEntity {
         if (this.status == Status.DELETED) {
             throw new BusinessException("이미 삭제된 요청입니다.", ErrorCode.INVALID_REQUEST_STATUS);
         }
-        if (this.status == Status.FULFILLED || this.status == Status.MIGRATING) {
+        if (this.status == Status.FULFILLED || this.status == Status.MIGRATING || this.status == Status.EXPIRING) {
             throw new BusinessException("컨테이너가 실행 중입니다. 인프라 정리 후 삭제해주세요.", ErrorCode.INVALID_REQUEST_STATUS);
         }
         if (this.status == Status.PROCESSING) {
@@ -254,12 +281,16 @@ public class Request extends BaseTimeEntity {
     }
 
     /**
-     * 인프라(Pod, 우분투 계정) 정리가 완료된 이후 FULFILLED 요청을 DELETED로 전환합니다.
+     * 인프라(Pod, 우분투 계정) 정리가 완료된 이후 요청을 DELETED로 전환합니다.
      * 반드시 외부 리소스 정리를 완료한 시스템 서비스(만료 처리, 사용자 삭제 등)에서만 호출하세요.
+     *
+     * FULFILLED가 아니라 EXPIRING을 요구한다 — 호출자가 정리를 시작하기 전에 행을 잠그고
+     * beginExpiry()로 선점했어야만 여기까지 올 수 있다는 뜻이다. FULFILLED를 허용하면
+     * 아무 잠금 없이 인프라를 지운 뒤 이 메서드를 부르는 경로가 검증을 통과해버린다.
      */
     public void deleteAfterCleanup() {
-        if (this.status != Status.FULFILLED) {
-            throw new BusinessException("인프라 정리 후 삭제는 FULFILLED 상태에서만 가능합니다.", ErrorCode.INVALID_REQUEST_STATUS);
+        if (this.status != Status.EXPIRING) {
+            throw new BusinessException("인프라 정리 후 삭제는 EXPIRING 상태에서만 가능합니다.", ErrorCode.INVALID_REQUEST_STATUS);
         }
         this.status = Status.DELETED;
         // ubuntu_uid는 unique 제약이 걸려 있다. 계정이 삭제되면 그 UID는 재사용 가능해지는데,

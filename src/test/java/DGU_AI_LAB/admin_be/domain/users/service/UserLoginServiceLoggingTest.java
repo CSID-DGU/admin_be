@@ -52,7 +52,7 @@ class UserLoginServiceLoggingTest {
         when(redisTemplate.hasKey("VERIFIED:" + EMAIL)).thenReturn(true);
         when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.empty());
         when(passwordEncoder.encode(anyString())).thenReturn("encodedPassword");
-        when(userRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         try (LogCaptor logCaptor = LogCaptor.forClass(UserLoginService.class)) {
             userLoginService.register(request);

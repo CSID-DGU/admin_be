@@ -187,11 +187,12 @@ class RequestTest {
     class DeleteAfterCleanup {
 
         @Test
-        @DisplayName("FULFILLED 상태에서 인프라 정리 후 삭제하면 상태가 DELETED로 변경된다")
-        void deleteAfterCleanup_changesStatusToDeleted_whenFulfilled() {
+        @DisplayName("EXPIRING 상태에서 인프라 정리 후 삭제하면 상태가 DELETED로 변경된다")
+        void deleteAfterCleanup_changesStatusToDeleted_whenExpiring() {
             ContainerImage image = mock(ContainerImage.class);
             ResourceGroup rg = mock(ResourceGroup.class);
             request.approve(image, rg, null);
+            request.beginExpiry();
 
             request.deleteAfterCleanup();
 
@@ -199,10 +200,22 @@ class RequestTest {
         }
 
         @Test
-        @DisplayName("FULFILLED 이외의 상태에서 deleteAfterCleanup을 호출하면 BusinessException을 던진다")
-        void deleteAfterCleanup_throwsException_whenNotFulfilled() {
+        @DisplayName("EXPIRING 이외의 상태에서 deleteAfterCleanup을 호출하면 BusinessException을 던진다")
+        void deleteAfterCleanup_throwsException_whenNotExpiring() {
             assertThatThrownBy(request::deleteAfterCleanup)
                     .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("정리를 선점(beginExpiry)하지 않은 FULFILLED 상태에서는 deleteAfterCleanup이 거부된다")
+        void deleteAfterCleanup_throwsException_whenFulfilledWithoutClaim() {
+            ContainerImage image = mock(ContainerImage.class);
+            ResourceGroup rg = mock(ResourceGroup.class);
+            request.approve(image, rg, null);
+
+            assertThatThrownBy(request::deleteAfterCleanup)
+                    .isInstanceOf(BusinessException.class);
+            assertThat(request.getStatus()).isEqualTo(Status.FULFILLED);
         }
 
         @Test
@@ -213,6 +226,7 @@ class RequestTest {
             request.approve(image, rg, null);
             request.assignUbuntuIds(20001L, 20001L);
             request.assignPodInfo("ailab-testuser-abcd1234", "farm1");
+            request.beginExpiry();
 
             request.deleteAfterCleanup();
 
@@ -296,6 +310,85 @@ class RequestTest {
                     .isInstanceOf(BusinessException.class);
             assertThatThrownBy(() -> request.assignUbuntuIds(2001L, -1L))
                     .isInstanceOf(BusinessException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("beginExpiry / endExpiry")
+    class Expiry {
+
+        private void fulfill() {
+            request.approve(mock(ContainerImage.class), mock(ResourceGroup.class), null);
+        }
+
+        @Test
+        @DisplayName("FULFILLED 요청의 정리를 시작하면 EXPIRING으로 전환된다")
+        void beginExpiry_transitionsFulfilledToExpiring() {
+            fulfill();
+
+            request.beginExpiry();
+
+            assertThat(request.getStatus()).isEqualTo(Status.EXPIRING);
+        }
+
+        @Test
+        @DisplayName("이미 EXPIRING인 요청의 정리를 다시 시작하면 BusinessException을 던진다 (중복 정리 차단)")
+        void beginExpiry_throwsException_whenAlreadyExpiring() {
+            fulfill();
+            request.beginExpiry();
+
+            assertThatThrownBy(request::beginExpiry)
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("PROCESSING 상태(승인 처리 중)인 요청은 정리를 시작할 수 없다")
+        void beginExpiry_throwsException_whenProcessing() {
+            request.markAsProcessing();
+
+            assertThatThrownBy(request::beginExpiry)
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("MIGRATING 상태인 요청은 정리를 시작할 수 없다")
+        void beginExpiry_throwsException_whenMigrating() {
+            fulfill();
+            request.beginMigration();
+
+            assertThatThrownBy(request::beginExpiry)
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("정리에 실패해 되돌리면 FULFILLED로 돌아가 다음 만료 스케줄에서 재시도된다")
+        void endExpiry_revertsToFulfilled() {
+            fulfill();
+            request.beginExpiry();
+
+            request.endExpiry();
+
+            assertThat(request.getStatus()).isEqualTo(Status.FULFILLED);
+        }
+
+        @Test
+        @DisplayName("EXPIRING이 아닌 요청을 되돌리려 하면 BusinessException을 던진다")
+        void endExpiry_throwsException_whenNotExpiring() {
+            fulfill();
+
+            assertThatThrownBy(request::endExpiry)
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("EXPIRING 중인 요청은 사용자가 취소(delete)할 수 없다 — 인프라 정리 중이라 고아 리소스가 생긴다")
+        void delete_throwsException_whenExpiring() {
+            fulfill();
+            request.beginExpiry();
+
+            assertThatThrownBy(request::delete)
+                    .isInstanceOf(BusinessException.class);
+            assertThat(request.getStatus()).isEqualTo(Status.EXPIRING);
         }
     }
 }

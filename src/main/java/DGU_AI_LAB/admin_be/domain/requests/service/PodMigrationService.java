@@ -76,7 +76,9 @@ public class PodMigrationService {
         // migrated 여부와 무관하게 MIGRATING -> FULFILLED로 되돌려야 한다.
         try {
             tx.execute(status -> {
-                Request req = requestRepository.findById(requestId)
+                // 행 잠금 조회: 외부 마이그레이션이 도는 동안 다른 경로가 같은 행을 건드릴 수 있어,
+                // 결과를 반영하기 전에 1단계와 동일하게 행을 다시 잠근다.
+                Request req = requestRepository.findByIdForUpdate(requestId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
                 if (response.isMigrated()) {
@@ -137,7 +139,8 @@ public class PodMigrationService {
         try {
             TransactionTemplate tx = new TransactionTemplate(transactionManager);
             tx.execute(status -> {
-                Request req = requestRepository.findById(requestId)
+                // 상태 확인 후 되돌리기까지가 원자적이어야 하므로 여기서도 행을 잠근다.
+                Request req = requestRepository.findByIdForUpdate(requestId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
                 if (req.getStatus() == Status.MIGRATING) {
                     req.endMigration();

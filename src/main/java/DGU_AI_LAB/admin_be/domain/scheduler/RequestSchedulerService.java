@@ -69,6 +69,9 @@ public class RequestSchedulerService {
         for (Request request : requestRepository.findAllByStatusAndUpdatedAtBefore(Status.MIGRATING, staleBefore)) {
             alertStaleMigrating(request);
         }
+        for (Request request : requestRepository.findAllByStatusAndUpdatedAtBefore(Status.EXPIRING, staleBefore)) {
+            reconcileStaleExpiring(request);
+        }
     }
 
     private void reconcileStaleProcessing(Request request) {
@@ -83,6 +86,17 @@ public class RequestSchedulerService {
                     request.getRequestId(), request.getUbuntuUsername(), STALE_IN_FLIGHT_THRESHOLD_MINUTES);
             alarmService.sendSlackAlert(msg, null);
         } catch (Exception ignored) {}
+    }
+
+    /**
+     * MIGRATING과 달리 EXPIRING은 자동 복구한다 — 만료 정리는 Pod/계정 삭제 API가 모두 404를
+     * "이미 삭제됨"으로 처리해 멱등하므로, FULFILLED로 되돌려 다음 만료 스케줄에서 재시도시키는
+     * 것이 안전하다. 되돌리지 않으면 정리가 중단된 요청이 EXPIRING에 영구히 갇힌다.
+     */
+    private void reconcileStaleExpiring(Request request) {
+        log.warn("🔧 [재조정] {}분 넘게 EXPIRING 상태로 방치된 요청을 FULFILLED로 복구해 다음 만료 스케줄에서 재시도: requestId={}",
+                STALE_IN_FLIGHT_THRESHOLD_MINUTES, request.getRequestId());
+        requestExpiryService.revertStaleExpiring(request.getRequestId());
     }
 
     private void alertStaleMigrating(Request request) {

@@ -12,6 +12,7 @@ import DGU_AI_LAB.admin_be.global.auth.jwt.JwtProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -50,7 +51,15 @@ public class UserLoginService {
         String encoded = passwordEncoder.encode(request.password());
         User user = request.toEntity(encoded);
 
-        userRepository.save(user);
+        try {
+            // 위 findByEmail 사전 검사와 여기 사이에 같은 이메일로 동시에 가입이 들어올 수 있다.
+            // 실제 방어선은 email unique 제약이므로, 그 위반을 잡아 사전 검사와 같은 409로
+            // 변환한다 (안 잡으면 그대로 500으로 새어나간다).
+            userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException e) {
+            log.warn("[register] 이메일 중복으로 가입 실패: email={}", request.email());
+            throw new BusinessException(ErrorCode.USER_ALREADY_EXISTS);
+        }
 
         redisTemplate.delete(redisKey);
         log.info("회원가입 완료 및 이메일 인증 키 삭제");
