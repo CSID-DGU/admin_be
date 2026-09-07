@@ -51,12 +51,12 @@ public class RequestSchedulerService {
     }
 
     /**
-     * 정지된(stale) PROCESSING/MIGRATING 요청 재조정(reconciliation). approveRequest/
-     * PodMigrationService의 보상 트랜잭션은 전부 try/catch 안에서만 실행되므로, admin_be
-     * 프로세스 자체가 처리 도중 죽으면(강제 재배포, OOM 등) catch가 실행될 기회조차 없이
-     * 그 요청은 PROCESSING/MIGRATING에 영구히 갇힌다. 5분마다 돌면서 임계치를 넘겨 방치된
+     * 정지된(stale) PROCESSING/MIGRATING/REBOOTING 요청 재조정(reconciliation). approveRequest/
+     * PodMigrationService/PodRebootService의 보상 트랜잭션은 전부 try/catch 안에서만 실행되므로,
+     * admin_be 프로세스 자체가 처리 도중 죽으면(강제 재배포, OOM 등) catch가 실행될 기회조차 없이
+     * 그 요청은 해당 상태에 영구히 갇힌다. 5분마다 돌면서 임계치를 넘겨 방치된
      * 요청을 찾아, PROCESSING은 안전하게 PENDING으로 되돌리고(재승인/재거절 가능하게),
-     * MIGRATING은 실제 Pod 생성/삭제가 걸려있어 자동 복구 대신 관리자 알림만 보낸다.
+     * MIGRATING/REBOOTING은 실제 Pod 생성/삭제가 걸려있어 자동 복구 대신 관리자 알림만 보낸다.
      */
     @Scheduled(fixedRate = 5 * 60 * 1000)
     public void reconcileStaleInFlightRequests() {
@@ -68,6 +68,9 @@ public class RequestSchedulerService {
         }
         for (Request request : requestRepository.findAllByStatusAndUpdatedAtBefore(Status.MIGRATING, staleBefore)) {
             alertStaleMigrating(request);
+        }
+        for (Request request : requestRepository.findAllByStatusAndUpdatedAtBefore(Status.REBOOTING, staleBefore)) {
+            alertStaleRebooting(request);
         }
     }
 
@@ -91,6 +94,17 @@ public class RequestSchedulerService {
                 STALE_IN_FLIGHT_THRESHOLD_MINUTES, request.getRequestId());
         try {
             String msg = messageUtils.get("notification.admin.request.stale-migrating",
+                    request.getRequestId(), request.getUbuntuUsername(), STALE_IN_FLIGHT_THRESHOLD_MINUTES);
+            alarmService.sendSlackAlert(msg, null);
+        } catch (Exception ignored) {}
+    }
+
+    private void alertStaleRebooting(Request request) {
+        log.error("🔧 [재조정] {}분 넘게 REBOOTING 상태로 방치된 요청 발견 — 실제 인프라 상태와 충돌할 수 있어 " +
+                        "자동 복구하지 않고 알림만 발송: requestId={}",
+                STALE_IN_FLIGHT_THRESHOLD_MINUTES, request.getRequestId());
+        try {
+            String msg = messageUtils.get("notification.admin.request.stale-rebooting",
                     request.getRequestId(), request.getUbuntuUsername(), STALE_IN_FLIGHT_THRESHOLD_MINUTES);
             alarmService.sendSlackAlert(msg, null);
         } catch (Exception ignored) {}

@@ -81,7 +81,7 @@ public class AdminRequestCommandService {
     // corePoolSize=maxPoolSize=3, queueCapacity=0(AsyncConfig 참고) — 이 이상 동시에 승인이
     // 몰리면 큐잉하지 않고 즉시 TaskRejectedException으로 거부해, 관리자에게 명확한 에러로
     // 실패시킨다 (기존 Semaphore(3) fail-fast 정책과 동일한 사용자 체감 동작 유지).
-    private final ThreadPoolTaskExecutor approvalExecutor;
+    private final @Qualifier("approvalExecutor") ThreadPoolTaskExecutor approvalExecutor;
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SaveRequestResponseDTO approveRequest(ApproveRequestDTO dto) {

@@ -67,12 +67,37 @@ public interface RequestApi {
             @Valid SingleChangeRequestDTO dto
     );
 
+    @Operation(
+            summary = "내 컨테이너 재시작",
+            description = "FULFILLED 상태인 나의 컨테이너를 같은 노드에서 재시작합니다. 새 컨테이너가 정상 확인된 뒤에야 " +
+                    "기존 컨테이너가 정리되므로, 실패하더라도 기존 컨테이너는 그대로 유지됩니다. " +
+                    "즉시 status=REBOOTING인 신청 정보를 반환하며, 실제 완료 여부는 '내 승인 완료 신청 목록 조회'를 " +
+                    "폴링해 status가 FULFILLED로 돌아오는지로 확인합니다."
+    )
+    @ApiResponse(responseCode = "200", description = "재시작 접수 성공 (status=REBOOTING)",
+            content = @Content(schema = @Schema(implementation = SaveRequestResponseDoc.class)))
+    @ApiResponse(responseCode = "400", description = "본인 소유의 신청이 아님",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "404", description = "신청을 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "409", description = "FULFILLED 상태가 아니거나(이미 재시작/마이그레이션 진행 중) 배치된 노드 정보가 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "429", description = "동시에 처리 중인 재시작 요청이 많음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @PostMapping("/{requestId}/reboot")
+    ResponseEntity<SuccessResponse<?>> rebootPod(
+            @Parameter(hidden = true) Long userId,
+            @PathVariable @Parameter(description = "재시작할 신청 ID") Long requestId
+    );
+
     @Operation(summary = "내 신청 목록 조회", description = "로그인된 사용자의 모든 신청 내역(전체 상태 포함)을 조회합니다.")
     @ApiResponse(responseCode = "200", description = "조회 성공",
             content = @Content(schema = @Schema(implementation = SaveRequestListResponseDoc.class)))
     ResponseEntity<SuccessResponse<?>> getMyRequests(@Parameter(hidden = true) CustomUserDetails user);
 
-    @Operation(summary = "내 승인 완료 신청 목록 조회", description = "FULFILLED 상태인 신청 목록만 조회합니다.")
+    @Operation(summary = "내 승인 완료 신청 목록 조회",
+            description = "컨테이너가 살아있는 신청 목록(FULFILLED, 마이그레이션 중 MIGRATING, 재시작 중 REBOOTING)을 조회합니다. " +
+                    "각 항목의 status로 재시작 진행 상태를 폴링할 수 있습니다.")
     @ApiResponse(responseCode = "200", description = "조회 성공",
             content = @Content(schema = @Schema(implementation = SaveRequestListResponseDoc.class)))
     ResponseEntity<SuccessResponse<?>> getMyApprovedRequests(@Parameter(hidden = true) CustomUserDetails user);

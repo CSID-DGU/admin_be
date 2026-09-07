@@ -209,6 +209,28 @@ public class Request extends BaseTimeEntity {
         this.status = Status.FULFILLED;
     }
 
+    /**
+     * 사용자 셀프 재시작 시작을 위해 FULFILLED -> REBOOTING으로 전환한다.
+     * beginMigration()과 같은 이유로 행 잠금 조회(findByIdForUpdate)와 같은 트랜잭션에서
+     * 호출해야 동시에 들어온 두 번째 재시작 요청이 이 상태 검증에서 실제로 막힌다.
+     */
+    public void beginReboot() {
+        if (this.status != Status.FULFILLED) {
+            throw new BusinessException("컨테이너가 실행 중일 때만 재시작할 수 있습니다. 이미 다른 작업이 진행 중입니다.", ErrorCode.INVALID_REQUEST_STATUS);
+        }
+        this.status = Status.REBOOTING;
+    }
+
+    /**
+     * 재시작 시도가 끝나면(성공/실패 모두) REBOOTING -> FULFILLED로 되돌린다.
+     */
+    public void endReboot() {
+        if (this.status != Status.REBOOTING) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+        }
+        this.status = Status.FULFILLED;
+    }
+
     public void assignUbuntuIds(Long ubuntuUid, Long ubuntuGid) {
         if (ubuntuUid == null || ubuntuGid == null || ubuntuUid <= 0 || ubuntuGid <= 0) {
             throw new BusinessException(ErrorCode.UID_ALLOCATION_FAILED);
@@ -240,7 +262,7 @@ public class Request extends BaseTimeEntity {
         if (this.status == Status.DELETED) {
             throw new BusinessException("이미 삭제된 요청입니다.", ErrorCode.INVALID_REQUEST_STATUS);
         }
-        if (this.status == Status.FULFILLED || this.status == Status.MIGRATING) {
+        if (this.status == Status.FULFILLED || this.status == Status.MIGRATING || this.status == Status.REBOOTING) {
             throw new BusinessException("컨테이너가 실행 중입니다. 인프라 정리 후 삭제해주세요.", ErrorCode.INVALID_REQUEST_STATUS);
         }
         if (this.status == Status.PROCESSING) {

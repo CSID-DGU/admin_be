@@ -42,7 +42,9 @@ public class PodMigrationService {
     // 무의미한 케이스). config-server 자체는 건드리지 않고 이미 있는 계약만 활용한다.
     // Double(래퍼)로 선언 — 삼항연산자에서 한쪽이 primitive double이면 다른 쪽 Double이
     // null이어도 타입 프로모션 때문에 무조건 언박싱되어 NPE가 난다.
-    private static final Double FORCE_MIGRATION_RATIO = -1000.0;
+    // 셀프 재시작(PodRebootService)도 개선 비율 검사를 건너뛴 채 같은 노드로 재배치해야 하므로
+    // 같은 패키지에서 재사용한다.
+    static final Double FORCE_MIGRATION_RATIO = -1000.0;
 
     public MigratePodResponseDTO migratePod(Long requestId, MigratePodRequestDTO dto) {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
@@ -80,19 +82,7 @@ public class PodMigrationService {
                         .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
                 if (response.isMigrated()) {
-                    req.assignPodInfo(response.newPod(), response.to());
-
-                    podExternalPortRepository.deleteByRequestRequestId(requestId);
-                    if (response.ports() != null) {
-                        for (CreatePodResponseDTO.PortInfo port : response.ports()) {
-                            podExternalPortRepository.save(PodExternalPort.builder()
-                                    .request(req)
-                                    .internalPort(port.internalPort())
-                                    .externalPort(port.externalPort())
-                                    .usagePurpose(port.usagePurpose())
-                                    .build());
-                        }
-                    }
+                    applyMigratedPodInfo(requestId, req, response);
                 }
                 req.endMigration();
                 return null;
@@ -126,6 +116,28 @@ public class PodMigrationService {
         }
 
         return response;
+    }
+
+    /**
+     * config-server가 새로 만든 Pod의 위치와 포트 매핑을 Request에 반영한다. 기존 포트 행은
+     * 새 Pod에서 더 이상 유효하지 않으므로 통째로 지우고 다시 심는다.
+     * 셀프 재시작(PodRebootService)도 같은 /migrate 응답을 받으므로 이 반영 로직을 공유한다.
+     * 호출자의 트랜잭션 안에서 실행되어야 하며, 상태 전환(endMigration/endReboot)은 호출자 책임이다.
+     */
+    void applyMigratedPodInfo(Long requestId, Request req, MigratePodResponseDTO response) {
+        req.assignPodInfo(response.newPod(), response.to());
+
+        podExternalPortRepository.deleteByRequestRequestId(requestId);
+        if (response.ports() != null) {
+            for (CreatePodResponseDTO.PortInfo port : response.ports()) {
+                podExternalPortRepository.save(PodExternalPort.builder()
+                        .request(req)
+                        .internalPort(port.internalPort())
+                        .externalPort(port.externalPort())
+                        .usagePurpose(port.usagePurpose())
+                        .build());
+            }
+        }
     }
 
     /**

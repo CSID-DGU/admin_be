@@ -181,7 +181,7 @@ public class RequestCommandService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
         if (requestRepository.existsByUbuntuUsernameAndStatusIn(
-                dto.ubuntuUsername(), List.of(Status.PENDING, Status.FULFILLED, Status.MIGRATING))) {
+                dto.ubuntuUsername(), List.of(Status.PENDING, Status.FULFILLED, Status.MIGRATING, Status.REBOOTING))) {
             throw new BusinessException(ErrorCode.DUPLICATE_USERNAME);
         }
 

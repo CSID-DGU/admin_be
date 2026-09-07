@@ -54,11 +54,14 @@ public class PodService {
     // config-server는 min_improvement_ratio 키가 아예 없어야 자체 기본값(0.2)을 쓴다.
     // null을 그대로 보내면 data.get(key, default)가 "키는 있지만 값이 None"이라 default가
     // 적용되지 않고 그대로 None을 반환해 마이그레이션이 500으로 실패한다.
+    // same_node는 config-server에서 기본값 false이므로, 켜지 않은 호출은 키 자체를 보내지 않아
+    // 기존 마이그레이션 동작을 그대로 유지한다(위 NON_NULL 설정으로 null이면 직렬화에서 빠진다).
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private record MigratePodRequest(
             String username,
             List<String> nodes,
-            @JsonProperty("min_improvement_ratio") Double minImprovementRatio
+            @JsonProperty("min_improvement_ratio") Double minImprovementRatio,
+            @JsonProperty("same_node") Boolean sameNode
     ) {}
 
     public CreatePodResponseDTO createPod(String username) {
@@ -127,13 +130,22 @@ public class PodService {
     }
 
     public MigratePodResponseDTO migratePod(String username, List<String> nodes, Double minImprovementRatio) {
+        return migratePod(username, nodes, minImprovementRatio, false);
+    }
+
+    /**
+     * sameNode=true면 현재 Pod가 떠 있는 노드도 이동 대상 후보로 남는다. config-server가
+     * 새 Pod를 만들어 정상 확인한 뒤에야 기존 Pod를 지우므로, "같은 노드로 마이그레이션"이
+     * 곧 안전한 컨테이너 재시작이 된다(생성 실패 시 기존 Pod는 그대로 살아있다).
+     */
+    public MigratePodResponseDTO migratePod(String username, List<String> nodes, Double minImprovementRatio, boolean sameNode) {
         try {
-            log.info("Pod 마이그레이션 API 요청 시작: 사용자: {}, 후보 노드: {}", username, nodes);
+            log.info("Pod 마이그레이션 API 요청 시작: 사용자: {}, 후보 노드: {}, sameNode: {}", username, nodes, sameNode);
 
             MigratePodResponseDTO response = WebClientErrorHandler.onError(
                             webClient.post()
                                     .uri("/migrate")
-                                    .bodyValue(new MigratePodRequest(username, nodes, minImprovementRatio))
+                                    .bodyValue(new MigratePodRequest(username, nodes, minImprovementRatio, sameNode ? Boolean.TRUE : null))
                                     .retrieve(),
                             (status, body) -> new BusinessException("Pod 마이그레이션 실패: " + body, ErrorCode.POD_MIGRATION_FAILED)
                     )
