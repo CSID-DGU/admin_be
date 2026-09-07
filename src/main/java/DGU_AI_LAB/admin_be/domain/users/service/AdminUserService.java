@@ -96,11 +96,20 @@ public class AdminUserService {
             if (request.getStatus() == Status.FULFILLED) {
                 // 이 요청 하나만 행을 잠그고 FULFILLED -> EXPIRING으로 선점한다. 위 사전 검사
                 // 이후 이 요청에 승인/마이그레이션이 새로 시작됐다면 beginExpiry()가 막는다.
+                // 삭제 대상 식별자도 위 목록 조회 시점의 준영속 스냅샷이 아니라 여기서 잠그고
+                // 다시 읽은 값을 쓴다 — 그 사이 마이그레이션이 끝났다면 podName/nodeName이
+                // 바뀌어 있어, 스냅샷대로 지우면 엉뚱한(이미 없는) Pod를 지우고 새 Pod는 남는다.
+                final String[] podNameRef = {null};
+                final String[] nodeNameRef = {null};
+                final String[] usernameRef = {null};
                 try {
                     newTx.execute(status -> {
                         Request managed = requestRepository.findByIdForUpdate(requestId)
                                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
                         managed.beginExpiry();
+                        podNameRef[0] = managed.getPodName();
+                        nodeNameRef[0] = managed.getNodeName();
+                        usernameRef[0] = managed.getUbuntuUsername();
                         return null;
                     });
                 } catch (Exception e) {
@@ -111,8 +120,8 @@ public class AdminUserService {
                 }
 
                 try {
-                    podService.deletePod(request.getPodName());
-                    ubuntuAccountService.deleteUbuntuAccount(request.getUbuntuUsername(), request.getNodeName());
+                    podService.deletePod(podNameRef[0]);
+                    ubuntuAccountService.deleteUbuntuAccount(usernameRef[0], nodeNameRef[0]);
                 } catch (Exception e) {
                     log.error("[{}] userId={} requestId={} Pod/계정 삭제 실패 — 이 요청은 FULFILLED로 남기고 다음 요청을 계속 정리합니다: {}",
                             logPrefix, user.getUserId(), requestId, e.getMessage());
@@ -121,7 +130,7 @@ public class AdminUserService {
                     try {
                         alarmService.sendSlackAlert(String.format(
                                 "[%s] userId=%d 정리 중 Pod/계정 삭제 실패 - 수동 확인 필요: requestId=%d, ubuntuUsername=%s",
-                                logPrefix, user.getUserId(), requestId, request.getUbuntuUsername()), null);
+                                logPrefix, user.getUserId(), requestId, usernameRef[0]), null);
                     } catch (Exception ignored) {
                         // 알림 발송 실패가 다른 요청 정리를 막으면 안 된다.
                     }
@@ -141,7 +150,7 @@ public class AdminUserService {
                 try {
                     alarmService.sendContainerDeletedEmail(deletedRef[0]);
                 } catch (Exception e) {
-                    log.warn("[{}] 삭제 안내 메일 발송 실패: ubuntuUsername={}", logPrefix, request.getUbuntuUsername(), e);
+                    log.warn("[{}] 삭제 안내 메일 발송 실패: ubuntuUsername={}", logPrefix, usernameRef[0], e);
                 }
             } else if (request.getStatus() != Status.DELETED) {
                 newTx.execute(status -> {

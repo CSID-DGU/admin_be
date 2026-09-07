@@ -57,7 +57,7 @@ public class UserLoginService {
             // 변환한다 (안 잡으면 그대로 500으로 새어나간다).
             userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException e) {
-            log.warn("[register] 이메일 중복으로 가입 실패: email={}", request.email());
+            log.warn("[register] 이메일 중복으로 가입 실패 (email unique 제약 위반)");
             throw new BusinessException(ErrorCode.USER_ALREADY_EXISTS);
         }
 
