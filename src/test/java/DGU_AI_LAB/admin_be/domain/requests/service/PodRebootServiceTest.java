@@ -281,6 +281,21 @@ class PodRebootServiceTest {
         }
 
         @Test
+        @DisplayName("기존 Pod 정리에 실패하면 재시작은 완료하되 관리자 알림을 보낸다")
+        void rebootPod_oldPodCleanupFailed_alertsAdmin() {
+            stubStatus(Status.FULFILLED);
+            MigratePodResponseDTO cleanupFailed = new MigratePodResponseDTO(
+                    "migrated", null, "farm1", "farm1", "ailab-testuser-2",
+                    List.of(), "failed", null, null, null, null);
+            when(podService.migratePod(anyString(), anyList(), any(), anyBoolean())).thenReturn(cleanupFailed);
+
+            service.rebootPod(REQUEST_ID, OWNER_ID);
+
+            verify(mockRequest).endReboot();
+            verify(alarmService).sendSlackAlert(contains("기존 Pod 정리 실패"), eq(null));
+        }
+
+        @Test
         @DisplayName("결과 DB 반영이 실패하면 REBOOTING을 유지한 채 관리자 알림을 보낸다")
         void rebootPod_dbApplyFails_keepsRebootingAndAlerts() {
             stubStatus(Status.FULFILLED);

@@ -82,7 +82,7 @@ public class AdminUserService {
                 .anyMatch(r -> r.getStatus() == Status.MIGRATING || r.getStatus() == Status.PROCESSING
                         || r.getStatus() == Status.REBOOTING);
         if (hasInFlightRequest) {
-            log.warn("[{}] userId={} 승인/마이그레이션 진행 중인 요청이 있어 정리를 거부합니다.", logPrefix, user.getUserId());
+            log.warn("[{}] userId={} 승인/마이그레이션/재시작 진행 중인 요청이 있어 정리를 거부합니다.", logPrefix, user.getUserId());
             throw new ConflictException(ErrorCode.REQUEST_MIGRATION_IN_PROGRESS);
         }
 

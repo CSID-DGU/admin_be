@@ -147,6 +147,15 @@ public class PodRebootService {
         if (response.isMigrated()) {
             log.info("컨테이너 재시작 완료: requestId={}, username={}, node={}, oldPod={}, newPod={}",
                     requestId, username, response.to(), oldPodName, response.newPod());
+
+            if ("failed".equals(response.oldPodCleanup())) {
+                // 새 Pod는 정상 반영됐지만 기존 Pod가 노드에 남아 자원을 계속 점유한다.
+                String msg = String.format(
+                        "[컨테이너 재시작] 새 Pod는 정상 반영됐지만 기존 Pod 정리 실패 - 수동 확인 필요: requestId=%d, username=%s, oldPod=%s, node=%s",
+                        requestId, username, oldPodName, currentNode);
+                log.warn(msg);
+                sendAlertSafely(msg);
+            }
         } else {
             // same_node=true인데도 config-server가 재배치를 건너뛴 경우(노드 자원 부족 등).
             // 기존 Pod는 그대로 살아있으므로 사용자 입장에선 재시작이 일어나지 않은 것과 같다.
