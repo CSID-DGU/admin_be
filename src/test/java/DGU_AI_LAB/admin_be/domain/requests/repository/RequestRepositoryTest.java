@@ -53,6 +53,7 @@ class RequestRepositoryTest {
                 .studentId("2021001234")
                 .phone("010-1111-2222")
                 .department("컴퓨터공학과")
+                .ubuntuUsername("pendinguser")
                 .build());
 
         resourceGroup = resourceGroupRepository.save(ResourceGroup.builder()
@@ -91,6 +92,21 @@ class RequestRepositoryTest {
                 .build();
         req2.approve(containerImage, resourceGroup, null);
         fulfilledRequest = requestRepository.save(req2);
+
+        // 같은 유저네임을 쓰는 종료된 이력 — 유저네임이 웹 계정 단위로 고정되면서
+        // Request.ubuntuUsername의 unique 제약이 사라졌음을 함께 검증한다.
+        Request denied = Request.builder()
+                .ubuntuUsername("pendinguser")
+                .ubuntuPassword("hashedPw3")
+                .expiresAt(LocalDateTime.now().plusDays(10))
+                .usagePurpose("지난 신청")
+                .formAnswers("{}")
+                .user(user)
+                .resourceGroup(resourceGroup)
+                .containerImage(containerImage)
+                .build();
+        denied.reject("리소스 부족");
+        requestRepository.save(denied);
     }
 
     @Nested
@@ -102,29 +118,44 @@ class RequestRepositoryTest {
         void findAllByUser_returnsUserRequests() {
             List<Request> result = requestRepository.findAllByUser(user);
 
-            assertThat(result).hasSize(2);
+            assertThat(result).hasSize(3);
         }
     }
 
     @Nested
-    @DisplayName("findByUbuntuUsername")
-    class FindByUbuntuUsername {
+    @DisplayName("findByUbuntuUsernameAndStatusInOrderByRequestIdDesc")
+    class FindByUbuntuUsernameAndStatusIn {
 
         @Test
-        @DisplayName("존재하는 ubuntuUsername으로 조회하면 Request를 반환한다")
-        void findByUbuntuUsername_returnsRequest_whenExists() {
-            Optional<Request> result = requestRepository.findByUbuntuUsername("pendinguser");
+        @DisplayName("살아있는 상태의 Request만 반환한다")
+        void returnsOpenRequest_whenExists() {
+            List<Request> result = requestRepository
+                    .findByUbuntuUsernameAndStatusInOrderByRequestIdDesc("pendinguser", Status.openStatuses());
 
-            assertThat(result).isPresent();
-            assertThat(result.get().getStatus()).isEqualTo(Status.PENDING);
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getStatus()).isEqualTo(Status.PENDING);
         }
 
         @Test
-        @DisplayName("존재하지 않는 ubuntuUsername으로 조회하면 빈 Optional을 반환한다")
-        void findByUbuntuUsername_returnsEmpty_whenNotExists() {
-            Optional<Request> result = requestRepository.findByUbuntuUsername("notexist");
+        @DisplayName("존재하지 않는 ubuntuUsername으로 조회하면 빈 목록을 반환한다")
+        void returnsEmpty_whenNotExists() {
+            List<Request> result = requestRepository
+                    .findByUbuntuUsernameAndStatusInOrderByRequestIdDesc("notexist", Status.openStatuses());
 
             assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("같은 유저네임의 종료된(DENIED) 이력은 제외한다 — 유저네임은 더 이상 유일하지 않다")
+        void excludesClosedHistory() {
+            List<Request> all = requestRepository.findAllByUser(user);
+            assertThat(all).filteredOn(r -> "pendinguser".equals(r.getUbuntuUsername())).hasSize(2);
+
+            List<Request> result = requestRepository
+                    .findByUbuntuUsernameAndStatusInOrderByRequestIdDesc("pendinguser", Status.openStatuses());
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).getStatus()).isEqualTo(Status.PENDING);
         }
     }
 
@@ -152,19 +183,19 @@ class RequestRepositoryTest {
     }
 
     @Nested
-    @DisplayName("existsByUbuntuUsername")
-    class ExistsByUbuntuUsername {
+    @DisplayName("existsByUser_UserIdAndStatusIn")
+    class ExistsByUserAndStatusIn {
 
         @Test
-        @DisplayName("존재하는 ubuntuUsername에 대해 true를 반환한다")
-        void existsByUbuntuUsername_returnsTrue_whenExists() {
-            assertThat(requestRepository.existsByUbuntuUsername("pendinguser")).isTrue();
+        @DisplayName("살아있는 신청을 가진 유저에 대해 true를 반환한다")
+        void returnsTrue_whenUserHasOpenRequest() {
+            assertThat(requestRepository.existsByUser_UserIdAndStatusIn(user.getUserId(), Status.openStatuses())).isTrue();
         }
 
         @Test
-        @DisplayName("존재하지 않는 ubuntuUsername에 대해 false를 반환한다")
-        void existsByUbuntuUsername_returnsFalse_whenNotExists() {
-            assertThat(requestRepository.existsByUbuntuUsername("notexist")).isFalse();
+        @DisplayName("살아있는 신청이 없는 유저에 대해 false를 반환한다")
+        void returnsFalse_whenUserHasNoOpenRequest() {
+            assertThat(requestRepository.existsByUser_UserIdAndStatusIn(user.getUserId(), List.of(Status.MIGRATING))).isFalse();
         }
     }
 
@@ -190,7 +221,7 @@ class RequestRepositoryTest {
         void findAllByUserUserId_returnsRequests() {
             List<Request> result = requestRepository.findAllByUser_UserId(user.getUserId());
 
-            assertThat(result).hasSize(2);
+            assertThat(result).hasSize(3);
         }
     }
 

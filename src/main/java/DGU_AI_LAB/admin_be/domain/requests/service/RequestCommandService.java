@@ -25,11 +25,9 @@ import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -185,30 +183,24 @@ public class RequestCommandService {
         ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        if (requestRepository.existsByUbuntuUsernameAndStatusIn(
-                dto.ubuntuUsername(), List.of(Status.PENDING, Status.FULFILLED, Status.MIGRATING))) {
-            throw new BusinessException(ErrorCode.DUPLICATE_USERNAME);
+        // 유저네임은 신청마다 고르는 값이 아니라 가입 시 정해진 웹 계정의 고정값이다.
+        String ubuntuUsername = user.getUbuntuUsername();
+        if (ubuntuUsername == null || ubuntuUsername.isBlank()) {
+            throw new BusinessException(ErrorCode.UBUNTU_USERNAME_NOT_ASSIGNED);
+        }
+
+        // 인프라(config-server)의 Pod 생성·조회·마이그레이션 API는 모두 유저네임을 키로 쓴다.
+        // 한 사용자가 같은 유저네임으로 컨테이너를 동시에 두 개 가지면 그 API들이 어느 쪽을
+        // 가리키는지 구분할 수 없으므로, 살아있는 신청은 사용자당 하나로 제한한다.
+        if (requestRepository.existsByUser_UserIdAndStatusIn(userId, Status.openStatuses())) {
+            throw new BusinessException(ErrorCode.ACTIVE_REQUEST_ALREADY_EXISTS);
         }
 
         ContainerImage img = containerImageRepository.findById(dto.imageId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        Request req = dto.toEntity(
-                user,
-                rg,
-                img,
-                java.util.Collections.emptySet()
-        );
-
-        try {
-            // 위 existsBy... 사전 검사와 여기 사이에 다른 요청이 같은 username으로 먼저 저장할 수
-            // 있다. 실제 방어선은 uk_requests_ubuntu_username 제약이므로, 그 위반을 잡아
-            // 사전 검사와 같은 409로 변환한다 (안 잡으면 그대로 500으로 새어나간다).
-            req = requestRepository.saveAndFlush(req);
-        } catch (DataIntegrityViolationException e) {
-            log.warn("[createRequest] username 중복으로 저장 실패: ubuntuUsername={}", dto.ubuntuUsername());
-            throw new BusinessException(ErrorCode.DUPLICATE_USERNAME);
-        }
+        // addGroup()/포트 신청이 requestId를 요구하므로 여기서 즉시 flush해 ID를 확보한다.
+        Request req = requestRepository.saveAndFlush(dto.toEntity(user, rg, img, ubuntuUsername));
 
         if (dto.ubuntuGids() != null && !dto.ubuntuGids().isEmpty()) {
             Set<Group> found = new java.util.HashSet<>(groupRepository.findAllByUbuntuGidIn(dto.ubuntuGids()));

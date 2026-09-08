@@ -18,7 +18,7 @@ import java.util.Set;
 @Table(name = "requests")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@EqualsAndHashCode(of = "ubuntuUsername", callSuper = false)
+@EqualsAndHashCode(of = "requestId", callSuper = false)
 public class Request extends BaseTimeEntity {
 
     @Id
@@ -26,10 +26,16 @@ public class Request extends BaseTimeEntity {
     @Column(name = "request_id")
     private Long requestId;
 
-    @Column(name = "ubuntu_username", nullable = false, length = 100, unique = true)
+    /**
+     * 신청 시점에 User.ubuntuUsername에서 복사해 오는 비정규화 사본 — 신청마다 따로 고르는
+     * 값이 아니다. 같은 사용자의 신청들은 모두 같은 값을 갖고, 지난 신청 이력에도 남으므로
+     * 더 이상 unique가 아니다. 유일성은 User.ubuntuUsername이 책임진다.
+     */
+    @Column(name = "ubuntu_username", nullable = false, length = 100)
     private String ubuntuUsername;
 
-    @Column(name = "ubuntu_uid", unique = true)
+    /** User에 귀속된 UID/GID의 사본(이력 조회용). 실제 소유자는 User다. */
+    @Column(name = "ubuntu_uid")
     private Long ubuntuUid;
 
     @Column(name = "ubuntu_gid")
@@ -126,12 +132,10 @@ public class Request extends BaseTimeEntity {
 
     public void revertToPending() {
         this.status = Status.PENDING;
-        // 보상 트랜잭션으로 계정/Pod가 이미 정리된 뒤에만 호출된다. ubuntu_uid는 unique
-        // 제약이 걸려 있는데, 계정 삭제로 풀린 UID는 나중에 다른 사용자에게 재할당될 수
-        // 있다 — 여기서 지우지 않으면 그 UID를 받은 다른 요청의 승인이 제약 위반으로
-        // 실패한다. podName/nodeName도 더 이상 유효한 리소스를 가리키지 않으므로 함께 지운다.
-        this.ubuntuUid = null;
-        this.ubuntuGid = null;
+        // podName/nodeName은 보상 트랜잭션이 이미 지운 리소스를 가리키므로 함께 지운다.
+        // ubuntuUid/ubuntuGid는 건드리지 않는다 — 이제 UID는 신청이 아니라 User에 귀속되고,
+        // 이 신청 하나가 실패했다고 사용자의 리눅스 계정이 사라지는 것은 아니다.
+        // 계정까지 실제로 삭제된 경우의 UID 회수는 User.releaseUbuntuAccount()가 담당한다.
         this.podName = null;
         this.nodeName = null;
     }
@@ -150,11 +154,6 @@ public class Request extends BaseTimeEntity {
     public void reject(String comment) {
         this.status = Status.DENIED;
         this.adminComment = comment;
-        // rejectRequest는 FULFILLED 상태(이미 uid가 배정된 요청)도 거절을 허용한다.
-        // 여기서 지우지 않으면 DENIED로 끝난 요청이 uid를 영구히 붙잡아, 재사용된 같은
-        // uid로 승인하는 다른 사용자가 uk_requests_ubuntu_uid 위반으로 계속 실패한다.
-        this.ubuntuUid = null;
-        this.ubuntuGid = null;
     }
 
     /**
@@ -276,8 +275,6 @@ public class Request extends BaseTimeEntity {
             throw new BusinessException("요청이 처리 중입니다. 처리가 완료된 후 다시 시도해주세요.", ErrorCode.INVALID_REQUEST_STATUS);
         }
         this.status = Status.DELETED;
-        this.ubuntuUid = null;
-        this.ubuntuGid = null;
     }
 
     /**
@@ -292,13 +289,10 @@ public class Request extends BaseTimeEntity {
         if (this.status != Status.EXPIRING) {
             throw new BusinessException("인프라 정리 후 삭제는 EXPIRING 상태에서만 가능합니다.", ErrorCode.INVALID_REQUEST_STATUS);
         }
+        // ubuntuUid/ubuntuGid/podName/nodeName은 어떤 계정으로 어느 노드에서 운영됐는지
+        // 이력 조회에 쓰이므로 남겨둔다. 신청 하나가 정리됐다고 사용자의 리눅스 계정이
+        // 삭제되는 것은 아니므로 여기서 지울 이유도 없다.
         this.status = Status.DELETED;
-        // ubuntu_uid는 unique 제약이 걸려 있다. 계정이 삭제되면 그 UID는 재사용 가능해지는데,
-        // 여기서 지우지 않으면 DELETED로 끝난 과거 요청이 그 UID를 영구히 붙잡아, 나중에
-        // 같은 UID를 받은 다른 사용자의 승인이 uk_requests_ubuntu_uid 위반으로 실패한다.
-        // podName/nodeName은 어느 노드에서 운영됐는지 이력 조회에 쓰일 수 있어 남겨둔다.
-        this.ubuntuUid = null;
-        this.ubuntuGid = null;
     }
 
 }

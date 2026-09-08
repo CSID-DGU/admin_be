@@ -18,16 +18,24 @@ import java.util.Optional;
 public interface RequestRepository extends JpaRepository<Request, Long> {
 
     List<Request> findAllByUser(User user);
-    Optional<Request> findByUbuntuUsername(String username);
     List<Request> findAllByUser_UserId(Long userId);
     List<Request> findAllByStatus(Status status);
     List<Request> findByUserUserIdAndStatus(Long userId, Status status);
-    boolean existsByUbuntuUsername(String ubuntuUsername);
-    boolean existsByUbuntuUsernameAndStatusIn(String ubuntuUsername, List<Status> statuses);
     List<Request> findAllByUser_UserIdAndStatus(Long userId, Status status);
     boolean existsByUbuntuUsernameAndUser_UserId(String ubuntuUsername, Long userId);
+    boolean existsByUser_UserIdAndStatusIn(Long userId, List<Status> statuses);
     List<Request> findAllByStatusIn(List<Status> statuses);
     List<Request> findAllByUser_UserIdAndStatusIn(Long userId, List<Status> statuses);
+
+    /**
+     * 유저네임이 웹 계정 단위로 고정되면서 ubuntu_username은 더 이상 유일하지 않다 —
+     * 같은 유저네임의 종료된 신청(DENIED/DELETED) 이력이 계속 쌓인다. 따라서 유저네임으로
+     * 신청을 찾을 때는 반드시 살아있는 상태로 범위를 좁혀야 하고, 그 안에서 가장 최근 건을
+     * 쓴다. 정상 운영에서는 사용자당 살아있는 신청이 하나뿐이라 결과도 하나다.
+     */
+    @Query("SELECT r FROM Request r WHERE r.ubuntuUsername = :username AND r.status IN :statuses ORDER BY r.requestId DESC")
+    List<Request> findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(@Param("username") String username,
+                                                                      @Param("statuses") List<Status> statuses);
 
     @Query("SELECT r.ubuntuUsername FROM Request r WHERE r.status = :status")
     List<String> findUbuntuUsernamesByStatus(@Param("status") Status status);

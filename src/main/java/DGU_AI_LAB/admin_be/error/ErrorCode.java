@@ -90,7 +90,10 @@ public enum ErrorCode {
     INVALID_AUTH_CODE(HttpStatus.BAD_REQUEST, "올바르지 않은 인증 코드입니다."),
     GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "지정된 그룹을 찾을 수 없습니다."),
     UID_ALLOCATION_FAILED(HttpStatus.BAD_GATEWAY, "외부 API 응답에서 UID/GID를 확인할 수 없습니다."),
-    DUPLICATE_USERNAME(HttpStatus.CONFLICT, "이미 사용하고 있는 username입니다. 같은 사용자이더라도 다른 username을 입력해주세요."),
+    DUPLICATE_USERNAME(HttpStatus.CONFLICT, "이미 사용 중인 username입니다. 다른 username을 입력해주세요."),
+    UBUNTU_USERNAME_NOT_ASSIGNED(HttpStatus.CONFLICT, "회원 정보에 우분투 계정명이 없습니다. 관리자에게 문의하세요."),
+    UBUNTU_ACCOUNT_ALREADY_ASSIGNED(HttpStatus.CONFLICT, "이미 다른 우분투 계정이 배정된 사용자입니다."),
+    ACTIVE_REQUEST_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 진행 중이거나 사용 중인 신청이 있습니다. 기존 컨테이너가 정리된 후 다시 신청해주세요."),
     ACCOUNT_DISABLED(HttpStatus.NOT_FOUND,"비활성화된 유저입니다. 관리자에게 문의하세요."),
 
     SLACK_USER_NOT_FOUND(HttpStatus.NOT_FOUND, "Slack 사용자를 찾을 수 없습니다."),

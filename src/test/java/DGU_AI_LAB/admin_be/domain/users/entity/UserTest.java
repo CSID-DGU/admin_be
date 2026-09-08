@@ -1,11 +1,14 @@
 package DGU_AI_LAB.admin_be.domain.users.entity;
 
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class UserTest {
 
@@ -20,7 +23,75 @@ class UserTest {
                 .studentId("2021001234")
                 .phone("010-1234-5678")
                 .department("컴퓨터공학과")
+                .ubuntuUsername("honggildong")
                 .build();
+    }
+
+    @Nested
+    @DisplayName("우분투 계정")
+    class UbuntuAccount {
+
+        @Test
+        @DisplayName("가입 시 유저네임만 정해지고 UID/GID는 아직 없다 — 승인받지 못할 사용자에게 리눅스 계정을 미리 만들지 않는다")
+        void freshUser_hasUsernameButNoAccountYet() {
+            assertThat(user.getUbuntuUsername()).isEqualTo("honggildong");
+            assertThat(user.hasUbuntuAccount()).isFalse();
+        }
+
+        @Test
+        @DisplayName("첫 승인에서 받은 UID/GID를 배정하면 계정 보유 상태가 된다")
+        void assignUbuntuAccount_marksAccountAsOwned() {
+            user.assignUbuntuAccount(20001L, 20001L);
+
+            assertThat(user.hasUbuntuAccount()).isTrue();
+            assertThat(user.getUbuntuUid()).isEqualTo(20001L);
+            assertThat(user.getUbuntuGid()).isEqualTo(20001L);
+        }
+
+        @Test
+        @DisplayName("같은 UID/GID를 다시 배정하면 조용히 통과한다 — 동시 승인이 같은 값으로 도달할 수 있다")
+        void assignUbuntuAccount_isIdempotentForSameValues() {
+            user.assignUbuntuAccount(20001L, 20001L);
+
+            user.assignUbuntuAccount(20001L, 20001L);
+
+            assertThat(user.getUbuntuUid()).isEqualTo(20001L);
+        }
+
+        @Test
+        @DisplayName("이미 다른 UID가 배정돼 있으면 덮어쓰지 않고 실패한다 — 한 웹 계정이 리눅스 계정 두 개를 가리키면 홈 소유권이 어긋난다")
+        void assignUbuntuAccount_rejectsConflictingValues() {
+            user.assignUbuntuAccount(20001L, 20001L);
+
+            assertThatThrownBy(() -> user.assignUbuntuAccount(20002L, 20002L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED);
+            assertThat(user.getUbuntuUid()).isEqualTo(20001L);
+        }
+
+        @Test
+        @DisplayName("UID/GID가 없거나 0 이하이면 배정을 거부한다")
+        void assignUbuntuAccount_rejectsInvalidIds() {
+            assertThatThrownBy(() -> user.assignUbuntuAccount(null, 20001L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UID_ALLOCATION_FAILED);
+            assertThatThrownBy(() -> user.assignUbuntuAccount(0L, 20001L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UID_ALLOCATION_FAILED);
+        }
+
+        @Test
+        @DisplayName("계정을 회수하면 UID/GID만 비우고 유저네임은 남긴다 — 유저네임은 웹 계정에 평생 귀속된다")
+        void releaseUbuntuAccount_clearsIdsButKeepsUsername() {
+            user.assignUbuntuAccount(20001L, 20001L);
+
+            user.releaseUbuntuAccount();
+
+            assertThat(user.hasUbuntuAccount()).isFalse();
+            assertThat(user.getUbuntuUid()).isNull();
+            assertThat(user.getUbuntuGid()).isNull();
+            assertThat(user.getUbuntuUsername()).isEqualTo("honggildong");
+        }
     }
 
     @Nested

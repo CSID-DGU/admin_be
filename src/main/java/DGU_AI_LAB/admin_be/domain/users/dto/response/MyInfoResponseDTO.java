@@ -20,6 +20,8 @@ public record MyInfoResponseDTO(
         String phone,
         @Schema(description = "학과", example = "컴퓨터공학과")
         String department,
+        @Schema(description = "가입 시 정한 Ubuntu 계정명 — 이 계정의 모든 컨테이너가 이 이름을 쓴다", example = "hongildong")
+        String ubuntuUsername,
         @Schema(description = "계정 활성화 여부", example = "true")
         Boolean isActive,
         @Schema(description = "사용자 권한", example = "USER", allowableValues = {"USER", "ADMIN"})
@@ -37,6 +39,7 @@ public record MyInfoResponseDTO(
                 u.getName(),
                 u.getPhone(),
                 u.getDepartment(),
+                u.getUbuntuUsername(),
                 u.getIsActive(),
                 u.getRole(),
                 u.getCreatedAt(),

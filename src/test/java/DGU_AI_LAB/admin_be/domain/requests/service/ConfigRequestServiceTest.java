@@ -9,7 +9,9 @@ import DGU_AI_LAB.admin_be.domain.portRequests.repository.PortRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.AcceptInfoResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,17 +22,18 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class ConfigRequestServiceTest {
 
     @Mock private RequestRepository requestRepository;
+    @Mock private UserRepository userRepository;
     @Mock private PortRequestRepository portRequestRepository;
     @Mock private NodeRepository nodeRepository;
 
@@ -38,7 +41,7 @@ class ConfigRequestServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ConfigRequestService(requestRepository, portRequestRepository, nodeRepository);
+        service = new ConfigRequestService(requestRepository, userRepository, portRequestRepository, nodeRepository);
     }
 
     private Request mockRequest(long requestId, String username, ResourceGroup resourceGroup) {
@@ -53,11 +56,24 @@ class ConfigRequestServiceTest {
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
         when(request.getResourceGroup()).thenReturn(resourceGroup);
 
-        when(requestRepository.findByUbuntuUsername(username)).thenReturn(Optional.of(request));
+        when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
+                .thenReturn(List.of(request));
         when(portRequestRepository.findByRequestRequestId(requestId)).thenReturn(List.of());
         when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of());
 
         return request;
+    }
+
+    @Test
+    @DisplayName("username 가용성은 신청이 아니라 웹 계정(User) 기준으로 판단한다")
+    void isUbuntuUsernameAvailable_checksWebAccountsNotRequests() {
+        when(userRepository.existsByUbuntuUsername("taken")).thenReturn(true);
+        when(userRepository.existsByUbuntuUsername("free")).thenReturn(false);
+
+        assertThat(service.isUbuntuUsernameAvailable("taken")).isFalse();
+        assertThat(service.isUbuntuUsernameAvailable("free")).isTrue();
+        // 종료된 신청 이력에 같은 유저네임이 남아 있어도 가용성 판단에 끼어들면 안 된다.
+        verifyNoInteractions(requestRepository);
     }
 
     @Test
@@ -92,7 +108,8 @@ class ConfigRequestServiceTest {
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>(Set.of(rg1, rg2)));
         when(request.getResourceGroup()).thenReturn(resourceGroup);
 
-        when(requestRepository.findByUbuntuUsername(username)).thenReturn(Optional.of(request));
+        when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
+                .thenReturn(List.of(request));
         when(portRequestRepository.findByRequestRequestId(1L)).thenReturn(List.of());
         when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of());
 
@@ -131,7 +148,8 @@ class ConfigRequestServiceTest {
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
         when(request.getResourceGroup()).thenReturn(resourceGroup);
 
-        when(requestRepository.findByUbuntuUsername(username)).thenReturn(Optional.of(request));
+        when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
+                .thenReturn(List.of(request));
         when(portRequestRepository.findByRequestRequestId(2L)).thenReturn(List.of());
         when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of(node));
 
@@ -165,7 +183,8 @@ class ConfigRequestServiceTest {
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
         when(request.getResourceGroup()).thenReturn(resourceGroup);
 
-        when(requestRepository.findByUbuntuUsername(username)).thenReturn(Optional.of(request));
+        when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
+                .thenReturn(List.of(request));
         when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of());
 
         PortRequests tensorboard = mock(PortRequests.class);
@@ -213,7 +232,8 @@ class ConfigRequestServiceTest {
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
         when(request.getResourceGroup()).thenReturn(resourceGroup);
 
-        when(requestRepository.findByUbuntuUsername(username)).thenReturn(Optional.of(request));
+        when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
+                .thenReturn(List.of(request));
         when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of());
 
         PortRequests portReq = mock(PortRequests.class);

@@ -34,6 +34,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -136,7 +137,8 @@ public class RequestSchedulerServiceTest {
         // 1. [삭제 검증] reqExpired
         Request deletedResult = requestRepository.findById(reqExpired.getRequestId()).orElseThrow();
         assertThat(deletedResult.getStatus()).isEqualTo(Status.DELETED);
-        verify(ubuntuAccountService, times(1)).deleteUbuntuAccount("user-expired", null);
+        // 만료는 Pod만 지운다 — 우분투 계정은 웹 계정 소유라 사용자 삭제/비활성화에서만 회수된다.
+        verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
 
         // [이벤트 리스너 검증] -> 삭제 완료 알림 (MessageUtils 사용 검증)
         // subject: notification.expired.detail.subject

@@ -47,18 +47,22 @@ public class UserLoginService {
         if (userRepository.findByEmail(request.email()).isPresent()) {
             throw new BusinessException(ErrorCode.USER_ALREADY_EXISTS);
         }
+        // 우분투 유저네임은 가입 시 한 번 정해져 이 웹 계정에 평생 귀속된다 — 홈 디렉터리가
+        // 유저네임으로만 결정되므로, 유일성 검사도 신청이 아니라 여기서 해야 한다.
+        if (userRepository.existsByUbuntuUsername(request.ubuntuUsername())) {
+            throw new BusinessException(ErrorCode.DUPLICATE_USERNAME);
+        }
 
         String encoded = passwordEncoder.encode(request.password());
         User user = request.toEntity(encoded);
 
         try {
-            // 위 findByEmail 사전 검사와 여기 사이에 같은 이메일로 동시에 가입이 들어올 수 있다.
-            // 실제 방어선은 email unique 제약이므로, 그 위반을 잡아 사전 검사와 같은 409로
-            // 변환한다 (안 잡으면 그대로 500으로 새어나간다).
+            // 위 사전 검사와 여기 사이에 같은 이메일/유저네임으로 동시에 가입이 들어올 수 있다.
+            // 실제 방어선은 unique 제약이므로, 그 위반을 잡아 사전 검사와 같은 409로 변환한다
+            // (안 잡으면 그대로 500으로 새어나간다).
             userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException e) {
-            log.warn("[register] 이메일 중복으로 가입 실패 (email unique 제약 위반)");
-            throw new BusinessException(ErrorCode.USER_ALREADY_EXISTS);
+            throw duplicateSignupException(e);
         }
 
         redisTemplate.delete(redisKey);
@@ -66,6 +70,22 @@ public class UserLoginService {
     }
 
 
+
+    /**
+     * 가입 시 unique 제약 위반이 이메일 때문인지 우분투 유저네임 때문인지 구분한다.
+     * 둘 다 409지만 안내 문구가 달라서, 사용자가 어느 값을 고쳐야 하는지 알려면 나눠야 한다.
+     * 저장이 실패한 트랜잭션에서는 재조회로 확인할 수 없으므로(rollback-only) 제약 이름으로 판별하고,
+     * 판별에 실패하면 기존 동작대로 이메일 중복으로 처리한다.
+     */
+    private BusinessException duplicateSignupException(DataIntegrityViolationException e) {
+        String cause = e.getMostSpecificCause().getMessage();
+        if (cause != null && cause.toLowerCase().contains("ubuntu_username")) {
+            log.warn("[register] 우분투 유저네임 중복으로 가입 실패 (uk_users_ubuntu_username 위반)");
+            return new BusinessException(ErrorCode.DUPLICATE_USERNAME);
+        }
+        log.warn("[register] 이메일 중복으로 가입 실패 (email unique 제약 위반)");
+        return new BusinessException(ErrorCode.USER_ALREADY_EXISTS);
+    }
 
     /** 로그인 */
     public UserTokenResponseDTO login(UserLoginRequestDTO request) {

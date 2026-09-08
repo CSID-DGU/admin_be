@@ -36,7 +36,7 @@ class UserRegisterRequestDTOTest {
     private UserRegisterRequestDTO valid() {
         return new UserRegisterRequestDTO(
                 "user@dgu.ac.kr", "strongPassword123!", "이소은",
-                "컴퓨터공학과", "202312345", "010-1234-5678");
+                "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi");
     }
 
     private String repeat(int length) {
@@ -54,7 +54,7 @@ class UserRegisterRequestDTOTest {
     void name_over100_isRejected() {
         UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
                 "user@dgu.ac.kr", "pw", repeat(101),
-                "컴퓨터공학과", "202312345", "010-1234-5678");
+                "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi");
 
         assertThat(violatedFields(dto)).contains("name");
     }
@@ -64,7 +64,7 @@ class UserRegisterRequestDTOTest {
     void department_over100_isRejected() {
         UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
                 "user@dgu.ac.kr", "pw", "이소은",
-                repeat(101), "202312345", "010-1234-5678");
+                repeat(101), "202312345", "010-1234-5678", "sochoi");
 
         assertThat(violatedFields(dto)).contains("department");
     }
@@ -74,7 +74,7 @@ class UserRegisterRequestDTOTest {
     void studentId_over100_isRejected() {
         UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
                 "user@dgu.ac.kr", "pw", "이소은",
-                "컴퓨터공학과", repeat(101), "010-1234-5678");
+                "컴퓨터공학과", repeat(101), "010-1234-5678", "sochoi");
 
         assertThat(violatedFields(dto)).contains("studentId");
     }
@@ -84,7 +84,7 @@ class UserRegisterRequestDTOTest {
     void phone_over100_isRejected() {
         UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
                 "user@dgu.ac.kr", "pw", "이소은",
-                "컴퓨터공학과", "202312345", repeat(101));
+                "컴퓨터공학과", "202312345", repeat(101), "sochoi");
 
         assertThat(violatedFields(dto)).contains("phone");
     }
@@ -94,7 +94,7 @@ class UserRegisterRequestDTOTest {
     void email_over100_isRejected() {
         UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
                 repeat(95) + "@dgu.ac.kr", "pw", "이소은",
-                "컴퓨터공학과", "202312345", "010-1234-5678");
+                "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi");
 
         assertThat(violatedFields(dto)).contains("email");
     }
@@ -104,7 +104,7 @@ class UserRegisterRequestDTOTest {
     void password_over255_isRejected() {
         UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
                 "user@dgu.ac.kr", repeat(256), "이소은",
-                "컴퓨터공학과", "202312345", "010-1234-5678");
+                "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi");
 
         assertThat(violatedFields(dto)).contains("password");
     }
@@ -114,7 +114,7 @@ class UserRegisterRequestDTOTest {
     void exactly100_isAccepted() {
         UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
                 "user@dgu.ac.kr", repeat(255), repeat(100),
-                repeat(100), repeat(100), repeat(100));
+                repeat(100), repeat(100), repeat(100), "a".repeat(50));
 
         assertThat(validator.validate(dto)).isEmpty();
     }
@@ -123,10 +123,41 @@ class UserRegisterRequestDTOTest {
     @DisplayName("기존 @NotBlank / @Email 제약은 그대로 동작한다")
     void existingConstraintsStillApply() {
         UserRegisterRequestDTO blank = new UserRegisterRequestDTO(
-                "not-an-email", "  ".trim(), "", "", "", "");
+                "not-an-email", "  ".trim(), "", "", "", "", "");
 
         assertThat(violatedFields(blank))
-                .contains("email", "password", "name", "department", "studentId", "phone");
+                .contains("email", "password", "name", "department", "studentId", "phone", "ubuntuUsername");
+    }
+
+    @Test
+    @DisplayName("ubuntuUsername이 3자 미만이면 위반이 발생한다")
+    void ubuntuUsername_tooShort_isRejected() {
+        UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+                "user@dgu.ac.kr", "pw", "이소은",
+                "컴퓨터공학과", "202312345", "010-1234-5678", "ab");
+
+        assertThat(violatedFields(dto)).contains("ubuntuUsername");
+    }
+
+    @Test
+    @DisplayName("ubuntuUsername이 리눅스 유저네임 규칙(소문자 시작, 소문자/숫자/_/-)을 어기면 위반이 발생한다")
+    void ubuntuUsername_invalidCharacters_isRejected() {
+        assertThat(violatedFields(registerWithUbuntuUsername("Uppercase"))).contains("ubuntuUsername");
+        assertThat(violatedFields(registerWithUbuntuUsername("1starts"))).contains("ubuntuUsername");
+        assertThat(violatedFields(registerWithUbuntuUsername("has space"))).contains("ubuntuUsername");
+        assertThat(violatedFields(registerWithUbuntuUsername("has.dot"))).contains("ubuntuUsername");
+    }
+
+    @Test
+    @DisplayName("소문자/숫자/밑줄/하이픈 조합은 통과한다")
+    void ubuntuUsername_validPattern_isAccepted() {
+        assertThat(violatedFields(registerWithUbuntuUsername("so-eun_2024"))).doesNotContain("ubuntuUsername");
+    }
+
+    private UserRegisterRequestDTO registerWithUbuntuUsername(String ubuntuUsername) {
+        return new UserRegisterRequestDTO(
+                "user@dgu.ac.kr", "strongPassword123!", "이소은",
+                "컴퓨터공학과", "202312345", "010-1234-5678", ubuntuUsername);
     }
 
     private Set<String> violatedFields(UserRegisterRequestDTO dto) {

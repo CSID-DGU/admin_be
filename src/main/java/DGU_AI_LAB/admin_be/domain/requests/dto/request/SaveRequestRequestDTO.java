@@ -1,7 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.dto.request;
 
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
-import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
@@ -13,7 +12,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
 import lombok.Builder;
 
 import java.time.LocalDateTime;
@@ -30,11 +28,6 @@ public record SaveRequestRequestDTO(
         @Schema(description = "이미지 id", example = "1")
         @NotNull(message = "Image ID cannot be null")
         Long imageId,
-
-        @Schema(description = "Ubuntu 사용자명 (3~50자)", example = "test2014")
-        @NotBlank(message = "Ubuntu username cannot be blank")
-        @Size(min = 3, max = 50, message = "Username must be between 3 and 50 characters")
-        String ubuntuUsername,
 
         @Schema(description = "Ubuntu 비밀번호", example = "strongPassword123!")
         @NotBlank(message = "Ubuntu Password cannot be blank")
@@ -57,11 +50,15 @@ public record SaveRequestRequestDTO(
         @Schema(description = "포트 요청 목록")
         List<PortRequestDTO> portRequests
 ) {
+    /**
+     * @param ubuntuUsername 신청자가 입력하는 값이 아니라 가입 시 정해진 User.ubuntuUsername을
+     *                       그대로 복사해 넣는다 — 서비스에서 꺼내 넘긴다.
+     */
     public Request toEntity(
             User user,
             ResourceGroup resourceGroup,
             ContainerImage image,
-            Set<Group> groups
+            String ubuntuUsername
     ) {
         String formAnswersJson;
         try {
