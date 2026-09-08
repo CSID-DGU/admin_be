@@ -200,12 +200,44 @@ public class AdminRequestCommandService {
                     userResponse = callUserCreationApi(ctx.creationDto());
                 } catch (Exception e) {
                     log.warn("[보상 트랜잭션] 사용자 생성 실패 → 상태 복구 시작: {}", username, e);
+                    notifyApprovalFailure(String.format(
+                            "[승인 실패] 사용자 생성 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
+                            username, requestId, e.getMessage()), serverName);
                     revertToPendingIfStillProcessing(requestId, serverName);
                     return;
                 }
                 uid = userResponse.uid();
                 gid = userResponse.gid();
                 accountCreatedNow = true;
+
+                // 계정 생성 성공 직후, Pod 생성(최대 10분 대기)에 들어가기 전에 UID/GID를
+                // User에 즉시 커밋한다. 이걸 미루면(예전엔 최종 DB 반영 트랜잭션에서만 했다)
+                // Pod 생성 대기 중 프로세스가 죽었을 때(재배포 SIGTERM 등) User는 이 계정의
+                // 존재를 전혀 모르는 채로 남는다 — 재승인 시 hasExistingAccount()가 다시
+                // false가 되어 계정 생성 API를 또 호출하고, config-server가 409를 던져
+                // 이 신청은 영구히 승인 불가 상태에 갇힌다. 리눅스 계정/홈 디렉터리/krb5
+                // principal은 이미 살아있는데 DB만 그 사실을 모르는 상태를 최대한 짧게 줄인다.
+                try {
+                    Long committedUid = uid;
+                    Long committedGid = gid;
+                    new TransactionTemplate(transactionManager).execute(status -> {
+                        User owner = userRepository.findByIdForUpdate(ctx.userId())
+                                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+                        owner.assignUbuntuAccount(committedUid, committedGid);
+                        return null;
+                    });
+                } catch (Exception e) {
+                    // 계정은 이미 인프라에 존재하는데 그 사실을 User에 못 남겼다. 아직 어느
+                    // farm 노드에도 배포된 게 없는 시점(Pod 생성 전)이라 node를 모른 채
+                    // 삭제하면 무관한 동명 레거시 계정까지 지울 위험이 있으므로 삭제는
+                    // 시도하지 않는다 — 알리고 수동 확인을 받는다.
+                    log.error("[보상 트랜잭션] 계정 생성 직후 UID/GID를 User에 반영하지 못함 - 계정은 인프라에 존재, 수동 확인 필요: username={}", username, e);
+                    notifyApprovalFailure(String.format(
+                            "[승인 실패] 계정 생성 직후 UID/GID 반영 실패 - 계정은 인프라에 존재하나 DB에 미반영, 수동 확인 필요: username=%s, requestId=%d",
+                            username, requestId), serverName);
+                    revertToPendingIfStillProcessing(requestId, serverName);
+                    return;
+                }
             }
 
             CreatePodResponseDTO podResponse;
@@ -217,8 +249,11 @@ public class AdminRequestCommandService {
                 // 복구는 되어도 방금 만든 Ubuntu 계정이 정리되지 않은 채 남는다.
                 log.warn("[보상 트랜잭션] Pod 생성 실패 → 상태 복구 시작: {}", username, e);
                 String failedNode = (e instanceof PodCreationFailedException pcfe) ? pcfe.getNode() : null;
+                notifyApprovalFailure(String.format(
+                        "[승인 실패] Pod 생성 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
+                        username, requestId, e.getMessage()), serverName);
                 if (accountCreatedNow) {
-                    tryCompensateDeleteUser(username, failedNode, serverName);
+                    tryCompensateDeleteUser(ctx.userId(), username, failedNode, serverName);
                 }
                 revertToPendingIfStillProcessing(requestId, serverName);
                 return;
@@ -272,7 +307,10 @@ public class AdminRequestCommandService {
                 });
             } catch (Exception e) {
                 log.error("[보상 트랜잭션] DB 업데이트 실패 → infra 리소스 삭제 시작: {}", username, e);
-                tryCompensateAll(username, podResponse.podName(), podResponse.node(), serverName, accountCreatedNow);
+                notifyApprovalFailure(String.format(
+                        "[승인 실패] DB 반영 실패로 infra 리소스 정리 후 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
+                        username, requestId, e.getMessage()), serverName);
+                tryCompensateAll(ctx.userId(), username, podResponse.podName(), podResponse.node(), serverName, accountCreatedNow);
                 revertToPendingIfStillProcessing(requestId, serverName);
                 return;
             }
@@ -529,13 +567,43 @@ public class AdminRequestCommandService {
 
     // ── 보상 트랜잭션 헬퍼 ─────────────────────────────────────────────
 
-    private void tryCompensateDeleteUser(String username, String nodeName, String serverName) {
+    /**
+     * @param nodeName 이 계정의 krb5 keytab이 실제로 배포된(또는 배포를 시도한) farm 노드.
+     *                 null이면(노드 선택 전에 실패했거나 응답에서 노드를 못 뽑은 경우) 삭제를
+     *                 시도하지 않는다 — node_name 없이 삭제를 호출하면 config-server가 설정된
+     *                 모든 farm 노드를 무차별로 훑어서, 같은 유저네임을 쓰는 무관한 레거시
+     *                 계정까지 잘못 지울 수 있다(AdminUserService.deleteUbuntuAccount와 동일
+     *                 원칙 — a3a8e21에서 사용자 삭제 경로에 먼저 적용됐던 가드를 여기도 맞춘다).
+     *                 이 경우 계정과 User의 UID/GID는 그대로 남기고 알림만 보낸다 — 남은 계정은
+     *                 재승인 시 hasUbuntuAccount() 분기로 자연스럽게 재사용된다.
+     */
+    private void tryCompensateDeleteUser(Long userId, String username, String nodeName, String serverName) {
+        if (nodeName == null) {
+            log.error("[보상 트랜잭션] 계정이 배포된 farm 노드를 알 수 없어 계정 삭제를 보류합니다 - 수동 정리 필요: username={}", username);
+            alertCompensationFailure(String.format(
+                    "[보상 트랜잭션] farm 노드 미상으로 계정 삭제 보류 - 계정/UID는 보존됩니다(재승인 시 재사용): username=%s", username), serverName);
+            return;
+        }
         try {
             ubuntuAccountService.deleteUbuntuAccount(username, nodeName);
+            releaseUserUbuntuAccount(userId);
             log.info("[보상 트랜잭션 완료] 계정 삭제: {}, node={}", username, nodeName);
         } catch (Exception e) {
             log.error("[보상 트랜잭션 실패] 계정 삭제 실패 - 수동 정리 필요: {}", username, e);
             alertCompensationFailure(String.format("[보상 트랜잭션 실패] 계정 삭제 실패 - 수동 정리 필요: username=%s", username), serverName);
+        }
+    }
+
+    /** 계정 삭제가 실제로 성공했을 때만 호출한다 — User에 남은 UID/GID를 비워, 다음 승인이
+     *  이미 삭제된 계정을 "보유 중"으로 착각해 재사용을 시도하지 않게 한다. */
+    private void releaseUserUbuntuAccount(Long userId) {
+        try {
+            new TransactionTemplate(transactionManager).execute(status -> {
+                userRepository.findByIdForUpdate(userId).ifPresent(User::releaseUbuntuAccount);
+                return null;
+            });
+        } catch (Exception e) {
+            log.error("[보상 트랜잭션] User UID/GID 회수 실패 - 수동 확인 필요: userId={}", userId, e);
         }
     }
 
@@ -548,6 +616,17 @@ public class AdminRequestCommandService {
             alarmService.sendAdminSlackNotification(serverName, message);
         } catch (Exception ignored) {
             // 알림 발송 실패가 원래 예외 전파를 막으면 안 된다.
+        }
+    }
+
+    // 비동기 전환 이전에는 계정/Pod/DB 실패가 HTTP 4xx/5xx로 관리자에게 곧바로 보였다.
+    // 지금은 관리자가 200 OK를 받고 떠난 뒤 executor 스레드에서 실패가 나므로, 여기서 알리지
+    // 않으면 신청이 조용히 PENDING으로 돌아가는 걸 관리자가 목록을 다시 볼 때까지 모른다.
+    // (보상 자체의 실패가 아니라 원래 승인 처리의 실패를 알린다는 점만 alertCompensationFailure와 다르다.)
+    private void notifyApprovalFailure(String message, String serverName) {
+        try {
+            alarmService.sendAdminSlackNotification(serverName, message);
+        } catch (Exception ignored) {
         }
     }
 
@@ -580,7 +659,7 @@ public class AdminRequestCommandService {
      *                          재사용한 경우에는 절대 지우면 안 된다 — 그 계정은 이 신청이
      *                          아니라 웹 계정에 귀속돼 있고, 사용자의 홈 디렉터리도 함께 사라진다.
      */
-    private void tryCompensateAll(String username, String podName, String nodeName, String serverName, boolean accountCreatedNow) {
+    private void tryCompensateAll(Long userId, String username, String podName, String nodeName, String serverName, boolean accountCreatedNow) {
         try {
             podService.deletePod(podName);
             log.info("[보상 트랜잭션 완료] Pod 삭제: {}", podName);
@@ -589,7 +668,7 @@ public class AdminRequestCommandService {
             alertCompensationFailure(String.format("[보상 트랜잭션 실패] Pod 삭제 실패 - 수동 정리 필요: podName=%s", podName), serverName);
         }
         if (accountCreatedNow) {
-            tryCompensateDeleteUser(username, nodeName, serverName);
+            tryCompensateDeleteUser(userId, username, nodeName, serverName);
         }
     }
 

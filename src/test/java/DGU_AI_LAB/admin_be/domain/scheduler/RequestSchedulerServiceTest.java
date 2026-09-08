@@ -252,11 +252,11 @@ public class RequestSchedulerServiceTest {
                 .isEqualTo(Status.PROCESSING);
 
         String expectedProcessingMsg = messageUtils.get("notification.admin.request.stale-processing",
-                staleProcessing.getRequestId(), "user-stale-processing", 10L);
+                staleProcessing.getRequestId(), "user-stale-processing", 20L);
         verify(alarmService).sendSlackAlert(eq(expectedProcessingMsg), isNull());
 
         String expectedMigratingMsg = messageUtils.get("notification.admin.request.stale-migrating",
-                staleMigrating.getRequestId(), "user-stale-migrating", 10L);
+                staleMigrating.getRequestId(), "user-stale-migrating", 20L);
         verify(alarmService).sendSlackAlert(eq(expectedMigratingMsg), isNull());
     }
 

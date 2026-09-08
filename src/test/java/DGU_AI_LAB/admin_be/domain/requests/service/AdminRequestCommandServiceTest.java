@@ -378,29 +378,56 @@ class AdminRequestCommandServiceTest {
 
             service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
 
-            verify(userRepository).findByIdForUpdate(100L);
+            // 계정 생성 직후(Pod 생성 전) 한 번, 최종 DB 반영 트랜잭션에서 한 번 — 총 두 번
+            // User 행을 잠그고 배정한다. 두 번째는 같은 값이라 항상 멱등하게 통과한다.
+            verify(userRepository, times(2)).findByIdForUpdate(100L);
             verify(userRepository, never()).findById(100L);
-            verify(mockUser).assignUbuntuAccount(2001L, 2001L);
+            verify(mockUser, times(2)).assignUbuntuAccount(2001L, 2001L);
         }
 
         @Test
-        @DisplayName("잠금 후 다른 승인이 이미 다른 UID를 배정했으면 배정에 실패하고 방금 만든 계정/Pod를 되돌린다")
-        void conflictingAssignmentDuringRace_compensatesAndRevertsRequest() {
+        @DisplayName("계정 생성 직후 배정에서 다른 UID가 이미 배정돼 있으면 Pod를 만들기 전에 중단한다")
+        void conflictingAssignmentRightAfterAccountCreation_stopsBeforeCreatingPod() {
             Long requestId = 62L;
             Request request = buildMockedRequest(requestId);
             stubWebClientPut();
-
-            when(podService.createPod("testuser")).thenReturn(
-                    new CreatePodResponseDTO("running", "farm1", "pod-testuser-race", List.of()));
-            when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
-            when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
-            // 잠금 대기 중 다른 승인이 먼저 다른 UID를 배정한 상황
+            // 계정 생성 API 호출 직후 벌어지는 배정 시도 시점에 다른 승인이 먼저 다른 UID를
+            // 배정해 놓은 상황 — Pod 생성 전에 잡히므로 Pod는 아예 만들어지지 않는다.
             doThrow(new BusinessException(ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED))
                     .when(mockUser).assignUbuntuAccount(2001L, 2001L);
 
             service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
 
-            verify(podService).deletePod("pod-testuser-race");
+            // Pod를 만든 적이 없으므로 지울 것도 없다.
+            verify(podService, never()).createPod(anyString());
+            verify(podService, never()).deletePod(anyString());
+            // 이 시점엔 아직 어느 farm 노드에도 배포된 게 없어 node를 모른다 — node_name 없이
+            // 삭제를 호출하면 무관한 동명 레거시 계정까지 지울 수 있으므로 삭제 자체를 보류한다
+            // (방금 만든 계정은 남고, 재승인 시 hasUbuntuAccount()로 재사용된다).
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
+            verify(request).revertToPending();
+        }
+
+        @Test
+        @DisplayName("Pod 생성 후 DB 반영 단계에서 배정 충돌이 나면 계정/Pod를 되돌린다")
+        void conflictingAssignmentAtFinalCommit_compensatesAndRevertsRequest() {
+            Long requestId = 65L;
+            Request request = buildMockedRequest(requestId);
+            stubWebClientPut();
+
+            when(podService.createPod("testuser")).thenReturn(
+                    new CreatePodResponseDTO("running", "farm1", "pod-testuser-race2", List.of()));
+            when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
+            when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
+            // 계정 생성 직후 배정은 통과시키고(첫 번째 호출), Pod 생성 후 최종 DB 반영 단계의
+            // 배정(두 번째 호출)에서만 다른 승인이 먼저 다른 UID를 배정해 놓은 상황을 재현한다.
+            doNothing()
+                    .doThrow(new BusinessException(ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED))
+                    .when(mockUser).assignUbuntuAccount(2001L, 2001L);
+
+            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
+
+            verify(podService).deletePod("pod-testuser-race2");
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
             verify(request).revertToPending();
         }
@@ -463,17 +490,20 @@ class AdminRequestCommandServiceTest {
             assertThat(response).isNotNull();
 
             // createPod가 던진 게 PodCreationFailedException이 아닌 평범한 BusinessException이라
-            // 실패 노드를 못 얻으므로 node=null로 전체 farm을 훑는 기존 방식으로 정리한다.
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
-            // 1단계(승인 시작)와 보상 트랜잭션 모두 findByIdForUpdate(행 잠금)로 조회한다 —
-            // 락 없는 findById 재조회는 동시 거절 결과를 덮어쓸 수 있어 더 이상 쓰지 않는다.
+            // 실패 노드를 못 얻는다 — node_name 없이 삭제를 호출하면 config-server가 모든 farm
+            // 노드를 훑어 무관한 동명 레거시 계정까지 지울 수 있으므로, 이제는 삭제를 보류하고
+            // 알림만 보낸다(a3a8e21이 AdminUserService에 적용한 것과 동일한 가드).
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
+            // 1단계(승인 시작)와 revertToPendingIfStillProcessing 모두 findByIdForUpdate(행
+            // 잠금)로 Request를 조회한다 — 락 없는 findById 재조회는 동시 거절 결과를 덮어쓸
+            // 수 있어 더 이상 쓰지 않는다.
             verify(requestRepository, times(2)).findByIdForUpdate(requestId);
             verify(requestRepository, never()).findById(requestId);
             verify(request).revertToPending();
         }
 
         @Test
-        @DisplayName("createPod()가 실패하면 Ubuntu 계정이 삭제되고 상태가 복구된다")
+        @DisplayName("createPod()가 실패하면 계정 삭제 대신 보류하고, 상태는 복구된다")
         void approveRequest_podReturnsNull_throwsAndCompensates() {
             Long requestId = 11L;
             buildMockedRequest(requestId);
@@ -486,7 +516,7 @@ class AdminRequestCommandServiceTest {
 
             assertThat(service.approveRequest(dto)).isNotNull();
 
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
             verify(containerImageRepository, never()).findById(any());
         }
 
@@ -517,25 +547,48 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
-        @DisplayName("createPod() 실패 시 보상 Ubuntu 계정 삭제 자체가 실패해도 처리는 종료되고, 정리 실패를 Slack으로 알린다")
-        void approveRequest_podFails_compensationAlsoFails_originalExceptionPropagates() {
+        @DisplayName("createPod() 실패 시 실패 노드를 모르면 계정 삭제를 시도조차 하지 않고 보류 알림만 보낸다")
+        void approveRequest_podFailsWithUnknownNode_holdsDeletionAndAlertsOnce() {
             Long requestId = 12L;
             buildMockedRequest(requestId);
             stubWebClientPut();
 
             when(podService.createPod("testuser"))
                     .thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED));
-            doThrow(new RuntimeException("계정 삭제 실패"))
-                    .when(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
             assertThat(service.approveRequest(dto)).isNotNull();
 
-            // 보상 트랜잭션 자체의 실패는 로그만 남으면 아무도 모른다 — 실무에서 이런 이중 실패는
-            // 인프라와 DB가 어긋난 채로 방치되는 경우라 즉시 Slack 알림이 필요하다. 관리자가
-            // 실제로 보는 farm/lab 채널로 보낸다 (serverName은 이 테스트에서 스텁 안 해 null).
-            verify(alarmService).sendAdminSlackNotification(isNull(), contains("testuser"));
+            // node_name 없이 삭제를 호출하면 config-server가 모든 farm 노드를 훑어 무관한 동명
+            // 레거시 계정까지 지울 수 있으므로, 삭제 자체를 시도하지 않는다.
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
+            // 원래 실패(Pod 생성 실패) 알림 + 삭제 보류 알림, 총 두 번 Slack으로 알린다 —
+            // 관리자가 실제로 보는 farm/lab 채널로 보낸다(serverName은 이 테스트에서 스텁
+            // 안 해 null).
+            verify(alarmService, times(2)).sendAdminSlackNotification(isNull(), contains("testuser"));
+        }
+
+        @Test
+        @DisplayName("createPod() 실패 노드를 알면 보상 계정 삭제를 시도하고, 그 삭제 자체가 실패해도 처리는 종료되며 두 알림 모두 보낸다")
+        void approveRequest_podFailsWithKnownNode_compensationDeleteAlsoFails_alertsBoth() {
+            Long requestId = 16L;
+            buildMockedRequest(requestId);
+            stubWebClientPut();
+
+            when(podService.createPod("testuser"))
+                    .thenThrow(new PodCreationFailedException("pod 생성 실패", ErrorCode.POD_CREATION_FAILED, "farm1"));
+            doThrow(new RuntimeException("계정 삭제 실패"))
+                    .when(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+
+            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
+
+            assertThat(service.approveRequest(dto)).isNotNull();
+
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+            // 보상 트랜잭션 자체의 실패는 로그만 남으면 아무도 모른다 — 원래 실패(Pod 생성 실패)
+            // 알림에 더해 삭제 실패 알림까지 총 두 번 Slack으로 보낸다.
+            verify(alarmService, times(2)).sendAdminSlackNotification(isNull(), contains("testuser"));
         }
 
         @Test
