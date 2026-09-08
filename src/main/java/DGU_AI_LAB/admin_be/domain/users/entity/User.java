@@ -169,4 +169,19 @@ public class User extends BaseTimeEntity {
         this.ubuntuUid = null;
         this.ubuntuGid = null;
     }
+
+    /**
+     * 회원가입 이후에 우분투 유저네임을 등록한다. 이 필드가 도입되기 전에 가입한 계정처럼
+     * ubuntuUsername이 비어있는 사용자를 위한 1회성 자가 등록 경로다 — 가입 폼에서 못
+     * 받았다고 영원히 컨테이너를 신청 못 하게 둘 수는 없다. 한 번 정해지면 그 사용자의
+     * 모든 컨테이너가 이 이름의 홈 디렉터리를 공유하게 되므로, 이미 값이 있으면(가입 시
+     * 정했든 이 메서드로 나중에 정했든) 다시 바꾸지 못하게 막는다 — 바꾸면 기존 홈
+     * 디렉터리와 새 이름이 어긋난다.
+     */
+    public void registerUbuntuUsername(String ubuntuUsername) {
+        if (this.ubuntuUsername != null && !this.ubuntuUsername.isBlank()) {
+            throw new BusinessException(ErrorCode.UBUNTU_USERNAME_ALREADY_ASSIGNED);
+        }
+        this.ubuntuUsername = ubuntuUsername;
+    }
 }

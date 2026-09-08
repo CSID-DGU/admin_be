@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigratePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.PodCreationStatusResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -47,11 +48,12 @@ class PodServiceTest {
 
     @Mock private WebClient configWebClient;
     @Mock private WebClient.RequestHeadersUriSpec<?> requestHeadersUriSpec;
+    @Mock private RequestRepository requestRepository;
 
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setUp() {
-        podService = new PodService(webClient, configWebClient);
+        podService = new PodService(webClient, configWebClient, requestRepository);
 
         when(webClient.post()).thenReturn(requestBodyUriSpec);
         when(requestBodyUriSpec.uri(anyString())).thenReturn(requestBodySpec);
@@ -119,6 +121,37 @@ class PodServiceTest {
             assertThat(txAnnotation)
                     .as("Propagation.MANDATORY 등 트랜잭션 어노테이션이 제거되어야 함")
                     .isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("deleteOrphanPod")
+    class DeleteOrphanPod {
+
+        @Test
+        @DisplayName("대응하는 Request가 없으면 실제 Pod 삭제를 호출한다")
+        void deleteOrphanPod_noMatchingRequest_deletesPod() {
+            when(requestRepository.existsByPodName("orphan-pod")).thenReturn(false);
+            when(responseSpec.bodyToMono(Map.class))
+                    .thenReturn(Mono.just(Map.of("status", "ok")));
+
+            assertThatCode(() -> podService.deleteOrphanPod("orphan-pod"))
+                    .doesNotThrowAnyException();
+
+            verify(webClient).post();
+        }
+
+        @Test
+        @DisplayName("대응하는 Request가 있으면 삭제를 거부하고 실제 Pod 삭제는 호출하지 않는다")
+        void deleteOrphanPod_matchingRequestExists_rejectsWithoutDeleting() {
+            when(requestRepository.existsByPodName("tracked-pod")).thenReturn(true);
+
+            assertThatThrownBy(() -> podService.deleteOrphanPod("tracked-pod"))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_NOT_ORPHAN);
+
+            verify(webClient, never()).post();
         }
     }
 

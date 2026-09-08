@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.global.util;
 
+import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,9 +40,13 @@ class EmailServiceTest {
     @Mock
     private MimeMessage mimeMessage;
 
+    @Mock
+    private UserRepository userRepository;
+
     @BeforeEach
     void setUp() {
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        // 이미 가입된 이메일을 거부하는 테스트는 이 스텁까지 도달하기 전에 끝나므로 lenient로 둔다.
+        lenient().when(redisTemplate.opsForValue()).thenReturn(valueOperations);
     }
 
     @Nested
@@ -82,6 +87,18 @@ class EmailServiceTest {
 
             assertThatThrownBy(() -> emailService.sendEmailVerificationCode("test@example.com"))
                     .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("이미 가입된 이메일이면 인증 메일을 보내지 않고 즉시 실패한다")
+        void sendEmailVerificationCode_alreadyRegisteredEmail_doesNotSendMail() {
+            when(userRepository.existsByEmail("test@example.com")).thenReturn(true);
+
+            assertThatThrownBy(() -> emailService.sendEmailVerificationCode("test@example.com"))
+                    .isInstanceOf(BusinessException.class);
+
+            verifyNoInteractions(mailSender);
+            verifyNoInteractions(valueOperations);
         }
     }
 

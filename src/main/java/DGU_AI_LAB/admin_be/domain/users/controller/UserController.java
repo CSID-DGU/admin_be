@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.users.controller;
 import DGU_AI_LAB.admin_be.domain.users.controller.docs.UserApi;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PasswordUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PhoneUpdateRequestDTO;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuUsernameRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.service.UserService;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
@@ -53,6 +54,19 @@ public class UserController implements UserApi {
                                                               @RequestBody @Valid PhoneUpdateRequestDTO request
     ) {
         UserResponseDTO updatedUser = userService.updatePhone(principal.getUserId(), request);
+        return SuccessResponse.ok(updatedUser);
+    }
+
+    /**
+     * 우분투 유저네임 등록 API (가입 시 못 받은 기존 계정용, 1회성)
+     * PATCH /api/users/me/ubuntu-username
+     */
+    @PatchMapping("/me/ubuntu-username")
+    public ResponseEntity<SuccessResponse<?>> registerUbuntuUsername(
+            @AuthenticationPrincipal CustomUserDetails principal,
+            @RequestBody @Valid UbuntuUsernameRegisterRequestDTO request
+    ) {
+        UserResponseDTO updatedUser = userService.registerUbuntuUsername(principal.getUserId(), request);
         return SuccessResponse.ok(updatedUser);
     }
 }

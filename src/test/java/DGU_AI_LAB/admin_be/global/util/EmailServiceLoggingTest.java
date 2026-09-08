@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.global.util;
 
+import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.support.LogCaptor;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +46,9 @@ class EmailServiceLoggingTest {
 
     @Mock
     private MimeMessage mimeMessage;
+
+    @Mock
+    private UserRepository userRepository;
 
     @BeforeEach
     void setUp() {

@@ -12,10 +12,11 @@ import org.springframework.http.ResponseEntity;
 @Tag(name = "1. 인증", description = "회원가입, 로그인 API")
 public interface EmailApi {
 
-    @Operation(summary = "이메일 인증번호 발송", description = "요청 본문의 이메일 주소로 인증번호를 전송합니다.")
+    @Operation(summary = "이메일 인증번호 발송", description = "요청 본문의 이메일 주소로 인증번호를 전송합니다. 이미 가입된 이메일이면 발송 자체를 하지 않습니다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "인증번호 발송 성공"),
-            @ApiResponse(responseCode = "400", description = "잘못된 요청")
+            @ApiResponse(responseCode = "400", description = "잘못된 요청"),
+            @ApiResponse(responseCode = "409", description = "이미 가입된 이메일")
     })
     ResponseEntity<SuccessResponse<?>> sendCode(EmailSendRequestDTO request);
 
