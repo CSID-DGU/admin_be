@@ -12,11 +12,13 @@ import lombok.Getter;
 public class ErrorResponse {
     private int status;
     private String message;
+    private String code;
 
     public static ErrorResponse of(ErrorCode errorCode) {
         return ErrorResponse.builder()
                 .status(errorCode.getHttpStatus().value())
                 .message(errorCode.getMessage())
+                .code(errorCode.name())
                 .build();
     }
 }
