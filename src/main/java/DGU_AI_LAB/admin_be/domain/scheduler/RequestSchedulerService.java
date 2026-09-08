@@ -32,9 +32,14 @@ public class RequestSchedulerService {
     private final RequestNotificationService requestNotificationService;
     private final AdminRequestCommandService adminRequestCommandService;
 
-    // 승인 처리 API가 보통 몇 초~1분 내로 끝나는 걸 감안해, 이보다 훨씬 길게 잡아 정상
-    // 처리 중인 요청을 잘못 회수하지 않게 한다.
-    private static final long STALE_IN_FLIGHT_THRESHOLD_MINUTES = 10;
+    // approveRequest 비동기 전환(#475) 이후 정상 처리 시간은 계정 생성(최대 120초,
+    // config.timeout-seconds) + Pod 생성(최대 600초, config.pod-timeout-seconds)을 더한
+    // 최대 720초(12분)까지 걸릴 수 있다. 예전 주석("보통 몇 초~1분")은 동기 시절 값이라
+    // 더 이상 맞지 않는다 — 10분으로 두면 정상 처리 중인 요청을 스케줄러가 먼저 회수해
+    // PENDING으로 되돌리고, 그 사이 관리자가 재승인하면 원래 처리와 새 처리가 동시에
+    // 같은 사용자로 Pod를 두 번 만드는 경합이 생긴다. 최대 소요시간(12분)보다 확실히 길게
+    // 잡아 그 창을 닫는다.
+    private static final long STALE_IN_FLIGHT_THRESHOLD_MINUTES = 20;
 
     @Scheduled(cron = "0 00 08 * * ?", zone = "Asia/Seoul")
     public void runScheduler() {

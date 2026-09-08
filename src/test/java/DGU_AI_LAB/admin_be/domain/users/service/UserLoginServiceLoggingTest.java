@@ -47,7 +47,7 @@ class UserLoginServiceLoggingTest {
     @DisplayName("회원가입 완료 로그에 이메일 주소가 남지 않는다")
     void doesNotLogEmailOnRegister() {
         UserRegisterRequestDTO request = new UserRegisterRequestDTO(
-                EMAIL, "rawPassword1!", "김신입", "컴퓨터공학과", "2024001234", "010-9999-8888");
+                EMAIL, "rawPassword1!", "김신입", "컴퓨터공학과", "2024001234", "010-9999-8888", "kimsinip");
 
         when(redisTemplate.hasKey("VERIFIED:" + EMAIL)).thenReturn(true);
         when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.empty());

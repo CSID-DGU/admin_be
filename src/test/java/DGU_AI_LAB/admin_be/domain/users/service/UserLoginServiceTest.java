@@ -15,6 +15,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -82,13 +83,56 @@ class UserLoginServiceTest {
             when(passwordEncoder.encode(anyString())).thenReturn("encodedPw");
 
             UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
-                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678"
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong"
             );
 
             userLoginService.register(dto);
 
-            verify(userRepository, times(1)).saveAndFlush(any(User.class));
+            ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+            verify(userRepository, times(1)).saveAndFlush(captor.capture());
+            // 가입 시 우분투 유저네임만 정해지고, 리눅스 계정(UID/GID)은 첫 승인 때 만들어진다.
+            assertThat(captor.getValue().getUbuntuUsername()).isEqualTo("honggildong");
+            assertThat(captor.getValue().hasUbuntuAccount()).isFalse();
             verify(redisTemplate, times(1)).delete("VERIFIED:test@dgu.ac.kr");
+        }
+
+        @Test
+        @DisplayName("이미 사용 중인 우분투 유저네임으로 가입하면 DUPLICATE_USERNAME을 던진다")
+        void register_throwsException_whenUbuntuUsernameTaken() {
+            when(redisTemplate.hasKey("VERIFIED:test@dgu.ac.kr")).thenReturn(true);
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.empty());
+            when(userRepository.existsByUbuntuUsername("honggildong")).thenReturn(true);
+
+            UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong"
+            );
+
+            assertThatThrownBy(() -> userLoginService.register(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DUPLICATE_USERNAME);
+
+            verify(userRepository, never()).saveAndFlush(any(User.class));
+        }
+
+        @Test
+        @DisplayName("사전 검사 통과 후 우분투 유저네임 unique 제약에 걸리면 DUPLICATE_USERNAME(409)으로 변환한다 — 이메일 중복과 구분해야 사용자가 뭘 고칠지 안다")
+        void register_mapsUbuntuUsernameViolationToDuplicateUsername() {
+            when(redisTemplate.hasKey("VERIFIED:test@dgu.ac.kr")).thenReturn(true);
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.empty());
+            when(passwordEncoder.encode(anyString())).thenReturn("encodedPw");
+            when(userRepository.saveAndFlush(any(User.class)))
+                    .thenThrow(new DataIntegrityViolationException("constraint violation",
+                            new RuntimeException("Duplicate entry 'honggildong' for key 'uk_users_ubuntu_username'")));
+
+            UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong"
+            );
+
+            assertThatThrownBy(() -> userLoginService.register(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DUPLICATE_USERNAME);
+
+            verify(redisTemplate, never()).delete("VERIFIED:test@dgu.ac.kr");
         }
 
         @Test
@@ -102,7 +146,7 @@ class UserLoginServiceTest {
                     .thenThrow(new DataIntegrityViolationException("uk_users_email"));
 
             UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
-                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678"
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong"
             );
 
             assertThatThrownBy(() -> userLoginService.register(dto))
@@ -119,7 +163,7 @@ class UserLoginServiceTest {
             when(redisTemplate.hasKey("VERIFIED:test@dgu.ac.kr")).thenReturn(false);
 
             UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
-                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678"
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong"
             );
 
             assertThatThrownBy(() -> userLoginService.register(dto))
@@ -133,7 +177,7 @@ class UserLoginServiceTest {
             when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
 
             UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
-                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678"
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong"
             );
 
             assertThatThrownBy(() -> userLoginService.register(dto))

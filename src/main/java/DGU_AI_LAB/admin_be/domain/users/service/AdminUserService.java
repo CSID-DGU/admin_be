@@ -55,8 +55,8 @@ public class AdminUserService {
     }
 
     /**
-     * 유저가 소유한 모든 Request(우분투 계정/컨테이너)를 정리한다.
-     * FULFILLED 상태는 외부 계정/Pod를 삭제하고, 나머지는 논리 삭제한다.
+     * 유저가 소유한 모든 Request(컨테이너)를 정리하고, 마지막에 우분투 계정 자체를 회수한다.
+     * FULFILLED 상태는 외부 Pod를 삭제하고, 나머지는 논리 삭제한다.
      * MIGRATING 중인 요청이 하나라도 있으면 정리 자체를 거부한다 — 마이그레이션 결과가
      * 반영될 Request의 소유자가 이미 정리된 상태로 남아 정합성이 깨지는 것을 막기 위함이다.
      * deleteUser(완전 탈퇴)와 deactivateUser(soft-delete와 동일 효과의 임시 비활성화)가
@@ -91,6 +91,10 @@ public class AdminUserService {
         }
 
         List<Long> failedRequestIds = new ArrayList<>();
+        // 마지막에 우분투 계정을 지울 때 config-server에 넘길 farm 노드. 살아있던 컨테이너가
+        // 있었다면 그 노드로 삭제 범위를 좁힌다 — 안 넘기면 config-server가 모든 farm 노드를
+        // 훑어서 같은 유저네임의 무관한 레거시 계정까지 지울 수 있다.
+        String accountNodeName = null;
         for (Request request : userRequests) {
             Long requestId = request.getRequestId();
             if (request.getStatus() == Status.FULFILLED) {
@@ -119,23 +123,26 @@ public class AdminUserService {
                     continue;
                 }
 
+                // 우분투 계정은 여기서 지우지 않는다 — 사용자가 컨테이너를 여러 번 받아도
+                // 계정은 하나뿐이라, 요청마다 지우면 두 번째 요청 정리에서 이미 없는 계정을
+                // 다시 지우게 된다. 계정 회수는 모든 요청을 정리한 뒤 아래에서 한 번만 한다.
                 try {
                     podService.deletePod(podNameRef[0]);
-                    ubuntuAccountService.deleteUbuntuAccount(usernameRef[0], nodeNameRef[0]);
                 } catch (Exception e) {
-                    log.error("[{}] userId={} requestId={} Pod/계정 삭제 실패 — 이 요청은 FULFILLED로 남기고 다음 요청을 계속 정리합니다: {}",
+                    log.error("[{}] userId={} requestId={} Pod 삭제 실패 — 이 요청은 FULFILLED로 남기고 다음 요청을 계속 정리합니다: {}",
                             logPrefix, user.getUserId(), requestId, e.getMessage());
                     failedRequestIds.add(requestId);
                     revertToFulfilled(requestId);
                     try {
                         alarmService.sendSlackAlert(String.format(
-                                "[%s] userId=%d 정리 중 Pod/계정 삭제 실패 - 수동 확인 필요: requestId=%d, ubuntuUsername=%s",
+                                "[%s] userId=%d 정리 중 Pod 삭제 실패 - 수동 확인 필요: requestId=%d, ubuntuUsername=%s",
                                 logPrefix, user.getUserId(), requestId, usernameRef[0]), null);
                     } catch (Exception ignored) {
                         // 알림 발송 실패가 다른 요청 정리를 막으면 안 된다.
                     }
                     continue;
                 }
+                accountNodeName = nodeNameRef[0];
                 final Request[] deletedRef = {null};
                 newTx.execute(status -> {
                     Request managed = requestRepository.findByIdForUpdate(requestId)
@@ -163,9 +170,68 @@ public class AdminUserService {
         }
 
         if (!failedRequestIds.isEmpty()) {
+            // Pod가 남아있는 요청이 있으면 계정을 지우지 않는다 — 계정 없이 떠 있는 Pod가 된다.
             throw new BusinessException(ErrorCode.USER_REQUEST_CLEANUP_PARTIALLY_FAILED);
         }
+        releaseUbuntuAccount(user.getUserId(), accountNodeName, logPrefix);
         log.info("[{}] userId={}와 연결된 Request 정리 완료", logPrefix, user.getUserId());
+    }
+
+    /**
+     * 사용자가 삭제/비활성화될 때만 실행되는 우분투 계정 회수.
+     * 유저네임은 웹 계정에 평생 귀속되므로 남기고, config-server의 리눅스 계정과 UID/GID만 지운다 —
+     * UID는 삭제 즉시 다른 사용자에게 재할당될 수 있어, 들고 있으면 이 계정이 되살아났을 때
+     * 남의 UID로 Pod를 만든다.
+     *
+     * @param cleanedNodeName 방금 정리한 컨테이너가 떠 있던 노드. 컨테이너가 이미 만료된
+     *                        사용자는 null이므로 그때는 신청 이력에서 노드를 되찾는다.
+     */
+    private void releaseUbuntuAccount(Long userId, String cleanedNodeName, String logPrefix) {
+        TransactionTemplate newTx = new TransactionTemplate(transactionManager);
+        newTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
+        final String[] usernameRef = {null};
+        final String[] nodeNameRef = {cleanedNodeName};
+        newTx.execute(status -> {
+            User managed = userRepository.findByIdForUpdate(userId)
+                    .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
+            if (!managed.hasUbuntuAccount()) {
+                return null;
+            }
+            usernameRef[0] = managed.getUbuntuUsername();
+            if (nodeNameRef[0] == null) {
+                nodeNameRef[0] = requestRepository.findNodeNamesByUserIdOrderByRequestIdDesc(userId)
+                        .stream().findFirst().orElse(null);
+            }
+            return null;
+        });
+        if (usernameRef[0] == null) {
+            log.info("[{}] userId={} 배정된 우분투 계정이 없어 계정 삭제를 건너뜁니다.", logPrefix, userId);
+            return;
+        }
+        if (nodeNameRef[0] == null) {
+            // node_name 없이 삭제를 호출하면 config-server가 모든 farm 노드를 훑어서 같은
+            // 유저네임의 무관한 레거시 계정까지 지운다. 그 위험을 감수하느니 계정을 남기고
+            // 관리자에게 알린다 — 남은 계정은 수동으로 정리할 수 있지만, 잘못 지운 남의
+            // 계정은 되돌릴 수 없다. UID/GID도 함께 남겨 이 사용자의 상태를 그대로 보존한다.
+            log.error("[{}] userId={} 계정이 배포된 farm 노드를 알 수 없어 계정 삭제를 보류합니다 - 수동 정리 필요: username={}",
+                    logPrefix, userId, usernameRef[0]);
+            try {
+                alarmService.sendSlackAlert(String.format(
+                        "[%s] userId=%d 우분투 계정의 farm 노드를 알 수 없어 삭제 보류 - 수동 정리 필요: ubuntuUsername=%s",
+                        logPrefix, userId, usernameRef[0]), null);
+            } catch (Exception ignored) {
+                // 알림 발송 실패가 사용자 삭제 자체를 막으면 안 된다.
+            }
+            return;
+        }
+
+        ubuntuAccountService.deleteUbuntuAccount(usernameRef[0], nodeNameRef[0]);
+        newTx.execute(status -> {
+            userRepository.findByIdForUpdate(userId).ifPresent(User::releaseUbuntuAccount);
+            return null;
+        });
+        log.info("[{}] userId={} 우분투 계정 삭제 완료: username={}, node={}", logPrefix, userId, usernameRef[0], nodeNameRef[0]);
     }
 
     /**
@@ -218,10 +284,15 @@ public class AdminUserService {
 
         // 1. 행 잠금 + 상태 검증 + FULFILLED -> EXPIRING 선점 (짧은 트랜잭션, 이후 커넥션 반납)
         final Long[] requestIdRef = {null};
+        final Long[] userIdRef = {null};
         final String[] podNameRef = {null};
         final String[] nodeNameRef = {null};
         tx.execute(status -> {
-            Long requestId = requestRepository.findByUbuntuUsername(username)
+            // ubuntu_username은 더 이상 유일하지 않다(종료된 신청 이력이 같은 이름을 공유한다).
+            // 살아있는 신청으로 범위를 좁혀 그 중 가장 최근 건을 대상으로 한다.
+            Long requestId = requestRepository
+                    .findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses())
+                    .stream().findFirst()
                     .orElseThrow(() -> {
                         log.warn("[deleteUbuntuAccount] {}에 해당하는 Request가 없습니다.", username);
                         return new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND);
@@ -238,6 +309,7 @@ public class AdminUserService {
             // 걸러서, 승인 처리나 마이그레이션이 진행 중인 요청의 인프라까지 지울 수 있었다.
             request.beginExpiry();
             requestIdRef[0] = requestId;
+            userIdRef[0] = request.getUser().getUserId();
             podNameRef[0] = request.getPodName();
             nodeNameRef[0] = request.getNodeName();
             return null;
@@ -252,6 +324,14 @@ public class AdminUserService {
             revertToFulfilled(requestId);
             throw e;
         }
+
+        // 계정 자체를 지웠으므로 웹 계정에 물려 있던 UID/GID도 함께 회수한다. 안 지우면
+        // 다음 승인이 "이미 계정 있음"으로 판단해 계정 생성을 건너뛰고, 존재하지 않는
+        // 계정의 UID로 Pod를 만든다. 유저네임은 이 웹 계정의 것이므로 그대로 남긴다.
+        tx.execute(status -> {
+            userRepository.findByIdForUpdate(userIdRef[0]).ifPresent(User::releaseUbuntuAccount);
+            return null;
+        });
 
         // 3. 행 잠금 후 최종 반영 (새 트랜잭션, HTTP 완료 후 짧게만 커넥션 보유)
         final Request[] deletedRef = {null};
