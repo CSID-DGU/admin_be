@@ -5,6 +5,7 @@ import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
+import DGU_AI_LAB.admin_be.domain.groups.service.GroupService;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
@@ -67,6 +68,7 @@ class AdminRequestCommandServiceTest {
     @Mock private ResourceGroupRepository resourceGroupRepository;
     @Mock private ChangeRequestRepository changeRequestRepository;
     @Mock private GroupRepository groupRepository;
+    @Mock private GroupService groupService;
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private PodService podService;
     @Mock private UbuntuAccountService ubuntuAccountService;
@@ -97,11 +99,16 @@ class AdminRequestCommandServiceTest {
         service = new AdminRequestCommandService(
                 alarmService, requestRepository, userRepository, containerImageRepository,
                 resourceGroupRepository, changeRequestRepository,
-                groupRepository, podExternalPortRepository, podService, ubuntuAccountService, portRequestService, new ObjectMapper(),
+                groupRepository, groupService, podExternalPortRepository, podService, ubuntuAccountService, portRequestService, new ObjectMapper(),
                 mockWebClient, transactionManager, approvalExecutor
         );
         // 공유 엔티티 기본 설정
         when(mockUser.getName()).thenReturn("테스트유저");
+        when(mockUser.getUserId()).thenReturn(100L);
+        // 기본값: 아직 리눅스 계정이 없는 사용자 → 승인 시 계정 생성 API를 호출한다.
+        when(mockUser.hasUbuntuAccount()).thenReturn(false);
+        // UID/GID 배정은 User 행을 잠그고 수행한다 (같은 사용자의 동시 승인 직렬화).
+        when(userRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(mockUser));
         when(mockImage.getImageId()).thenReturn(1L);
         when(mockRg.getRsgroupId()).thenReturn(1);
 
@@ -248,6 +255,74 @@ class AdminRequestCommandServiceTest {
         assertThat(supplementaryGroups).hasSize(1);
         assertThat(supplementaryGroups.get(0).name()).isEqualTo("ASCP");
         assertThat(supplementaryGroups.get(0).gid()).isEqualTo(20004L);
+        // 계정 생성 API 호출에도 그룹이 실렸지만, 별도로 groupService를 통한 멱등 그룹
+        // 추가도 반드시 호출돼야 한다 — 재사용 계정 경로는 계정 생성 API 자체를 건너뛰므로
+        // 이 별도 호출 없이는 재사용 승인에서 그룹이 전혀 반영되지 않는다.
+        verify(groupService).addUserToGroups("testuser", List.of("ASCP"));
+    }
+
+    @Test
+    @DisplayName("계정을 재사용하는 승인도 이번 신청의 그룹을 계정에 추가한다 — 안 그러면 최초 승인 때 그룹에 영구히 고정된다")
+    void approveRequest_reusedAccount_stillSyncsThisRequestsGroups() {
+        Long requestId = 66L;
+        Request request = mock(Request.class);
+        when(request.getStatus()).thenReturn(Status.PENDING, Status.PROCESSING);
+        when(request.getUbuntuUsername()).thenReturn("testuser");
+        when(request.getUbuntuPasswordBase64()).thenReturn("cGxhaW5fdGV4dF9wdw==");
+
+        Group vision = mock(Group.class);
+        when(vision.getGroupName()).thenReturn("VISION-LAB");
+        when(vision.getUbuntuGid()).thenReturn(20005L);
+        DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup requestGroup =
+                mock(DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup.class);
+        when(requestGroup.getGroup()).thenReturn(vision);
+        when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>(List.of(requestGroup)));
+
+        when(request.getUser()).thenReturn(mockUser);
+        when(request.getResourceGroup()).thenReturn(mockRg);
+        when(request.getContainerImage()).thenReturn(mockImage);
+        when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
+        when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+        // 이미 리눅스 계정(UID/GID)을 보유한 사용자로 바꾼다 — 두 번째 이후의 승인 상황.
+        when(mockUser.hasUbuntuAccount()).thenReturn(true);
+        when(mockUser.getUbuntuUid()).thenReturn(20001L);
+        when(mockUser.getUbuntuGid()).thenReturn(20001L);
+
+        when(podService.createPod("testuser")).thenReturn(
+                new CreatePodResponseDTO("running", "farm1", "pod-testuser-reuse-grp", List.of()));
+        when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
+        when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
+
+        service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
+
+        // 계정 생성 API는 안 불렸지만(재사용 경로),
+        verify(mockWebClient, never()).put();
+        // 이번 신청의 그룹은 별도로 반영돼야 한다.
+        verify(groupService).addUserToGroups("testuser", List.of("VISION-LAB"));
+    }
+
+    @Test
+    @DisplayName("그룹 추가가 실패하면 상태를 PENDING으로 되돌린다")
+    void approveRequest_groupSyncFails_revertsToPending() {
+        Long requestId = 67L;
+        Request request = buildMockedRequest(requestId);
+        stubWebClientPut();
+
+        Group ascp = mock(Group.class);
+        when(ascp.getGroupName()).thenReturn("ASCP");
+        when(ascp.getUbuntuGid()).thenReturn(20004L);
+        DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup requestGroup =
+                mock(DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup.class);
+        when(requestGroup.getGroup()).thenReturn(ascp);
+        when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>(List.of(requestGroup)));
+
+        doThrow(new BusinessException(ErrorCode.GROUP_CREATION_FAILED))
+                .when(groupService).addUserToGroups(eq("testuser"), anyList());
+
+        service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
+
+        verify(podService, never()).createPod(anyString());
+        verify(request).revertToPending();
     }
 
     @Test
@@ -326,6 +401,143 @@ class AdminRequestCommandServiceTest {
     // ── C-3: Pod 생성 null 응답 / NPE 보상 트랜잭션 테스트 ─────────────────
 
     @Nested
+    @DisplayName("웹 계정당 우분투 계정 하나")
+    class AccountScopedToWebAccount {
+
+        /** 이미 리눅스 계정(UID/GID)을 보유한 사용자로 바꾼다 — 두 번째 이후의 승인 상황. */
+        private void givenUserAlreadyHasUbuntuAccount() {
+            when(mockUser.hasUbuntuAccount()).thenReturn(true);
+            when(mockUser.getUbuntuUid()).thenReturn(20001L);
+            when(mockUser.getUbuntuGid()).thenReturn(20001L);
+        }
+
+        @Test
+        @DisplayName("이미 계정을 가진 사용자의 두 번째 승인은 계정 생성 API를 호출하지 않고 기존 UID/GID를 그대로 쓴다")
+        void secondApproval_skipsAccountCreationAndReusesUidGid() {
+            Long requestId = 60L;
+            Request request = buildMockedRequest(requestId);
+            givenUserAlreadyHasUbuntuAccount();
+
+            when(podService.createPod("testuser")).thenReturn(
+                    new CreatePodResponseDTO("running", "farm1", "pod-testuser-2nd", List.of()));
+            when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
+            when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
+
+            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
+
+            // 계정 생성 PUT은 한 번도 나가지 않아야 한다. 다시 만들면 UID가 바뀌어
+            // 기존 홈 디렉터리(/home/testuser)의 소유권이 어긋난다.
+            verify(mockWebClient, never()).put();
+            // 같은 유저네임/UID/GID로 Pod를 만들었으므로 홈 디렉터리가 그대로 이어진다.
+            verify(podService).createPod("testuser");
+            verify(request).assignUbuntuIds(20001L, 20001L);
+            verify(mockUser).assignUbuntuAccount(20001L, 20001L);
+        }
+
+        @Test
+        @DisplayName("UID/GID 배정은 User 행을 잠그고 수행한다 — 같은 사용자의 승인 두 건이 각자 계정을 만들지 못하게 직렬화한다")
+        void assignsUidUnderUserRowLock() {
+            Long requestId = 61L;
+            buildMockedRequest(requestId);
+            stubWebClientPut();
+
+            when(podService.createPod("testuser")).thenReturn(
+                    new CreatePodResponseDTO("running", "farm1", "pod-testuser-lock", List.of()));
+            when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
+            when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
+
+            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
+
+            // 계정 생성 직후(Pod 생성 전) 한 번, 최종 DB 반영 트랜잭션에서 한 번 — 총 두 번
+            // User 행을 잠그고 배정한다. 두 번째는 같은 값이라 항상 멱등하게 통과한다.
+            verify(userRepository, times(2)).findByIdForUpdate(100L);
+            verify(userRepository, never()).findById(100L);
+            verify(mockUser, times(2)).assignUbuntuAccount(2001L, 2001L);
+        }
+
+        @Test
+        @DisplayName("계정 생성 직후 배정에서 다른 UID가 이미 배정돼 있으면 Pod를 만들기 전에 중단한다")
+        void conflictingAssignmentRightAfterAccountCreation_stopsBeforeCreatingPod() {
+            Long requestId = 62L;
+            Request request = buildMockedRequest(requestId);
+            stubWebClientPut();
+            // 계정 생성 API 호출 직후 벌어지는 배정 시도 시점에 다른 승인이 먼저 다른 UID를
+            // 배정해 놓은 상황 — Pod 생성 전에 잡히므로 Pod는 아예 만들어지지 않는다.
+            doThrow(new BusinessException(ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED))
+                    .when(mockUser).assignUbuntuAccount(2001L, 2001L);
+
+            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
+
+            // Pod를 만든 적이 없으므로 지울 것도 없다.
+            verify(podService, never()).createPod(anyString());
+            verify(podService, never()).deletePod(anyString());
+            // 이 시점엔 아직 어느 farm 노드에도 배포된 게 없어 node를 모른다 — node_name 없이
+            // 삭제를 호출하면 무관한 동명 레거시 계정까지 지울 수 있으므로 삭제 자체를 보류한다
+            // (방금 만든 계정은 남고, 재승인 시 hasUbuntuAccount()로 재사용된다).
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
+            verify(request).revertToPending();
+        }
+
+        @Test
+        @DisplayName("Pod 생성 후 DB 반영 단계에서 배정 충돌이 나면 계정/Pod를 되돌린다")
+        void conflictingAssignmentAtFinalCommit_compensatesAndRevertsRequest() {
+            Long requestId = 65L;
+            Request request = buildMockedRequest(requestId);
+            stubWebClientPut();
+
+            when(podService.createPod("testuser")).thenReturn(
+                    new CreatePodResponseDTO("running", "farm1", "pod-testuser-race2", List.of()));
+            when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
+            when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
+            // 계정 생성 직후 배정은 통과시키고(첫 번째 호출), Pod 생성 후 최종 DB 반영 단계의
+            // 배정(두 번째 호출)에서만 다른 승인이 먼저 다른 UID를 배정해 놓은 상황을 재현한다.
+            doNothing()
+                    .doThrow(new BusinessException(ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED))
+                    .when(mockUser).assignUbuntuAccount(2001L, 2001L);
+
+            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
+
+            verify(podService).deletePod("pod-testuser-race2");
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+            verify(request).revertToPending();
+        }
+
+        @Test
+        @DisplayName("재사용한 계정은 Pod 생성이 실패해도 지우지 않는다 — 지우면 이 사용자의 홈 디렉터리까지 사라진다")
+        void podFailureAfterReusingAccount_doesNotDeleteTheSharedAccount() {
+            Long requestId = 63L;
+            Request request = buildMockedRequest(requestId);
+            givenUserAlreadyHasUbuntuAccount();
+
+            when(podService.createPod("testuser"))
+                    .thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED));
+
+            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
+
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
+            verify(request).revertToPending();
+        }
+
+        @Test
+        @DisplayName("재사용한 계정은 DB 반영이 실패해도 Pod만 지우고 계정은 남긴다")
+        void dbFailureAfterReusingAccount_deletesPodButKeepsTheAccount() {
+            Long requestId = 64L;
+            Request request = buildMockedRequest(requestId);
+            givenUserAlreadyHasUbuntuAccount();
+
+            when(podService.createPod("testuser")).thenReturn(
+                    new CreatePodResponseDTO("running", "farm1", "pod-testuser-dbfail", List.of()));
+            when(containerImageRepository.findById(1L)).thenReturn(Optional.empty());
+
+            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
+
+            verify(podService).deletePod("pod-testuser-dbfail");
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
+            verify(request).revertToPending();
+        }
+    }
+
+    @Nested
     @DisplayName("C-3: Pod 생성 실패 시 보상 트랜잭션")
     class PodCreationFailureCompensation {
 
@@ -348,17 +560,20 @@ class AdminRequestCommandServiceTest {
             assertThat(response).isNotNull();
 
             // createPod가 던진 게 PodCreationFailedException이 아닌 평범한 BusinessException이라
-            // 실패 노드를 못 얻으므로 node=null로 전체 farm을 훑는 기존 방식으로 정리한다.
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
-            // 1단계(승인 시작)와 보상 트랜잭션 모두 findByIdForUpdate(행 잠금)로 조회한다 —
-            // 락 없는 findById 재조회는 동시 거절 결과를 덮어쓸 수 있어 더 이상 쓰지 않는다.
+            // 실패 노드를 못 얻는다 — node_name 없이 삭제를 호출하면 config-server가 모든 farm
+            // 노드를 훑어 무관한 동명 레거시 계정까지 지울 수 있으므로, 이제는 삭제를 보류하고
+            // 알림만 보낸다(a3a8e21이 AdminUserService에 적용한 것과 동일한 가드).
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
+            // 1단계(승인 시작)와 revertToPendingIfStillProcessing 모두 findByIdForUpdate(행
+            // 잠금)로 Request를 조회한다 — 락 없는 findById 재조회는 동시 거절 결과를 덮어쓸
+            // 수 있어 더 이상 쓰지 않는다.
             verify(requestRepository, times(2)).findByIdForUpdate(requestId);
             verify(requestRepository, never()).findById(requestId);
             verify(request).revertToPending();
         }
 
         @Test
-        @DisplayName("createPod()가 실패하면 Ubuntu 계정이 삭제되고 상태가 복구된다")
+        @DisplayName("createPod()가 실패하면 계정 삭제 대신 보류하고, 상태는 복구된다")
         void approveRequest_podReturnsNull_throwsAndCompensates() {
             Long requestId = 11L;
             buildMockedRequest(requestId);
@@ -371,7 +586,7 @@ class AdminRequestCommandServiceTest {
 
             assertThat(service.approveRequest(dto)).isNotNull();
 
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
             verify(containerImageRepository, never()).findById(any());
         }
 
@@ -402,25 +617,48 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
-        @DisplayName("createPod() 실패 시 보상 Ubuntu 계정 삭제 자체가 실패해도 처리는 종료되고, 정리 실패를 Slack으로 알린다")
-        void approveRequest_podFails_compensationAlsoFails_originalExceptionPropagates() {
+        @DisplayName("createPod() 실패 시 실패 노드를 모르면 계정 삭제를 시도조차 하지 않고 보류 알림만 보낸다")
+        void approveRequest_podFailsWithUnknownNode_holdsDeletionAndAlertsOnce() {
             Long requestId = 12L;
             buildMockedRequest(requestId);
             stubWebClientPut();
 
             when(podService.createPod("testuser"))
                     .thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED));
-            doThrow(new RuntimeException("계정 삭제 실패"))
-                    .when(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
             assertThat(service.approveRequest(dto)).isNotNull();
 
-            // 보상 트랜잭션 자체의 실패는 로그만 남으면 아무도 모른다 — 실무에서 이런 이중 실패는
-            // 인프라와 DB가 어긋난 채로 방치되는 경우라 즉시 Slack 알림이 필요하다. 관리자가
-            // 실제로 보는 farm/lab 채널로 보낸다 (serverName은 이 테스트에서 스텁 안 해 null).
-            verify(alarmService).sendAdminSlackNotification(isNull(), contains("testuser"));
+            // node_name 없이 삭제를 호출하면 config-server가 모든 farm 노드를 훑어 무관한 동명
+            // 레거시 계정까지 지울 수 있으므로, 삭제 자체를 시도하지 않는다.
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
+            // 원래 실패(Pod 생성 실패) 알림 + 삭제 보류 알림, 총 두 번 Slack으로 알린다 —
+            // 관리자가 실제로 보는 farm/lab 채널로 보낸다(serverName은 이 테스트에서 스텁
+            // 안 해 null).
+            verify(alarmService, times(2)).sendAdminSlackNotification(isNull(), contains("testuser"));
+        }
+
+        @Test
+        @DisplayName("createPod() 실패 노드를 알면 보상 계정 삭제를 시도하고, 그 삭제 자체가 실패해도 처리는 종료되며 두 알림 모두 보낸다")
+        void approveRequest_podFailsWithKnownNode_compensationDeleteAlsoFails_alertsBoth() {
+            Long requestId = 16L;
+            buildMockedRequest(requestId);
+            stubWebClientPut();
+
+            when(podService.createPod("testuser"))
+                    .thenThrow(new PodCreationFailedException("pod 생성 실패", ErrorCode.POD_CREATION_FAILED, "farm1"));
+            doThrow(new RuntimeException("계정 삭제 실패"))
+                    .when(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+
+            ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
+
+            assertThat(service.approveRequest(dto)).isNotNull();
+
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+            // 보상 트랜잭션 자체의 실패는 로그만 남으면 아무도 모른다 — 원래 실패(Pod 생성 실패)
+            // 알림에 더해 삭제 실패 알림까지 총 두 번 Slack으로 보낸다.
+            verify(alarmService, times(2)).sendAdminSlackNotification(isNull(), contains("testuser"));
         }
 
         @Test

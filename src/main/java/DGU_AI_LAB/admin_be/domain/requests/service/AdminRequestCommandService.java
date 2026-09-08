@@ -5,6 +5,7 @@ import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
+import DGU_AI_LAB.admin_be.domain.groups.service.GroupService;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
@@ -68,6 +69,7 @@ public class AdminRequestCommandService {
     private final ResourceGroupRepository resourceGroupRepository;
     private final ChangeRequestRepository changeRequestRepository;
     private final GroupRepository groupRepository;
+    private final GroupService groupService;
     private final PodExternalPortRepository podExternalPortRepository;
     private final PodService podService;
     private final UbuntuAccountService ubuntuAccountService;
@@ -92,11 +94,7 @@ public class AdminRequestCommandService {
         // 트랜잭션만 기다리면 된다. 실제 처리 완료 여부는 기존 Pod 생성 진행 상태 폴링
         // API(/pod-status/pods/{username}/status)로 확인한다 — 승인/일반 Pod 생성 모두
         // config-server가 같은 stage 체계를 쓰므로 별도 API 없이 그대로 재사용된다.
-        final UserCreationRequestDTO[] creationDtoRef = {null};
-        final String[] usernameRef = {null};
-        // 보상 트랜잭션 실패 알림을 관리자가 실제로 보는 farm/lab 채널로 보내기 위해
-        // 승인 시점의 서버 구분을 미리 떼어둔다 (resourceGroup은 신청 시점부터 항상 존재).
-        final String[] serverNameRef = {null};
+        final ApprovalContext[] contextRef = {null};
         final SaveRequestResponseDTO[] responseRef = {null};
         tx.execute(status -> {
             // 행 잠금 조회: 동시에 같은 요청을 승인 시도하는 두 번째 트랜잭션은 여기서 대기하다가
@@ -107,18 +105,30 @@ public class AdminRequestCommandService {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
             }
             req.markAsProcessing(); // 다른 관리자의 중복 승인 시도 차단
-            usernameRef[0] = req.getUbuntuUsername();
-            serverNameRef[0] = req.getResourceGroup().getServerName();
             List<UserCreationRequestDTO.SupplementaryGroup> supplementaryGroups = req.getRequestGroups().stream()
                     .map(rg -> new UserCreationRequestDTO.SupplementaryGroup(rg.getGroup().getGroupName(), rg.getGroup().getUbuntuGid()))
                     .toList();
-            creationDtoRef[0] = new UserCreationRequestDTO(
+            UserCreationRequestDTO creationDto = new UserCreationRequestDTO(
                     req.getUbuntuUsername(),
                     req.getUbuntuPasswordBase64(),
                     req.getUser().getName(),
                     req.getUbuntuUsername(),
                     false,
                     supplementaryGroups
+            );
+            User owner = req.getUser();
+            contextRef[0] = new ApprovalContext(
+                    dto.requestId(),
+                    owner.getUserId(),
+                    req.getUbuntuUsername(),
+                    // 이 사용자가 이미 리눅스 계정을 갖고 있으면 계정 생성 API를 건너뛰고 이 UID/GID를
+                    // 그대로 재사용한다 — 그래야 새 컨테이너가 기존 홈 디렉터리를 그대로 물려받는다.
+                    owner.hasUbuntuAccount() ? owner.getUbuntuUid() : null,
+                    owner.hasUbuntuAccount() ? owner.getUbuntuGid() : null,
+                    creationDto,
+                    // 보상 트랜잭션 실패 알림을 관리자가 실제로 보는 farm/lab 채널로 보내기 위해
+                    // 승인 시점의 서버 구분을 미리 떼어둔다 (resourceGroup은 신청 시점부터 항상 존재).
+                    req.getResourceGroup().getServerName()
             );
             // 트랜잭션 종료 후 사용되는 모든 lazy 연관 초기화 (즉시 응답 DTO 빌드용)
             req.getUser().getEmail();
@@ -128,24 +138,36 @@ public class AdminRequestCommandService {
             responseRef[0] = SaveRequestResponseDTO.fromEntity(req);
             return null;
         });
-        String username = usernameRef[0];
-        Long requestId = dto.requestId();
-        String serverName = serverNameRef[0];
-        UserCreationRequestDTO creationDto = creationDtoRef[0];
+        ApprovalContext ctx = contextRef[0];
 
         // 2~4단계(계정 생성, Pod 생성, DB 반영, 메일)를 비동기로 넘긴다. executor 큐가
         // 꽉 차서(동시 3건 초과) 거부되면 제출 시점에 곧바로 TaskRejectedException이
         // 던져지므로(작업 실행 자체가 아니라 제출이 동기 호출이라 그렇다), 여기서 잡아서
         // 기존과 동일하게 즉시 실패시킨다.
         try {
-            approvalExecutor.execute(() -> processApproval(requestId, username, creationDto, dto, serverName));
+            approvalExecutor.execute(() -> processApproval(ctx, dto));
         } catch (TaskRejectedException e) {
-            log.warn("[동시 처리 한도 초과] 승인 후처리 제출 거부 → 상태 복구 시작: {}", username);
-            revertToPendingIfStillProcessing(requestId, serverName);
+            log.warn("[동시 처리 한도 초과] 승인 후처리 제출 거부 → 상태 복구 시작: {}", ctx.username());
+            revertToPendingIfStillProcessing(ctx.requestId(), ctx.serverName());
             throw new BusinessException(ErrorCode.POD_CREATION_CONCURRENCY_LIMIT);
         }
 
         return responseRef[0];
+    }
+
+    /**
+     * 승인 후처리에 필요한 값들을 첫 트랜잭션에서 미리 떼어낸 스냅샷.
+     * existingUid/existingGid가 채워져 있으면 이 사용자는 이미 리눅스 계정을 갖고 있다는 뜻이며,
+     * 계정 생성 API를 호출하지 않고 그 값을 그대로 쓴다.
+     */
+    private record ApprovalContext(
+            Long requestId, Long userId, String username,
+            Long existingUid, Long existingGid,
+            UserCreationRequestDTO creationDto, String serverName
+    ) {
+        boolean hasExistingAccount() {
+            return existingUid != null && existingGid != null;
+        }
     }
 
     /**
@@ -155,15 +177,95 @@ public class AdminRequestCommandService {
      * 상태라 예외를 던져봐야 아무도 받지 않는다. 바깥 try/catch는 각 단계 내부에서 처리하지
      * 못한 예기치 않은 예외가 executor 스레드에서 조용히 사라지는 것을 막는 최후의 안전망이다.
      */
-    private void processApproval(Long requestId, String username, UserCreationRequestDTO creationDto,
-                                  ApproveRequestDTO dto, String serverName) {
+    private void processApproval(ApprovalContext ctx, ApproveRequestDTO dto) {
+        Long requestId = ctx.requestId();
+        String username = ctx.username();
+        String serverName = ctx.serverName();
         try {
-            // 2. 외부 HTTP 호출
-            UserCreationResponse userResponse;
+            // 2. 외부 HTTP 호출. 이미 리눅스 계정이 있는 사용자면 계정 생성은 건너뛴다 —
+            //    같은 유저네임으로 다시 만들 수도 없고(config-server가 409), 다시 만들면
+            //    UID가 바뀌어 기존 홈 디렉터리의 소유권이 어긋난다.
+            final Long uid;
+            final Long gid;
+            // 이번 승인에서 계정을 새로 만들었는지 — 뒤 단계가 실패했을 때 계정을 지워도
+            // 되는지 판단하는 기준이다. 재사용한 계정을 지우면 이 사용자의 다른 컨테이너와
+            // 홈 디렉터리까지 함께 날아간다.
+            final boolean accountCreatedNow;
+            if (ctx.hasExistingAccount()) {
+                log.info("이미 우분투 계정을 보유한 사용자 — 계정 생성 API 호출 생략: username={}, uid={}", username, ctx.existingUid());
+                uid = ctx.existingUid();
+                gid = ctx.existingGid();
+                accountCreatedNow = false;
+            } else {
+                UserCreationResponse userResponse;
+                try {
+                    userResponse = callUserCreationApi(ctx.creationDto());
+                } catch (Exception e) {
+                    log.warn("[보상 트랜잭션] 사용자 생성 실패 → 상태 복구 시작: {}", username, e);
+                    notifyApprovalFailure(String.format(
+                            "[승인 실패] 사용자 생성 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
+                            username, requestId, e.getMessage()), serverName);
+                    revertToPendingIfStillProcessing(requestId, serverName);
+                    return;
+                }
+                uid = userResponse.uid();
+                gid = userResponse.gid();
+                accountCreatedNow = true;
+
+                // 계정 생성 성공 직후, Pod 생성(최대 10분 대기)에 들어가기 전에 UID/GID를
+                // User에 즉시 커밋한다. 이걸 미루면(예전엔 최종 DB 반영 트랜잭션에서만 했다)
+                // Pod 생성 대기 중 프로세스가 죽었을 때(재배포 SIGTERM 등) User는 이 계정의
+                // 존재를 전혀 모르는 채로 남는다 — 재승인 시 hasExistingAccount()가 다시
+                // false가 되어 계정 생성 API를 또 호출하고, config-server가 409를 던져
+                // 이 신청은 영구히 승인 불가 상태에 갇힌다. 리눅스 계정/홈 디렉터리/krb5
+                // principal은 이미 살아있는데 DB만 그 사실을 모르는 상태를 최대한 짧게 줄인다.
+                try {
+                    Long committedUid = uid;
+                    Long committedGid = gid;
+                    new TransactionTemplate(transactionManager).execute(status -> {
+                        User owner = userRepository.findByIdForUpdate(ctx.userId())
+                                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+                        owner.assignUbuntuAccount(committedUid, committedGid);
+                        return null;
+                    });
+                } catch (Exception e) {
+                    // 계정은 이미 인프라에 존재하는데 그 사실을 User에 못 남겼다. 아직 어느
+                    // farm 노드에도 배포된 게 없는 시점(Pod 생성 전)이라 node를 모른 채
+                    // 삭제하면 무관한 동명 레거시 계정까지 지울 위험이 있으므로 삭제는
+                    // 시도하지 않는다 — 알리고 수동 확인을 받는다.
+                    log.error("[보상 트랜잭션] 계정 생성 직후 UID/GID를 User에 반영하지 못함 - 계정은 인프라에 존재, 수동 확인 필요: username={}", username, e);
+                    notifyApprovalFailure(String.format(
+                            "[승인 실패] 계정 생성 직후 UID/GID 반영 실패 - 계정은 인프라에 존재하나 DB에 미반영, 수동 확인 필요: username=%s, requestId=%d",
+                            username, requestId), serverName);
+                    revertToPendingIfStillProcessing(requestId, serverName);
+                    return;
+                }
+            }
+
+            // 이번 신청이 요구하는 그룹에 사용자를 추가한다. 계정을 새로 만든 경우
+            // callUserCreationApi가 이미 이 신청의 그룹을 넣어 만들었지만, 이 호출도 멱등
+            // 집합-추가라 다시 불러도 안전하다(config-server add_user_groups). 재사용
+            // 계정은 애초에 계정 생성 API 자체를 건너뛰므로, 이 호출이 없으면 최초 승인
+            // 때의 그룹 멤버십에 영구히 고정되고 이후 신청이 요구하는 다른 그룹엔 실제
+            // 파일 접근 권한이 생기지 않는다 — 같은 사용자가 여러 그룹에 동시에 속하는
+            // 건 정상이고(A그룹 신청과 B그룹 신청을 둘 다 승인받았다면 둘 다 유지),
+            // config-server 쪽 API도 원래 있던 그룹에서 빼지 않고 더하기만 한다.
+            List<String> requestGroupNames = ctx.creationDto().supplementaryGroups().stream()
+                    .map(UserCreationRequestDTO.SupplementaryGroup::name)
+                    .toList();
             try {
-                userResponse = callUserCreationApi(creationDto);
+                groupService.addUserToGroups(username, requestGroupNames);
             } catch (Exception e) {
-                log.warn("[보상 트랜잭션] 사용자 생성 실패 → 상태 복구 시작: {}", username, e);
+                log.warn("[보상 트랜잭션] 그룹 추가 실패 → 상태 복구 시작: {}", username, e);
+                notifyApprovalFailure(String.format(
+                        "[승인 실패] 그룹 추가 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, groups=%s, error=%s",
+                        username, requestId, requestGroupNames, e.getMessage()), serverName);
+                if (accountCreatedNow) {
+                    // 아직 어느 farm 노드에도 배포된 게 없는 시점이라 node를 모른 채 삭제하면
+                    // 무관한 동명 레거시 계정까지 지울 위험이 있다 — tryCompensateDeleteUser
+                    // 내부에서 이 경우 삭제 대신 보류+알림으로 처리한다.
+                    tryCompensateDeleteUser(ctx.userId(), username, null, serverName);
+                }
                 revertToPendingIfStillProcessing(requestId, serverName);
                 return;
             }
@@ -175,9 +277,14 @@ public class AdminRequestCommandService {
                 // BusinessException뿐 아니라 WebClient 타임아웃 등 예기치 않은 예외도
                 // 여기서 잡아야 한다 — 안 그러면 바깥쪽 catch-all까지 새어나가 상태
                 // 복구는 되어도 방금 만든 Ubuntu 계정이 정리되지 않은 채 남는다.
-                log.warn("[보상 트랜잭션] Pod 생성 실패 → 계정 삭제 및 상태 복구 시작: {}", username, e);
+                log.warn("[보상 트랜잭션] Pod 생성 실패 → 상태 복구 시작: {}", username, e);
                 String failedNode = (e instanceof PodCreationFailedException pcfe) ? pcfe.getNode() : null;
-                tryCompensateDeleteUser(username, failedNode, serverName);
+                notifyApprovalFailure(String.format(
+                        "[승인 실패] Pod 생성 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
+                        username, requestId, e.getMessage()), serverName);
+                if (accountCreatedNow) {
+                    tryCompensateDeleteUser(ctx.userId(), username, failedNode, serverName);
+                }
                 revertToPendingIfStillProcessing(requestId, serverName);
                 return;
             }
@@ -203,7 +310,13 @@ public class AdminRequestCommandService {
                             .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
                     ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
                             .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-                    req.assignUbuntuIds(userResponse.uid(), userResponse.gid());
+                    // UID/GID의 소유자는 신청이 아니라 웹 계정이다. 같은 사용자의 다른 신청이
+                    // 동시에 승인돼 먼저 배정했을 수 있으므로 User 행을 잠그고 배정한다 —
+                    // 같은 값이면 그대로 통과하고, 다른 값이면 여기서 실패해 보상 트랜잭션을 탄다.
+                    User owner = userRepository.findByIdForUpdate(ctx.userId())
+                            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+                    owner.assignUbuntuAccount(uid, gid);
+                    req.assignUbuntuIds(uid, gid);
                     req.approve(image, rg, dto.adminComment());
                     req.assignPodInfo(podResponse.podName(), podResponse.node());
                     for (CreatePodResponseDTO.PortInfo port : podResponse.ports()) {
@@ -223,8 +336,11 @@ public class AdminRequestCommandService {
                     return null;
                 });
             } catch (Exception e) {
-                log.error("[보상 트랜잭션] DB 업데이트 실패 → 전체 infra 리소스 삭제 시작: {}", username, e);
-                tryCompensateAll(username, podResponse.podName(), podResponse.node(), serverName);
+                log.error("[보상 트랜잭션] DB 업데이트 실패 → infra 리소스 삭제 시작: {}", username, e);
+                notifyApprovalFailure(String.format(
+                        "[승인 실패] DB 반영 실패로 infra 리소스 정리 후 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
+                        username, requestId, e.getMessage()), serverName);
+                tryCompensateAll(ctx.userId(), username, podResponse.podName(), podResponse.node(), serverName, accountCreatedNow);
                 revertToPendingIfStillProcessing(requestId, serverName);
                 return;
             }
@@ -428,6 +544,15 @@ public class AdminRequestCommandService {
         for (Group g : newGroups) {
             originalRequest.addGroup(g);
         }
+
+        // DB에만 반영하고 끝내면 실제 리눅스 계정의 그룹 멤버십은 그대로다 — 이 그룹이
+        // 요구하는 파일에 실제로 접근이 안 되는 채로 "변경 승인됨"만 표시되는 상태가 된다.
+        // config-server의 그룹 추가는 집합-추가 방식이라(원래 그룹에서 빼지 않음) 여기서도
+        // 새로 추가된 그룹만 보내면 된다. approveModification 전체가 하나의 트랜잭션이라
+        // 이 안에서 외부 호출을 하면 그 시간만큼 커넥션을 붙들지만, 그룹 변경 자체가
+        // 드문 오퍼레이션이라 승인 흐름 전체를 다시 3단계로 쪼갤 정도는 아니라고 판단했다.
+        List<String> newGroupNames = newGroups.stream().map(Group::getGroupName).toList();
+        groupService.addUserToGroups(originalRequest.getUbuntuUsername(), newGroupNames);
         return null;
     }
 
@@ -481,13 +606,43 @@ public class AdminRequestCommandService {
 
     // ── 보상 트랜잭션 헬퍼 ─────────────────────────────────────────────
 
-    private void tryCompensateDeleteUser(String username, String nodeName, String serverName) {
+    /**
+     * @param nodeName 이 계정의 krb5 keytab이 실제로 배포된(또는 배포를 시도한) farm 노드.
+     *                 null이면(노드 선택 전에 실패했거나 응답에서 노드를 못 뽑은 경우) 삭제를
+     *                 시도하지 않는다 — node_name 없이 삭제를 호출하면 config-server가 설정된
+     *                 모든 farm 노드를 무차별로 훑어서, 같은 유저네임을 쓰는 무관한 레거시
+     *                 계정까지 잘못 지울 수 있다(AdminUserService.deleteUbuntuAccount와 동일
+     *                 원칙 — a3a8e21에서 사용자 삭제 경로에 먼저 적용됐던 가드를 여기도 맞춘다).
+     *                 이 경우 계정과 User의 UID/GID는 그대로 남기고 알림만 보낸다 — 남은 계정은
+     *                 재승인 시 hasUbuntuAccount() 분기로 자연스럽게 재사용된다.
+     */
+    private void tryCompensateDeleteUser(Long userId, String username, String nodeName, String serverName) {
+        if (nodeName == null) {
+            log.error("[보상 트랜잭션] 계정이 배포된 farm 노드를 알 수 없어 계정 삭제를 보류합니다 - 수동 정리 필요: username={}", username);
+            alertCompensationFailure(String.format(
+                    "[보상 트랜잭션] farm 노드 미상으로 계정 삭제 보류 - 계정/UID는 보존됩니다(재승인 시 재사용): username=%s", username), serverName);
+            return;
+        }
         try {
             ubuntuAccountService.deleteUbuntuAccount(username, nodeName);
+            releaseUserUbuntuAccount(userId);
             log.info("[보상 트랜잭션 완료] 계정 삭제: {}, node={}", username, nodeName);
         } catch (Exception e) {
             log.error("[보상 트랜잭션 실패] 계정 삭제 실패 - 수동 정리 필요: {}", username, e);
             alertCompensationFailure(String.format("[보상 트랜잭션 실패] 계정 삭제 실패 - 수동 정리 필요: username=%s", username), serverName);
+        }
+    }
+
+    /** 계정 삭제가 실제로 성공했을 때만 호출한다 — User에 남은 UID/GID를 비워, 다음 승인이
+     *  이미 삭제된 계정을 "보유 중"으로 착각해 재사용을 시도하지 않게 한다. */
+    private void releaseUserUbuntuAccount(Long userId) {
+        try {
+            new TransactionTemplate(transactionManager).execute(status -> {
+                userRepository.findByIdForUpdate(userId).ifPresent(User::releaseUbuntuAccount);
+                return null;
+            });
+        } catch (Exception e) {
+            log.error("[보상 트랜잭션] User UID/GID 회수 실패 - 수동 확인 필요: userId={}", userId, e);
         }
     }
 
@@ -500,6 +655,17 @@ public class AdminRequestCommandService {
             alarmService.sendAdminSlackNotification(serverName, message);
         } catch (Exception ignored) {
             // 알림 발송 실패가 원래 예외 전파를 막으면 안 된다.
+        }
+    }
+
+    // 비동기 전환 이전에는 계정/Pod/DB 실패가 HTTP 4xx/5xx로 관리자에게 곧바로 보였다.
+    // 지금은 관리자가 200 OK를 받고 떠난 뒤 executor 스레드에서 실패가 나므로, 여기서 알리지
+    // 않으면 신청이 조용히 PENDING으로 돌아가는 걸 관리자가 목록을 다시 볼 때까지 모른다.
+    // (보상 자체의 실패가 아니라 원래 승인 처리의 실패를 알린다는 점만 alertCompensationFailure와 다르다.)
+    private void notifyApprovalFailure(String message, String serverName) {
+        try {
+            alarmService.sendAdminSlackNotification(serverName, message);
+        } catch (Exception ignored) {
         }
     }
 
@@ -527,7 +693,12 @@ public class AdminRequestCommandService {
         }
     }
 
-    private void tryCompensateAll(String username, String podName, String nodeName, String serverName) {
+    /**
+     * @param accountCreatedNow 이번 승인에서 리눅스 계정을 새로 만들었는지. 기존 계정을
+     *                          재사용한 경우에는 절대 지우면 안 된다 — 그 계정은 이 신청이
+     *                          아니라 웹 계정에 귀속돼 있고, 사용자의 홈 디렉터리도 함께 사라진다.
+     */
+    private void tryCompensateAll(Long userId, String username, String podName, String nodeName, String serverName, boolean accountCreatedNow) {
         try {
             podService.deletePod(podName);
             log.info("[보상 트랜잭션 완료] Pod 삭제: {}", podName);
@@ -535,7 +706,9 @@ public class AdminRequestCommandService {
             log.error("[보상 트랜잭션 실패] Pod 삭제 실패 - 수동 정리 필요: {}", podName, e);
             alertCompensationFailure(String.format("[보상 트랜잭션 실패] Pod 삭제 실패 - 수동 정리 필요: podName=%s", podName), serverName);
         }
-        tryCompensateDeleteUser(username, nodeName, serverName);
+        if (accountCreatedNow) {
+            tryCompensateDeleteUser(userId, username, nodeName, serverName);
+        }
     }
 
     record UserCreationResponse(

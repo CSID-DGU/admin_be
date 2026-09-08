@@ -178,6 +178,43 @@ public class GroupService {
         return GroupResponseDTO.fromEntity(savedGroup);
     }
 
+    /**
+     * 이 신청이 요구하는 그룹들에 사용자를 추가한다(PUT /accounts/users/{username}/groups).
+     * config-server 쪽 구현이 멤버 목록에 추가만 하지 원래 있던 다른 그룹에서 빼지 않는
+     * 집합-추가 방식이라(main.py add_user_groups), 호출부도 그 의미에 맞춰 "이번 신청의
+     * 그룹을 더한다"로만 쓴다 — 사용자가 여러 그룹에 동시에 속하는 것 자체가 정상이다
+     * (예: 예전 신청의 A그룹과 새 신청의 B그룹을 동시에 갖는 상태).
+     *
+     * 계정을 새로 만들 때(callUserCreationApi)도 supplementary_groups를 같이 보내지만,
+     * 그건 그 시점에 계정이 존재하는 이번 신청의 그룹뿐이다. 재사용 계정은 애초에 그 호출
+     * 자체를 건너뛰므로, 승인마다(재사용이든 신규든) 이 메서드를 별도로 호출해야 나중
+     * 신청이 요구하는 그룹이 실제 리눅스 계정에도 반영된다 — 안 그러면 최초 승인 때의
+     * 그룹 멤버십에 영구히 고정된다.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void addUserToGroups(String username, List<String> groupNames) {
+        if (groupNames == null || groupNames.isEmpty()) {
+            return;
+        }
+        log.info("[addUserToGroups] 사용자 그룹 추가 API 호출 시작: username={}, groups={}", username, groupNames);
+        WebClientErrorHandler.onError(
+                        groupCreationWebClient
+                                .put()
+                                .uri("/accounts/users/{username}/groups", username)
+                                .bodyValue(new AddUserGroupsRequest(groupNames))
+                                .retrieve(),
+                        (status, body) -> {
+                            log.error("[addUserToGroups] 외부 API 오류: username={}, 상태 코드={}, 응답={}", username, status, body);
+                            return new BusinessException("사용자 그룹 추가 실패: " + body, ErrorCode.GROUP_CREATION_FAILED);
+                        }
+                )
+                .toBodilessEntity()
+                .block();
+        log.info("[addUserToGroups] 사용자 그룹 추가 완료: username={}, groups={}", username, groupNames);
+    }
+
+    record AddUserGroupsRequest(List<String> groups) {}
+
     private void alertOrphanedInfraGroup(String groupName, Long gid, String cause) {
         try {
             alarmService.sendSlackAlert(String.format(

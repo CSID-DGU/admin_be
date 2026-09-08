@@ -8,7 +8,9 @@ import lombok.Getter;
  * config-server의 /create-pod 실패 응답에서 파싱한 대상 노드(node) 정보를 함께 들고 다니는
  * 예외. 계정 삭제 보상 트랜잭션(tryCompensateDeleteUser)이 이 노드로 범위를 좁혀서 정리할 수
  * 있도록, 어느 farm에 배포를 시도했는지 알아야 해서 만들었다. node는 응답에 없거나 파싱에
- * 실패하면 null일 수 있다 — 그러면 호출자는 기존처럼(전체 farm 노드 훑기) 처리해야 한다.
+ * 실패하면 null일 수 있다 — 그러면 호출자(tryCompensateDeleteUser)는 삭제 자체를 보류한다.
+ * node_name 없이 삭제를 호출하면 config-server가 모든 farm 노드를 훑어서 무관한 동명 레거시
+ * 계정까지 지울 수 있기 때문이다.
  */
 @Getter
 public class PodCreationFailedException extends BusinessException {

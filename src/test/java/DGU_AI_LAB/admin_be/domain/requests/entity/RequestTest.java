@@ -59,8 +59,8 @@ class RequestTest {
     class RevertToPending {
 
         @Test
-        @DisplayName("PENDING으로 되돌리면 uid/gid/podName/nodeName이 함께 지워진다")
-        void revertToPending_clearsUidGidAndPodInfo() {
+        @DisplayName("PENDING으로 되돌리면 podName/nodeName은 지우지만 uid/gid는 건드리지 않는다 — 계정은 웹 계정 소유다")
+        void revertToPending_clearsPodInfoButKeepsUidGid() {
             request.markAsProcessing();
             request.assignUbuntuIds(20001L, 20001L);
             request.assignPodInfo("ailab-testuser-abcd1234", "farm1");
@@ -68,10 +68,10 @@ class RequestTest {
             request.revertToPending();
 
             assertThat(request.getStatus()).isEqualTo(Status.PENDING);
-            assertThat(request.getUbuntuUid()).isNull();
-            assertThat(request.getUbuntuGid()).isNull();
             assertThat(request.getPodName()).isNull();
             assertThat(request.getNodeName()).isNull();
+            assertThat(request.getUbuntuUid()).isEqualTo(20001L);
+            assertThat(request.getUbuntuGid()).isEqualTo(20001L);
         }
     }
 
@@ -89,8 +89,8 @@ class RequestTest {
         }
 
         @Test
-        @DisplayName("이미 uid가 배정된 FULFILLED 요청을 거절하면 uid/gid가 함께 지워진다")
-        void reject_clearsUidAndGid_whenAlreadyFulfilled() {
+        @DisplayName("이미 uid가 배정된 FULFILLED 요청을 거절해도 uid/gid는 남는다 — 신청이 아니라 웹 계정이 그 계정의 주인이다")
+        void reject_keepsUidAndGid_whenAlreadyFulfilled() {
             ContainerImage image = mock(ContainerImage.class);
             ResourceGroup rg = mock(ResourceGroup.class);
             request.approve(image, rg, null);
@@ -99,8 +99,8 @@ class RequestTest {
             request.reject("승인 취소");
 
             assertThat(request.getStatus()).isEqualTo(Status.DENIED);
-            assertThat(request.getUbuntuUid()).isNull();
-            assertThat(request.getUbuntuGid()).isNull();
+            assertThat(request.getUbuntuUid()).isEqualTo(20001L);
+            assertThat(request.getUbuntuGid()).isEqualTo(20001L);
         }
     }
 
@@ -147,14 +147,14 @@ class RequestTest {
         }
 
         @Test
-        @DisplayName("삭제하면 uid/gid가 함께 지워져 나중에 재사용되는 uid와 충돌하지 않는다")
-        void delete_clearsUidAndGid() {
+        @DisplayName("삭제해도 uid/gid는 이력으로 남는다 — 신청 하나가 끝났다고 사용자의 리눅스 계정이 사라지지 않는다")
+        void delete_keepsUidAndGid() {
             request.assignUbuntuIds(20001L, 20001L);
 
             request.delete();
 
-            assertThat(request.getUbuntuUid()).isNull();
-            assertThat(request.getUbuntuGid()).isNull();
+            assertThat(request.getUbuntuUid()).isEqualTo(20001L);
+            assertThat(request.getUbuntuGid()).isEqualTo(20001L);
         }
 
         @Test
@@ -219,8 +219,8 @@ class RequestTest {
         }
 
         @Test
-        @DisplayName("인프라 정리 후 삭제하면 uid/gid가 함께 지워져 재사용되는 uid와 충돌하지 않는다")
-        void deleteAfterCleanup_clearsUidAndGid() {
+        @DisplayName("인프라 정리 후 삭제해도 uid/gid/podName/nodeName은 이력 조회용으로 남는다")
+        void deleteAfterCleanup_keepsUidGidAndPodInfo() {
             ContainerImage image = mock(ContainerImage.class);
             ResourceGroup rg = mock(ResourceGroup.class);
             request.approve(image, rg, null);
@@ -230,9 +230,8 @@ class RequestTest {
 
             request.deleteAfterCleanup();
 
-            assertThat(request.getUbuntuUid()).isNull();
-            assertThat(request.getUbuntuGid()).isNull();
-            // podName/nodeName은 이력 조회용으로 남겨둔다
+            assertThat(request.getUbuntuUid()).isEqualTo(20001L);
+            assertThat(request.getUbuntuGid()).isEqualTo(20001L);
             assertThat(request.getPodName()).isEqualTo("ailab-testuser-abcd1234");
             assertThat(request.getNodeName()).isEqualTo("farm1");
         }

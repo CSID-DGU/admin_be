@@ -46,7 +46,6 @@ import static org.mockito.Mockito.*;
 class RequestExpiryServiceTest {
 
     @Mock private RequestRepository requestRepository;
-    @Mock private UbuntuAccountService ubuntuAccountService;
     @Mock private PodService podService;
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
@@ -62,7 +61,7 @@ class RequestExpiryServiceTest {
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         service = new RequestExpiryService(
-                requestRepository, ubuntuAccountService, podService,
+                requestRepository, podService,
                 podExternalPortRepository, eventPublisher, transactionManager
         );
         when(mockRg.getServerName()).thenReturn("FARM-01");
@@ -94,8 +93,8 @@ class RequestExpiryServiceTest {
     class HappyPath {
 
         @Test
-        @DisplayName("Pod 삭제와 계정 삭제가 모두 성공하면 DELETED로 전환되고 이벤트가 발행된다")
-        void bothDeletesSucceed_marksDeletedAndPublishesEvent() {
+        @DisplayName("Pod 삭제가 성공하면 DELETED로 전환되고 이벤트가 발행된다")
+        void podDeleteSucceeds_marksDeletedAndPublishesEvent() {
             Long requestId = 1L;
             Request request = buildMockedRequest(Status.FULFILLED);
             when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
@@ -104,7 +103,6 @@ class RequestExpiryServiceTest {
             service.deleteExpiredRequest(requestId);
 
             verify(podService).deletePod("pod-testuser-xxxx");
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
             verify(request).deleteAfterCleanup();
 
             ArgumentCaptor<RequestExpiredEvent> captor = ArgumentCaptor.forClass(RequestExpiredEvent.class);
@@ -123,7 +121,6 @@ class RequestExpiryServiceTest {
             service.deleteExpiredRequest(requestId);
 
             verify(podService, never()).deletePod(any());
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount(any(), any());
             verify(request, never()).deleteAfterCleanup();
             verify(eventPublisher, never()).publishEvent(any());
         }
@@ -138,7 +135,6 @@ class RequestExpiryServiceTest {
             service.deleteExpiredRequest(requestId);
 
             verify(podService, never()).deletePod(any());
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount(any(), any());
             verify(eventPublisher, never()).publishEvent(any());
         }
 
@@ -152,7 +148,6 @@ class RequestExpiryServiceTest {
             service.deleteExpiredRequest(requestId);
 
             verify(podService, never()).deletePod(any());
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount(any(), any());
             verify(eventPublisher, never()).publishEvent(any());
         }
 
@@ -175,7 +170,7 @@ class RequestExpiryServiceTest {
     class PartialFailure {
 
         @Test
-        @DisplayName("Pod 삭제 실패 시 예외를 던지고, 계정 삭제는 시도하지 않으며, DELETED로 전환하지 않는다")
+        @DisplayName("Pod 삭제 실패 시 예외를 던지고 DELETED로 전환하지 않는다")
         void podDeletionFails_throwsAndDoesNotMarkDeleted() {
             Long requestId = 10L;
             Request request = buildMockedRequest(Status.FULFILLED);
@@ -189,47 +184,44 @@ class RequestExpiryServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_DELETION_FAILED);
 
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount(any(), any());
             verify(request, never()).deleteAfterCleanup();
             verify(eventPublisher, never()).publishEvent(any());
         }
+    }
+
+    @Nested
+    @DisplayName("우분투 계정은 만료로 회수하지 않는다")
+    class AccountSurvivesExpiry {
 
         @Test
-        @DisplayName("계정 삭제 실패 시 예외를 던지고 DELETED로 전환하지 않는다 (Pod 삭제는 이미 수행됨)")
-        void accountDeletionFails_throwsAndDoesNotMarkDeleted() {
-            Long requestId = 11L;
+        @DisplayName("컨테이너 하나가 만료돼도 우분투 계정 삭제 API는 호출하지 않는다 — 계정은 신청이 아니라 웹 계정 소유다")
+        void expiry_deletesPodOnly_neverTheUbuntuAccount() {
+            Long requestId = 30L;
             Request request = buildMockedRequest(Status.FULFILLED);
             when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
             when(podExternalPortRepository.findByRequestRequestId(requestId)).thenReturn(List.of());
-            doThrow(new RuntimeException("WAS 연결 실패"))
-                    .when(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
 
-            assertThatThrownBy(() -> service.deleteExpiredRequest(requestId))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.UBUNTU_USER_DELETION_FAILED);
+            service.deleteExpiredRequest(requestId);
 
+            // 인프라 호출은 Pod 삭제 하나뿐이어야 한다. 계정 삭제까지 하면 같은 사용자의 다른
+            // 컨테이너와 홈 디렉터리가 함께 날아가고, 다시 신청해도 예전 홈으로 돌아올 수 없다.
             verify(podService).deletePod("pod-testuser-xxxx");
-            verify(request, never()).deleteAfterCleanup();
-            verify(eventPublisher, never()).publishEvent(any());
+            verifyNoMoreInteractions(podService);
         }
 
         @Test
-        @DisplayName("Pod 삭제와 계정 삭제가 모두 실패 대상이어도 Pod 삭제 예외가 먼저 전파되고 계정 삭제는 시도되지 않는다")
-        void bothDeletionsWouldFail_podFailurePropagatesFirstWithoutTryingAccount() {
-            Long requestId = 12L;
+        @DisplayName("사용자의 마지막 컨테이너가 만료돼도 계정은 남는다 — 다시 신청하면 같은 홈 디렉터리로 돌아와야 한다")
+        void expiryOfLastContainer_stillKeepsTheUbuntuAccount() {
+            Long requestId = 31L;
             Request request = buildMockedRequest(Status.FULFILLED);
             when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
             when(podExternalPortRepository.findByRequestRequestId(requestId)).thenReturn(List.of());
-            doThrow(new BusinessException(ErrorCode.POD_DELETION_FAILED))
-                    .when(podService).deletePod("pod-testuser-xxxx");
 
-            assertThatThrownBy(() -> service.deleteExpiredRequest(requestId))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.POD_DELETION_FAILED);
+            service.deleteExpiredRequest(requestId);
 
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount(any(), any());
+            verify(request).deleteAfterCleanup();
+            verify(podService).deletePod("pod-testuser-xxxx");
+            verifyNoMoreInteractions(podService);
         }
     }
 
@@ -250,10 +242,9 @@ class RequestExpiryServiceTest {
             // 잠금 없는 findById로는 조회하지 않는다 — 그러면 삭제 중에도 DB가 FULFILLED를 가리킨다
             verify(requestRepository, never()).findById(any());
             // 선점(beginExpiry)이 외부 삭제보다 먼저 일어나야 의미가 있다
-            InOrder order = inOrder(request, podService, ubuntuAccountService);
+            InOrder order = inOrder(request, podService);
             order.verify(request).beginExpiry();
             order.verify(podService).deletePod("pod-testuser-xxxx");
-            order.verify(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
             order.verify(request).deleteAfterCleanup();
         }
 
@@ -286,7 +277,7 @@ class RequestExpiryServiceTest {
             doAnswer(inv -> {
                 when(request.getStatus()).thenReturn(Status.DENIED);
                 return null;
-            }).when(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
+            }).when(podService).deletePod("pod-testuser-xxxx");
 
             assertThatThrownBy(() -> service.deleteExpiredRequest(requestId))
                     .isInstanceOf(BusinessException.class)

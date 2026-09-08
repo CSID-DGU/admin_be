@@ -15,4 +15,14 @@ public enum Status {
     public static List<Status> activeStatuses() {
         return List.of(FULFILLED, MIGRATING, EXPIRING);
     }
+
+    /**
+     * 아직 끝나지 않은(DENIED/DELETED가 아닌) 신청 상태 집합.
+     * 유저네임이 웹 계정 단위로 고정되면서 Request.ubuntuUsername은 더 이상 유일하지 않다 —
+     * 같은 유저네임을 가진 과거 이력 행이 계속 쌓이므로, 유저네임으로 "지금 살아있는 신청"을
+     * 찾는 조회(config-server의 accept-info 등)는 이 집합으로 범위를 좁혀야 한다.
+     */
+    public static List<Status> openStatuses() {
+        return List.of(PENDING, PROCESSING, FULFILLED, MIGRATING, EXPIRING);
+    }
 }
