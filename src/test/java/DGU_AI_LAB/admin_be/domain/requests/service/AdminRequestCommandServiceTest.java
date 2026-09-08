@@ -54,7 +54,9 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -174,7 +176,7 @@ class AdminRequestCommandServiceTest {
                         new CreatePodResponseDTO.PortInfo("jupyter", 8888, 30888)
                 )
         );
-        when(podService.createPod("testuser")).thenReturn(podResponse);
+        when(podService.createPod(eq("testuser"), anyLong())).thenReturn(podResponse);
         when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
         when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
         when(podExternalPortRepository.save(any(PodExternalPort.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -239,7 +241,7 @@ class AdminRequestCommandServiceTest {
         stubWebClientPut();
 
         CreatePodResponseDTO podResponse = new CreatePodResponseDTO("running", "farm1", "pod-testuser-xxxx", List.of());
-        when(podService.createPod("testuser")).thenReturn(podResponse);
+        when(podService.createPod(eq("testuser"), anyLong())).thenReturn(podResponse);
         when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
         when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
 
@@ -288,7 +290,7 @@ class AdminRequestCommandServiceTest {
         when(mockUser.getUbuntuUid()).thenReturn(20001L);
         when(mockUser.getUbuntuGid()).thenReturn(20001L);
 
-        when(podService.createPod("testuser")).thenReturn(
+        when(podService.createPod(eq("testuser"), anyLong())).thenReturn(
                 new CreatePodResponseDTO("running", "farm1", "pod-testuser-reuse-grp", List.of()));
         when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
         when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
@@ -321,7 +323,7 @@ class AdminRequestCommandServiceTest {
 
         service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
 
-        verify(podService, never()).createPod(anyString());
+        verify(podService, never()).createPod(anyString(), anyLong());
         verify(request).revertToPending();
     }
 
@@ -337,7 +339,7 @@ class AdminRequestCommandServiceTest {
         CreatePodResponseDTO podResponse = new CreatePodResponseDTO(
                 "running", "farm1", "pod-testuser-yyyy", List.of()
         );
-        when(podService.createPod("testuser")).thenReturn(podResponse);
+        when(podService.createPod(eq("testuser"), anyLong())).thenReturn(podResponse);
         when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
         when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
 
@@ -361,7 +363,7 @@ class AdminRequestCommandServiceTest {
         CreatePodResponseDTO podResponse = new CreatePodResponseDTO(
                 "running", "farm1", "pod-testuser-zzzz", List.of()
         );
-        when(podService.createPod("testuser")).thenReturn(podResponse);
+        when(podService.createPod(eq("testuser"), anyLong())).thenReturn(podResponse);
         when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
         when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
 
@@ -370,8 +372,8 @@ class AdminRequestCommandServiceTest {
         // When
         service.approveRequest(dto);
 
-        // Then - PodService.createPod()가 username으로 정확히 1회 호출
-        verify(podService, times(1)).createPod("testuser");
+        // Then - PodService.createPod()가 username·requestId로 정확히 1회 호출
+        verify(podService, times(1)).createPod("testuser", requestId);
     }
 
     @Test
@@ -385,7 +387,7 @@ class AdminRequestCommandServiceTest {
         CreatePodResponseDTO podResponse = new CreatePodResponseDTO(
                 "running", "farm1", "pod-testuser-mail-fail", List.of()
         );
-        when(podService.createPod("testuser")).thenReturn(podResponse);
+        when(podService.createPod(eq("testuser"), anyLong())).thenReturn(podResponse);
         when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
         when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
         doThrow(new RuntimeException("SMTP 연결 실패"))
@@ -418,7 +420,7 @@ class AdminRequestCommandServiceTest {
             Request request = buildMockedRequest(requestId);
             givenUserAlreadyHasUbuntuAccount();
 
-            when(podService.createPod("testuser")).thenReturn(
+            when(podService.createPod(eq("testuser"), anyLong())).thenReturn(
                     new CreatePodResponseDTO("running", "farm1", "pod-testuser-2nd", List.of()));
             when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
             when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
@@ -429,7 +431,7 @@ class AdminRequestCommandServiceTest {
             // 기존 홈 디렉터리(/home/testuser)의 소유권이 어긋난다.
             verify(mockWebClient, never()).put();
             // 같은 유저네임/UID/GID로 Pod를 만들었으므로 홈 디렉터리가 그대로 이어진다.
-            verify(podService).createPod("testuser");
+            verify(podService).createPod("testuser", requestId);
             verify(request).assignUbuntuIds(20001L, 20001L);
             verify(mockUser).assignUbuntuAccount(20001L, 20001L);
         }
@@ -441,7 +443,7 @@ class AdminRequestCommandServiceTest {
             buildMockedRequest(requestId);
             stubWebClientPut();
 
-            when(podService.createPod("testuser")).thenReturn(
+            when(podService.createPod(eq("testuser"), anyLong())).thenReturn(
                     new CreatePodResponseDTO("running", "farm1", "pod-testuser-lock", List.of()));
             when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
             when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
@@ -469,7 +471,7 @@ class AdminRequestCommandServiceTest {
             service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
 
             // Pod를 만든 적이 없으므로 지울 것도 없다.
-            verify(podService, never()).createPod(anyString());
+            verify(podService, never()).createPod(anyString(), anyLong());
             verify(podService, never()).deletePod(anyString());
             // 이 시점엔 아직 어느 farm 노드에도 배포된 게 없어 node를 모른다 — node_name 없이
             // 삭제를 호출하면 무관한 동명 레거시 계정까지 지울 수 있으므로 삭제 자체를 보류한다
@@ -485,7 +487,7 @@ class AdminRequestCommandServiceTest {
             Request request = buildMockedRequest(requestId);
             stubWebClientPut();
 
-            when(podService.createPod("testuser")).thenReturn(
+            when(podService.createPod(eq("testuser"), anyLong())).thenReturn(
                     new CreatePodResponseDTO("running", "farm1", "pod-testuser-race2", List.of()));
             when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
             when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
@@ -509,7 +511,7 @@ class AdminRequestCommandServiceTest {
             Request request = buildMockedRequest(requestId);
             givenUserAlreadyHasUbuntuAccount();
 
-            when(podService.createPod("testuser"))
+            when(podService.createPod(eq("testuser"), anyLong()))
                     .thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED));
 
             service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
@@ -525,7 +527,7 @@ class AdminRequestCommandServiceTest {
             Request request = buildMockedRequest(requestId);
             givenUserAlreadyHasUbuntuAccount();
 
-            when(podService.createPod("testuser")).thenReturn(
+            when(podService.createPod(eq("testuser"), anyLong())).thenReturn(
                     new CreatePodResponseDTO("running", "farm1", "pod-testuser-dbfail", List.of()));
             when(containerImageRepository.findById(1L)).thenReturn(Optional.empty());
 
@@ -548,7 +550,7 @@ class AdminRequestCommandServiceTest {
             Request request = buildMockedRequest(requestId);
             stubWebClientPut();
 
-            when(podService.createPod("testuser"))
+            when(podService.createPod(eq("testuser"), anyLong()))
                     .thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED));
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
@@ -579,7 +581,7 @@ class AdminRequestCommandServiceTest {
             buildMockedRequest(requestId);
             stubWebClientPut();
 
-            when(podService.createPod("testuser"))
+            when(podService.createPod(eq("testuser"), anyLong()))
                     .thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED));
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
@@ -612,7 +614,7 @@ class AdminRequestCommandServiceTest {
             // 제출 자체가 거부됐으므로 계정 생성 API 호출도, Pod 생성도 전혀 일어나지 않는다 —
             // 오늘의 3-한도가 Pod 생성뿐 아니라 계정 생성까지 함께 가드하도록 넓어진 부분이다.
             verify(putBodySpec, never()).bodyValue(any());
-            verify(podService, never()).createPod(any());
+            verify(podService, never()).createPod(anyString(), anyLong());
             verify(ubuntuAccountService, never()).deleteUbuntuAccount(any(), any());
         }
 
@@ -623,7 +625,7 @@ class AdminRequestCommandServiceTest {
             buildMockedRequest(requestId);
             stubWebClientPut();
 
-            when(podService.createPod("testuser"))
+            when(podService.createPod(eq("testuser"), anyLong()))
                     .thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED));
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
@@ -646,7 +648,7 @@ class AdminRequestCommandServiceTest {
             buildMockedRequest(requestId);
             stubWebClientPut();
 
-            when(podService.createPod("testuser"))
+            when(podService.createPod(eq("testuser"), anyLong()))
                     .thenThrow(new PodCreationFailedException("pod 생성 실패", ErrorCode.POD_CREATION_FAILED, "farm1"));
             doThrow(new RuntimeException("계정 삭제 실패"))
                     .when(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
@@ -671,7 +673,7 @@ class AdminRequestCommandServiceTest {
             CreatePodResponseDTO podResponse = new CreatePodResponseDTO(
                     "running", "farm1", "pod-testuser-ok", List.of()
             );
-            when(podService.createPod("testuser")).thenReturn(podResponse);
+            when(podService.createPod(eq("testuser"), anyLong())).thenReturn(podResponse);
             when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
             when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
 
@@ -704,7 +706,7 @@ class AdminRequestCommandServiceTest {
             CreatePodResponseDTO podResponse = new CreatePodResponseDTO(
                     "running", "farm1", "pod-testuser-race", List.of()
             );
-            when(podService.createPod("testuser")).thenReturn(podResponse);
+            when(podService.createPod(eq("testuser"), anyLong())).thenReturn(podResponse);
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
@@ -741,7 +743,7 @@ class AdminRequestCommandServiceTest {
             CreatePodResponseDTO podResponse = new CreatePodResponseDTO(
                     "running", "farm1", "pod-testuser-orphan", List.of()
             );
-            when(podService.createPod("testuser")).thenReturn(podResponse);
+            when(podService.createPod(eq("testuser"), anyLong())).thenReturn(podResponse);
             when(containerImageRepository.findById(1L)).thenReturn(Optional.empty());
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
@@ -770,7 +772,7 @@ class AdminRequestCommandServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
 
-            verify(podService, never()).createPod(any());
+            verify(podService, never()).createPod(anyString(), anyLong());
         }
 
         @Test
