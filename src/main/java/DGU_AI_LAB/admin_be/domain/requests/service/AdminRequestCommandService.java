@@ -5,6 +5,7 @@ import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
+import DGU_AI_LAB.admin_be.domain.groups.service.GroupService;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
@@ -68,6 +69,7 @@ public class AdminRequestCommandService {
     private final ResourceGroupRepository resourceGroupRepository;
     private final ChangeRequestRepository changeRequestRepository;
     private final GroupRepository groupRepository;
+    private final GroupService groupService;
     private final PodExternalPortRepository podExternalPortRepository;
     private final PodService podService;
     private final UbuntuAccountService ubuntuAccountService;
@@ -238,6 +240,34 @@ public class AdminRequestCommandService {
                     revertToPendingIfStillProcessing(requestId, serverName);
                     return;
                 }
+            }
+
+            // 이번 신청이 요구하는 그룹에 사용자를 추가한다. 계정을 새로 만든 경우
+            // callUserCreationApi가 이미 이 신청의 그룹을 넣어 만들었지만, 이 호출도 멱등
+            // 집합-추가라 다시 불러도 안전하다(config-server add_user_groups). 재사용
+            // 계정은 애초에 계정 생성 API 자체를 건너뛰므로, 이 호출이 없으면 최초 승인
+            // 때의 그룹 멤버십에 영구히 고정되고 이후 신청이 요구하는 다른 그룹엔 실제
+            // 파일 접근 권한이 생기지 않는다 — 같은 사용자가 여러 그룹에 동시에 속하는
+            // 건 정상이고(A그룹 신청과 B그룹 신청을 둘 다 승인받았다면 둘 다 유지),
+            // config-server 쪽 API도 원래 있던 그룹에서 빼지 않고 더하기만 한다.
+            List<String> requestGroupNames = ctx.creationDto().supplementaryGroups().stream()
+                    .map(UserCreationRequestDTO.SupplementaryGroup::name)
+                    .toList();
+            try {
+                groupService.addUserToGroups(username, requestGroupNames);
+            } catch (Exception e) {
+                log.warn("[보상 트랜잭션] 그룹 추가 실패 → 상태 복구 시작: {}", username, e);
+                notifyApprovalFailure(String.format(
+                        "[승인 실패] 그룹 추가 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, groups=%s, error=%s",
+                        username, requestId, requestGroupNames, e.getMessage()), serverName);
+                if (accountCreatedNow) {
+                    // 아직 어느 farm 노드에도 배포된 게 없는 시점이라 node를 모른 채 삭제하면
+                    // 무관한 동명 레거시 계정까지 지울 위험이 있다 — tryCompensateDeleteUser
+                    // 내부에서 이 경우 삭제 대신 보류+알림으로 처리한다.
+                    tryCompensateDeleteUser(ctx.userId(), username, null, serverName);
+                }
+                revertToPendingIfStillProcessing(requestId, serverName);
+                return;
             }
 
             CreatePodResponseDTO podResponse;
@@ -514,6 +544,15 @@ public class AdminRequestCommandService {
         for (Group g : newGroups) {
             originalRequest.addGroup(g);
         }
+
+        // DB에만 반영하고 끝내면 실제 리눅스 계정의 그룹 멤버십은 그대로다 — 이 그룹이
+        // 요구하는 파일에 실제로 접근이 안 되는 채로 "변경 승인됨"만 표시되는 상태가 된다.
+        // config-server의 그룹 추가는 집합-추가 방식이라(원래 그룹에서 빼지 않음) 여기서도
+        // 새로 추가된 그룹만 보내면 된다. approveModification 전체가 하나의 트랜잭션이라
+        // 이 안에서 외부 호출을 하면 그 시간만큼 커넥션을 붙들지만, 그룹 변경 자체가
+        // 드문 오퍼레이션이라 승인 흐름 전체를 다시 3단계로 쪼갤 정도는 아니라고 판단했다.
+        List<String> newGroupNames = newGroups.stream().map(Group::getGroupName).toList();
+        groupService.addUserToGroups(originalRequest.getUbuntuUsername(), newGroupNames);
         return null;
     }
 

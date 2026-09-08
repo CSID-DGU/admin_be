@@ -5,6 +5,7 @@ import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
+import DGU_AI_LAB.admin_be.domain.groups.service.GroupService;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
@@ -67,6 +68,7 @@ class AdminRequestCommandServiceTest {
     @Mock private ResourceGroupRepository resourceGroupRepository;
     @Mock private ChangeRequestRepository changeRequestRepository;
     @Mock private GroupRepository groupRepository;
+    @Mock private GroupService groupService;
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private PodService podService;
     @Mock private UbuntuAccountService ubuntuAccountService;
@@ -97,7 +99,7 @@ class AdminRequestCommandServiceTest {
         service = new AdminRequestCommandService(
                 alarmService, requestRepository, userRepository, containerImageRepository,
                 resourceGroupRepository, changeRequestRepository,
-                groupRepository, podExternalPortRepository, podService, ubuntuAccountService, portRequestService, new ObjectMapper(),
+                groupRepository, groupService, podExternalPortRepository, podService, ubuntuAccountService, portRequestService, new ObjectMapper(),
                 mockWebClient, transactionManager, approvalExecutor
         );
         // 공유 엔티티 기본 설정
@@ -253,6 +255,74 @@ class AdminRequestCommandServiceTest {
         assertThat(supplementaryGroups).hasSize(1);
         assertThat(supplementaryGroups.get(0).name()).isEqualTo("ASCP");
         assertThat(supplementaryGroups.get(0).gid()).isEqualTo(20004L);
+        // 계정 생성 API 호출에도 그룹이 실렸지만, 별도로 groupService를 통한 멱등 그룹
+        // 추가도 반드시 호출돼야 한다 — 재사용 계정 경로는 계정 생성 API 자체를 건너뛰므로
+        // 이 별도 호출 없이는 재사용 승인에서 그룹이 전혀 반영되지 않는다.
+        verify(groupService).addUserToGroups("testuser", List.of("ASCP"));
+    }
+
+    @Test
+    @DisplayName("계정을 재사용하는 승인도 이번 신청의 그룹을 계정에 추가한다 — 안 그러면 최초 승인 때 그룹에 영구히 고정된다")
+    void approveRequest_reusedAccount_stillSyncsThisRequestsGroups() {
+        Long requestId = 66L;
+        Request request = mock(Request.class);
+        when(request.getStatus()).thenReturn(Status.PENDING, Status.PROCESSING);
+        when(request.getUbuntuUsername()).thenReturn("testuser");
+        when(request.getUbuntuPasswordBase64()).thenReturn("cGxhaW5fdGV4dF9wdw==");
+
+        Group vision = mock(Group.class);
+        when(vision.getGroupName()).thenReturn("VISION-LAB");
+        when(vision.getUbuntuGid()).thenReturn(20005L);
+        DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup requestGroup =
+                mock(DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup.class);
+        when(requestGroup.getGroup()).thenReturn(vision);
+        when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>(List.of(requestGroup)));
+
+        when(request.getUser()).thenReturn(mockUser);
+        when(request.getResourceGroup()).thenReturn(mockRg);
+        when(request.getContainerImage()).thenReturn(mockImage);
+        when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
+        when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+        // 이미 리눅스 계정(UID/GID)을 보유한 사용자로 바꾼다 — 두 번째 이후의 승인 상황.
+        when(mockUser.hasUbuntuAccount()).thenReturn(true);
+        when(mockUser.getUbuntuUid()).thenReturn(20001L);
+        when(mockUser.getUbuntuGid()).thenReturn(20001L);
+
+        when(podService.createPod("testuser")).thenReturn(
+                new CreatePodResponseDTO("running", "farm1", "pod-testuser-reuse-grp", List.of()));
+        when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
+        when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
+
+        service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
+
+        // 계정 생성 API는 안 불렸지만(재사용 경로),
+        verify(mockWebClient, never()).put();
+        // 이번 신청의 그룹은 별도로 반영돼야 한다.
+        verify(groupService).addUserToGroups("testuser", List.of("VISION-LAB"));
+    }
+
+    @Test
+    @DisplayName("그룹 추가가 실패하면 상태를 PENDING으로 되돌린다")
+    void approveRequest_groupSyncFails_revertsToPending() {
+        Long requestId = 67L;
+        Request request = buildMockedRequest(requestId);
+        stubWebClientPut();
+
+        Group ascp = mock(Group.class);
+        when(ascp.getGroupName()).thenReturn("ASCP");
+        when(ascp.getUbuntuGid()).thenReturn(20004L);
+        DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup requestGroup =
+                mock(DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup.class);
+        when(requestGroup.getGroup()).thenReturn(ascp);
+        when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>(List.of(requestGroup)));
+
+        doThrow(new BusinessException(ErrorCode.GROUP_CREATION_FAILED))
+                .when(groupService).addUserToGroups(eq("testuser"), anyList());
+
+        service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
+
+        verify(podService, never()).createPod(anyString());
+        verify(request).revertToPending();
     }
 
     @Test

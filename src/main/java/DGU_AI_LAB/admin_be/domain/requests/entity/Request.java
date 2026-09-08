@@ -18,7 +18,6 @@ import java.util.Set;
 @Table(name = "requests")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@EqualsAndHashCode(of = "requestId", callSuper = false)
 public class Request extends BaseTimeEntity {
 
     @Id
@@ -293,6 +292,28 @@ public class Request extends BaseTimeEntity {
         // 이력 조회에 쓰이므로 남겨둔다. 신청 하나가 정리됐다고 사용자의 리눅스 계정이
         // 삭제되는 것은 아니므로 여기서 지울 이유도 없다.
         this.status = Status.DELETED;
+    }
+
+    /**
+     * Lombok의 requestId 기반 @EqualsAndHashCode를 쓰지 않는다 — IDENTITY 채번이라 저장 전엔
+     * requestId가 null이고, 저장 후 값이 채워지면 hashCode가 바뀐다. RequestGroup의
+     * equals/hashCode가 request 필드를 포함하므로(RequestGroup.java), 저장 전에
+     * originalRequest.getRequestGroups()(Hibernate가 관리하는 Set) 같은 해시 기반 컬렉션에
+     * 담긴 RequestGroup은 저장 후 버킷 위치가 어긋나 조회/삭제가 안 되는 문제가 생긴다.
+     * hashCode는 생애주기 내내 상수로 고정하고(equals가 그 계약을 지키는 한 문제 없음),
+     * equals는 영속 상태(requestId != null)인 두 엔티티만 ID로 비교한다 — 미영속 상태끼리는
+     * 값이 같아도 다른 엔티티로 취급한다(참조 동일성과 동치, this==o에서 이미 처리됨).
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof Request other)) return false;
+        return requestId != null && requestId.equals(other.requestId);
+    }
+
+    @Override
+    public int hashCode() {
+        return getClass().hashCode();
     }
 
 }
