@@ -94,7 +94,10 @@ public enum ErrorCode {
     UBUNTU_USERNAME_NOT_ASSIGNED(HttpStatus.CONFLICT, "회원 정보에 우분투 계정명이 없습니다. 관리자에게 문의하세요."),
     UBUNTU_ACCOUNT_ALREADY_ASSIGNED(HttpStatus.CONFLICT, "이미 다른 우분투 계정이 배정된 사용자입니다."),
     ACTIVE_REQUEST_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 진행 중이거나 사용 중인 신청이 있습니다. 기존 컨테이너가 정리된 후 다시 신청해주세요."),
-    ACCOUNT_DISABLED(HttpStatus.NOT_FOUND,"비활성화된 유저입니다. 관리자에게 문의하세요."),
+    // 인증 계층(로그인/토큰 갱신/JWT 필터) 전부에서 던져지는 예외라 401이어야 프론트가
+    // 세션만료 처리 흐름(재로그인 모달)을 타운다. 404였을 때는 로그인 후 계정이 비활성화된
+    // 세션에서 모든 API 호출이 조용히 실패하고 아무 안내도 뜨지 않았다.
+    ACCOUNT_DISABLED(HttpStatus.UNAUTHORIZED, "비활성화된 유저입니다. 관리자에게 문의하세요."),
 
     SLACK_USER_NOT_FOUND(HttpStatus.NOT_FOUND, "Slack 사용자를 찾을 수 없습니다."),
     SLACK_USER_EMAIL_NOT_MATCH(HttpStatus.NOT_FOUND, "이메일이 일치하는 Slack 사용자를 찾을 수 없습니다."),

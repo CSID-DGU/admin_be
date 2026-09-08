@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.global.auth.jwt;
 
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.dto.ErrorResponse;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetailsService;
@@ -22,8 +23,6 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -86,11 +85,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         response.setStatus(errorCode.getHttpStatus().value());
         response.setContentType("application/json;charset=UTF-8");
 
-        Map<String, Object> errorBody = new HashMap<>();
-        errorBody.put("status", errorCode.getHttpStatus().value());
-        errorBody.put("message", errorCode.getMessage());
-
-        objectMapper.writeValue(response.getWriter(), errorBody);
+        // ExceptionHandlerFilter/GlobalExceptionHandler와 동일하게 ErrorResponse.of(...)를 써야
+        // "code" 필드가 실린다 — 이 필드가 없으면 프론트가 SESSION_EXPIRED와 ACCOUNT_DISABLED를
+        // 구분 못 해 항상 일반 "다시 로그인이 필요합니다"로만 뜬다.
+        objectMapper.writeValue(response.getWriter(), ErrorResponse.of(errorCode));
     }
 
     @Override
