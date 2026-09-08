@@ -37,6 +37,16 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     List<Request> findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(@Param("username") String username,
                                                                       @Param("statuses") List<Status> statuses);
 
+    /**
+     * 이 사용자의 리눅스 계정이 배포된 farm 노드 후보를 최신순으로 반환한다.
+     * 계정 삭제 시 config-server에 node_name을 넘겨 삭제 범위를 좁히는 데 쓴다 — 안 넘기면
+     * 모든 farm 노드를 훑어서 같은 유저네임의 무관한 레거시 계정까지 지운다. 정리가 끝난
+     * (DELETED) 신청도 nodeName을 이력으로 남기므로, 컨테이너가 이미 만료돼 살아있는 신청이
+     * 없는 사용자도 여기서 노드를 되찾을 수 있다.
+     */
+    @Query("SELECT r.nodeName FROM Request r WHERE r.user.userId = :userId AND r.nodeName IS NOT NULL ORDER BY r.requestId DESC")
+    List<String> findNodeNamesByUserIdOrderByRequestIdDesc(@Param("userId") Long userId);
+
     @Query("SELECT r.ubuntuUsername FROM Request r WHERE r.status = :status")
     List<String> findUbuntuUsernamesByStatus(@Param("status") Status status);
 

@@ -196,6 +196,8 @@ class AdminUserServiceTest {
         // 선점(beginExpiry)에서 걸러진 요청은 인프라 삭제까지 가지 않아 이 스텁들이 안 쓰일 수 있다.
         lenient().when(request.getUbuntuUsername()).thenReturn(username);
         lenient().when(request.getPodName()).thenReturn("pod-" + username);
+        // 계정 삭제 시 config-server에 넘길 farm 노드 — 없으면 모든 노드를 훑게 되어 삭제를 보류한다.
+        lenient().when(request.getNodeName()).thenReturn("farm1");
         // 정리 완료 트랜잭션에서 메일 발송용 lazy 연관을 초기화한다.
         lenient().when(request.getUser()).thenReturn(mockUser);
         lenient().when(request.getResourceGroup()).thenReturn(mock(ResourceGroup.class));
@@ -224,6 +226,8 @@ class AdminUserServiceTest {
         void deleteUser_withNoRequests_softDeletesAndReleasesAccount() {
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of());
+            // 컨테이너는 이미 만료됐지만 지난 신청 이력에 노드가 남아 있어 삭제 범위를 좁힐 수 있다.
+            when(requestRepository.findNodeNamesByUserIdOrderByRequestIdDesc(any())).thenReturn(List.of("farm1"));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
             adminUserService.deleteUser(1L);
@@ -233,7 +237,7 @@ class AdminUserServiceTest {
             verifyNoInteractions(podService);
             // 컨테이너는 이미 만료로 정리됐어도 리눅스 계정은 웹 계정에 남아 있다 —
             // 사용자 삭제가 그 계정을 실제로 회수하는 유일한 지점이다.
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
             assertThat(mockUser.hasUbuntuAccount()).isFalse();
             assertThat(mockUser.getUbuntuUsername()).isEqualTo("testuser");
             verify(alarmService).sendAllAlerts(eq("홍길동"), eq("test@dgu.ac.kr"), anyString(), anyString());
@@ -253,10 +257,30 @@ class AdminUserServiceTest {
         }
 
         @Test
+        @DisplayName("계정이 배포된 farm 노드를 알 수 없으면 계정 삭제를 보류하고 관리자에게 알린다 — 모든 노드를 훑으면 동명의 레거시 계정까지 지운다")
+        void deleteUser_withUnknownAccountNode_skipsDeletionAndAlerts() {
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of());
+            when(requestRepository.findNodeNamesByUserIdOrderByRequestIdDesc(any())).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
+
+            adminUserService.deleteUser(1L);
+
+            verifyNoInteractions(ubuntuAccountService, podService);
+            verify(alarmService).sendSlackAlert(contains("testuser"), isNull());
+            // 상태를 그대로 남겨야 관리자가 수동 정리 후 재시도할 수 있다.
+            assertThat(mockUser.hasUbuntuAccount()).isTrue();
+            // 사용자 탈퇴 자체는 계정 정리 보류와 무관하게 완료된다.
+            assertThat(mockUser.getIsActive()).isFalse();
+        }
+
+        @Test
         @DisplayName("유저를 삭제하면 남아있는 리프레시 토큰도 함께 폐기한다")
         void deleteUser_revokesRefreshToken() {
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of());
+            // 컨테이너는 이미 만료됐지만 지난 신청 이력에 노드가 남아 있어 삭제 범위를 좁힐 수 있다.
+            when(requestRepository.findNodeNamesByUserIdOrderByRequestIdDesc(any())).thenReturn(List.of("farm1"));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
             adminUserService.deleteUser(1L);
@@ -287,8 +311,8 @@ class AdminUserServiceTest {
             // Pod 삭제가 먼저, 계정 삭제는 모든 요청을 정리한 뒤 한 번만.
             InOrder order = inOrder(podService, ubuntuAccountService);
             order.verify(podService).deletePod("pod-testuser");
-            order.verify(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
-            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount(anyString(), any());
+            order.verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount(anyString(), anyString());
             verify(fulfilledRequest).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(fulfilledRequest);
             assertThat(mockUser.getIsActive()).isFalse();
@@ -341,7 +365,7 @@ class AdminUserServiceTest {
 
             verify(podService).deletePod("pod-fuser");
             // 계정 삭제 대상은 요청이 아니라 웹 계정의 유저네임이고, 요청이 몇 개든 한 번만 부른다.
-            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount("testuser", null);
+            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount("testuser", "farm1");
             verify(fulfilled).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(fulfilled);
             verify(pending).delete();
@@ -490,7 +514,7 @@ class AdminUserServiceTest {
             verify(podService).deletePod("pod-user1");
             verify(podService).deletePod("pod-user2");
             // 요청이 두 개여도 리눅스 계정은 하나뿐이라 계정 삭제는 마지막에 한 번만 일어난다.
-            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount("testuser", null);
+            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount("testuser", "farm1");
             verify(req1).deleteAfterCleanup();
             verify(req2).deleteAfterCleanup();
             assertThat(mockUser.getIsActive()).isFalse();
@@ -543,6 +567,8 @@ class AdminUserServiceTest {
         void deactivateUser_withNoRequests_success() {
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of());
+            // 컨테이너는 이미 만료됐지만 지난 신청 이력에 노드가 남아 있어 삭제 범위를 좁힐 수 있다.
+            when(requestRepository.findNodeNamesByUserIdOrderByRequestIdDesc(any())).thenReturn(List.of("farm1"));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
             UserSummaryDTO result = adminUserService.deactivateUser(1L);
@@ -552,7 +578,7 @@ class AdminUserServiceTest {
             assertThat(result.isActive()).isFalse();
             verifyNoInteractions(podService);
             // 비활성화도 삭제와 같이 리눅스 계정을 회수한다 (컨테이너는 이미 정리됨).
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
             verify(alarmService).sendAllAlerts(eq("홍길동"), eq("test@dgu.ac.kr"), anyString(), anyString());
         }
 
@@ -581,6 +607,8 @@ class AdminUserServiceTest {
         void deactivateUser_revokesRefreshToken() {
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of());
+            // 컨테이너는 이미 만료됐지만 지난 신청 이력에 노드가 남아 있어 삭제 범위를 좁힐 수 있다.
+            when(requestRepository.findNodeNamesByUserIdOrderByRequestIdDesc(any())).thenReturn(List.of("farm1"));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
             adminUserService.deactivateUser(1L);
@@ -600,7 +628,7 @@ class AdminUserServiceTest {
             adminUserService.deactivateUser(1L);
 
             verify(podService).deletePod("pod-testuser");
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
             verify(fulfilledRequest).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(fulfilledRequest);
             assertThat(mockUser.getIsActive()).isFalse();
@@ -688,7 +716,7 @@ class AdminUserServiceTest {
 
             verify(podService).deletePod("pod-fuser");
             // 계정 삭제 대상은 요청이 아니라 웹 계정의 유저네임이고, 요청이 몇 개든 한 번만 부른다.
-            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount("testuser", null);
+            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount("testuser", "farm1");
             verify(fulfilled).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(fulfilled);
             verify(pending).delete();
@@ -740,7 +768,7 @@ class AdminUserServiceTest {
             verify(podService).deletePod("pod-user1");
             verify(podService).deletePod("pod-user2");
             // 요청이 두 개여도 리눅스 계정은 하나뿐이라 계정 삭제는 마지막에 한 번만 일어난다.
-            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount("testuser", null);
+            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount("testuser", "farm1");
             verify(req1).deleteAfterCleanup();
             verify(req2).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(req2);
@@ -752,6 +780,8 @@ class AdminUserServiceTest {
         void deactivateUser_completes_whenFinalNotificationEmailFails() {
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of());
+            // 컨테이너는 이미 만료됐지만 지난 신청 이력에 노드가 남아 있어 삭제 범위를 좁힐 수 있다.
+            when(requestRepository.findNodeNamesByUserIdOrderByRequestIdDesc(any())).thenReturn(List.of("farm1"));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
             doThrow(new RuntimeException("Slack/메일 발송 실패"))
                     .when(alarmService).sendAllAlerts(anyString(), anyString(), anyString(), anyString());

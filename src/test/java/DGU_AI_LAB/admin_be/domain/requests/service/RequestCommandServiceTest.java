@@ -89,7 +89,7 @@ class RequestCommandServiceTest {
             User user = userWithUbuntuUsername("honggildong");
             ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
 
-            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+            when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
             when(requestRepository.existsByUser_UserIdAndStatusIn(1L, Status.openStatuses())).thenReturn(true);
 
@@ -110,7 +110,7 @@ class RequestCommandServiceTest {
                     .build();
             ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
 
-            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+            when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
 
             SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
@@ -124,7 +124,7 @@ class RequestCommandServiceTest {
         @Test
         @DisplayName("유저가 없으면 BusinessException을 던진다")
         void createRequest_throwsException_whenUserNotFound() {
-            when(userRepository.findById(99L)).thenReturn(Optional.empty());
+            when(userRepository.findByIdForUpdate(99L)).thenReturn(Optional.empty());
 
             SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
 
@@ -140,7 +140,7 @@ class RequestCommandServiceTest {
                     .studentId("2021001234").phone("010-0000-0000").department("컴퓨터공학과")
                     .build();
 
-            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+            when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.empty());
 
             SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
@@ -229,7 +229,7 @@ class RequestCommandServiceTest {
             User user = userWithUbuntuUsername("newuser");
             ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
 
-            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+            when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
             when(requestRepository.existsByUser_UserIdAndStatusIn(any(), anyList())).thenReturn(false);
             when(containerImageRepository.findById(any())).thenReturn(Optional.empty());
@@ -252,7 +252,7 @@ class RequestCommandServiceTest {
 
             Request savedReq = mock(Request.class);
 
-            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+            when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
             when(requestRepository.existsByUser_UserIdAndStatusIn(any(), anyList())).thenReturn(false);
             when(containerImageRepository.findById(any())).thenReturn(Optional.of(img));
@@ -278,7 +278,7 @@ class RequestCommandServiceTest {
             ContainerImage img = ContainerImage.builder()
                     .imageName("cuda").imageVersion("11.8").cudaVersion("11.8").description("test").build();
 
-            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+            when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
             when(requestRepository.existsByUser_UserIdAndStatusIn(any(), anyList())).thenReturn(false);
             when(containerImageRepository.findById(any())).thenReturn(Optional.of(img));

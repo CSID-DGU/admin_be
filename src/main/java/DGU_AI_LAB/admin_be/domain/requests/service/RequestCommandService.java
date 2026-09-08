@@ -177,7 +177,10 @@ public class RequestCommandService {
     /** 신청 생성 */
     @Transactional
     public SaveRequestResponseDTO createRequest(Long userId, SaveRequestRequestDTO dto) {
-        User user = userRepository.findById(userId)
+        // 행 잠금 조회: 아래 "살아있는 신청이 이미 있는가" 검사는 확인 후 저장 사이가 벌어져 있어,
+        // 같은 사용자가 신청 두 건을 동시에 넣으면 둘 다 통과한다. 사용자당 하나라는 제약을
+        // 걸어줄 DB 유니크 키가 없으므로 User 행 잠금으로 두 트랜잭션을 직렬화한다.
+        User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())

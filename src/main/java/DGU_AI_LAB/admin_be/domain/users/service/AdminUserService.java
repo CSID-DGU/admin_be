@@ -182,17 +182,26 @@ public class AdminUserService {
      * 유저네임은 웹 계정에 평생 귀속되므로 남기고, config-server의 리눅스 계정과 UID/GID만 지운다 —
      * UID는 삭제 즉시 다른 사용자에게 재할당될 수 있어, 들고 있으면 이 계정이 되살아났을 때
      * 남의 UID로 Pod를 만든다.
+     *
+     * @param cleanedNodeName 방금 정리한 컨테이너가 떠 있던 노드. 컨테이너가 이미 만료된
+     *                        사용자는 null이므로 그때는 신청 이력에서 노드를 되찾는다.
      */
-    private void releaseUbuntuAccount(Long userId, String nodeName, String logPrefix) {
+    private void releaseUbuntuAccount(Long userId, String cleanedNodeName, String logPrefix) {
         TransactionTemplate newTx = new TransactionTemplate(transactionManager);
         newTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 
         final String[] usernameRef = {null};
+        final String[] nodeNameRef = {cleanedNodeName};
         newTx.execute(status -> {
             User managed = userRepository.findByIdForUpdate(userId)
                     .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
-            if (managed.hasUbuntuAccount()) {
-                usernameRef[0] = managed.getUbuntuUsername();
+            if (!managed.hasUbuntuAccount()) {
+                return null;
+            }
+            usernameRef[0] = managed.getUbuntuUsername();
+            if (nodeNameRef[0] == null) {
+                nodeNameRef[0] = requestRepository.findNodeNamesByUserIdOrderByRequestIdDesc(userId)
+                        .stream().findFirst().orElse(null);
             }
             return null;
         });
@@ -200,13 +209,29 @@ public class AdminUserService {
             log.info("[{}] userId={} 배정된 우분투 계정이 없어 계정 삭제를 건너뜁니다.", logPrefix, userId);
             return;
         }
+        if (nodeNameRef[0] == null) {
+            // node_name 없이 삭제를 호출하면 config-server가 모든 farm 노드를 훑어서 같은
+            // 유저네임의 무관한 레거시 계정까지 지운다. 그 위험을 감수하느니 계정을 남기고
+            // 관리자에게 알린다 — 남은 계정은 수동으로 정리할 수 있지만, 잘못 지운 남의
+            // 계정은 되돌릴 수 없다. UID/GID도 함께 남겨 이 사용자의 상태를 그대로 보존한다.
+            log.error("[{}] userId={} 계정이 배포된 farm 노드를 알 수 없어 계정 삭제를 보류합니다 - 수동 정리 필요: username={}",
+                    logPrefix, userId, usernameRef[0]);
+            try {
+                alarmService.sendSlackAlert(String.format(
+                        "[%s] userId=%d 우분투 계정의 farm 노드를 알 수 없어 삭제 보류 - 수동 정리 필요: ubuntuUsername=%s",
+                        logPrefix, userId, usernameRef[0]), null);
+            } catch (Exception ignored) {
+                // 알림 발송 실패가 사용자 삭제 자체를 막으면 안 된다.
+            }
+            return;
+        }
 
-        ubuntuAccountService.deleteUbuntuAccount(usernameRef[0], nodeName);
+        ubuntuAccountService.deleteUbuntuAccount(usernameRef[0], nodeNameRef[0]);
         newTx.execute(status -> {
             userRepository.findByIdForUpdate(userId).ifPresent(User::releaseUbuntuAccount);
             return null;
         });
-        log.info("[{}] userId={} 우분투 계정 삭제 완료: username={}", logPrefix, userId, usernameRef[0]);
+        log.info("[{}] userId={} 우분투 계정 삭제 완료: username={}, node={}", logPrefix, userId, usernameRef[0], nodeNameRef[0]);
     }
 
     /**
