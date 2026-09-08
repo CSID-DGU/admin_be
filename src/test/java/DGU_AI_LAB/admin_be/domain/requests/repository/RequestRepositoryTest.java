@@ -183,23 +183,6 @@ class RequestRepositoryTest {
     }
 
     @Nested
-    @DisplayName("existsByUser_UserIdAndStatusIn")
-    class ExistsByUserAndStatusIn {
-
-        @Test
-        @DisplayName("살아있는 신청을 가진 유저에 대해 true를 반환한다")
-        void returnsTrue_whenUserHasOpenRequest() {
-            assertThat(requestRepository.existsByUser_UserIdAndStatusIn(user.getUserId(), Status.openStatuses())).isTrue();
-        }
-
-        @Test
-        @DisplayName("살아있는 신청이 없는 유저에 대해 false를 반환한다")
-        void returnsFalse_whenUserHasNoOpenRequest() {
-            assertThat(requestRepository.existsByUser_UserIdAndStatusIn(user.getUserId(), List.of(Status.MIGRATING))).isFalse();
-        }
-    }
-
-    @Nested
     @DisplayName("findUbuntuUsernamesByStatus")
     class FindUbuntuUsernamesByStatus {
 

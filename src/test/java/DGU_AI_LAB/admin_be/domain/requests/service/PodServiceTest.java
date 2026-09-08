@@ -172,7 +172,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(CreatePodResponseDTO.class))
                     .thenReturn(Mono.just(mockResponse));
 
-            CreatePodResponseDTO result = podService.createPod("testuser");
+            CreatePodResponseDTO result = podService.createPod("testuser", 42L);
 
             assertThat(result).isEqualTo(mockResponse);
             assertThat(result.podName()).isEqualTo("pod-testuser-abc");
@@ -184,7 +184,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(CreatePodResponseDTO.class))
                     .thenReturn(Mono.empty());
 
-            assertThatThrownBy(() -> podService.createPod("testuser"))
+            assertThatThrownBy(() -> podService.createPod("testuser", 42L))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_CREATION_FAILED);
@@ -199,7 +199,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(CreatePodResponseDTO.class))
                     .thenReturn(Mono.just(badResponse));
 
-            assertThatThrownBy(() -> podService.createPod("testuser"))
+            assertThatThrownBy(() -> podService.createPod("testuser", 42L))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_CREATION_FAILED);
@@ -211,7 +211,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(CreatePodResponseDTO.class))
                     .thenReturn(Mono.error(new BusinessException("Pod 생성 실패", ErrorCode.POD_CREATION_FAILED)));
 
-            assertThatThrownBy(() -> podService.createPod("testuser"))
+            assertThatThrownBy(() -> podService.createPod("testuser", 42L))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("Pod 생성 실패");
         }
@@ -222,7 +222,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(CreatePodResponseDTO.class))
                     .thenReturn(Mono.error(new RuntimeException("network error")));
 
-            assertThatThrownBy(() -> podService.createPod("testuser"))
+            assertThatThrownBy(() -> podService.createPod("testuser", 42L))
                     .isInstanceOf(BusinessException.class);
         }
 
@@ -232,7 +232,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(CreatePodResponseDTO.class))
                     .thenReturn(Mono.just(new CreatePodResponseDTO("running", "node", "pod-user", List.of())));
 
-            podService.createPod("myuser");
+            podService.createPod("myuser", 7L);
 
             verify(requestBodyUriSpec).uri("/create-pod");
         }
@@ -388,12 +388,12 @@ class PodServiceTest {
         @DisplayName("정상 응답이면 상태 DTO를 그대로 반환한다")
         void getPodCreationStatus_returnsDto_whenApiSucceeds() {
             PodCreationStatusResponseDTO mockResponse = new PodCreationStatusResponseDTO(
-                    "testuser", "waiting_ready", "이미지 pull / 컨테이너 기동 대기 중", "2026-08-27T17:56:17.862769+00:00"
+                    42L, "waiting_ready", "이미지 pull / 컨테이너 기동 대기 중", "2026-08-27T17:56:17.862769+00:00"
             );
             when(responseSpec.bodyToMono(PodCreationStatusResponseDTO.class))
                     .thenReturn(Mono.just(mockResponse));
 
-            PodCreationStatusResponseDTO result = podService.getPodCreationStatus("testuser");
+            PodCreationStatusResponseDTO result = podService.getPodCreationStatus(42L);
 
             assertThat(result).isEqualTo(mockResponse);
             assertThat(result.stage()).isEqualTo("waiting_ready");
@@ -403,12 +403,12 @@ class PodServiceTest {
         @DisplayName("생성 이력이 없으면 stage=unknown 응답을 그대로 반환한다")
         void getPodCreationStatus_returnsUnknown_whenNoHistory() {
             PodCreationStatusResponseDTO mockResponse = new PodCreationStatusResponseDTO(
-                    "testuser", "unknown", "생성 이력 없음", null
+                    42L, "unknown", "생성 이력 없음", null
             );
             when(responseSpec.bodyToMono(PodCreationStatusResponseDTO.class))
                     .thenReturn(Mono.just(mockResponse));
 
-            PodCreationStatusResponseDTO result = podService.getPodCreationStatus("testuser");
+            PodCreationStatusResponseDTO result = podService.getPodCreationStatus(42L);
 
             assertThat(result.stage()).isEqualTo("unknown");
         }
@@ -419,7 +419,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(PodCreationStatusResponseDTO.class))
                     .thenReturn(Mono.empty());
 
-            assertThatThrownBy(() -> podService.getPodCreationStatus("testuser"))
+            assertThatThrownBy(() -> podService.getPodCreationStatus(42L))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.EXTERNAL_API_ERROR);
@@ -431,21 +431,21 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(PodCreationStatusResponseDTO.class))
                     .thenReturn(Mono.error(new RuntimeException("connection timeout")));
 
-            assertThatThrownBy(() -> podService.getPodCreationStatus("testuser"))
+            assertThatThrownBy(() -> podService.getPodCreationStatus(42L))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.EXTERNAL_API_ERROR);
         }
 
         @Test
-        @DisplayName("올바른 username으로 /pods/{username}/status URI에 요청한다")
+        @DisplayName("올바른 requestId로 /requests/{requestId}/status URI에 요청한다")
         void getPodCreationStatus_callsCorrectUri() {
             when(responseSpec.bodyToMono(PodCreationStatusResponseDTO.class))
-                    .thenReturn(Mono.just(new PodCreationStatusResponseDTO("myuser", "ready", "생성 완료", "2026-08-27T00:00:00Z")));
+                    .thenReturn(Mono.just(new PodCreationStatusResponseDTO(7L, "ready", "생성 완료", "2026-08-27T00:00:00Z")));
 
-            podService.getPodCreationStatus("myuser");
+            podService.getPodCreationStatus(7L);
 
-            verify(requestHeadersUriSpec).uri("/pods/myuser/status");
+            verify(requestHeadersUriSpec).uri("/requests/7/status");
         }
     }
 }

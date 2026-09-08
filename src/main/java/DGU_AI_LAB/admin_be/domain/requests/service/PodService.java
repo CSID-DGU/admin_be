@@ -63,14 +63,14 @@ public class PodService {
             @JsonProperty("min_improvement_ratio") Double minImprovementRatio
     ) {}
 
-    public CreatePodResponseDTO createPod(String username) {
+    public CreatePodResponseDTO createPod(String username, Long requestId) {
         try {
-            log.info("Pod 생성 API 요청 시작: 사용자: {}", username);
+            log.info("Pod 생성 API 요청 시작: 사용자: {}, requestId: {}", username, requestId);
 
             CreatePodResponseDTO response = WebClientErrorHandler.onError(
                             webClient.post()
                                     .uri("/create-pod")
-                                    .bodyValue(new CreatePodRequestDTO(username))
+                                    .bodyValue(new CreatePodRequestDTO(username, requestId))
                                     .retrieve(),
                             (status, body) -> new PodCreationFailedException("Pod 생성 실패: " + body, ErrorCode.POD_CREATION_FAILED, extractNode(body))
                     )
@@ -172,11 +172,11 @@ public class PodService {
         }
     }
 
-    public PodCreationStatusResponseDTO getPodCreationStatus(String username) {
+    public PodCreationStatusResponseDTO getPodCreationStatus(Long requestId) {
         try {
             PodCreationStatusResponseDTO response = WebClientErrorHandler.onError(
                             configWebClient.get()
-                                    .uri("/pods/" + username + "/status")
+                                    .uri("/requests/" + requestId + "/status")
                                     .retrieve(),
                             (status, body) -> new BusinessException("Pod 생성 상태 조회 실패: " + body, ErrorCode.EXTERNAL_API_ERROR)
                     )
@@ -184,7 +184,7 @@ public class PodService {
                     .block();
 
             if (response == null) {
-                log.error("Pod 생성 상태 조회 API가 빈 응답을 반환했습니다. 사용자: {}", username);
+                log.error("Pod 생성 상태 조회 API가 빈 응답을 반환했습니다. requestId: {}", requestId);
                 throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
             }
             return response;
@@ -192,7 +192,7 @@ public class PodService {
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Pod 생성 상태 조회 API 호출 중 예기치 않은 오류 발생. 사용자: {}", username, e);
+            log.error("Pod 생성 상태 조회 API 호출 중 예기치 않은 오류 발생. requestId: {}", requestId, e);
             throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
         }
     }
