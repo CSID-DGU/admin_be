@@ -177,9 +177,8 @@ public class RequestCommandService {
     /** 신청 생성 */
     @Transactional
     public SaveRequestResponseDTO createRequest(Long userId, SaveRequestRequestDTO dto) {
-        // 행 잠금 조회: 아래 "살아있는 신청이 이미 있는가" 검사는 확인 후 저장 사이가 벌어져 있어,
-        // 같은 사용자가 신청 두 건을 동시에 넣으면 둘 다 통과한다. 사용자당 하나라는 제약을
-        // 걸어줄 DB 유니크 키가 없으므로 User 행 잠금으로 두 트랜잭션을 직렬화한다.
+        // 행 잠금 조회: 계정 배정(승인 시점)이 User 행 잠금으로 직렬화되므로, 신청 생성
+        // 자체도 같은 사용자 기준으로 일관되게 잠그고 시작한다.
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
@@ -192,12 +191,10 @@ public class RequestCommandService {
             throw new BusinessException(ErrorCode.UBUNTU_USERNAME_NOT_ASSIGNED);
         }
 
-        // 인프라(config-server)의 Pod 생성·조회·마이그레이션 API는 모두 유저네임을 키로 쓴다.
-        // 한 사용자가 같은 유저네임으로 컨테이너를 동시에 두 개 가지면 그 API들이 어느 쪽을
-        // 가리키는지 구분할 수 없으므로, 살아있는 신청은 사용자당 하나로 제한한다.
-        if (requestRepository.existsByUser_UserIdAndStatusIn(userId, Status.openStatuses())) {
-            throw new BusinessException(ErrorCode.ACTIVE_REQUEST_ALREADY_EXISTS);
-        }
+        // 사용자당 신청 1개 제한은 없앴다 — Pod 생성/상태조회는 이제 requestId로 구분되므로
+        // 한 사용자가 컨테이너를 여러 개 동시에 가질 수 있다. (마이그레이션은 아직
+        // username 기준으로 "그 유저의 pod"를 찾으므로, 사용자가 Pod를 2개 이상 가진
+        // 상태에서 마이그레이션하면 대상이 모호해질 수 있는 게 알려진 제약이다.)
 
         ContainerImage img = containerImageRepository.findById(dto.imageId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));

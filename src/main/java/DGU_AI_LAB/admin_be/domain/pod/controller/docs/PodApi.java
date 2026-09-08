@@ -46,12 +46,13 @@ public interface PodApi {
             @Parameter(description = "Pod 이름") String podName
     );
 
-    @Operation(summary = "Pod 생성 진행 상태 조회", description = "사용자명으로 Pod 생성 진행 단계(stage)를 조회합니다.")
+    @Operation(summary = "Pod 생성 진행 상태 조회", description = "신청 ID로 Pod 생성 진행 단계(stage)를 조회합니다. " +
+            "한 사용자가 여러 신청을 동시에 가질 수 있어 사용자명이 아닌 신청 ID로 구분합니다.")
     @ApiResponse(responseCode = "200", description = "조회 성공",
             content = @Content(schema = @Schema(implementation = PodCreationStatusResponseDTO.class)))
     @ApiResponse(responseCode = "502", description = "config-server 연동 오류", content = @Content)
     PodCreationStatusResponseDTO getPodCreationStatus(
-            @Parameter(description = "사용자명") String username
+            @Parameter(description = "신청 ID") Long requestId
     );
 
     @Operation(summary = "고아 Pod 삭제", description = "DB에 대응하는 신청(Request) 기록이 없는 Pod를 k8s에서 직접 삭제합니다. " +

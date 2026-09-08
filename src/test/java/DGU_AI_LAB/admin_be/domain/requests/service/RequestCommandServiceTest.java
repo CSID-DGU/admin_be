@@ -84,21 +84,36 @@ class RequestCommandServiceTest {
     class CreateRequest {
 
         @Test
-        @DisplayName("이미 살아있는 신청이 있으면 ACTIVE_REQUEST_ALREADY_EXISTS를 던진다 — 유저네임이 같아 인프라 API가 두 컨테이너를 구분할 수 없다")
-        void createRequest_throwsException_whenUserAlreadyHasOpenRequest() {
+        @DisplayName("이미 살아있는 신청이 있어도 새 신청을 막지 않는다 — Pod 생성/상태조회가 requestId로 구분되므로 사용자당 여러 개 신청 가능")
+        void createRequest_succeeds_evenWhenUserAlreadyHasOpenRequest() {
             User user = userWithUbuntuUsername("honggildong");
             ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
+            ContainerImage img = ContainerImage.builder()
+                    .imageName("cuda").imageVersion("11.8").cudaVersion("11.8").description("test").build();
+
+            Request savedReq = Request.builder()
+                    .ubuntuUsername("honggildong")
+                    .ubuntuPassword("pw")
+                    .expiresAt(LocalDateTime.now().plusDays(30))
+                    .usagePurpose("연구")
+                    .formAnswers("{}")
+                    .user(user)
+                    .resourceGroup(rg)
+                    .containerImage(img)
+                    .build();
 
             when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
-            when(requestRepository.existsByUser_UserIdAndStatusIn(1L, Status.openStatuses())).thenReturn(true);
+            when(containerImageRepository.findById(any())).thenReturn(Optional.of(img));
 
             SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
             when(dto.resourceGroupId()).thenReturn(1);
+            when(dto.imageId()).thenReturn(1L);
+            when(dto.toEntity(any(), any(), any(), anyString())).thenReturn(savedReq);
+            when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
 
-            assertThatThrownBy(() -> requestCommandService.createRequest(1L, dto))
-                    .isInstanceOf(BusinessException.class)
-                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.ACTIVE_REQUEST_ALREADY_EXISTS);
+            assertThat(requestCommandService.createRequest(1L, dto).ubuntuUsername())
+                    .isEqualTo("honggildong");
         }
 
         @Test
@@ -231,7 +246,6 @@ class RequestCommandServiceTest {
 
             when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
-            when(requestRepository.existsByUser_UserIdAndStatusIn(any(), anyList())).thenReturn(false);
             when(containerImageRepository.findById(any())).thenReturn(Optional.empty());
 
             SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
@@ -254,7 +268,6 @@ class RequestCommandServiceTest {
 
             when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
-            when(requestRepository.existsByUser_UserIdAndStatusIn(any(), anyList())).thenReturn(false);
             when(containerImageRepository.findById(any())).thenReturn(Optional.of(img));
 
             SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
@@ -280,7 +293,6 @@ class RequestCommandServiceTest {
 
             when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
-            when(requestRepository.existsByUser_UserIdAndStatusIn(any(), anyList())).thenReturn(false);
             when(containerImageRepository.findById(any())).thenReturn(Optional.of(img));
 
             // 응답 DTO 조립까지 통과해야 하므로 mock 대신 실제 엔티티를 저장 결과로 돌려준다.

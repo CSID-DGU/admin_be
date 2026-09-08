@@ -5,8 +5,9 @@ import io.swagger.v3.oas.annotations.media.Schema;
 
 @Schema(description = "Pod 생성 진행 상태 응답 DTO")
 public record PodCreationStatusResponseDTO(
-        @Schema(description = "조회 대상 사용자명", example = "testuser082702")
-        String username,
+        @JsonProperty("request_id")
+        @Schema(description = "조회 대상 신청 ID", example = "42")
+        Long requestId,
 
         @Schema(description = "진행 단계", example = "waiting_ready",
                 allowableValues = {"unknown", "started", "selecting_node", "building_pod_spec",

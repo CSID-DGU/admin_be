@@ -272,7 +272,7 @@ public class AdminRequestCommandService {
 
             CreatePodResponseDTO podResponse;
             try {
-                podResponse = podService.createPod(username);
+                podResponse = podService.createPod(username, requestId);
             } catch (Exception e) {
                 // BusinessException뿐 아니라 WebClient 타임아웃 등 예기치 않은 예외도
                 // 여기서 잡아야 한다 — 안 그러면 바깥쪽 catch-all까지 새어나가 상태
