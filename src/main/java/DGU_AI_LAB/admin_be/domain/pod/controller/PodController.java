@@ -6,7 +6,10 @@ import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.pod.service.PodQueryService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.PodCreationStatusResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodService;
+import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -55,5 +58,12 @@ public class PodController implements PodApi {
     @GetMapping("/status/{username}")
     public PodCreationStatusResponseDTO getPodCreationStatus(@PathVariable String username) {
         return podService.getPodCreationStatus(username);
+    }
+
+    // DB에 대응하는 신청이 없는 고아 Pod 직접 삭제 (신청 이력이 있으면 409로 거부)
+    @DeleteMapping("/{podName}")
+    public ResponseEntity<SuccessResponse<?>> deleteOrphanPod(@PathVariable String podName) {
+        podService.deleteOrphanPod(podName);
+        return SuccessResponse.ok(null);
     }
 }

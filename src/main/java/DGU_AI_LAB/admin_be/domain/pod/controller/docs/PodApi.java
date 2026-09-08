@@ -3,12 +3,14 @@ package DGU_AI_LAB.admin_be.domain.pod.controller.docs;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodEventDTO;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.PodCreationStatusResponseDTO;
+import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.http.ResponseEntity;
 
 import java.util.List;
 import java.util.Map;
@@ -50,5 +52,14 @@ public interface PodApi {
     @ApiResponse(responseCode = "502", description = "config-server 연동 오류", content = @Content)
     PodCreationStatusResponseDTO getPodCreationStatus(
             @Parameter(description = "사용자명") String username
+    );
+
+    @Operation(summary = "고아 Pod 삭제", description = "DB에 대응하는 신청(Request) 기록이 없는 Pod를 k8s에서 직접 삭제합니다. " +
+            "정상적으로 신청을 거쳐 생성된 Pod는 이 API로 지울 수 없습니다 — 사용자 삭제/신청 만료 등 정식 경로를 이용하세요.")
+    @ApiResponse(responseCode = "200", description = "삭제 성공")
+    @ApiResponse(responseCode = "409", description = "신청 이력이 있는 Pod라 거부됨", content = @Content)
+    @ApiResponse(responseCode = "502", description = "K8s/config-server 연동 오류", content = @Content)
+    ResponseEntity<SuccessResponse<?>> deleteOrphanPod(
+            @Parameter(description = "Pod 이름") String podName
     );
 }
