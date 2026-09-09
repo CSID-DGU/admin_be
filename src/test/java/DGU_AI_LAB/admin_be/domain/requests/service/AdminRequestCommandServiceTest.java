@@ -39,8 +39,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
-import org.springframework.core.task.TaskRejectedException;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -49,6 +48,7 @@ import reactor.core.publisher.Mono;
 import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.concurrent.Semaphore;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -78,7 +78,6 @@ class AdminRequestCommandServiceTest {
     @Mock private WebClient mockWebClient;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
-    @Mock private ThreadPoolTaskExecutor approvalExecutor;
 
     // WebClient 체이닝 mock
     @Mock private WebClient.RequestBodyUriSpec putUriSpec;
@@ -102,7 +101,7 @@ class AdminRequestCommandServiceTest {
                 alarmService, requestRepository, userRepository, containerImageRepository,
                 resourceGroupRepository, changeRequestRepository,
                 groupRepository, groupService, podExternalPortRepository, podService, ubuntuAccountService, portRequestService, new ObjectMapper(),
-                mockWebClient, transactionManager, approvalExecutor
+                mockWebClient, transactionManager
         );
         // 공유 엔티티 기본 설정
         when(mockUser.getName()).thenReturn("테스트유저");
@@ -113,16 +112,6 @@ class AdminRequestCommandServiceTest {
         when(userRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(mockUser));
         when(mockImage.getImageId()).thenReturn(1L);
         when(mockRg.getRsgroupId()).thenReturn(1);
-
-        // approvalExecutor.execute(...)는 실제 스레드풀 없이 제출된 작업을 그 자리에서
-        // 동기 실행한다 — 유닛 테스트에는 별도 스레드가 필요 없고, 이렇게 해야 기존
-        // 테스트들이 approveRequest() 호출 직후 바로 부수효과를 검증할 수 있다. 동시
-        // 처리 한도 초과 테스트만 이 stub을 덮어써서 TaskRejectedException을 던지게 한다.
-        doAnswer(invocation -> {
-            Runnable task = invocation.getArgument(0);
-            task.run();
-            return null;
-        }).when(approvalExecutor).execute(any());
     }
 
     /** 사용자 생성 PUT 요청 WebClient 모킹
@@ -321,7 +310,10 @@ class AdminRequestCommandServiceTest {
         doThrow(new BusinessException(ErrorCode.GROUP_CREATION_FAILED))
                 .when(groupService).addUserToGroups(eq("testuser"), anyList());
 
-        service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
+        assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.GROUP_CREATION_FAILED);
 
         verify(podService, never()).createPod(anyString(), anyLong());
         verify(request).revertToPending();
@@ -450,9 +442,11 @@ class AdminRequestCommandServiceTest {
 
             service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
 
-            // 계정 생성 직후(Pod 생성 전) 한 번, 최종 DB 반영 트랜잭션에서 한 번 — 총 두 번
-            // User 행을 잠그고 배정한다. 두 번째는 같은 값이라 항상 멱등하게 통과한다.
-            verify(userRepository, times(2)).findByIdForUpdate(100L);
+            // 계정 존재 확인(락 구간 진입 직후) 한 번, 계정 생성 직후(Pod 생성 전) 한 번,
+            // 최종 DB 반영 트랜잭션에서 한 번 — 총 세 번 User 행을 잠그고 조회/배정한다.
+            // assignUbuntuAccount 자체는 뒤의 두 번만 호출되고(같은 값이라 멱등), 첫 번째는
+            // 조회 전용이다.
+            verify(userRepository, times(3)).findByIdForUpdate(100L);
             verify(userRepository, never()).findById(100L);
             verify(mockUser, times(2)).assignUbuntuAccount(2001L, 2001L);
         }
@@ -468,7 +462,8 @@ class AdminRequestCommandServiceTest {
             doThrow(new BusinessException(ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED))
                     .when(mockUser).assignUbuntuAccount(2001L, 2001L);
 
-            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인")))
+                    .isInstanceOf(BusinessException.class);
 
             // Pod를 만든 적이 없으므로 지울 것도 없다.
             verify(podService, never()).createPod(anyString(), anyLong());
@@ -497,7 +492,10 @@ class AdminRequestCommandServiceTest {
                     .doThrow(new BusinessException(ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED))
                     .when(mockUser).assignUbuntuAccount(2001L, 2001L);
 
-            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED);
 
             verify(podService).deletePod("pod-testuser-race2");
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
@@ -514,7 +512,10 @@ class AdminRequestCommandServiceTest {
             when(podService.createPod(eq("testuser"), anyLong()))
                     .thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED));
 
-            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_CREATION_FAILED);
 
             verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
             verify(request).revertToPending();
@@ -531,7 +532,10 @@ class AdminRequestCommandServiceTest {
                     new CreatePodResponseDTO("running", "farm1", "pod-testuser-dbfail", List.of()));
             when(containerImageRepository.findById(1L)).thenReturn(Optional.empty());
 
-            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인"));
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
 
             verify(podService).deletePod("pod-testuser-dbfail");
             verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
@@ -555,11 +559,12 @@ class AdminRequestCommandServiceTest {
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
-            // 후처리는 비동기(테스트에서는 approvalExecutor mock이 즉시 동기 실행)라, 실패해도
-            // 이미 응답을 반환한 approveRequest() 자체는 예외를 던지지 않는다 — 보상 트랜잭션이
-            // 내부적으로 처리됐는지를 검증한다.
-            SaveRequestResponseDTO response = service.approveRequest(dto);
-            assertThat(response).isNotNull();
+            // approveRequest는 동기식이라, 실패는 보상 트랜잭션 실행 후 원래 예외 그대로
+            // 호출자(관리자 HTTP 요청)에게 전파된다.
+            assertThatThrownBy(() -> service.approveRequest(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_CREATION_FAILED);
 
             // createPod가 던진 게 PodCreationFailedException이 아닌 평범한 BusinessException이라
             // 실패 노드를 못 얻는다 — node_name 없이 삭제를 호출하면 config-server가 모든 farm
@@ -586,36 +591,42 @@ class AdminRequestCommandServiceTest {
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
-            assertThat(service.approveRequest(dto)).isNotNull();
+            assertThatThrownBy(() -> service.approveRequest(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_CREATION_FAILED);
 
             verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
             verify(containerImageRepository, never()).findById(any());
         }
 
         @Test
-        @DisplayName("동시 처리 한도(3) 초과 시 승인 후처리 제출 자체가 즉시 실패하고 보상 트랜잭션이 실행된다")
-        void approveRequest_concurrencyLimitExceeded_failsFastWithoutCallingCreatePod() {
+        @DisplayName("동시 처리 한도(3) 초과 시 createPod 호출 없이 즉시 실패하고 보상 트랜잭션이 실행된다")
+        void approveRequest_concurrencyLimitExceeded_failsFastWithoutCallingCreatePod() throws InterruptedException {
             Long requestId = 20L;
             buildMockedRequest(requestId);
             stubWebClientPut();
 
-            // executor 큐가 꽉 차서(동시 3건 초과) 거부되는 상황을 재현 — 제출 자체가
-            // TaskRejectedException을 던지므로 processApproval은 아예 실행되지 않는다.
-            doThrow(new TaskRejectedException("executor saturated"))
-                    .when(approvalExecutor).execute(any());
+            Semaphore semaphore = (Semaphore) ReflectionTestUtils.getField(service, "podCreationSemaphore");
+            semaphore.acquire(3); // 한도(3)만큼 permit을 모두 선점해 초과 상황을 재현
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
+            try {
+                assertThatThrownBy(() -> service.approveRequest(dto))
+                        .isInstanceOf(BusinessException.class)
+                        .extracting(e -> ((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.POD_CREATION_CONCURRENCY_LIMIT);
 
-            assertThatThrownBy(() -> service.approveRequest(dto))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.POD_CREATION_CONCURRENCY_LIMIT);
-
-            // 제출 자체가 거부됐으므로 계정 생성 API 호출도, Pod 생성도 전혀 일어나지 않는다 —
-            // 오늘의 3-한도가 Pod 생성뿐 아니라 계정 생성까지 함께 가드하도록 넓어진 부분이다.
-            verify(putBodySpec, never()).bodyValue(any());
-            verify(podService, never()).createPod(anyString(), anyLong());
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount(any(), any());
+                // 계정 생성 API는 이미 호출된 뒤(Pod 생성 직전에만 한도를 건다)라 계정은 만들어져
+                // 있다. 하지만 아직 어느 farm 노드에도 배포된 게 없어(Pod 생성 자체가 시작도
+                // 못 함) node를 모른다 — node_name 없이 삭제를 호출하면 config-server가 모든
+                // farm 노드를 훑어 무관한 동명 레거시 계정까지 지울 수 있으므로, 삭제 자체를
+                // 보류하고 계정은 남겨둔다(재승인 시 재사용).
+                verify(podService, never()).createPod(anyString(), anyLong());
+                verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
+            } finally {
+                semaphore.release(3);
+            }
         }
 
         @Test
@@ -630,7 +641,10 @@ class AdminRequestCommandServiceTest {
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
-            assertThat(service.approveRequest(dto)).isNotNull();
+            assertThatThrownBy(() -> service.approveRequest(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_CREATION_FAILED);
 
             // node_name 없이 삭제를 호출하면 config-server가 모든 farm 노드를 훑어 무관한 동명
             // 레거시 계정까지 지울 수 있으므로, 삭제 자체를 시도하지 않는다.
@@ -655,7 +669,10 @@ class AdminRequestCommandServiceTest {
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
-            assertThat(service.approveRequest(dto)).isNotNull();
+            assertThatThrownBy(() -> service.approveRequest(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_CREATION_FAILED);
 
             verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
             // 보상 트랜잭션 자체의 실패는 로그만 남으면 아무도 모른다 — 원래 실패(Pod 생성 실패)
@@ -710,9 +727,12 @@ class AdminRequestCommandServiceTest {
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
-            // 후처리는 비동기라 그 안에서 발생하는 INVALID_REQUEST_STATUS는 approveRequest()
-            // 밖으로 전파되지 않는다 — 보상 트랜잭션(계정/Pod 정리)이 내부적으로 수행됐는지 검증한다.
-            assertThat(service.approveRequest(dto)).isNotNull();
+            // approveRequest는 동기식이라 INVALID_REQUEST_STATUS가 그대로 호출자에게
+            // 전파된다 — 보상 트랜잭션(계정/Pod 정리)도 함께 수행됐는지 검증한다.
+            assertThatThrownBy(() -> service.approveRequest(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
 
             // 이미 만든 계정/Pod는 정리하되, 거절된 요청의 상태를 승인으로 덮어쓰지 않는다
             verify(podService).deletePod("pod-testuser-race");
@@ -748,7 +768,10 @@ class AdminRequestCommandServiceTest {
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
-            assertThat(service.approveRequest(dto)).isNotNull();
+            assertThatThrownBy(() -> service.approveRequest(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
 
             // 인프라는 정리하고, 여전히 PROCESSING이었던 요청은 PENDING으로 되돌려
             // 재승인/재거절이 막힌 채 영구히 갇히지 않게 한다
