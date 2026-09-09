@@ -524,6 +524,34 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
+        @DisplayName("계정을 새로 만든 요청 자신의 Pod 생성이 실패해도, 같은 사용자의 다른 요청이 이미 그 계정을 쓰고 있으면 삭제를 보류한다")
+        void podCreationFails_butAnotherActiveRequestAlreadySharesTheAccount_holdsDeletion() {
+            Long requestId = 68L;
+            Request request = buildMockedRequest(requestId);
+            stubWebClientPut();
+
+            when(podService.createPod(eq("testuser"), anyLong()))
+                    .thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED));
+
+            // 같은 사용자의 다른 요청(69L)이 이 요청의 계정 생성 직후~Pod 생성 실패 사이에 먼저
+            // 그 계정을 재사용해 FULFILLED까지 끝낸 상황을 재현한다 — R1(이 요청)이 "내가 방금
+            // 만든 계정"이라며 지우면 R2가 쓰고 있는 살아있는 계정을 지우게 된다.
+            Request otherActiveRequest = mock(Request.class);
+            when(otherActiveRequest.getRequestId()).thenReturn(69L);
+            when(requestRepository.findAllByUser_UserIdAndStatusIn(eq(100L), any()))
+                    .thenReturn(List.of(otherActiveRequest));
+
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_CREATION_FAILED);
+
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
+            verify(alarmService).sendAdminSlackNotification(isNull(), contains("다른 요청"));
+            verify(request).revertToPending();
+        }
+
+        @Test
         @DisplayName("재사용한 계정은 DB 반영이 실패해도 Pod만 지우고 계정은 남긴다")
         void dbFailureAfterReusingAccount_deletesPodButKeepsTheAccount() {
             Long requestId = 64L;

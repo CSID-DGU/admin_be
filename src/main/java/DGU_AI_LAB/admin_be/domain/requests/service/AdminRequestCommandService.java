@@ -250,7 +250,7 @@ public class AdminRequestCommandService {
                 // 아직 어느 farm 노드에도 배포된 게 없는 시점이라 node를 모른 채 삭제하면
                 // 무관한 동명 레거시 계정까지 지울 위험이 있다 — tryCompensateDeleteUser
                 // 내부에서 이 경우 삭제 대신 보류+알림으로 처리한다.
-                tryCompensateDeleteUser(userId, username, null, serverName);
+                tryCompensateDeleteUser(requestId, userId, username, null, serverName);
             }
             revertToPendingIfStillProcessing(requestId, serverName);
             throw e;
@@ -278,7 +278,7 @@ public class AdminRequestCommandService {
                     "[승인 실패] Pod 생성 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
                     username, requestId, e.getMessage()), serverName);
             if (accountCreatedNow) {
-                tryCompensateDeleteUser(userId, username, failedNode, serverName);
+                tryCompensateDeleteUser(requestId, userId, username, failedNode, serverName);
             }
             revertToPendingIfStillProcessing(requestId, serverName);
             throw e;
@@ -334,7 +334,7 @@ public class AdminRequestCommandService {
             notifyApprovalFailure(String.format(
                     "[승인 실패] DB 반영 실패로 infra 리소스 정리 후 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
                     username, requestId, e.getMessage()), serverName);
-            tryCompensateAll(userId, username, podResponse.podName(), podResponse.node(), serverName, accountCreatedNow);
+            tryCompensateAll(requestId, userId, username, podResponse.podName(), podResponse.node(), serverName, accountCreatedNow);
             revertToPendingIfStillProcessing(requestId, serverName);
             throw e;
         }
@@ -596,7 +596,18 @@ public class AdminRequestCommandService {
 
     // ── 보상 트랜잭션 헬퍼 ─────────────────────────────────────────────
 
+    // 계정 회수 보상을 실행하기 전, 같은 사용자의 "이 요청 말고 다른" 요청이 지금 이 계정을
+    // 쓰고 있는지 확인하는 상태 집합. 한 사용자가 신청을 여러 개 동시에 가질 수 있게 되면서,
+    // 계정을 새로 만든 요청(R1) 자신의 Pod 생성이 실패해 보상 삭제를 타는 사이, 그 계정을
+    // 재사용한 다른 요청(R2)이 먼저 성공해 그 계정으로 이미 Pod를 띄웠을 수 있다 — 그 시점에
+    // R1이 "내가 방금 만든 계정"이라며 지우면 R2가 쓰고 있는 살아있는 계정을 지우게 된다.
+    // PENDING은 아직 계정에 손도 안 댄 상태라 제외한다.
+    private static final List<Status> ACCOUNT_DEPENDENT_STATUSES =
+            List.of(Status.PROCESSING, Status.FULFILLED, Status.MIGRATING, Status.EXPIRING);
+
     /**
+     * @param requestId 지금 보상 중인 요청. 계정을 지우기 전, 같은 사용자의 다른 요청이 이
+     *                  계정을 이미 쓰고 있지 않은지 확인하는 데만 쓰인다(자기 자신은 제외).
      * @param nodeName 이 계정의 krb5 keytab이 실제로 배포된(또는 배포를 시도한) farm 노드.
      *                 null이면(노드 선택 전에 실패했거나 응답에서 노드를 못 뽑은 경우) 삭제를
      *                 시도하지 않는다 — node_name 없이 삭제를 호출하면 config-server가 설정된
@@ -606,7 +617,18 @@ public class AdminRequestCommandService {
      *                 이 경우 계정과 User의 UID/GID는 그대로 남기고 알림만 보낸다 — 남은 계정은
      *                 재승인 시 hasUbuntuAccount() 분기로 자연스럽게 재사용된다.
      */
-    private void tryCompensateDeleteUser(Long userId, String username, String nodeName, String serverName) {
+    private void tryCompensateDeleteUser(Long requestId, Long userId, String username, String nodeName, String serverName) {
+        boolean sharedByAnotherActiveRequest = requestRepository
+                .findAllByUser_UserIdAndStatusIn(userId, ACCOUNT_DEPENDENT_STATUSES).stream()
+                .anyMatch(r -> !r.getRequestId().equals(requestId));
+        if (sharedByAnotherActiveRequest) {
+            log.warn("[보상 트랜잭션] 같은 사용자의 다른 요청이 이미 이 계정을 쓰고 있어 삭제를 보류합니다: username={}, requestId={}",
+                    username, requestId);
+            alertCompensationFailure(String.format(
+                    "[보상 트랜잭션] 같은 사용자의 다른 요청이 이미 이 계정을 쓰고 있어 삭제를 보류합니다 - 확인 필요: username=%s, requestId=%d",
+                    username, requestId), serverName);
+            return;
+        }
         if (nodeName == null) {
             log.error("[보상 트랜잭션] 계정이 배포된 farm 노드를 알 수 없어 계정 삭제를 보류합니다 - 수동 정리 필요: username={}", username);
             alertCompensationFailure(String.format(
@@ -689,7 +711,7 @@ public class AdminRequestCommandService {
      *                          재사용한 경우에는 절대 지우면 안 된다 — 그 계정은 이 신청이
      *                          아니라 웹 계정에 귀속돼 있고, 사용자의 홈 디렉터리도 함께 사라진다.
      */
-    private void tryCompensateAll(Long userId, String username, String podName, String nodeName, String serverName, boolean accountCreatedNow) {
+    private void tryCompensateAll(Long requestId, Long userId, String username, String podName, String nodeName, String serverName, boolean accountCreatedNow) {
         try {
             podService.deletePod(podName);
             log.info("[보상 트랜잭션 완료] Pod 삭제: {}", podName);
@@ -698,7 +720,7 @@ public class AdminRequestCommandService {
             alertCompensationFailure(String.format("[보상 트랜잭션 실패] Pod 삭제 실패 - 수동 정리 필요: podName=%s", podName), serverName);
         }
         if (accountCreatedNow) {
-            tryCompensateDeleteUser(userId, username, nodeName, serverName);
+            tryCompensateDeleteUser(requestId, userId, username, nodeName, serverName);
         }
     }
 
