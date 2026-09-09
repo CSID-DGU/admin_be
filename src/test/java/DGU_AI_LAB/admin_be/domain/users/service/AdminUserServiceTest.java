@@ -401,6 +401,29 @@ class AdminUserServiceTest {
         }
 
         @Test
+        @DisplayName("서로 다른 노드에 걸친 계정 삭제 중 한 노드만 실패하면, 성공한 노드가 있어도 UID/GID는 회수하지 않는다")
+        void deleteUser_accountDeletionFailsOnOneOfMultipleNodes_keepsUidAssignedAndAlerts() {
+            Request onFarm1 = mockFulfilledRequest("testuser", 42L, "farm1");
+            Request onFarm2 = mockFulfilledRequest("testuser", 43L, "farm2");
+            doThrow(new RuntimeException("config-server 통신 오류"))
+                    .when(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm2");
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(onFarm1, onFarm2));
+
+            assertThatThrownBy(() -> adminUserService.deleteUser(1L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.USER_REQUEST_CLEANUP_PARTIALLY_FAILED);
+
+            // farm1은 이미 지워졌는데 UID/GID를 회수해버리면, farm2에 남은 계정이 DB엔
+            // 없는 걸로 기록된 채 실제로는 살아남는다 — 하나라도 실패하면 통째로 보류한다.
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+            assertThat(mockUser.hasUbuntuAccount()).isTrue();
+            verify(alarmService).sendSlackAlert(contains("farm2"), isNull());
+        }
+
+        @Test
         @DisplayName("FULFILLED 요청이 여러 개일 때 하나의 Pod/계정 삭제가 실패해도, 이미 정리된 다른 요청의 DB 반영은 롤백되지 않는다")
         void deleteUser_oneOfMultipleFulfilledFails_doesNotRollbackAlreadyCleanedOnes() {
             Request ok = mockFulfilledRequest("okuser", 30L);

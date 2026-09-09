@@ -147,7 +147,12 @@ public class AdminUserService {
                     }
                     continue;
                 }
-                cleanedNodeNames.add(nodeNameRef[0]);
+                // 정상적인 FULFILLED 요청이라면 항상 채워져 있어야 하지만, 방어적으로 null이면
+                // 건너뛴다 — Set에 null이 섞이면 releaseUbuntuAccount가 node_name=null로 계정
+                // 삭제를 호출해, 모든 farm 노드를 훑는 "hold-and-alert" 안전장치를 우회하게 된다.
+                if (nodeNameRef[0] != null) {
+                    cleanedNodeNames.add(nodeNameRef[0]);
+                }
                 final Request[] deletedRef = {null};
                 newTx.execute(status -> {
                     Request managed = requestRepository.findByIdForUpdate(requestId)
@@ -193,6 +198,10 @@ public class AdminUserService {
      *                         있으므로, 노드마다 개별적으로 계정 삭제를 호출해야 한다.
      *                         컨테이너가 이미 만료된 사용자는 비어있으므로 그때는 신청 이력에서
      *                         노드를 되찾는다.
+     * 일부 노드에서만 계정 삭제가 실패하면 UID/GID는 회수하지 않고
+     * {@link ErrorCode#USER_REQUEST_CLEANUP_PARTIALLY_FAILED}를 던진다 — 이미 지워진
+     * 노드와 실패한 노드가 섞인 채로 회수해버리면, 남은 노드의 계정이 DB엔 없는 걸로
+     * 기록된 채 실제로는 살아남는다.
      */
     private void releaseUbuntuAccount(Long userId, Set<String> cleanedNodeNames, String logPrefix) {
         TransactionTemplate newTx = new TransactionTemplate(transactionManager);
@@ -234,8 +243,30 @@ public class AdminUserService {
             return;
         }
 
+        List<String> failedNodeNames = new ArrayList<>();
         for (String nodeName : nodeNamesRef) {
-            ubuntuAccountService.deleteUbuntuAccount(usernameRef[0], nodeName);
+            try {
+                ubuntuAccountService.deleteUbuntuAccount(usernameRef[0], nodeName);
+            } catch (Exception e) {
+                log.error("[{}] userId={} 우분투 계정 삭제 실패 - 수동 확인 필요: username={}, node={}",
+                        logPrefix, userId, usernameRef[0], nodeName, e);
+                failedNodeNames.add(nodeName);
+            }
+        }
+        if (!failedNodeNames.isEmpty()) {
+            // 일부 노드에서만 계정을 지운 채 UID/GID를 회수하면, 실패한 노드엔 계정이 남아있는데
+            // DB는 이미 회수됐다고 기록해 다음 승인이 새 UID를 발급하고 그 노드에서 충돌한다.
+            // 하나라도 실패하면 UID/GID를 그대로 두고, 이미 지워진 노드까지 포함해 수동 확인을
+            // 요청한다 — 이미 지워진 노드를 다시 지우려 하면 config-server가 404로 응답할 뿐이라
+            // 재시도 자체는 안전하다.
+            try {
+                alarmService.sendSlackAlert(String.format(
+                        "[%s] userId=%d 우분투 계정 삭제 일부 실패 - 수동 확인 필요: ubuntuUsername=%s, 실패한 노드=%s",
+                        logPrefix, userId, usernameRef[0], failedNodeNames), null);
+            } catch (Exception ignored) {
+                // 알림 발송 실패가 원래 예외 전파를 막으면 안 된다.
+            }
+            throw new BusinessException(ErrorCode.USER_REQUEST_CLEANUP_PARTIALLY_FAILED);
         }
         newTx.execute(status -> {
             userRepository.findByIdForUpdate(userId).ifPresent(User::releaseUbuntuAccount);
