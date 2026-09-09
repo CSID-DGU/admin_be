@@ -63,6 +63,7 @@ class PodMigrationServiceTest {
     private void stubExistingRequest(Long requestId, Status status) {
         when(mockRequest.getStatus()).thenReturn(status);
         when(mockRequest.getUbuntuUsername()).thenReturn("testuser");
+        when(mockRequest.getPodName()).thenReturn("pod-testuser");
         when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(mockRequest));
         when(requestRepository.findById(requestId)).thenReturn(Optional.of(mockRequest));
         if (status != Status.FULFILLED) {
@@ -89,7 +90,7 @@ class PodMigrationServiceTest {
                     ),
                     null, null, null, null, null
             );
-            when(podService.migratePod("testuser", List.of("farm1", "farm2"), 0.2)).thenReturn(response);
+            when(podService.migratePod("testuser", "pod-testuser", requestId, List.of("farm1", "farm2"), 0.2)).thenReturn(response);
             when(podExternalPortRepository.save(any(PodExternalPort.class))).thenAnswer(inv -> inv.getArgument(0));
 
             MigratePodRequestDTO dto = new MigratePodRequestDTO(List.of("farm1", "farm2"), 0.2, null);
@@ -116,7 +117,7 @@ class PodMigrationServiceTest {
                     "skipped", "no_significant_improvement", null, null, null, null, null,
                     "farm1", 1.5, "farm2", 1.4
             );
-            when(podService.migratePod(eq("testuser"), any(), any())).thenReturn(response);
+            when(podService.migratePod(eq("testuser"), any(), any(), any(), any())).thenReturn(response);
 
             MigratePodRequestDTO dto = new MigratePodRequestDTO(List.of("farm1", "farm2"), null, null);
             MigratePodResponseDTO result = service.migratePod(requestId, dto);
@@ -133,7 +134,7 @@ class PodMigrationServiceTest {
         void migratePod_usesRowLock_forInitialClaim() {
             Long requestId = 7L;
             stubExistingRequest(requestId, Status.FULFILLED);
-            when(podService.migratePod(any(), any(), any())).thenReturn(
+            when(podService.migratePod(any(), any(), any(), any(), any())).thenReturn(
                     new MigratePodResponseDTO("skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null)
             );
 
@@ -151,13 +152,13 @@ class PodMigrationServiceTest {
         void migratePod_passesNullRatio_whenOmitted() {
             Long requestId = 3L;
             stubExistingRequest(requestId, Status.FULFILLED);
-            when(podService.migratePod(any(), any(), any())).thenReturn(
+            when(podService.migratePod(any(), any(), any(), any(), any())).thenReturn(
                     new MigratePodResponseDTO("skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null)
             );
 
             service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1"), null, null));
 
-            verify(podService).migratePod("testuser", List.of("farm1"), null);
+            verify(podService).migratePod("testuser", "pod-testuser", requestId, List.of("farm1"), null);
         }
 
         @Test
@@ -165,14 +166,14 @@ class PodMigrationServiceTest {
         void migratePod_force_overridesRatioWithForceValue() {
             Long requestId = 11L;
             stubExistingRequest(requestId, Status.FULFILLED);
-            when(podService.migratePod(any(), any(), any())).thenReturn(
+            when(podService.migratePod(any(), any(), any(), any(), any())).thenReturn(
                     new MigratePodResponseDTO("migrated", null, "farm1", "farm2", "pod-testuser-11", List.of(), null, null, null, null, null)
             );
 
             service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1", "farm2"), 0.9, true));
 
             ArgumentCaptor<Double> ratioCaptor = ArgumentCaptor.forClass(Double.class);
-            verify(podService).migratePod(eq("testuser"), eq(List.of("farm1", "farm2")), ratioCaptor.capture());
+            verify(podService).migratePod(eq("testuser"), eq("pod-testuser"), eq(requestId), eq(List.of("farm1", "farm2")), ratioCaptor.capture());
             assertThat(ratioCaptor.getValue()).isNegative();
         }
     }
@@ -192,7 +193,7 @@ class PodMigrationServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
 
-            verify(podService, never()).migratePod(any(), any(), any());
+            verify(podService, never()).migratePod(any(), any(), any(), any(), any());
         }
 
         @Test
@@ -206,7 +207,7 @@ class PodMigrationServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
 
-            verify(podService, never()).migratePod(any(), any(), any());
+            verify(podService, never()).migratePod(any(), any(), any(), any(), any());
         }
 
         @Test
@@ -214,7 +215,7 @@ class PodMigrationServiceTest {
         void migratePod_externalCallFails_propagatesAndSkipsDbUpdate() {
             Long requestId = 5L;
             stubExistingRequest(requestId, Status.FULFILLED);
-            when(podService.migratePod(any(), any(), any()))
+            when(podService.migratePod(any(), any(), any(), any(), any()))
                     .thenThrow(new BusinessException("Pod 마이그레이션 실패", ErrorCode.POD_MIGRATION_FAILED));
 
             assertThatThrownBy(() -> service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1"), null, null)))
@@ -235,7 +236,7 @@ class PodMigrationServiceTest {
                     "migrated", null, "farm1", "farm2", "pod-testuser-7", List.of(), null,
                     null, null, null, null
             );
-            when(podService.migratePod(any(), any(), any())).thenReturn(response);
+            when(podService.migratePod(any(), any(), any(), any(), any())).thenReturn(response);
             doThrow(new RuntimeException("db error")).when(mockRequest).endMigration();
 
             assertThatThrownBy(() -> service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1", "farm2"), null, null)))
@@ -262,7 +263,7 @@ class PodMigrationServiceTest {
                     "migrated", null, "farm1", "farm2", "pod-testuser-3", List.of(), null,
                     null, null, null, null
             );
-            when(podService.migratePod(any(), any(), any())).thenReturn(response);
+            when(podService.migratePod(any(), any(), any(), any(), any())).thenReturn(response);
 
             service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1", "farm2"), null, null));
 
@@ -284,7 +285,7 @@ class PodMigrationServiceTest {
                     "migrated", null, "farm1", "farm2", "pod-testuser-4", List.of(), null,
                     null, null, null, null
             );
-            when(podService.migratePod(any(), any(), any())).thenReturn(response);
+            when(podService.migratePod(any(), any(), any(), any(), any())).thenReturn(response);
 
             service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1", "farm2"), null, null));
 
@@ -303,7 +304,7 @@ class PodMigrationServiceTest {
                     "failed",
                     null, null, null, null
             );
-            when(podService.migratePod(any(), any(), any())).thenReturn(response);
+            when(podService.migratePod(any(), any(), any(), any(), any())).thenReturn(response);
             when(podExternalPortRepository.save(any(PodExternalPort.class))).thenAnswer(inv -> inv.getArgument(0));
 
             service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1", "farm2"), null, null));
@@ -329,7 +330,7 @@ class PodMigrationServiceTest {
                     "migrated", null, "farm1", "farm2", "pod-testuser-6", List.of(), "failed",
                     null, null, null, null
             );
-            when(podService.migratePod(any(), any(), any())).thenReturn(response);
+            when(podService.migratePod(any(), any(), any(), any(), any())).thenReturn(response);
             doThrow(new RuntimeException("slack down")).when(alarmService).sendSlackAlert(any(), any());
 
             MigratePodResponseDTO result = service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1", "farm2"), null, null));

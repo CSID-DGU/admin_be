@@ -52,21 +52,24 @@ public class PodMigrationService {
         // beginMigration()의 상태 검증에서 실제로 막힌다 (조회만으로는 막히지 않는다 —
         // 아무것도 쓰지 않는 조회 트랜잭션은 두 번째 호출을 저지하지 못한다).
         final String[] usernameRef = {null};
+        final String[] podNameRef = {null};
         tx.execute(status -> {
             Request req = requestRepository.findByIdForUpdate(requestId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
             req.beginMigration();
             usernameRef[0] = req.getUbuntuUsername();
+            podNameRef[0] = req.getPodName();
             return null;
         });
         String username = usernameRef[0];
+        String podName = podNameRef[0];
 
         Double effectiveRatio = Boolean.TRUE.equals(dto.force()) ? FORCE_MIGRATION_RATIO : dto.minImprovementRatio();
 
         // 2. 외부 HTTP 호출 (DB 커넥션 미보유). 실패 시 MIGRATING에 갇히지 않도록 되돌린다.
         MigratePodResponseDTO response;
         try {
-            response = podService.migratePod(username, dto.nodes(), effectiveRatio);
+            response = podService.migratePod(username, podName, requestId, dto.nodes(), effectiveRatio);
         } catch (RuntimeException e) {
             revertToFulfilled(requestId);
             throw e;

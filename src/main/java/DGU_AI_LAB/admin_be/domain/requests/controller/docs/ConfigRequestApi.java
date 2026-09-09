@@ -22,11 +22,22 @@ public interface ConfigRequestApi {
             @RequestParam @Parameter(description = "확인할 우분투 계정명", example = "toni") String username
     );
 
-    @Operation(summary = "승인 정보 조회", description = "우분투 계정명으로 승인된 서버 사용 신청 정보를 조회합니다. Config Server에서 계정 설정 적용 시 호출합니다.")
+    @Operation(summary = "승인 정보 조회 (레거시)", description = "우분투 계정명으로 승인된 서버 사용 신청 정보를 조회합니다. " +
+            "한 사용자가 신청을 여러 개 동시에 가질 수 있어 \"가장 최근 열린 신청\"을 반환합니다 — 가능하면 " +
+            "getAcceptInfoByRequestId를 쓰세요. Config Server에서 계정 설정 적용 시 호출합니다.")
     @ApiResponse(responseCode = "200", description = "성공")
     @ApiResponse(responseCode = "404", description = "해당 계정명의 승인 정보가 없음")
     @GetMapping("/{username}")
     ResponseEntity<AcceptInfoResponseDTO> getAcceptInfo(
             @PathVariable @Parameter(description = "우분투 계정명", example = "toni") String username
+    );
+
+    @Operation(summary = "승인 정보 조회 (requestId 기준)", description = "신청 ID로 정확히 그 신청 하나의 정보를 조회합니다. " +
+            "한 사용자가 신청을 여러 개 동시에 가져도 모호함이 없습니다. Config Server에서 Pod 생성·마이그레이션 시 호출합니다.")
+    @ApiResponse(responseCode = "200", description = "성공")
+    @ApiResponse(responseCode = "404", description = "해당 requestId의 승인 정보가 없음")
+    @GetMapping("/by-request/{requestId}")
+    ResponseEntity<AcceptInfoResponseDTO> getAcceptInfoByRequestId(
+            @PathVariable @Parameter(description = "신청 ID", example = "42") Long requestId
     );
 }
