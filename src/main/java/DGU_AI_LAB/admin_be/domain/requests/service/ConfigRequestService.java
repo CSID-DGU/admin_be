@@ -71,7 +71,11 @@ public class ConfigRequestService {
     public AcceptInfoResponseDTO getAcceptInfoByRequestId(Long requestId) {
         log.info("사용자 승인 정보 조회를 시작합니다. requestId: {}", requestId);
 
+        // getAcceptInfo(username)와 동일하게 openStatuses로 좁힌다 — 안 좁히면 취소/만료돼
+        // 종료된(DENIED/DELETED) 신청의 스펙도 그대로 내줘서, config-server가 이미 끝난
+        // 신청을 근거로 Pod/계정을 구성할 위험이 있다.
         Request request = requestRepository.findById(requestId)
+                .filter(r -> Status.openStatuses().contains(r.getStatus()))
                 .orElseThrow(() -> {
                     log.warn("requestId '{}'에 대한 승인 정보가 존재하지 않습니다.", requestId);
                     return new BusinessException(ErrorCode.USER_APPROVAL_NOT_FOUND);
