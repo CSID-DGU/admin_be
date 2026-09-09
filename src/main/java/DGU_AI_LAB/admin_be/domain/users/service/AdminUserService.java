@@ -29,6 +29,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 @Slf4j
@@ -328,12 +329,45 @@ public class AdminUserService {
         log.warn("[deleteUbuntuAccount] 우분투 계정 삭제 시도: {}", username);
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
 
-        User user = tx.execute(status -> userRepository.findByUbuntuUsername(username)
-                .filter(User::hasUbuntuAccount)
-                .orElseThrow(() -> {
-                    log.warn("[deleteUbuntuAccount] {}에 해당하는 계정이 없습니다.", username);
-                    return new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND);
-                }));
+        User user = tx.execute(status -> {
+            Optional<User> primary = userRepository.findByUbuntuUsername(username)
+                    .filter(User::hasUbuntuAccount);
+            if (primary.isPresent()) {
+                return primary.get();
+            }
+
+            // 레거시 데이터 보정: 과거 수동 DB 복구(farm 마이그레이션 사고 등)로 Request에만
+            // 이 유저네임/UID/GID가 남고 User 쪽 ubuntu_username/uid/gid는 갱신되지 않은
+            // 행이 실제로 있었다 — User 테이블 조회로 못 찾으면 같은 유저네임을 가진
+            // 살아있는 Request의 소유자로 한 번 더 찾는다. 정상 데이터에서는 둘이 항상
+            // 일치하므로 이 경로는 원래 안 타야 한다.
+            Request legacyRequest = requestRepository
+                    .findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses())
+                    .stream().findFirst()
+                    .orElseThrow(() -> {
+                        log.warn("[deleteUbuntuAccount] {}에 해당하는 계정이 없습니다.", username);
+                        return new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND);
+                    });
+
+            // User에 UID/GID가 없으면 releaseUbuntuAccount가 실제 계정 삭제 호출을
+            // 건너뛰어 farm 노드의 리눅스 계정이 그대로 남는다 — Request에 남아있는
+            // 실제 UID/GID로 User를 먼저 복구한 뒤 정리 흐름을 태운다. 이 파일의 다른
+            // 모든 쓰기 지점(releaseUbuntuAccount 등)과 동일하게 행을 잠그고 수정한다 —
+            // 잠그지 않으면 같은 레거시 유저네임에 대한 삭제 요청이 동시에 들어왔을 때
+            // 두 트랜잭션이 같은 준영속 상태를 각자 읽고 덮어쓸 수 있다.
+            Long ownerId = legacyRequest.getUser().getUserId();
+            User owner = userRepository.findByIdForUpdate(ownerId)
+                    .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
+            if (!owner.hasUbuntuAccount()
+                    && legacyRequest.getUbuntuUid() != null && legacyRequest.getUbuntuUid() > 0
+                    && legacyRequest.getUbuntuGid() != null && legacyRequest.getUbuntuGid() > 0) {
+                log.warn("[deleteUbuntuAccount] User의 ubuntu_uid/gid가 비어있어 Request 값으로 복구합니다: "
+                        + "username={}, uid={}, gid={}",
+                        username, legacyRequest.getUbuntuUid(), legacyRequest.getUbuntuGid());
+                owner.assignUbuntuAccount(legacyRequest.getUbuntuUid(), legacyRequest.getUbuntuGid());
+            }
+            return owner;
+        });
 
         cleanupUserRequests(user, "deleteUbuntuAccount");
         log.info("[deleteUbuntuAccount] {} 계정 삭제 및 DB 상태 업데이트 완료", username);
