@@ -256,7 +256,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
                     .thenReturn(Mono.just(mockResponse));
 
-            MigratePodResponseDTO result = podService.migratePod("testuser", List.of("farm1", "farm2"), 0.2);
+            MigratePodResponseDTO result = podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1", "farm2"), 0.2);
 
             assertThat(result).isEqualTo(mockResponse);
             assertThat(result.isMigrated()).isTrue();
@@ -273,7 +273,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
                     .thenReturn(Mono.just(mockResponse));
 
-            MigratePodResponseDTO result = podService.migratePod("testuser", List.of("farm1", "farm2"), 0.2);
+            MigratePodResponseDTO result = podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1", "farm2"), 0.2);
 
             assertThat(result.isMigrated()).isFalse();
             assertThat(result.reason()).isEqualTo("no_significant_improvement");
@@ -285,7 +285,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
                     .thenReturn(Mono.empty());
 
-            assertThatThrownBy(() -> podService.migratePod("testuser", List.of("farm1"), null))
+            assertThatThrownBy(() -> podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1"), null))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_MIGRATION_FAILED);
@@ -300,7 +300,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
                     .thenReturn(Mono.just(badResponse));
 
-            assertThatThrownBy(() -> podService.migratePod("testuser", List.of("farm1"), null))
+            assertThatThrownBy(() -> podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1"), null))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_MIGRATION_FAILED);
@@ -312,7 +312,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
                     .thenReturn(Mono.error(new BusinessException("Pod 마이그레이션 실패", ErrorCode.POD_MIGRATION_FAILED)));
 
-            assertThatThrownBy(() -> podService.migratePod("testuser", List.of("farm1"), null))
+            assertThatThrownBy(() -> podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1"), null))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("Pod 마이그레이션 실패");
         }
@@ -323,7 +323,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
                     .thenReturn(Mono.error(new RuntimeException("network error")));
 
-            assertThatThrownBy(() -> podService.migratePod("testuser", List.of("farm1"), null))
+            assertThatThrownBy(() -> podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1"), null))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_MIGRATION_FAILED);
@@ -337,7 +337,7 @@ class PodServiceTest {
                             "skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null
                     )));
 
-            podService.migratePod("myuser", List.of("farm1"), 0.3);
+            podService.migratePod("myuser", "pod-myuser", 1L, List.of("farm1"), 0.3);
 
             verify(requestBodyUriSpec).uri("/migrate");
         }
@@ -350,7 +350,7 @@ class PodServiceTest {
                             "skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null
                     )));
 
-            podService.migratePod("myuser", List.of("farm1"), null);
+            podService.migratePod("myuser", "pod-myuser", 1L, List.of("farm1"), null);
 
             ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
             verify(requestBodySpec).bodyValue(bodyCaptor.capture());
@@ -367,7 +367,7 @@ class PodServiceTest {
                             "skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null
                     )));
 
-            podService.migratePod("myuser", List.of("farm1"), 0.3);
+            podService.migratePod("myuser", "pod-myuser", 1L, List.of("farm1"), 0.3);
 
             ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
             verify(requestBodySpec).bodyValue(bodyCaptor.capture());
