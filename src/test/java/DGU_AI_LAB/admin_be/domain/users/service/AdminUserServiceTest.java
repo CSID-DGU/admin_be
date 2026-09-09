@@ -201,7 +201,9 @@ class AdminUserServiceTest {
         when(request.getStatus()).thenAnswer(inv -> current.get());
         lenient().doAnswer(inv -> { current.set(Status.EXPIRING); return null; }).when(request).beginExpiry();
         lenient().doAnswer(inv -> { current.set(Status.FULFILLED); return null; }).when(request).endExpiry();
-        when(request.getRequestId()).thenReturn(requestId);
+        // deleteSingleContainer는 request.getRequestId() 대신 인자로 받은 requestId를 그대로
+        // 쓰므로 이 스텁이 그 경로에서는 안 쓰인다.
+        lenient().when(request.getRequestId()).thenReturn(requestId);
         // 선점(beginExpiry)에서 걸러진 요청은 인프라 삭제까지 가지 않아 이 스텁들이 안 쓰일 수 있다.
         lenient().when(request.getUbuntuUsername()).thenReturn(username);
         lenient().when(request.getPodName()).thenReturn("pod-" + username);
@@ -959,6 +961,86 @@ class AdminUserServiceTest {
                     .isInstanceOf(EntityNotFoundException.class);
 
             verifyNoInteractions(ubuntuAccountService, podService);
+        }
+    }
+
+    @Nested
+    @DisplayName("deleteSingleContainer (관리자 콘솔 개별 컨테이너 삭제 버튼용)")
+    class DeleteSingleContainer {
+
+        @Test
+        @DisplayName("이 사용자의 다른 살아있는 신청이 없으면 Pod를 지우고 계정도 회수한다")
+        void deleteSingleContainer_lastLiveRequest_deletesPodAndReleasesAccount() {
+            Request request = mockFulfilledRequest("testuser", 60L);
+            when(requestRepository.findAllByUser_UserIdAndStatusIn(any(), eq(Status.openStatuses())))
+                    .thenReturn(List.of());
+
+            adminUserService.deleteSingleContainer(60L);
+
+            verify(podService).deletePod("pod-testuser");
+            verify(request).deleteAfterCleanup();
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+            verify(alarmService).sendContainerDeletedEmail(request);
+            assertThat(mockUser.hasUbuntuAccount()).isFalse();
+        }
+
+        @Test
+        @DisplayName("이 사용자의 다른 살아있는 신청이 남아있으면 이 Pod만 지우고 계정은 유지한다")
+        void deleteSingleContainer_otherLiveRequestRemains_keepsAccount() {
+            Request request = mockFulfilledRequest("testuser", 61L);
+            // "다른 살아있는 신청"이 있다는 사실만 필요하다 — 이 mock의 어떤 스텁도
+            // deleteSingleContainer가 직접 건드리지 않으므로 빈 mock으로 충분하다.
+            Request stillLive = mock(Request.class);
+            when(requestRepository.findAllByUser_UserIdAndStatusIn(any(), eq(Status.openStatuses())))
+                    .thenReturn(List.of(stillLive));
+
+            adminUserService.deleteSingleContainer(61L);
+
+            verify(podService).deletePod("pod-testuser");
+            verify(request).deleteAfterCleanup();
+            verifyNoInteractions(ubuntuAccountService);
+            assertThat(mockUser.hasUbuntuAccount()).isTrue();
+        }
+
+        @Test
+        @DisplayName("FULFILLED 상태가 아니면 삭제를 거부한다")
+        void deleteSingleContainer_notFulfilled_throwsConflict() {
+            Request request = mockRequestWithStatus(Status.PENDING);
+
+            assertThatThrownBy(() -> adminUserService.deleteSingleContainer(request.getRequestId()))
+                    .isInstanceOf(ConflictException.class)
+                    .extracting(e -> ((ConflictException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+
+            verifyNoInteractions(podService, ubuntuAccountService);
+        }
+
+        @Test
+        @DisplayName("마이그레이션 진행 중이면 삭제를 거부한다")
+        void deleteSingleContainer_migrating_throwsConflict() {
+            Request request = mockRequestWithStatus(Status.MIGRATING);
+
+            assertThatThrownBy(() -> adminUserService.deleteSingleContainer(request.getRequestId()))
+                    .isInstanceOf(ConflictException.class)
+                    .extracting(e -> ((ConflictException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.REQUEST_MIGRATION_IN_PROGRESS);
+
+            verifyNoInteractions(podService, ubuntuAccountService);
+        }
+
+        @Test
+        @DisplayName("Pod 삭제가 실패하면 FULFILLED로 되돌리고 계정은 건드리지 않는다")
+        void deleteSingleContainer_podDeleteFails_revertsAndSkipsAccount() {
+            Request request = mockFulfilledRequest("testuser", 63L);
+            doThrow(new RuntimeException("config-server 통신 오류")).when(podService).deletePod("pod-testuser");
+
+            assertThatThrownBy(() -> adminUserService.deleteSingleContainer(63L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.USER_REQUEST_CLEANUP_PARTIALLY_FAILED);
+
+            assertThat(request.getStatus()).isEqualTo(Status.FULFILLED);
+            verifyNoInteractions(ubuntuAccountService);
         }
     }
 

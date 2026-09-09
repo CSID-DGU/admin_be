@@ -63,4 +63,14 @@ public interface AdminRequestApi {
     @ApiResponse(responseCode = "502", description = "config-server 마이그레이션 API 호출 실패",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     ResponseEntity<SuccessResponse<?>> migratePod(Long requestId, MigratePodRequestDTO dto);
+
+    @Operation(summary = "컨테이너(신청) 개별 삭제", description = "FULFILLED 상태 신청 하나만 삭제합니다. 같은 사용자의 다른 살아있는 신청이 남아있으면 우분투 계정은 회수하지 않습니다.")
+    @ApiResponse(responseCode = "200", description = "성공")
+    @ApiResponse(responseCode = "404", description = "신청을 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "409", description = "FULFILLED 상태가 아니거나 마이그레이션 진행 중",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "502", description = "Pod 삭제 실패",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    ResponseEntity<SuccessResponse<?>> deleteContainer(Long requestId);
 }
