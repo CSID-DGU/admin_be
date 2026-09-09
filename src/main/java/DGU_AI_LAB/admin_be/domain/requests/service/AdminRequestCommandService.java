@@ -100,9 +100,10 @@ public class AdminRequestCommandService {
     }
 
     /**
-     * 사용 신청을 승인한다. Operational Baseline은 동기식 순차 실행이 정의라, 계정 생성부터
-     * Pod 생성 대기(최대 720초)까지 관리자 HTTP 요청 스레드가 그대로 붙잡은 채 처리한다 —
-     * 이 메서드가 정상 반환하면 승인이 완전히 끝난 것이고, 예외가 나면 실패한 것이다.
+     * 사용 신청을 승인한다. Operational Baseline은 동기식 순차 실행이 정의라, 계정 생성
+     * (최대 120초) + Pod 생성 대기(최대 600초) 최대 720초까지 관리자 HTTP 요청 스레드가
+     * 그대로 붙잡은 채 처리한다 — 이 메서드가 정상 반환하면 승인이 완전히 끝난 것이고,
+     * 예외가 나면 실패한 것이다.
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SaveRequestResponseDTO approveRequest(ApproveRequestDTO dto) {
