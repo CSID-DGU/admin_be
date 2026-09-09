@@ -340,6 +340,91 @@ public class AdminUserService {
     }
 
     /**
+     * 컨테이너(신청) 하나만 삭제 — 관리자 콘솔의 개별 컨테이너 상세 페이지 삭제 버튼용.
+     * deleteUbuntuAccount(username)는 그 유저네임에 딸린 살아있는 신청을 전부 순회해서
+     * 지우므로, 한 사용자가 컨테이너를 여러 개 동시에 가진 상태에서 그 엔드포인트를 개별
+     * 컨테이너 삭제에 쓰면 나머지 컨테이너까지 같이 지워진다 — 이 메서드는 요청받은
+     * requestId 하나만 정리하고, 같은 사용자의 다른 살아있는 신청이 남아있으면 우분투
+     * 계정(UID/GID)은 회수하지 않는다.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void deleteSingleContainer(Long requestId) {
+        log.warn("[deleteSingleContainer] requestId={} 컨테이너 삭제 시도", requestId);
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+
+        final String[] podNameRef = {null};
+        final String[] nodeNameRef = {null};
+        final String[] usernameRef = {null};
+        final Long[] userIdRef = {null};
+        tx.execute(status -> {
+            Request request = requestRepository.findByIdForUpdate(requestId)
+                    .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
+            if (request.getStatus() == Status.MIGRATING || request.getStatus() == Status.PROCESSING
+                    || request.getStatus() == Status.EXPIRING) {
+                log.warn("[deleteSingleContainer] requestId={} 승인/마이그레이션 진행 중이라 삭제를 거부합니다.", requestId);
+                throw new ConflictException(ErrorCode.REQUEST_MIGRATION_IN_PROGRESS);
+            }
+            if (request.getStatus() != Status.FULFILLED) {
+                log.warn("[deleteSingleContainer] requestId={} FULFILLED 상태가 아니라 삭제를 거부합니다. 현재 상태={}",
+                        requestId, request.getStatus());
+                throw new ConflictException(ErrorCode.INVALID_REQUEST_STATUS);
+            }
+            request.beginExpiry();
+            podNameRef[0] = request.getPodName();
+            nodeNameRef[0] = request.getNodeName();
+            usernameRef[0] = request.getUbuntuUsername();
+            userIdRef[0] = request.getUser().getUserId();
+            return null;
+        });
+
+        try {
+            podService.deletePod(podNameRef[0]);
+        } catch (Exception e) {
+            log.error("[deleteSingleContainer] requestId={} Pod 삭제 실패: {}", requestId, e.getMessage());
+            revertToFulfilled(requestId);
+            try {
+                alarmService.sendSlackAlert(String.format(
+                        "[deleteSingleContainer] requestId=%d Pod 삭제 실패 - 수동 확인 필요: ubuntuUsername=%s",
+                        requestId, usernameRef[0]), null);
+            } catch (Exception ignored) {
+                // 알림 발송 실패가 원래 예외 전파를 막으면 안 된다.
+            }
+            throw new BusinessException(ErrorCode.USER_REQUEST_CLEANUP_PARTIALLY_FAILED);
+        }
+
+        final Request[] deletedRef = {null};
+        tx.execute(status -> {
+            Request managed = requestRepository.findByIdForUpdate(requestId)
+                    .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
+            managed.deleteAfterCleanup();
+            managed.getUser().getEmail();
+            managed.getResourceGroup().getServerName();
+            deletedRef[0] = managed;
+            return null;
+        });
+        try {
+            alarmService.sendContainerDeletedEmail(deletedRef[0]);
+        } catch (Exception e) {
+            log.warn("[deleteSingleContainer] 삭제 안내 메일 발송 실패: ubuntuUsername={}", usernameRef[0], e);
+        }
+
+        // deleteAfterCleanup()으로 이 요청은 이미 DELETED라 openStatuses()에 안 잡힌다 —
+        // 이 조회에 남는 게 있다면 전부 "다른" 살아있는 신청이다. 남아있으면 그 컨테이너들이
+        // 이 UID/GID를 계속 쓰고 있으므로 계정은 회수하지 않는다.
+        List<Request> otherLiveRequests = tx.execute(status ->
+                requestRepository.findAllByUser_UserIdAndStatusIn(userIdRef[0], Status.openStatuses()));
+        if (otherLiveRequests != null && !otherLiveRequests.isEmpty()) {
+            log.info("[deleteSingleContainer] requestId={} 삭제 완료 — userId={}의 다른 살아있는 신청이 {}건 남아있어 계정은 유지합니다.",
+                    requestId, userIdRef[0], otherLiveRequests.size());
+            return;
+        }
+
+        Set<String> nodeNames = nodeNameRef[0] != null ? Set.of(nodeNameRef[0]) : Set.of();
+        releaseUbuntuAccount(userIdRef[0], nodeNames, "deleteSingleContainer");
+        log.info("[deleteSingleContainer] requestId={} 컨테이너 및 계정 삭제 완료", requestId);
+    }
+
+    /**
      * 인프라 삭제에 실패했을 때 EXPIRING에 갇힌 요청을 FULFILLED로 되돌린다.
      * 되돌리지 않으면 그 요청은 재시도도 취소도 못 하는 상태로 남는다. 이 복구 자체의 실패가
      * 원래 예외 전파를 막으면 안 되므로 여기서 삼키고, 정지된 EXPIRING은 재조정 스케줄러가 회수한다.

@@ -11,6 +11,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestQueryService;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodMigrationService;
+import DGU_AI_LAB.admin_be.domain.users.service.AdminUserService;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,7 @@ public class AdminRequestController implements AdminRequestApi {
     private final AdminRequestCommandService adminRequestCommandService;
     private final AdminRequestQueryService adminRequestQueryService;
     private final PodMigrationService podMigrationService;
+    private final AdminUserService adminUserService;
 
 
     /**
@@ -78,5 +80,11 @@ public class AdminRequestController implements AdminRequestApi {
     public ResponseEntity<SuccessResponse<?>> migratePod(@PathVariable Long requestId, @RequestBody @Valid MigratePodRequestDTO dto) {
         MigratePodResponseDTO responseDto = podMigrationService.migratePod(requestId, dto);
         return SuccessResponse.ok(responseDto);
+    }
+
+    @DeleteMapping("/{requestId}")
+    public ResponseEntity<SuccessResponse<?>> deleteContainer(@PathVariable Long requestId) {
+        adminUserService.deleteSingleContainer(requestId);
+        return SuccessResponse.ok(null);
     }
 }
