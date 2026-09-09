@@ -219,6 +219,9 @@ public class AdminRequestCommandService {
                             "[승인 실패] 계정 생성 직후 UID/GID 반영 실패 - 계정은 인프라에 존재하나 DB에 미반영, 수동 확인 필요: username=%s, requestId=%d",
                             username, requestId), serverName);
                     revertToPendingIfStillProcessing(requestId, serverName);
+                    if (e instanceof BusinessException be) {
+                        throw be;
+                    }
                     throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
                 }
             }

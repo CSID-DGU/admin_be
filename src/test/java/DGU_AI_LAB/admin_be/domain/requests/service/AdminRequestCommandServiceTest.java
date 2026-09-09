@@ -463,7 +463,9 @@ class AdminRequestCommandServiceTest {
                     .when(mockUser).assignUbuntuAccount(2001L, 2001L);
 
             assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인")))
-                    .isInstanceOf(BusinessException.class);
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED);
 
             // Pod를 만든 적이 없으므로 지울 것도 없다.
             verify(podService, never()).createPod(anyString(), anyLong());
