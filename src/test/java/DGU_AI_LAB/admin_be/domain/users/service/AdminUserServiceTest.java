@@ -1,7 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
-import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -24,6 +23,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -31,10 +33,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
 
-import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -187,6 +192,10 @@ class AdminUserServiceTest {
      * mock으로는 정상 흐름이 재현되지 않는다.
      */
     private Request mockFulfilledRequest(String username, long requestId) {
+        return mockFulfilledRequest(username, requestId, "farm1");
+    }
+
+    private Request mockFulfilledRequest(String username, long requestId, String nodeName) {
         Request request = mock(Request.class);
         AtomicReference<Status> current = new AtomicReference<>(Status.FULFILLED);
         when(request.getStatus()).thenAnswer(inv -> current.get());
@@ -197,7 +206,7 @@ class AdminUserServiceTest {
         lenient().when(request.getUbuntuUsername()).thenReturn(username);
         lenient().when(request.getPodName()).thenReturn("pod-" + username);
         // 계정 삭제 시 config-server에 넘길 farm 노드 — 없으면 모든 노드를 훑게 되어 삭제를 보류한다.
-        lenient().when(request.getNodeName()).thenReturn("farm1");
+        lenient().when(request.getNodeName()).thenReturn(nodeName);
         // 정리 완료 트랜잭션에서 메일 발송용 lazy 연관을 초기화한다.
         lenient().when(request.getUser()).thenReturn(mockUser);
         lenient().when(request.getResourceGroup()).thenReturn(mock(ResourceGroup.class));
@@ -371,6 +380,24 @@ class AdminUserServiceTest {
             verify(pending).delete();
             verify(deleted, never()).delete();
             verify(deleted, never()).deleteAfterCleanup();
+        }
+
+        @Test
+        @DisplayName("FULFILLED 요청이 서로 다른 노드에 떠 있으면, 계정 삭제를 마지막 노드 한 곳에서만 하지 않고 노드마다 각각 호출한다")
+        void deleteUser_withRequestsOnDifferentNodes_releasesAccountOnEachNode() {
+            Request onFarm1 = mockFulfilledRequest("testuser", 40L, "farm1");
+            Request onFarm2 = mockFulfilledRequest("testuser", 41L, "farm2");
+
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(onFarm1, onFarm2));
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
+
+            adminUserService.deleteUser(1L);
+
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm2");
+            verify(ubuntuAccountService, times(2)).deleteUbuntuAccount(anyString(), anyString());
+            assertThat(mockUser.hasUbuntuAccount()).isFalse();
         }
 
         @Test
@@ -833,92 +860,170 @@ class AdminUserServiceTest {
     @DisplayName("deleteUbuntuAccount (단독 엔드포인트용)")
     class DeleteUbuntuAccount {
 
-        private Request buildFulfilledRequest() {
-            ResourceGroup rg = ResourceGroup.builder()
-                    .resourceGroupName("Server A")
-                    .description("desc")
-                    .serverName("server-01")
-                    .build();
-            ContainerImage image = ContainerImage.builder()
-                    .imageName("pytorch")
-                    .imageVersion("2.1.0")
-                    .cudaVersion("11.8")
-                    .description("desc")
-                    .build();
-            Request req = Request.builder()
-                    .ubuntuUsername("testuser")
-                    .ubuntuPassword("pw")
-                    .expiresAt(LocalDateTime.now().plusDays(30))
-                    .usagePurpose("연구")
-                    .formAnswers("{}")
-                    .user(mockUser)
-                    .resourceGroup(rg)
-                    .containerImage(image)
-                    .build();
-            req.approve(image, rg, null);
-            return req;
-        }
-
         @Test
-        @DisplayName("FULFILLED Request가 있으면 외부 API 호출 후 DB 상태를 DELETED로 변경한다")
+        @DisplayName("FULFILLED Request가 있으면 외부 API 호출 후 DB 상태를 DELETED로 변경하고 계정을 회수한다")
         void deleteUbuntuAccount_success() {
-            Request request = buildFulfilledRequest();
-            when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc("testuser", Status.openStatuses()))
-                    .thenReturn(List.of(request));
-            // 영속되지 않은 엔티티라 requestId가 null이다 — 행 잠금 조회는 그 id로 다시 조회한다.
-            when(requestRepository.findByIdForUpdate(request.getRequestId())).thenReturn(Optional.of(request));
+            Request request = mockFulfilledRequest("testuser", 50L);
+            when(userRepository.findByUbuntuUsername("testuser")).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(request));
 
             adminUserService.deleteUbuntuAccount("testuser");
 
-            verify(podService).deletePod(null);
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", null);
-            assertThat(request.getStatus()).isEqualTo(Status.DELETED);
+            verify(podService).deletePod("pod-testuser");
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+            verify(request).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(request);
+            assertThat(mockUser.hasUbuntuAccount()).isFalse();
         }
 
         @Test
-        @DisplayName("승인 처리 중(PROCESSING)인 요청의 인프라는 삭제하지 않는다 — 기존에는 DELETED만 걸러서 통과했다")
+        @DisplayName("서로 다른 노드에 신청을 여러 개 가지고 있으면 전부 정리하고 각 노드에서 계정을 회수한다 — 가장 최근 신청 하나만 지우면 다른 노드에 UID 없는 컨테이너가 남는다")
+        void deleteUbuntuAccount_withLiveRequestsOnDifferentNodes_cleansUpAllAndReleasesEachNode() {
+            Request onFarm1 = mockFulfilledRequest("testuser", 51L, "farm1");
+            Request onFarm2 = mockFulfilledRequest("testuser", 52L, "farm2");
+            when(userRepository.findByUbuntuUsername("testuser")).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(onFarm1, onFarm2));
+
+            adminUserService.deleteUbuntuAccount("testuser");
+
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm2");
+            verify(onFarm1).deleteAfterCleanup();
+            verify(onFarm2).deleteAfterCleanup();
+            assertThat(mockUser.hasUbuntuAccount()).isFalse();
+        }
+
+        @Test
+        @DisplayName("승인/마이그레이션 진행 중인 요청이 있으면 정리 자체를 거부한다 — 기존에는 그 요청만 걸러서 나머지를 지울 수 있었다")
         void deleteUbuntuAccount_refusesInFlightRequest() {
-            Request request = buildFulfilledRequest();
-            request.beginMigration();
-            when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc("testuser", Status.openStatuses()))
-                    .thenReturn(List.of(request));
-            when(requestRepository.findByIdForUpdate(request.getRequestId())).thenReturn(Optional.of(request));
+            Request migrating = mockRequestWithStatus(Status.MIGRATING);
+            when(userRepository.findByUbuntuUsername("testuser")).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(migrating));
+
+            assertThatThrownBy(() -> adminUserService.deleteUbuntuAccount("testuser"))
+                    .isInstanceOf(ConflictException.class)
+                    .extracting(e -> ((ConflictException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.REQUEST_MIGRATION_IN_PROGRESS);
+
+            verifyNoInteractions(ubuntuAccountService, podService);
+            assertThat(mockUser.hasUbuntuAccount()).isTrue();
+        }
+
+        @Test
+        @DisplayName("외부 삭제가 실패하면 그 요청은 FULFILLED로 되돌리고, 계정은 지우지 않는다")
+        void deleteUbuntuAccount_revertsToFulfilledOnFailure() {
+            Request request = mockFulfilledRequest("testuser", 53L);
+            when(userRepository.findByUbuntuUsername("testuser")).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(request));
+            doThrow(new RuntimeException("config-server 통신 오류")).when(podService).deletePod("pod-testuser");
 
             assertThatThrownBy(() -> adminUserService.deleteUbuntuAccount("testuser"))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
-
-            assertThat(request.getStatus()).isEqualTo(Status.MIGRATING);
-            verifyNoInteractions(ubuntuAccountService, podService);
-        }
-
-        @Test
-        @DisplayName("외부 삭제가 실패하면 EXPIRING에 갇히지 않도록 FULFILLED로 되돌린다")
-        void deleteUbuntuAccount_revertsToFulfilledOnFailure() {
-            Request request = buildFulfilledRequest();
-            when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc("testuser", Status.openStatuses()))
-                    .thenReturn(List.of(request));
-            when(requestRepository.findByIdForUpdate(request.getRequestId())).thenReturn(Optional.of(request));
-            doThrow(new RuntimeException("config-server 통신 오류")).when(podService).deletePod(null);
-
-            assertThatThrownBy(() -> adminUserService.deleteUbuntuAccount("testuser"))
-                    .isInstanceOf(RuntimeException.class);
+                    .isEqualTo(ErrorCode.USER_REQUEST_CLEANUP_PARTIALLY_FAILED);
 
             assertThat(request.getStatus()).isEqualTo(Status.FULFILLED);
+            verifyNoInteractions(ubuntuAccountService);
+            assertThat(mockUser.hasUbuntuAccount()).isTrue();
         }
 
         @Test
-        @DisplayName("해당 username의 Request가 없으면 EntityNotFoundException을 던진다")
+        @DisplayName("해당 유저네임의 계정이 없으면 EntityNotFoundException을 던진다")
         void deleteUbuntuAccount_throwsWhenNotFound() {
-            when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc("nobody", Status.openStatuses()))
-                    .thenReturn(List.of());
+            when(userRepository.findByUbuntuUsername("nobody")).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> adminUserService.deleteUbuntuAccount("nobody"))
                     .isInstanceOf(EntityNotFoundException.class);
 
             verifyNoInteractions(ubuntuAccountService, podService);
+        }
+    }
+
+    /**
+     * deleteUser/deactivateUser/deleteUbuntuAccount 셋 다 cleanupUserRequests를 공유한다.
+     * 세 진입점 × 노드 분포(단일/서로 다른 두 노드/한 노드 중복) × 비활성 요청(PENDING·DELETED)
+     * 혼재 여부를 카타시안 곱으로 조합해, 어느 진입점으로 들어와도 살아있는 요청의 노드를
+     * 빠짐없이·중복없이 순회해 계정을 회수하는지 한 번에 검증한다.
+     */
+    @Nested
+    @DisplayName("cleanupUserRequests 공유 로직 — 진입점 × 노드 분포 카타시안 곱")
+    class CleanupNodeMatrix {
+
+        private enum EntryPoint { DELETE_USER, DEACTIVATE_USER, DELETE_UBUNTU_ACCOUNT }
+
+        private enum NodeDistribution {
+            SINGLE_NODE(List.of("farm1")),
+            TWO_DISTINCT_NODES(List.of("farm1", "farm2")),
+            DUPLICATE_NODE(List.of("farm1", "farm1", "farm2"));
+
+            private final List<String> nodes;
+
+            NodeDistribution(List<String> nodes) {
+                this.nodes = nodes;
+            }
+        }
+
+        static Stream<Arguments> matrix() {
+            List<Arguments> combinations = new ArrayList<>();
+            for (EntryPoint entryPoint : EntryPoint.values()) {
+                for (NodeDistribution nodeDistribution : NodeDistribution.values()) {
+                    for (boolean withExtraNonLiveRequests : List.of(false, true)) {
+                        combinations.add(Arguments.of(entryPoint, nodeDistribution, withExtraNonLiveRequests));
+                    }
+                }
+            }
+            return combinations.stream();
+        }
+
+        @ParameterizedTest(name = "[{index}] entry={0}, nodes={1}, extraNonLive={2}")
+        @MethodSource("matrix")
+        @DisplayName("모든 진입점이 살아있는 요청의 노드를 빠짐없이·중복없이 순회해 계정을 회수한다")
+        void cleanupReleasesAccountOnEveryDistinctNodeRegardlessOfEntryPoint(
+                EntryPoint entryPoint, NodeDistribution nodeDistribution, boolean withExtraNonLiveRequests) {
+
+            List<Request> liveRequests = new ArrayList<>();
+            long requestId = 900L;
+            for (String node : nodeDistribution.nodes) {
+                liveRequests.add(mockFulfilledRequest("testuser", requestId++, node));
+            }
+            List<Request> allRequests = new ArrayList<>(liveRequests);
+            Request pending = null;
+            Request deleted = null;
+            if (withExtraNonLiveRequests) {
+                pending = mockRequestWithStatus(Status.PENDING);
+                deleted = mockRequestWithStatus(Status.DELETED);
+                allRequests.add(pending);
+                allRequests.add(deleted);
+            }
+
+            lenient().when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            lenient().when(userRepository.findByUbuntuUsername("testuser")).thenReturn(Optional.of(mockUser));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(allRequests);
+            lenient().when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
+
+            switch (entryPoint) {
+                case DELETE_USER -> adminUserService.deleteUser(1L);
+                case DEACTIVATE_USER -> adminUserService.deactivateUser(1L);
+                case DELETE_UBUNTU_ACCOUNT -> adminUserService.deleteUbuntuAccount("testuser");
+            }
+
+            // 노드 분포에 몇 개가 중복됐든, 실제로 지워야 할 서로 다른 노드 각각에 정확히
+            // 한 번씩만 호출돼야 한다 — 이게 이번에 고친 두 버그의 핵심 불변식이다.
+            Set<String> expectedNodes = new LinkedHashSet<>(nodeDistribution.nodes);
+            for (String node : expectedNodes) {
+                verify(ubuntuAccountService).deleteUbuntuAccount("testuser", node);
+            }
+            verify(ubuntuAccountService, times(expectedNodes.size())).deleteUbuntuAccount(anyString(), anyString());
+
+            for (Request live : liveRequests) {
+                verify(live).deleteAfterCleanup();
+            }
+            if (withExtraNonLiveRequests) {
+                verify(pending).delete();
+                verify(deleted, never()).delete();
+                verify(deleted, never()).deleteAfterCleanup();
+            }
+            assertThat(mockUser.hasUbuntuAccount()).isFalse();
         }
     }
 }
