@@ -13,18 +13,24 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -266,6 +272,58 @@ class ConfigRequestServiceTest {
 
         // Then
         assertThat(result.additional_ports()).isEmpty();
+    }
+
+    @ParameterizedTest(name = "status={0}")
+    @EnumSource(value = Status.class, names = {"PENDING", "PROCESSING", "FULFILLED", "MIGRATING", "EXPIRING"})
+    @DisplayName("getAcceptInfoByRequestId는 살아있는(openStatuses) 신청이면 정보를 반환한다")
+    void getAcceptInfoByRequestId_returnsInfo_whenStatusIsOpen(Status status) {
+        ResourceGroup resourceGroup = mock(ResourceGroup.class);
+        ContainerImage image = mock(ContainerImage.class);
+        when(image.getImageName()).thenReturn("cuda");
+        when(image.getImageVersion()).thenReturn("11.8");
+
+        Request request = mock(Request.class);
+        when(request.getRequestId()).thenReturn(5L);
+        when(request.getStatus()).thenReturn(status);
+        when(request.getContainerImage()).thenReturn(image);
+        when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
+        when(request.getResourceGroup()).thenReturn(resourceGroup);
+
+        when(requestRepository.findById(5L)).thenReturn(Optional.of(request));
+        when(portRequestRepository.findByRequestRequestId(5L)).thenReturn(List.of());
+        when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of());
+
+        AcceptInfoResponseDTO result = service.getAcceptInfoByRequestId(5L);
+
+        assertThat(result).isNotNull();
+    }
+
+    @ParameterizedTest(name = "status={0}")
+    @EnumSource(value = Status.class, names = {"DENIED", "DELETED"})
+    @DisplayName("취소/만료로 종료된 신청은 requestId로 조회해도 승인 정보를 내주지 않는다 — config-server가 끝난 신청을 근거로 인프라를 구성하면 안 된다")
+    void getAcceptInfoByRequestId_throws_whenStatusIsTerminal(Status status) {
+        Request request = mock(Request.class);
+        when(request.getStatus()).thenReturn(status);
+        when(requestRepository.findById(6L)).thenReturn(Optional.of(request));
+
+        assertThatThrownBy(() -> service.getAcceptInfoByRequestId(6L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_APPROVAL_NOT_FOUND);
+
+        verifyNoInteractions(portRequestRepository, nodeRepository);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 requestId는 USER_APPROVAL_NOT_FOUND를 던진다")
+    void getAcceptInfoByRequestId_throws_whenNotFound() {
+        when(requestRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getAcceptInfoByRequestId(99L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_APPROVAL_NOT_FOUND);
     }
 
 }

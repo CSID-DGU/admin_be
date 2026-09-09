@@ -59,6 +59,10 @@ public class PodService {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private record MigratePodRequest(
             String username,
+            // 한 사용자가 Pod를 여러 개 동시에 가질 수 있어, username만으로는 config-server가
+            // "그 유저의 Pod"를 하나로 특정 못 한다. 정확한 대상을 짚어주기 위해 함께 보낸다.
+            @JsonProperty("pod_name") String podName,
+            @JsonProperty("request_id") Long requestId,
             List<String> nodes,
             @JsonProperty("min_improvement_ratio") Double minImprovementRatio
     ) {}
@@ -143,14 +147,14 @@ public class PodService {
         deletePod(podName);
     }
 
-    public MigratePodResponseDTO migratePod(String username, List<String> nodes, Double minImprovementRatio) {
+    public MigratePodResponseDTO migratePod(String username, String podName, Long requestId, List<String> nodes, Double minImprovementRatio) {
         try {
-            log.info("Pod 마이그레이션 API 요청 시작: 사용자: {}, 후보 노드: {}", username, nodes);
+            log.info("Pod 마이그레이션 API 요청 시작: 사용자: {}, pod: {}, requestId: {}, 후보 노드: {}", username, podName, requestId, nodes);
 
             MigratePodResponseDTO response = WebClientErrorHandler.onError(
                             webClient.post()
                                     .uri("/migrate")
-                                    .bodyValue(new MigratePodRequest(username, nodes, minImprovementRatio))
+                                    .bodyValue(new MigratePodRequest(username, podName, requestId, nodes, minImprovementRatio))
                                     .retrieve(),
                             (status, body) -> new BusinessException("Pod 마이그레이션 실패: " + body, ErrorCode.POD_MIGRATION_FAILED)
                     )

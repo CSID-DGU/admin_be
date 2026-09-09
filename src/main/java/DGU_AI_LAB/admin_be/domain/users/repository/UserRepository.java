@@ -21,6 +21,8 @@ public interface UserRepository extends JpaRepository<User,Long> {
 
     boolean existsByUbuntuUsername(String ubuntuUsername);
 
+    Optional<User> findByUbuntuUsername(String ubuntuUsername);
+
     /**
      * 우분투 계정(UID/GID) 배정 시점의 "확인 후 배정" 경합을 막기 위한 행 잠금 조회.
      * 같은 사용자의 서로 다른 신청 두 건이 동시에 승인되면 둘 다 "아직 계정 없음"으로 보고

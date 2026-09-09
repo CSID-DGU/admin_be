@@ -30,4 +30,10 @@ public class ConfigRequestController implements ConfigRequestApi {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping("/by-request/{requestId}")
+    public ResponseEntity<AcceptInfoResponseDTO> getAcceptInfoByRequestId(@PathVariable Long requestId) {
+        AcceptInfoResponseDTO response = configRequestService.getAcceptInfoByRequestId(requestId);
+        return ResponseEntity.ok(response);
+    }
+
 }
