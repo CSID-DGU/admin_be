@@ -330,6 +330,15 @@ public class AdminUserService {
 
         User user = tx.execute(status -> userRepository.findByUbuntuUsername(username)
                 .filter(User::hasUbuntuAccount)
+                // 레거시 데이터 보정: 과거 수동 DB 복구(farm 마이그레이션 사고 등)로 Request에만
+                // 이 유저네임/UID/GID가 남고 User 쪽 ubuntu_username/uid/gid는 갱신되지 않은
+                // 행이 실제로 있었다 — User 테이블 조회로 못 찾으면 같은 유저네임을 가진
+                // 살아있는 Request의 소유자로 한 번 더 찾는다. 정상 데이터에서는 둘이 항상
+                // 일치하므로 이 경로는 원래 안 타야 한다.
+                .or(() -> requestRepository
+                        .findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses())
+                        .stream().findFirst()
+                        .map(Request::getUser))
                 .orElseThrow(() -> {
                     log.warn("[deleteUbuntuAccount] {}에 해당하는 계정이 없습니다.", username);
                     return new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND);

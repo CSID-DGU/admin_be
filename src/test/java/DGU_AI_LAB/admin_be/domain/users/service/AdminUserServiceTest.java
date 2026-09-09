@@ -951,6 +951,25 @@ class AdminUserServiceTest {
         }
 
         @Test
+        @DisplayName("User.ubuntu_username이 비어있는 레거시 데이터도 살아있는 Request로 소유자를 찾아 정리한다 — farm 마이그레이션 사고 때 Request에만 유저네임/UID가 남고 User는 갱신 안 된 행이 실제로 있었다")
+        void deleteUbuntuAccount_userTableMissingUsername_fallsBackToRequestOwner() {
+            mockUser.releaseUbuntuAccount(); // 실제 사고 데이터처럼 User 쪽엔 UID/GID가 전혀 없는 상태
+            Request request = mockFulfilledRequest("testuser", 54L);
+            when(userRepository.findByUbuntuUsername("testuser")).thenReturn(Optional.empty());
+            when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc("testuser", Status.openStatuses()))
+                    .thenReturn(List.of(request));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(request));
+
+            adminUserService.deleteUbuntuAccount("testuser");
+
+            verify(podService).deletePod("pod-testuser");
+            verify(request).deleteAfterCleanup();
+            // User에 UID/GID가 아예 없어 config-server 계정 삭제까지는 못 간다 — Pod/DB 정리만
+            // 되고, 실제 리눅스 계정은 남을 수 있다는 뜻이라 별도 수동 확인이 필요하다.
+            verifyNoInteractions(ubuntuAccountService);
+        }
+
+        @Test
         @DisplayName("해당 유저네임의 계정이 없으면 EntityNotFoundException을 던진다")
         void deleteUbuntuAccount_throwsWhenNotFound() {
             when(userRepository.findByUbuntuUsername("nobody")).thenReturn(Optional.empty());
