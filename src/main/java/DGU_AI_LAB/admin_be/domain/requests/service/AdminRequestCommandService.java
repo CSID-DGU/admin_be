@@ -36,10 +36,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.core.task.TaskRejectedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -52,6 +50,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -79,23 +79,41 @@ public class AdminRequestCommandService {
     private final @Qualifier("configWebClient") WebClient userCreationWebClient;
     private final PlatformTransactionManager transactionManager;
 
-    // 계정 생성·Pod 생성을 포함한 승인 후처리 전체를 이 executor로 비동기 실행한다.
-    // corePoolSize=maxPoolSize=3, queueCapacity=0(AsyncConfig 참고) — 이 이상 동시에 승인이
-    // 몰리면 큐잉하지 않고 즉시 TaskRejectedException으로 거부해, 관리자에게 명확한 에러로
-    // 실패시킨다 (기존 Semaphore(3) fail-fast 정책과 동일한 사용자 체감 동작 유지).
-    private final ThreadPoolTaskExecutor approvalExecutor;
+    // 동시 처리 한도. Pod 생성 대기(최대 600초)가 그만큼 Tomcat 워커 스레드를 붙잡으므로,
+    // 이 이상 몰리면 큐잉하지 않고 즉시 명확한 에러로 실패시킨다. Operational Baseline은
+    // 동기식 순차 실행이 정의라 승인 후처리 전체를 별도 executor로 넘기지 않는다 — 계정
+    // 생성부터 Pod 생성까지 관리자 HTTP 요청 스레드가 그대로 붙잡은 채 처리한다.
+    private final Semaphore podCreationSemaphore = new Semaphore(3);
 
+    // 계정 존재 확인~생성~UID 커밋 구간을 userId별로 직렬화한다. 이 구간은 짧은 DB
+    // 트랜잭션 두 개(확인용/커밋용) 사이에 config-server HTTP 호출이 끼어 있어, User 행을
+    // 커밋 시점에만 잠그는 것으로는 안 막힌다 — 확인 시점에 잠갔다 바로 풀면, 그 직후
+    // 같은 사용자의 다른 신청을 승인하는 스레드가 잠금 해제 틈을 비집고 들어와 똑같이
+    // "계정 없음"을 보고 계정 생성 API를 중복 호출할 수 있다(치명적이진 않다 — 한쪽은
+    // config-server 409로 실패해 PENDING으로 되돌아가고 재시도하면 정상적으로 재사용하지만,
+    // 관리자 입장에선 불필요한 승인 실패로 보인다). admin_be가 단일 인스턴스로만 배포되므로
+    // in-process 락으로 충분하다.
+    private final ConcurrentHashMap<Long, Object> userApprovalLocks = new ConcurrentHashMap<>();
+
+    private Object approvalLockFor(Long userId) {
+        return userApprovalLocks.computeIfAbsent(userId, id -> new Object());
+    }
+
+    /**
+     * 사용 신청을 승인한다. Operational Baseline은 동기식 순차 실행이 정의라, 계정 생성
+     * (최대 120초) + Pod 생성 대기(최대 600초) 최대 720초까지 관리자 HTTP 요청 스레드가
+     * 그대로 붙잡은 채 처리한다 — 이 메서드가 정상 반환하면 승인이 완전히 끝난 것이고,
+     * 예외가 나면 실패한 것이다.
+     */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SaveRequestResponseDTO approveRequest(ApproveRequestDTO dto) {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
 
-        // 1. 상태 검증 + HTTP 요청 데이터 추출 + 즉시 응답 DTO 준비 (짧은 트랜잭션, 이후 커넥션 반납)
-        // 계정/Pod 생성(최대 10분)은 아래에서 비동기로 넘기므로, 관리자 HTTP 요청은 이 짧은
-        // 트랜잭션만 기다리면 된다. 실제 처리 완료 여부는 기존 Pod 생성 진행 상태 폴링
-        // API(/pod-status/pods/{username}/status)로 확인한다 — 승인/일반 Pod 생성 모두
-        // config-server가 같은 stage 체계를 쓰므로 별도 API 없이 그대로 재사용된다.
-        final ApprovalContext[] contextRef = {null};
-        final SaveRequestResponseDTO[] responseRef = {null};
+        // 1. 상태 검증 + PROCESSING 전환 + HTTP 요청 데이터 추출 (짧은 트랜잭션, 이후 커넥션 반납)
+        final Long[] userIdRef = {null};
+        final String[] usernameRef = {null};
+        final String[] serverNameRef = {null};
+        final UserCreationRequestDTO[] creationDtoRef = {null};
         tx.execute(status -> {
             // 행 잠금 조회: 동시에 같은 요청을 승인 시도하는 두 번째 트랜잭션은 여기서 대기하다가
             // 첫 트랜잭션 커밋 후 PROCESSING 상태를 보고 아래에서 실패한다 (중복 승인/중복 provisioning 방지)
@@ -108,7 +126,7 @@ public class AdminRequestCommandService {
             List<UserCreationRequestDTO.SupplementaryGroup> supplementaryGroups = req.getRequestGroups().stream()
                     .map(rg -> new UserCreationRequestDTO.SupplementaryGroup(rg.getGroup().getGroupName(), rg.getGroup().getUbuntuGid()))
                     .toList();
-            UserCreationRequestDTO creationDto = new UserCreationRequestDTO(
+            creationDtoRef[0] = new UserCreationRequestDTO(
                     req.getUbuntuUsername(),
                     req.getUbuntuPasswordBase64(),
                     req.getUser().getName(),
@@ -116,114 +134,78 @@ public class AdminRequestCommandService {
                     false,
                     supplementaryGroups
             );
-            User owner = req.getUser();
-            contextRef[0] = new ApprovalContext(
-                    dto.requestId(),
-                    owner.getUserId(),
-                    req.getUbuntuUsername(),
-                    // 이 사용자가 이미 리눅스 계정을 갖고 있으면 계정 생성 API를 건너뛰고 이 UID/GID를
-                    // 그대로 재사용한다 — 그래야 새 컨테이너가 기존 홈 디렉터리를 그대로 물려받는다.
-                    owner.hasUbuntuAccount() ? owner.getUbuntuUid() : null,
-                    owner.hasUbuntuAccount() ? owner.getUbuntuGid() : null,
-                    creationDto,
-                    // 보상 트랜잭션 실패 알림을 관리자가 실제로 보는 farm/lab 채널로 보내기 위해
-                    // 승인 시점의 서버 구분을 미리 떼어둔다 (resourceGroup은 신청 시점부터 항상 존재).
-                    req.getResourceGroup().getServerName()
-            );
-            // 트랜잭션 종료 후 사용되는 모든 lazy 연관 초기화 (즉시 응답 DTO 빌드용)
-            req.getUser().getEmail();
-            req.getContainerImage().getImageName();
-            req.getResourceGroup().getServerName();
-            req.getRequestGroups().size();
-            responseRef[0] = SaveRequestResponseDTO.fromEntity(req);
+            userIdRef[0] = req.getUser().getUserId();
+            usernameRef[0] = req.getUbuntuUsername();
+            // 보상 트랜잭션 실패 알림을 관리자가 실제로 보는 farm/lab 채널로 보내기 위해
+            // 승인 시점의 서버 구분을 미리 떼어둔다 (resourceGroup은 신청 시점부터 항상 존재).
+            serverNameRef[0] = req.getResourceGroup().getServerName();
             return null;
         });
-        ApprovalContext ctx = contextRef[0];
+        Long requestId = dto.requestId();
+        Long userId = userIdRef[0];
+        String username = usernameRef[0];
+        String serverName = serverNameRef[0];
+        UserCreationRequestDTO creationDto = creationDtoRef[0];
 
-        // 2~4단계(계정 생성, Pod 생성, DB 반영, 메일)를 비동기로 넘긴다. executor 큐가
-        // 꽉 차서(동시 3건 초과) 거부되면 제출 시점에 곧바로 TaskRejectedException이
-        // 던져지므로(작업 실행 자체가 아니라 제출이 동기 호출이라 그렇다), 여기서 잡아서
-        // 기존과 동일하게 즉시 실패시킨다.
-        try {
-            approvalExecutor.execute(() -> processApproval(ctx, dto));
-        } catch (TaskRejectedException e) {
-            log.warn("[동시 처리 한도 초과] 승인 후처리 제출 거부 → 상태 복구 시작: {}", ctx.username());
-            revertToPendingIfStillProcessing(ctx.requestId(), ctx.serverName());
-            throw new BusinessException(ErrorCode.POD_CREATION_CONCURRENCY_LIMIT);
-        }
+        // 2. 계정 확인/생성. userId 단위로 직렬화한다 — 짧은 DB 트랜잭션 두 개(확인용/커밋용)
+        // 사이에 config-server HTTP 호출이 끼어 있어, User 행을 커밋 시점에만 잠그는 것만으로는
+        // 같은 사용자의 다른 신청이 동시에 승인되는 경합을 못 막는다.
+        final Long uid;
+        final Long gid;
+        // 이번 승인에서 계정을 새로 만들었는지 — 뒤 단계가 실패했을 때 계정을 지워도
+        // 되는지 판단하는 기준이다. 재사용한 계정을 지우면 이 사용자의 다른 컨테이너와
+        // 홈 디렉터리까지 함께 날아간다.
+        final boolean accountCreatedNow;
+        synchronized (approvalLockFor(userId)) {
+            final Long[] existingUidRef = {null};
+            final Long[] existingGidRef = {null};
+            new TransactionTemplate(transactionManager).execute(status -> {
+                User owner = userRepository.findByIdForUpdate(userId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+                if (owner.hasUbuntuAccount()) {
+                    existingUidRef[0] = owner.getUbuntuUid();
+                    existingGidRef[0] = owner.getUbuntuGid();
+                }
+                return null;
+            });
 
-        return responseRef[0];
-    }
-
-    /**
-     * 승인 후처리에 필요한 값들을 첫 트랜잭션에서 미리 떼어낸 스냅샷.
-     * existingUid/existingGid가 채워져 있으면 이 사용자는 이미 리눅스 계정을 갖고 있다는 뜻이며,
-     * 계정 생성 API를 호출하지 않고 그 값을 그대로 쓴다.
-     */
-    private record ApprovalContext(
-            Long requestId, Long userId, String username,
-            Long existingUid, Long existingGid,
-            UserCreationRequestDTO creationDto, String serverName
-    ) {
-        boolean hasExistingAccount() {
-            return existingUid != null && existingGid != null;
-        }
-    }
-
-    /**
-     * approveRequest의 후처리(계정 생성 → Pod 생성 → DB 반영 → 메일)를 approvalExecutor
-     * 스레드에서 실행한다. 각 단계의 실패는 기존과 동일하게 자체적으로 보상 트랜잭션을 수행하고
-     * 조용히 종료한다 — 이 메서드를 호출한 쪽(관리자 HTTP 요청)은 이미 응답을 반환하고 떠난
-     * 상태라 예외를 던져봐야 아무도 받지 않는다. 바깥 try/catch는 각 단계 내부에서 처리하지
-     * 못한 예기치 않은 예외가 executor 스레드에서 조용히 사라지는 것을 막는 최후의 안전망이다.
-     */
-    private void processApproval(ApprovalContext ctx, ApproveRequestDTO dto) {
-        Long requestId = ctx.requestId();
-        String username = ctx.username();
-        String serverName = ctx.serverName();
-        try {
-            // 2. 외부 HTTP 호출. 이미 리눅스 계정이 있는 사용자면 계정 생성은 건너뛴다 —
-            //    같은 유저네임으로 다시 만들 수도 없고(config-server가 409), 다시 만들면
-            //    UID가 바뀌어 기존 홈 디렉터리의 소유권이 어긋난다.
-            final Long uid;
-            final Long gid;
-            // 이번 승인에서 계정을 새로 만들었는지 — 뒤 단계가 실패했을 때 계정을 지워도
-            // 되는지 판단하는 기준이다. 재사용한 계정을 지우면 이 사용자의 다른 컨테이너와
-            // 홈 디렉터리까지 함께 날아간다.
-            final boolean accountCreatedNow;
-            if (ctx.hasExistingAccount()) {
-                log.info("이미 우분투 계정을 보유한 사용자 — 계정 생성 API 호출 생략: username={}, uid={}", username, ctx.existingUid());
-                uid = ctx.existingUid();
-                gid = ctx.existingGid();
+            if (existingUidRef[0] != null) {
+                // 이미 리눅스 계정이 있는 사용자면 계정 생성 API를 건너뛰고 이 UID/GID를
+                // 그대로 재사용한다 — 그래야 새 컨테이너가 기존 홈 디렉터리를 그대로 물려받는다.
+                // 같은 유저네임으로 다시 만들 수도 없고(config-server가 409), 다시 만들면
+                // UID가 바뀌어 기존 홈 디렉터리의 소유권이 어긋난다.
+                log.info("이미 우분투 계정을 보유한 사용자 — 계정 생성 API 호출 생략: username={}, uid={}", username, existingUidRef[0]);
+                uid = existingUidRef[0];
+                gid = existingGidRef[0];
                 accountCreatedNow = false;
             } else {
                 UserCreationResponse userResponse;
                 try {
-                    userResponse = callUserCreationApi(ctx.creationDto());
+                    userResponse = callUserCreationApi(creationDto);
                 } catch (Exception e) {
                     log.warn("[보상 트랜잭션] 사용자 생성 실패 → 상태 복구 시작: {}", username, e);
                     notifyApprovalFailure(String.format(
                             "[승인 실패] 사용자 생성 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
                             username, requestId, e.getMessage()), serverName);
                     revertToPendingIfStillProcessing(requestId, serverName);
-                    return;
+                    throw e;
                 }
                 uid = userResponse.uid();
                 gid = userResponse.gid();
                 accountCreatedNow = true;
 
                 // 계정 생성 성공 직후, Pod 생성(최대 10분 대기)에 들어가기 전에 UID/GID를
-                // User에 즉시 커밋한다. 이걸 미루면(예전엔 최종 DB 반영 트랜잭션에서만 했다)
-                // Pod 생성 대기 중 프로세스가 죽었을 때(재배포 SIGTERM 등) User는 이 계정의
-                // 존재를 전혀 모르는 채로 남는다 — 재승인 시 hasExistingAccount()가 다시
-                // false가 되어 계정 생성 API를 또 호출하고, config-server가 409를 던져
-                // 이 신청은 영구히 승인 불가 상태에 갇힌다. 리눅스 계정/홈 디렉터리/krb5
-                // principal은 이미 살아있는데 DB만 그 사실을 모르는 상태를 최대한 짧게 줄인다.
+                // User에 즉시 커밋한다. 이걸 미루면(최종 DB 반영 트랜잭션에서만 하면) Pod 생성
+                // 대기 중 프로세스가 죽었을 때(강제 재배포, OOM 등) User는 이 계정의 존재를
+                // 전혀 모르는 채로 남는다 — 재승인 시 이 확인이 다시 "계정 없음"으로 판단해
+                // 계정 생성 API를 또 호출하고, config-server가 409를 던져 이 신청은 영구히
+                // 승인 불가 상태에 갇힌다. 리눅스 계정/홈 디렉터리/krb5 principal은 이미
+                // 살아있는데 DB만 그 사실을 모르는 상태를 최대한 짧게 줄인다.
                 try {
                     Long committedUid = uid;
                     Long committedGid = gid;
                     new TransactionTemplate(transactionManager).execute(status -> {
-                        User owner = userRepository.findByIdForUpdate(ctx.userId())
+                        User owner = userRepository.findByIdForUpdate(userId)
                                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
                         owner.assignUbuntuAccount(committedUid, committedGid);
                         return null;
@@ -238,129 +220,137 @@ public class AdminRequestCommandService {
                             "[승인 실패] 계정 생성 직후 UID/GID 반영 실패 - 계정은 인프라에 존재하나 DB에 미반영, 수동 확인 필요: username=%s, requestId=%d",
                             username, requestId), serverName);
                     revertToPendingIfStillProcessing(requestId, serverName);
-                    return;
+                    if (e instanceof BusinessException be) {
+                        throw be;
+                    }
+                    throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
                 }
             }
+        }
 
-            // 이번 신청이 요구하는 그룹에 사용자를 추가한다. 계정을 새로 만든 경우
-            // callUserCreationApi가 이미 이 신청의 그룹을 넣어 만들었지만, 이 호출도 멱등
-            // 집합-추가라 다시 불러도 안전하다(config-server add_user_groups). 재사용
-            // 계정은 애초에 계정 생성 API 자체를 건너뛰므로, 이 호출이 없으면 최초 승인
-            // 때의 그룹 멤버십에 영구히 고정되고 이후 신청이 요구하는 다른 그룹엔 실제
-            // 파일 접근 권한이 생기지 않는다 — 같은 사용자가 여러 그룹에 동시에 속하는
-            // 건 정상이고(A그룹 신청과 B그룹 신청을 둘 다 승인받았다면 둘 다 유지),
-            // config-server 쪽 API도 원래 있던 그룹에서 빼지 않고 더하기만 한다.
-            List<String> requestGroupNames = ctx.creationDto().supplementaryGroups().stream()
-                    .map(UserCreationRequestDTO.SupplementaryGroup::name)
-                    .toList();
-            try {
-                groupService.addUserToGroups(username, requestGroupNames);
-            } catch (Exception e) {
-                log.warn("[보상 트랜잭션] 그룹 추가 실패 → 상태 복구 시작: {}", username, e);
-                notifyApprovalFailure(String.format(
-                        "[승인 실패] 그룹 추가 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, groups=%s, error=%s",
-                        username, requestId, requestGroupNames, e.getMessage()), serverName);
-                if (accountCreatedNow) {
-                    // 아직 어느 farm 노드에도 배포된 게 없는 시점이라 node를 모른 채 삭제하면
-                    // 무관한 동명 레거시 계정까지 지울 위험이 있다 — tryCompensateDeleteUser
-                    // 내부에서 이 경우 삭제 대신 보류+알림으로 처리한다.
-                    tryCompensateDeleteUser(ctx.userId(), username, null, serverName);
-                }
-                revertToPendingIfStillProcessing(requestId, serverName);
-                return;
+        // 3. 이번 신청이 요구하는 그룹에 사용자를 추가한다. 계정을 새로 만든 경우
+        // callUserCreationApi가 이미 이 신청의 그룹을 넣어 만들었지만, 이 호출도 멱등
+        // 집합-추가라 다시 불러도 안전하다(config-server add_user_groups). 재사용
+        // 계정은 애초에 계정 생성 API 자체를 건너뛰므로, 이 호출이 없으면 최초 승인
+        // 때의 그룹 멤버십에 영구히 고정되고 이후 신청이 요구하는 다른 그룹엔 실제
+        // 파일 접근 권한이 생기지 않는다 — 같은 사용자가 여러 그룹에 동시에 속하는
+        // 건 정상이고(A그룹 신청과 B그룹 신청을 둘 다 승인받았다면 둘 다 유지),
+        // config-server 쪽 API도 원래 있던 그룹에서 빼지 않고 더하기만 한다.
+        List<String> requestGroupNames = creationDto.supplementaryGroups().stream()
+                .map(UserCreationRequestDTO.SupplementaryGroup::name)
+                .toList();
+        try {
+            groupService.addUserToGroups(username, requestGroupNames);
+        } catch (Exception e) {
+            log.warn("[보상 트랜잭션] 그룹 추가 실패 → 상태 복구 시작: {}", username, e);
+            notifyApprovalFailure(String.format(
+                    "[승인 실패] 그룹 추가 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, groups=%s, error=%s",
+                    username, requestId, requestGroupNames, e.getMessage()), serverName);
+            if (accountCreatedNow) {
+                // 아직 어느 farm 노드에도 배포된 게 없는 시점이라 node를 모른 채 삭제하면
+                // 무관한 동명 레거시 계정까지 지울 위험이 있다 — tryCompensateDeleteUser
+                // 내부에서 이 경우 삭제 대신 보류+알림으로 처리한다.
+                tryCompensateDeleteUser(userId, username, null, serverName);
             }
+            revertToPendingIfStillProcessing(requestId, serverName);
+            throw e;
+        }
 
-            CreatePodResponseDTO podResponse;
+        // 4. Pod 생성. 동시 처리 한도를 넘으면 큐잉하지 않고 즉시 실패시킨다 — 안 그러면
+        // Tomcat 워커 스레드가 Pod 생성 대기(최대 600초)만큼씩 계속 쌓인다.
+        CreatePodResponseDTO podResponse;
+        try {
+            if (!podCreationSemaphore.tryAcquire()) {
+                throw new BusinessException(ErrorCode.POD_CREATION_CONCURRENCY_LIMIT);
+            }
             try {
                 podResponse = podService.createPod(username, requestId);
-            } catch (Exception e) {
-                // BusinessException뿐 아니라 WebClient 타임아웃 등 예기치 않은 예외도
-                // 여기서 잡아야 한다 — 안 그러면 바깥쪽 catch-all까지 새어나가 상태
-                // 복구는 되어도 방금 만든 Ubuntu 계정이 정리되지 않은 채 남는다.
-                log.warn("[보상 트랜잭션] Pod 생성 실패 → 상태 복구 시작: {}", username, e);
-                String failedNode = (e instanceof PodCreationFailedException pcfe) ? pcfe.getNode() : null;
-                notifyApprovalFailure(String.format(
-                        "[승인 실패] Pod 생성 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
-                        username, requestId, e.getMessage()), serverName);
-                if (accountCreatedNow) {
-                    tryCompensateDeleteUser(ctx.userId(), username, failedNode, serverName);
-                }
-                revertToPendingIfStillProcessing(requestId, serverName);
-                return;
+            } finally {
+                podCreationSemaphore.release();
             }
-
-            // 3. DB 저장 (새 트랜잭션)
-            TransactionTemplate tx = new TransactionTemplate(transactionManager);
-            final Request[] savedRequestRef = {null};
-            try {
-                tx.execute(status -> {
-                    // 행 잠금 + 상태 재확인: 외부 호출(계정/Pod 생성) 도중 다른 관리자가 거절을
-                    // 눌러 상태가 이미 바뀌었을 수 있다. 여기서 다시 확인하지 않고 무조건
-                    // approve()로 덮어쓰면, 거절됐는데도 방금 만든 계정/Pod가 FULFILLED로
-                    // 살아남는 정합성 문제가 생긴다 (rejectRequest도 findByIdForUpdate로
-                    // 행 잠금을 쓰므로 여기서 걸리면 그 커밋이 끝난 뒤의 최신 상태를 본다).
-                    Request req = requestRepository.findByIdForUpdate(requestId)
-                            .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-                    if (req.getStatus() != Status.PROCESSING) {
-                        log.warn("[보상 트랜잭션] 승인 처리 중 상태가 변경됨(다른 관리자가 거절했을 수 있음) - " +
-                                "requestId={}, 현재 상태={}", requestId, req.getStatus());
-                        throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
-                    }
-                    ContainerImage image = containerImageRepository.findById(dto.imageId())
-                            .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-                    ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
-                            .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-                    // UID/GID의 소유자는 신청이 아니라 웹 계정이다. 같은 사용자의 다른 신청이
-                    // 동시에 승인돼 먼저 배정했을 수 있으므로 User 행을 잠그고 배정한다 —
-                    // 같은 값이면 그대로 통과하고, 다른 값이면 여기서 실패해 보상 트랜잭션을 탄다.
-                    User owner = userRepository.findByIdForUpdate(ctx.userId())
-                            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-                    owner.assignUbuntuAccount(uid, gid);
-                    req.assignUbuntuIds(uid, gid);
-                    req.approve(image, rg, dto.adminComment());
-                    req.assignPodInfo(podResponse.podName(), podResponse.node());
-                    for (CreatePodResponseDTO.PortInfo port : podResponse.ports()) {
-                        podExternalPortRepository.save(PodExternalPort.builder()
-                                .request(req)
-                                .internalPort(port.internalPort())
-                                .externalPort(port.externalPort())
-                                .usagePurpose(port.usagePurpose())
-                                .build());
-                    }
-                    // 트랜잭션 종료 후 사용되는 모든 lazy 연관 초기화
-                    req.getUser().getEmail();
-                    req.getContainerImage().getImageName();
-                    req.getResourceGroup().getServerName();
-                    req.getRequestGroups().size();
-                    savedRequestRef[0] = req;
-                    return null;
-                });
-            } catch (Exception e) {
-                log.error("[보상 트랜잭션] DB 업데이트 실패 → infra 리소스 삭제 시작: {}", username, e);
-                notifyApprovalFailure(String.format(
-                        "[승인 실패] DB 반영 실패로 infra 리소스 정리 후 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
-                        username, requestId, e.getMessage()), serverName);
-                tryCompensateAll(ctx.userId(), username, podResponse.podName(), podResponse.node(), serverName, accountCreatedNow);
-                revertToPendingIfStillProcessing(requestId, serverName);
-                return;
-            }
-
-            // 4. 이메일 발송 (트랜잭션 종료 후, 실패해도 Pod·계정은 이미 생성됨)
-            Request savedRequest = savedRequestRef[0];
-            String sshPort = extractExternalPort(podResponse, "ssh");
-            String jupyterPort = extractExternalPort(podResponse, "jupyter");
-            sendNotificationSafely(
-                    () -> alarmService.sendContainerCreatedEmail(savedRequest, sshPort, jupyterPort),
-                    () -> log.info("사용자 '{}'에게 컨테이너 배정 안내 메일을 발송했습니다.", savedRequest.getUser().getName()),
-                    e -> log.warn("사용자 '{}'에게 배정 안내 메일 발송 실패. (RequestId: {})",
-                            savedRequest.getUser().getName(), savedRequest.getRequestId(), e)
-            );
         } catch (Exception e) {
-            // executor 스레드에서 여기까지 예외가 올라오면 아무도 받지 않고 조용히 사라진다 —
-            // 최소한 로그를 남기고 요청이 PROCESSING에 영구히 갇히지 않도록 상태를 복구한다.
-            log.error("[승인 후처리] 예기치 않은 오류로 처리 중단 → 상태 복구 시도: {}", username, e);
+            // BusinessException뿐 아니라 WebClient 타임아웃 등 예기치 않은 예외도
+            // 여기서 잡아야 한다 — 안 그러면 상태 복구는 되어도 방금 만든 Ubuntu 계정이
+            // 정리되지 않은 채 남는다.
+            log.warn("[보상 트랜잭션] Pod 생성 실패 → 상태 복구 시작: {}", username, e);
+            String failedNode = (e instanceof PodCreationFailedException pcfe) ? pcfe.getNode() : null;
+            notifyApprovalFailure(String.format(
+                    "[승인 실패] Pod 생성 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
+                    username, requestId, e.getMessage()), serverName);
+            if (accountCreatedNow) {
+                tryCompensateDeleteUser(userId, username, failedNode, serverName);
+            }
             revertToPendingIfStillProcessing(requestId, serverName);
+            throw e;
         }
+
+        // 5. DB 저장 (새 트랜잭션, HTTP 완료 후 짧게만 커넥션 보유)
+        final Request[] savedRequestRef = {null};
+        try {
+            tx.execute(status -> {
+                // 행 잠금 + 상태 재확인: 외부 호출(계정/Pod 생성) 도중 다른 관리자가 거절을
+                // 눌러 상태가 이미 바뀌었을 수 있다. 여기서 다시 확인하지 않고 무조건
+                // approve()로 덮어쓰면, 거절됐는데도 방금 만든 계정/Pod가 FULFILLED로
+                // 살아남는 정합성 문제가 생긴다 (rejectRequest도 findByIdForUpdate로
+                // 행 잠금을 쓰므로 여기서 걸리면 그 커밋이 끝난 뒤의 최신 상태를 본다).
+                Request req = requestRepository.findByIdForUpdate(requestId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                if (req.getStatus() != Status.PROCESSING) {
+                    log.warn("[보상 트랜잭션] 승인 처리 중 상태가 변경됨(다른 관리자가 거절했을 수 있음) - " +
+                            "requestId={}, 현재 상태={}", requestId, req.getStatus());
+                    throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+                }
+                ContainerImage image = containerImageRepository.findById(dto.imageId())
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                // UID/GID의 소유자는 신청이 아니라 웹 계정이다. 같은 사용자의 다른 신청이
+                // 동시에 승인돼 먼저 배정했을 수 있으므로 User 행을 잠그고 배정한다 —
+                // 같은 값이면 그대로 통과하고, 다른 값이면 여기서 실패해 보상 트랜잭션을 탄다.
+                User owner = userRepository.findByIdForUpdate(userId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+                owner.assignUbuntuAccount(uid, gid);
+                req.assignUbuntuIds(uid, gid);
+                req.approve(image, rg, dto.adminComment());
+                req.assignPodInfo(podResponse.podName(), podResponse.node());
+                for (CreatePodResponseDTO.PortInfo port : podResponse.ports()) {
+                    podExternalPortRepository.save(PodExternalPort.builder()
+                            .request(req)
+                            .internalPort(port.internalPort())
+                            .externalPort(port.externalPort())
+                            .usagePurpose(port.usagePurpose())
+                            .build());
+                }
+                // 트랜잭션 종료 후 사용되는 모든 lazy 연관 초기화
+                req.getUser().getEmail();
+                req.getContainerImage().getImageName();
+                req.getResourceGroup().getServerName();
+                req.getRequestGroups().size();
+                savedRequestRef[0] = req;
+                return null;
+            });
+        } catch (Exception e) {
+            log.error("[보상 트랜잭션] DB 업데이트 실패 → infra 리소스 삭제 시작: {}", username, e);
+            notifyApprovalFailure(String.format(
+                    "[승인 실패] DB 반영 실패로 infra 리소스 정리 후 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
+                    username, requestId, e.getMessage()), serverName);
+            tryCompensateAll(userId, username, podResponse.podName(), podResponse.node(), serverName, accountCreatedNow);
+            revertToPendingIfStillProcessing(requestId, serverName);
+            throw e;
+        }
+
+        // 6. 이메일 발송 (트랜잭션 종료 후, 실패해도 Pod·계정은 이미 생성됨)
+        Request savedRequest = savedRequestRef[0];
+        String sshPort = extractExternalPort(podResponse, "ssh");
+        String jupyterPort = extractExternalPort(podResponse, "jupyter");
+        sendNotificationSafely(
+                () -> alarmService.sendContainerCreatedEmail(savedRequest, sshPort, jupyterPort),
+                () -> log.info("사용자 '{}'에게 컨테이너 배정 안내 메일을 발송했습니다.", savedRequest.getUser().getName()),
+                e -> log.warn("사용자 '{}'에게 배정 안내 메일 발송 실패. (RequestId: {})",
+                        savedRequest.getUser().getName(), savedRequest.getRequestId(), e)
+        );
+
+        return SaveRequestResponseDTO.fromEntity(savedRequest);
     }
 
     private UserCreationResponse callUserCreationApi(UserCreationRequestDTO userCreationDto) {
@@ -658,9 +648,10 @@ public class AdminRequestCommandService {
         }
     }
 
-    // 비동기 전환 이전에는 계정/Pod/DB 실패가 HTTP 4xx/5xx로 관리자에게 곧바로 보였다.
-    // 지금은 관리자가 200 OK를 받고 떠난 뒤 executor 스레드에서 실패가 나므로, 여기서 알리지
-    // 않으면 신청이 조용히 PENDING으로 돌아가는 걸 관리자가 목록을 다시 볼 때까지 모른다.
+    // approveRequest가 동기식이라 실패는 이 메서드를 호출한 관리자에게 HTTP 4xx/5xx로도
+    // 곧바로 보인다. 그래도 Slack에 별도로 남기는 이유는, 그 관리자가 응답을 못 받고
+    // 창을 닫아버렸거나(타임아웃 등) 다른 관리자가 나중에 신청 목록만 보고 원인을 모른 채
+    // 재승인을 시도하는 상황에서도 실패 이력이 남아있게 하기 위함이다.
     // (보상 자체의 실패가 아니라 원래 승인 처리의 실패를 알린다는 점만 alertCompensationFailure와 다르다.)
     private void notifyApprovalFailure(String message, String serverName) {
         try {
