@@ -201,7 +201,9 @@ class AdminUserServiceTest {
         when(request.getStatus()).thenAnswer(inv -> current.get());
         lenient().doAnswer(inv -> { current.set(Status.EXPIRING); return null; }).when(request).beginExpiry();
         lenient().doAnswer(inv -> { current.set(Status.FULFILLED); return null; }).when(request).endExpiry();
-        when(request.getRequestId()).thenReturn(requestId);
+        // deleteSingleContainer는 request.getRequestId() 대신 인자로 받은 requestId를 그대로
+        // 쓰므로 이 스텁이 그 경로에서는 안 쓰인다.
+        lenient().when(request.getRequestId()).thenReturn(requestId);
         // 선점(beginExpiry)에서 걸러진 요청은 인프라 삭제까지 가지 않아 이 스텁들이 안 쓰일 수 있다.
         lenient().when(request.getUbuntuUsername()).thenReturn(username);
         lenient().when(request.getPodName()).thenReturn("pod-" + username);
@@ -955,6 +957,8 @@ class AdminUserServiceTest {
         void deleteUbuntuAccount_userTableMissingUsername_fallsBackToRequestOwner() {
             mockUser.releaseUbuntuAccount(); // 실제 사고 데이터처럼 User 쪽엔 UID/GID가 전혀 없는 상태
             Request request = mockFulfilledRequest("testuser", 54L);
+            lenient().when(request.getUbuntuUid()).thenReturn(20001L);
+            lenient().when(request.getUbuntuGid()).thenReturn(20001L);
             when(userRepository.findByUbuntuUsername("testuser")).thenReturn(Optional.empty());
             when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc("testuser", Status.openStatuses()))
                     .thenReturn(List.of(request));
@@ -964,8 +968,29 @@ class AdminUserServiceTest {
 
             verify(podService).deletePod("pod-testuser");
             verify(request).deleteAfterCleanup();
-            // User에 UID/GID가 아예 없어 config-server 계정 삭제까지는 못 간다 — Pod/DB 정리만
-            // 되고, 실제 리눅스 계정은 남을 수 있다는 뜻이라 별도 수동 확인이 필요하다.
+            // Request에 남아있는 실제 UID/GID로 User를 복구한 뒤 정리하므로, farm 노드의
+            // 실제 리눅스 계정도 config-server 삭제 호출까지 이어져야 한다.
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+        }
+
+        @Test
+        @DisplayName("레거시 Request에도 UID/GID가 안 남아있으면 복구할 값이 없어 계정 삭제 호출 없이 Pod/DB 정리만 한다")
+        void deleteUbuntuAccount_userTableMissingUsername_andRequestHasNoUid_skipsAccountDeletion() {
+            mockUser.releaseUbuntuAccount();
+            Request request = mockFulfilledRequest("testuser", 55L);
+            // Request 쪽에도 UID/GID가 남아있지 않은 경우 (Mockito 기본값 0이 아니라
+            // 실제 DB의 NULL 컬럼을 재현하기 위해 명시적으로 null을 스텁한다).
+            lenient().when(request.getUbuntuUid()).thenReturn(null);
+            lenient().when(request.getUbuntuGid()).thenReturn(null);
+            when(userRepository.findByUbuntuUsername("testuser")).thenReturn(Optional.empty());
+            when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc("testuser", Status.openStatuses()))
+                    .thenReturn(List.of(request));
+            when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(request));
+
+            adminUserService.deleteUbuntuAccount("testuser");
+
+            verify(podService).deletePod("pod-testuser");
+            verify(request).deleteAfterCleanup();
             verifyNoInteractions(ubuntuAccountService);
         }
 
