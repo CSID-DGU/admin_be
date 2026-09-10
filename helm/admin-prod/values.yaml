@@ -11,3 +11,12 @@ service:
   nodePort: 30083 # 외부 접속용 Port
 
 forceReload: "" # CI/CD에서 동적으로 넣어주는 값
+
+env:
+  application: "" # 운영 application.yml(base64). CI가 GitHub 시크릿 APPLICATION으로 넣는다.
+
+serviceAccount:
+  create: false
+
+rbac:
+  create: false
