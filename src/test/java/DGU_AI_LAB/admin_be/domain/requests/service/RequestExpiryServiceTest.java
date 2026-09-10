@@ -102,7 +102,8 @@ class RequestExpiryServiceTest {
 
             service.deleteExpiredRequest(requestId);
 
-            verify(podService).deletePod("pod-testuser-xxxx");
+            // 만료 회수도 이 신청의 번호로 기록돼야 생성 이력과 같은 request_id로 묶인다.
+            verify(podService).deletePod("pod-testuser-xxxx", requestId);
             verify(request).deleteAfterCleanup();
 
             ArgumentCaptor<RequestExpiredEvent> captor = ArgumentCaptor.forClass(RequestExpiredEvent.class);
@@ -120,7 +121,7 @@ class RequestExpiryServiceTest {
 
             service.deleteExpiredRequest(requestId);
 
-            verify(podService, never()).deletePod(any());
+            verify(podService, never()).deletePod(any(), any());
             verify(request, never()).deleteAfterCleanup();
             verify(eventPublisher, never()).publishEvent(any());
         }
@@ -134,7 +135,7 @@ class RequestExpiryServiceTest {
 
             service.deleteExpiredRequest(requestId);
 
-            verify(podService, never()).deletePod(any());
+            verify(podService, never()).deletePod(any(), any());
             verify(eventPublisher, never()).publishEvent(any());
         }
 
@@ -147,7 +148,7 @@ class RequestExpiryServiceTest {
 
             service.deleteExpiredRequest(requestId);
 
-            verify(podService, never()).deletePod(any());
+            verify(podService, never()).deletePod(any(), any());
             verify(eventPublisher, never()).publishEvent(any());
         }
 
@@ -160,7 +161,7 @@ class RequestExpiryServiceTest {
             assertThatThrownBy(() -> service.deleteExpiredRequest(requestId))
                     .isInstanceOf(EntityNotFoundException.class);
 
-            verify(podService, never()).deletePod(any());
+            verify(podService, never()).deletePod(any(), any());
             verify(eventPublisher, never()).publishEvent(any());
         }
     }
@@ -177,7 +178,7 @@ class RequestExpiryServiceTest {
             when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
             when(podExternalPortRepository.findByRequestRequestId(requestId)).thenReturn(List.of());
             doThrow(new BusinessException(ErrorCode.POD_DELETION_FAILED))
-                    .when(podService).deletePod("pod-testuser-xxxx");
+                    .when(podService).deletePod(eq("pod-testuser-xxxx"), any());
 
             assertThatThrownBy(() -> service.deleteExpiredRequest(requestId))
                     .isInstanceOf(BusinessException.class)
@@ -205,7 +206,7 @@ class RequestExpiryServiceTest {
 
             // 인프라 호출은 Pod 삭제 하나뿐이어야 한다. 계정 삭제까지 하면 같은 사용자의 다른
             // 컨테이너와 홈 디렉터리가 함께 날아가고, 다시 신청해도 예전 홈으로 돌아올 수 없다.
-            verify(podService).deletePod("pod-testuser-xxxx");
+            verify(podService).deletePod(eq("pod-testuser-xxxx"), any());
             verifyNoMoreInteractions(podService);
         }
 
@@ -220,7 +221,7 @@ class RequestExpiryServiceTest {
             service.deleteExpiredRequest(requestId);
 
             verify(request).deleteAfterCleanup();
-            verify(podService).deletePod("pod-testuser-xxxx");
+            verify(podService).deletePod(eq("pod-testuser-xxxx"), any());
             verifyNoMoreInteractions(podService);
         }
     }
@@ -244,7 +245,7 @@ class RequestExpiryServiceTest {
             // 선점(beginExpiry)이 외부 삭제보다 먼저 일어나야 의미가 있다
             InOrder order = inOrder(request, podService);
             order.verify(request).beginExpiry();
-            order.verify(podService).deletePod("pod-testuser-xxxx");
+            order.verify(podService).deletePod(eq("pod-testuser-xxxx"), any());
             order.verify(request).deleteAfterCleanup();
         }
 
@@ -256,7 +257,7 @@ class RequestExpiryServiceTest {
             when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
             when(podExternalPortRepository.findByRequestRequestId(requestId)).thenReturn(List.of());
             doThrow(new BusinessException(ErrorCode.POD_DELETION_FAILED))
-                    .when(podService).deletePod("pod-testuser-xxxx");
+                    .when(podService).deletePod(eq("pod-testuser-xxxx"), any());
 
             assertThatThrownBy(() -> service.deleteExpiredRequest(requestId))
                     .isInstanceOf(BusinessException.class);
@@ -277,7 +278,7 @@ class RequestExpiryServiceTest {
             doAnswer(inv -> {
                 when(request.getStatus()).thenReturn(Status.DENIED);
                 return null;
-            }).when(podService).deletePod("pod-testuser-xxxx");
+            }).when(podService).deletePod(eq("pod-testuser-xxxx"), any());
 
             assertThatThrownBy(() -> service.deleteExpiredRequest(requestId))
                     .isInstanceOf(BusinessException.class)

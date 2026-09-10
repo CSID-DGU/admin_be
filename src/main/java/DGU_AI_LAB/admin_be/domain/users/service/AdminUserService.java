@@ -132,7 +132,7 @@ public class AdminUserService {
                 // 계정은 하나뿐이라, 요청마다 지우면 두 번째 요청 정리에서 이미 없는 계정을
                 // 다시 지우게 된다. 계정 회수는 모든 요청을 정리한 뒤 아래에서 한 번만 한다.
                 try {
-                    podService.deletePod(podNameRef[0]);
+                    podService.deletePod(podNameRef[0], requestId);
                 } catch (Exception e) {
                     log.error("[{}] userId={} requestId={} Pod 삭제 실패 — 이 요청은 FULFILLED로 남기고 다음 요청을 계속 정리합니다: {}",
                             logPrefix, user.getUserId(), requestId, e.getMessage());
@@ -246,7 +246,9 @@ public class AdminUserService {
         List<String> failedNodeNames = new ArrayList<>();
         for (String nodeName : nodeNamesRef) {
             try {
-                ubuntuAccountService.deleteUbuntuAccount(usernameRef[0], nodeName);
+                // 이 경로는 이 웹 계정에 딸린 신청을 전부 정리한 뒤 계정을 한 번만 회수하므로
+                // 어느 승인 한 건에 귀속시킬 수 없다. config-server가 임시 키로 기록한다.
+                ubuntuAccountService.deleteUbuntuAccount(usernameRef[0], nodeName, null);
             } catch (Exception e) {
                 log.error("[{}] userId={} 우분투 계정 삭제 실패 - 수동 확인 필요: username={}, node={}",
                         logPrefix, userId, usernameRef[0], nodeName, e);
