@@ -24,7 +24,7 @@ public class UbuntuAccountService {
     private final @Qualifier("configWebClient") WebClient webClient;
 
     public void deleteUbuntuAccount(String username) {
-        deleteUbuntuAccount(username, null);
+        deleteUbuntuAccount(username, null, null);
     }
 
     /**
@@ -32,15 +32,26 @@ public class UbuntuAccountService {
      *                 알고 있으면 반드시 넘겨야 한다 — 안 넘기면 config-server가 설정된
      *                 모든 farm 노드를 무차별로 훑어서, 같은 유저네임을 쓰는 무관한
      *                 레거시 계정까지 잘못 지울 수 있다.
+     * @param requestId 이 회수를 유발한 신청 PK. config-server가 작업 이력을 이 값으로 묶으므로
+     *                  아는 호출자는 넘겨야 생성 이력과 이어진다. 우분투 계정은 신청이 아니라
+     *                  웹 계정에 귀속되어 있어, 사용자 삭제처럼 여러 신청을 한꺼번에 정리한 뒤
+     *                  계정을 회수하는 경로에는 대응하는 승인 번호가 하나로 정해지지 않는다.
+     *                  그런 경우에만 null을 넘긴다.
      */
-    public void deleteUbuntuAccount(String username, String nodeName) {
+    public void deleteUbuntuAccount(String username, String nodeName, Long requestId) {
 
         try {
-            log.info("사용자 삭제 API 호출 시작: {}, node={}", username, nodeName);
-            String uri = "/accounts/users/" + username;
+            log.info("사용자 삭제 API 호출 시작: {}, node={}, requestId={}", username, nodeName, requestId);
+            StringBuilder uriBuilder = new StringBuilder("/accounts/users/").append(username);
+            char separator = '?';
             if (nodeName != null && !nodeName.isBlank()) {
-                uri += "?node_name=" + nodeName;
+                uriBuilder.append(separator).append("node_name=").append(nodeName);
+                separator = '&';
             }
+            if (requestId != null) {
+                uriBuilder.append(separator).append("request_id=").append(requestId);
+            }
+            String uri = uriBuilder.toString();
             WebClientErrorHandler.onError(
                             webClient.delete()
                                     .uri(uri)

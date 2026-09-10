@@ -246,7 +246,7 @@ class AdminUserServiceTest {
             verifyNoInteractions(podService);
             // 컨테이너는 이미 만료로 정리됐어도 리눅스 계정은 웹 계정에 남아 있다 —
             // 사용자 삭제가 그 계정을 실제로 회수하는 유일한 지점이다.
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+            verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
             assertThat(mockUser.hasUbuntuAccount()).isFalse();
             assertThat(mockUser.getUbuntuUsername()).isEqualTo("testuser");
             verify(alarmService).sendAllAlerts(eq("홍길동"), eq("test@dgu.ac.kr"), anyString(), anyString());
@@ -319,9 +319,9 @@ class AdminUserServiceTest {
 
             // Pod 삭제가 먼저, 계정 삭제는 모든 요청을 정리한 뒤 한 번만.
             InOrder order = inOrder(podService, ubuntuAccountService);
-            order.verify(podService).deletePod("pod-testuser");
-            order.verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
-            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount(anyString(), anyString());
+            order.verify(podService).deletePod(eq("pod-testuser"), any());
+            order.verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
+            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount(anyString(), anyString(), any());
             verify(fulfilledRequest).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(fulfilledRequest);
             assertThat(mockUser.getIsActive()).isFalse();
@@ -372,9 +372,9 @@ class AdminUserServiceTest {
 
             adminUserService.deleteUser(1L);
 
-            verify(podService).deletePod("pod-fuser");
+            verify(podService).deletePod(eq("pod-fuser"), any());
             // 계정 삭제 대상은 요청이 아니라 웹 계정의 유저네임이고, 요청이 몇 개든 한 번만 부른다.
-            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount("testuser", "farm1");
+            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
             verify(fulfilled).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(fulfilled);
             verify(pending).delete();
@@ -394,9 +394,9 @@ class AdminUserServiceTest {
 
             adminUserService.deleteUser(1L);
 
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm2");
-            verify(ubuntuAccountService, times(2)).deleteUbuntuAccount(anyString(), anyString());
+            verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
+            verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm2"), any());
+            verify(ubuntuAccountService, times(2)).deleteUbuntuAccount(anyString(), anyString(), any());
             assertThat(mockUser.hasUbuntuAccount()).isFalse();
         }
 
@@ -406,7 +406,7 @@ class AdminUserServiceTest {
             Request onFarm1 = mockFulfilledRequest("testuser", 42L, "farm1");
             Request onFarm2 = mockFulfilledRequest("testuser", 43L, "farm2");
             doThrow(new RuntimeException("config-server 통신 오류"))
-                    .when(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm2");
+                    .when(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm2"), any());
 
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(onFarm1, onFarm2));
@@ -418,7 +418,7 @@ class AdminUserServiceTest {
 
             // farm1은 이미 지워졌는데 UID/GID를 회수해버리면, farm2에 남은 계정이 DB엔
             // 없는 걸로 기록된 채 실제로는 살아남는다 — 하나라도 실패하면 통째로 보류한다.
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+            verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
             assertThat(mockUser.hasUbuntuAccount()).isTrue();
             verify(alarmService).sendSlackAlert(contains("farm2"), isNull());
         }
@@ -438,7 +438,7 @@ class AdminUserServiceTest {
                     throw new RuntimeException("config-server 통신 오류");
                 }
                 return null;
-            }).when(podService).deletePod(anyString());
+            }).when(podService).deletePod(anyString(), any());
 
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(ok, broken));
@@ -475,11 +475,11 @@ class AdminUserServiceTest {
                     .isEqualTo(ErrorCode.USER_REQUEST_CLEANUP_PARTIALLY_FAILED);
 
             // 선점에 실패한 요청은 Pod/계정을 건드리지 않는다 (고아 인프라 방지의 핵심)
-            verify(podService, never()).deletePod("pod-raceduser");
+            verify(podService, never()).deletePod(eq("pod-raceduser"), any());
             verifyNoInteractions(ubuntuAccountService);
             verify(raced, never()).deleteAfterCleanup();
             // 정상 요청은 그대로 정리된다
-            verify(podService).deletePod("pod-okuser");
+            verify(podService).deletePod(eq("pod-okuser"), any());
             verify(ok).deleteAfterCleanup();
         }
 
@@ -539,12 +539,12 @@ class AdminUserServiceTest {
             for (Request req : List.of(req1, req2, req3)) {
                 InOrder order = inOrder(req, podService);
                 order.verify(req).beginExpiry();
-                order.verify(podService).deletePod("pod-" + req.getUbuntuUsername());
+                order.verify(podService).deletePod(eq("pod-" + req.getUbuntuUsername()), any());
                 verify(requestRepository, atLeastOnce()).findByIdForUpdate(req.getRequestId());
             }
             verify(requestRepository, never()).findById(anyLong());
             verify(alarmService, times(3)).sendContainerDeletedEmail(any(Request.class));
-            verify(podService, times(3)).deletePod(anyString());
+            verify(podService, times(3)).deletePod(anyString(), any());
         }
 
         @Test
@@ -561,10 +561,10 @@ class AdminUserServiceTest {
 
             adminUserService.deleteUser(1L);
 
-            verify(podService).deletePod("pod-user1");
-            verify(podService).deletePod("pod-user2");
+            verify(podService).deletePod(eq("pod-user1"), any());
+            verify(podService).deletePod(eq("pod-user2"), any());
             // 요청이 두 개여도 리눅스 계정은 하나뿐이라 계정 삭제는 마지막에 한 번만 일어난다.
-            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount("testuser", "farm1");
+            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
             verify(req1).deleteAfterCleanup();
             verify(req2).deleteAfterCleanup();
             assertThat(mockUser.getIsActive()).isFalse();
@@ -628,7 +628,7 @@ class AdminUserServiceTest {
             assertThat(result.isActive()).isFalse();
             verifyNoInteractions(podService);
             // 비활성화도 삭제와 같이 리눅스 계정을 회수한다 (컨테이너는 이미 정리됨).
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+            verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
             verify(alarmService).sendAllAlerts(eq("홍길동"), eq("test@dgu.ac.kr"), anyString(), anyString());
         }
 
@@ -677,8 +677,8 @@ class AdminUserServiceTest {
 
             adminUserService.deactivateUser(1L);
 
-            verify(podService).deletePod("pod-testuser");
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+            verify(podService).deletePod(eq("pod-testuser"), any());
+            verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
             verify(fulfilledRequest).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(fulfilledRequest);
             assertThat(mockUser.getIsActive()).isFalse();
@@ -764,9 +764,9 @@ class AdminUserServiceTest {
 
             adminUserService.deactivateUser(1L);
 
-            verify(podService).deletePod("pod-fuser");
+            verify(podService).deletePod(eq("pod-fuser"), any());
             // 계정 삭제 대상은 요청이 아니라 웹 계정의 유저네임이고, 요청이 몇 개든 한 번만 부른다.
-            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount("testuser", "farm1");
+            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
             verify(fulfilled).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(fulfilled);
             verify(pending).delete();
@@ -793,12 +793,12 @@ class AdminUserServiceTest {
             for (Request req : List.of(req1, req2, req3)) {
                 InOrder order = inOrder(req, podService);
                 order.verify(req).beginExpiry();
-                order.verify(podService).deletePod("pod-" + req.getUbuntuUsername());
+                order.verify(podService).deletePod(eq("pod-" + req.getUbuntuUsername()), any());
                 verify(requestRepository, atLeastOnce()).findByIdForUpdate(req.getRequestId());
             }
             verify(requestRepository, never()).findById(anyLong());
             verify(alarmService, times(3)).sendContainerDeletedEmail(any(Request.class));
-            verify(podService, times(3)).deletePod(anyString());
+            verify(podService, times(3)).deletePod(anyString(), any());
         }
 
         @Test
@@ -815,10 +815,10 @@ class AdminUserServiceTest {
 
             adminUserService.deactivateUser(1L);
 
-            verify(podService).deletePod("pod-user1");
-            verify(podService).deletePod("pod-user2");
+            verify(podService).deletePod(eq("pod-user1"), any());
+            verify(podService).deletePod(eq("pod-user2"), any());
             // 요청이 두 개여도 리눅스 계정은 하나뿐이라 계정 삭제는 마지막에 한 번만 일어난다.
-            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount("testuser", "farm1");
+            verify(ubuntuAccountService, times(1)).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
             verify(req1).deleteAfterCleanup();
             verify(req2).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(req2);
@@ -892,8 +892,8 @@ class AdminUserServiceTest {
 
             adminUserService.deleteUbuntuAccount("testuser");
 
-            verify(podService).deletePod("pod-testuser");
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+            verify(podService).deletePod(eq("pod-testuser"), any());
+            verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
             verify(request).deleteAfterCleanup();
             verify(alarmService).sendContainerDeletedEmail(request);
             assertThat(mockUser.hasUbuntuAccount()).isFalse();
@@ -909,8 +909,8 @@ class AdminUserServiceTest {
 
             adminUserService.deleteUbuntuAccount("testuser");
 
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm2");
+            verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
+            verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm2"), any());
             verify(onFarm1).deleteAfterCleanup();
             verify(onFarm2).deleteAfterCleanup();
             assertThat(mockUser.hasUbuntuAccount()).isFalse();
@@ -938,7 +938,7 @@ class AdminUserServiceTest {
             Request request = mockFulfilledRequest("testuser", 53L);
             when(userRepository.findByUbuntuUsername("testuser")).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(request));
-            doThrow(new RuntimeException("config-server 통신 오류")).when(podService).deletePod("pod-testuser");
+            doThrow(new RuntimeException("config-server 통신 오류")).when(podService).deletePod(eq("pod-testuser"), any());
 
             assertThatThrownBy(() -> adminUserService.deleteUbuntuAccount("testuser"))
                     .isInstanceOf(BusinessException.class)
@@ -1034,9 +1034,9 @@ class AdminUserServiceTest {
             // 한 번씩만 호출돼야 한다 — 이게 이번에 고친 두 버그의 핵심 불변식이다.
             Set<String> expectedNodes = new LinkedHashSet<>(nodeDistribution.nodes);
             for (String node : expectedNodes) {
-                verify(ubuntuAccountService).deleteUbuntuAccount("testuser", node);
+                verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq(node), any());
             }
-            verify(ubuntuAccountService, times(expectedNodes.size())).deleteUbuntuAccount(anyString(), anyString());
+            verify(ubuntuAccountService, times(expectedNodes.size())).deleteUbuntuAccount(anyString(), anyString(), any());
 
             for (Request live : liveRequests) {
                 verify(live).deleteAfterCleanup();
