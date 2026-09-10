@@ -81,7 +81,7 @@ public class RequestExpiryService {
         //    되돌리지 않으면 다음 스케줄 실행의 FULFILLED 조회에 잡히지 않아 재시도 자체가
         //    사라진다. 삭제 API는 404를 "이미 삭제됨"으로 처리하므로 재시도해도 안전하다.
         try {
-            podService.deletePod(ctx.podName());
+            podService.deletePod(ctx.podName(), requestId);
         } catch (Exception e) {
             log.error("[deleteExpiredRequest] Pod 삭제 실패 — DELETED로 전환하지 않음: requestId={}, error={}", requestId, e.getMessage());
             revertToFulfilled(requestId);

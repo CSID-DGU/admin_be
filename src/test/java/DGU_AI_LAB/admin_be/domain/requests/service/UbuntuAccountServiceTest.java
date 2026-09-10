@@ -60,6 +60,36 @@ class UbuntuAccountServiceTest {
         }
 
         @Test
+        @DisplayName("nodeName과 requestId를 모두 넘기면 두 쿼리 파라미터를 &로 이어 붙인다")
+        void deleteUbuntuAccount_appendsNodeNameAndRequestId() {
+            when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "deleted")));
+
+            ubuntuAccountService.deleteUbuntuAccount("testuser", "farm2", 4821L);
+
+            verify(deleteUriSpec).uri("/accounts/users/testuser?node_name=farm2&request_id=4821");
+        }
+
+        @Test
+        @DisplayName("requestId만 있으면 request_id가 첫 쿼리 파라미터가 된다")
+        void deleteUbuntuAccount_appendsOnlyRequestId_whenNodeNameMissing() {
+            when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "deleted")));
+
+            ubuntuAccountService.deleteUbuntuAccount("testuser", null, 4821L);
+
+            verify(deleteUriSpec).uri("/accounts/users/testuser?request_id=4821");
+        }
+
+        @Test
+        @DisplayName("requestId가 null이면 request_id 파라미터를 붙이지 않는다 (승인 번호를 특정할 수 없는 계정 회수)")
+        void deleteUbuntuAccount_omitsRequestId_whenNull() {
+            when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "deleted")));
+
+            ubuntuAccountService.deleteUbuntuAccount("testuser", "farm2", null);
+
+            verify(deleteUriSpec).uri("/accounts/users/testuser?node_name=farm2");
+        }
+
+        @Test
         @DisplayName("반응형 체인 내부에서 BusinessException이 발생해도 바깥 catch(Exception)에 잡혀 INTERNAL_SERVER_ERROR로 재래핑된다")
         void deleteUbuntuAccount_wrapsInnerBusinessException_asInternalServerError() {
             // UbuntuAccountService는 PodService와 달리 catch(BusinessException e){throw e;} 분기가 없어서,

@@ -127,6 +127,7 @@ public class AdminRequestCommandService {
                     .map(rg -> new UserCreationRequestDTO.SupplementaryGroup(rg.getGroup().getGroupName(), rg.getGroup().getUbuntuGid()))
                     .toList();
             creationDtoRef[0] = new UserCreationRequestDTO(
+                    dto.requestId(),
                     req.getUbuntuUsername(),
                     req.getUbuntuPasswordBase64(),
                     req.getUser().getName(),
@@ -636,7 +637,7 @@ public class AdminRequestCommandService {
             return;
         }
         try {
-            ubuntuAccountService.deleteUbuntuAccount(username, nodeName);
+            ubuntuAccountService.deleteUbuntuAccount(username, nodeName, requestId);
             releaseUserUbuntuAccount(userId);
             log.info("[보상 트랜잭션 완료] 계정 삭제: {}, node={}", username, nodeName);
         } catch (Exception e) {
@@ -713,7 +714,7 @@ public class AdminRequestCommandService {
      */
     private void tryCompensateAll(Long requestId, Long userId, String username, String podName, String nodeName, String serverName, boolean accountCreatedNow) {
         try {
-            podService.deletePod(podName);
+            podService.deletePod(podName, requestId);
             log.info("[보상 트랜잭션 완료] Pod 삭제: {}", podName);
         } catch (Exception e) {
             log.error("[보상 트랜잭션 실패] Pod 삭제 실패 - 수동 정리 필요: {}", podName, e);

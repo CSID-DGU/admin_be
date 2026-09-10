@@ -51,7 +51,14 @@ public class PodService {
         }
     }
 
-    private record DeletePodRequest(@com.fasterxml.jackson.annotation.JsonProperty("pod_name") String podName) {}
+    // request_id는 config-server가 작업 이력을 승인 1건 단위로 묶는 키다. 안 보내면
+    // config-server가 username+시각으로 임시 키를 만들어, 같은 승인의 생성 이력과
+    // 회수 이력이 갈라져 회수 소요시간을 산출할 수 없다.
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private record DeletePodRequest(
+            @com.fasterxml.jackson.annotation.JsonProperty("pod_name") String podName,
+            @JsonProperty("request_id") Long requestId
+    ) {}
 
     // config-server는 min_improvement_ratio 키가 아예 없어야 자체 기본값(0.2)을 쓴다.
     // null을 그대로 보내면 data.get(key, default)가 "키는 있지만 값이 None"이라 default가
@@ -96,19 +103,24 @@ public class PodService {
         }
     }
 
-    public void deletePod(String podName) {
+    /**
+     * @param requestId 이 회수를 유발한 신청 PK. config-server가 작업 이력을 이 값으로 묶으므로
+     *                  아는 호출자는 반드시 넘겨야 한다. 대응하는 신청이 아예 없는 고아 Pod
+     *                  정리처럼 승인 번호가 존재하지 않는 경우에만 null을 넘긴다.
+     */
+    public void deletePod(String podName, Long requestId) {
         if (podName == null) {
             log.warn("pod_name이 없어 Pod 삭제를 건너뜁니다.");
             return;
         }
 
         try {
-            log.info("Pod 삭제 API 요청 시작: {}", podName);
+            log.info("Pod 삭제 API 요청 시작: {}, requestId: {}", podName, requestId);
 
             WebClientErrorHandler.onError(
                             webClient.post()
                                     .uri("/delete-pod")
-                                    .bodyValue(new DeletePodRequest(podName))
+                                    .bodyValue(new DeletePodRequest(podName, requestId))
                                     .retrieve(),
                             (status, body) -> {
                                 if (status == HttpStatus.NOT_FOUND) {
@@ -144,7 +156,8 @@ public class PodService {
         if (requestRepository.existsByPodName(podName)) {
             throw new BusinessException(ErrorCode.POD_NOT_ORPHAN);
         }
-        deletePod(podName);
+        // 대응하는 신청이 없는 것이 이 경로의 전제이므로 넘길 승인 번호가 없다.
+        deletePod(podName, null);
     }
 
     public MigratePodResponseDTO migratePod(String username, String podName, Long requestId, List<String> nodes, Double minImprovementRatio) {

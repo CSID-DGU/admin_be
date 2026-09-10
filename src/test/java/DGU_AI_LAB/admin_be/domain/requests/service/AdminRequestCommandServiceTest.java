@@ -133,6 +133,7 @@ class AdminRequestCommandServiceTest {
     /** 공통 Request mock 설정 */
     private Request buildMockedRequest(Long requestId) {
         Request request = mock(Request.class);
+        when(request.getRequestId()).thenReturn(requestId);
         // 1단계(승인 시작)에서는 PENDING을 확인하고, 3단계(외부 호출 완료 후 DB 반영)에서는
         // markAsProcessing()으로 바뀐 PROCESSING을 재확인한다. mock이라 실제로 상태가
         // 바뀌진 않으므로, 호출 순서에 맞춰 반환값을 순차 지정한다.
@@ -196,6 +197,8 @@ class AdminRequestCommandServiceTest {
         ArgumentCaptor<UserCreationRequestDTO> userCreationCaptor = ArgumentCaptor.forClass(UserCreationRequestDTO.class);
         verify(putBodySpec).bodyValue(userCreationCaptor.capture());
         UserCreationRequestDTO userCreationRequest = userCreationCaptor.getValue();
+        // 계정 생성 이력이 /create-pod 이력과 같은 request_id로 묶이려면 승인 번호가 함께 가야 한다.
+        assertThat(userCreationRequest.requestId()).isEqualTo(requestId);
         assertThat(userCreationRequest.username()).isEqualTo("testuser");
         assertThat(userCreationRequest.passwordBase64()).isEqualTo("cGxhaW5fdGV4dF9wdw==");
         assertThat(userCreationRequest.gecos()).isEqualTo("테스트유저");
@@ -469,11 +472,11 @@ class AdminRequestCommandServiceTest {
 
             // Pod를 만든 적이 없으므로 지울 것도 없다.
             verify(podService, never()).createPod(anyString(), anyLong());
-            verify(podService, never()).deletePod(anyString());
+            verify(podService, never()).deletePod(anyString(), any());
             // 이 시점엔 아직 어느 farm 노드에도 배포된 게 없어 node를 모른다 — node_name 없이
             // 삭제를 호출하면 무관한 동명 레거시 계정까지 지울 수 있으므로 삭제 자체를 보류한다
             // (방금 만든 계정은 남고, 재승인 시 hasUbuntuAccount()로 재사용된다).
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any(), any());
             verify(request).revertToPending();
         }
 
@@ -499,8 +502,9 @@ class AdminRequestCommandServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED);
 
-            verify(podService).deletePod("pod-testuser-race2");
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+            // 보상 삭제도 이 승인의 번호로 기록돼야 생성 이력과 같은 request_id로 묶인다.
+            verify(podService).deletePod("pod-testuser-race2", requestId);
+            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1", requestId);
             verify(request).revertToPending();
         }
 
@@ -519,7 +523,7 @@ class AdminRequestCommandServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_CREATION_FAILED);
 
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any(), any());
             verify(request).revertToPending();
         }
 
@@ -546,7 +550,7 @@ class AdminRequestCommandServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_CREATION_FAILED);
 
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any(), any());
             verify(alarmService).sendAdminSlackNotification(isNull(), contains("다른 요청"));
             verify(request).revertToPending();
         }
@@ -567,8 +571,8 @@ class AdminRequestCommandServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
 
-            verify(podService).deletePod("pod-testuser-dbfail");
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
+            verify(podService).deletePod(eq("pod-testuser-dbfail"), any());
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any(), any());
             verify(request).revertToPending();
         }
     }
@@ -600,7 +604,7 @@ class AdminRequestCommandServiceTest {
             // 실패 노드를 못 얻는다 — node_name 없이 삭제를 호출하면 config-server가 모든 farm
             // 노드를 훑어 무관한 동명 레거시 계정까지 지울 수 있으므로, 이제는 삭제를 보류하고
             // 알림만 보낸다(a3a8e21이 AdminUserService에 적용한 것과 동일한 가드).
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any(), any());
             // 1단계(승인 시작)와 revertToPendingIfStillProcessing 모두 findByIdForUpdate(행
             // 잠금)로 Request를 조회한다 — 락 없는 findById 재조회는 동시 거절 결과를 덮어쓸
             // 수 있어 더 이상 쓰지 않는다.
@@ -626,7 +630,7 @@ class AdminRequestCommandServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_CREATION_FAILED);
 
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any(), any());
             verify(containerImageRepository, never()).findById(any());
         }
 
@@ -653,7 +657,7 @@ class AdminRequestCommandServiceTest {
                 // farm 노드를 훑어 무관한 동명 레거시 계정까지 지울 수 있으므로, 삭제 자체를
                 // 보류하고 계정은 남겨둔다(재승인 시 재사용).
                 verify(podService, never()).createPod(anyString(), anyLong());
-                verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
+                verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any(), any());
             } finally {
                 semaphore.release(3);
             }
@@ -678,7 +682,7 @@ class AdminRequestCommandServiceTest {
 
             // node_name 없이 삭제를 호출하면 config-server가 모든 farm 노드를 훑어 무관한 동명
             // 레거시 계정까지 지울 수 있으므로, 삭제 자체를 시도하지 않는다.
-            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any());
+            verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any(), any());
             // 원래 실패(Pod 생성 실패) 알림 + 삭제 보류 알림, 총 두 번 Slack으로 알린다 —
             // 관리자가 실제로 보는 farm/lab 채널로 보낸다(serverName은 이 테스트에서 스텁
             // 안 해 null).
@@ -695,7 +699,7 @@ class AdminRequestCommandServiceTest {
             when(podService.createPod(eq("testuser"), anyLong()))
                     .thenThrow(new PodCreationFailedException("pod 생성 실패", ErrorCode.POD_CREATION_FAILED, "farm1"));
             doThrow(new RuntimeException("계정 삭제 실패"))
-                    .when(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+                    .when(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
 
             ApproveRequestDTO dto = new ApproveRequestDTO(requestId, 1L, 1, "승인");
 
@@ -704,7 +708,7 @@ class AdminRequestCommandServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_CREATION_FAILED);
 
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+            verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
             // 보상 트랜잭션 자체의 실패는 로그만 남으면 아무도 모른다 — 원래 실패(Pod 생성 실패)
             // 알림에 더해 삭제 실패 알림까지 총 두 번 Slack으로 보낸다.
             verify(alarmService, times(2)).sendAdminSlackNotification(isNull(), contains("testuser"));
@@ -729,7 +733,7 @@ class AdminRequestCommandServiceTest {
             service.approveRequest(dto);
 
             verify(ubuntuAccountService, never()).deleteUbuntuAccount(any());
-            verify(podService, never()).deletePod(any());
+            verify(podService, never()).deletePod(any(), any());
         }
 
         @Test
@@ -765,9 +769,9 @@ class AdminRequestCommandServiceTest {
                     .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
 
             // 이미 만든 계정/Pod는 정리하되, 거절된 요청의 상태를 승인으로 덮어쓰지 않는다
-            verify(podService).deletePod("pod-testuser-race");
+            verify(podService).deletePod(eq("pod-testuser-race"), any());
             // 이 경로는 Pod 생성까지는 성공했으므로 finalPodResponse.node()("farm1")로 좁혀서 정리한다.
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+            verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
             verify(request, never()).approve(any(), any(), any());
             // 이미 DENIED로 정상 종료된 요청이므로 PENDING으로 되돌리지 않는다
             verify(request, never()).revertToPending();
@@ -805,8 +809,8 @@ class AdminRequestCommandServiceTest {
 
             // 인프라는 정리하고, 여전히 PROCESSING이었던 요청은 PENDING으로 되돌려
             // 재승인/재거절이 막힌 채 영구히 갇히지 않게 한다
-            verify(podService).deletePod("pod-testuser-orphan");
-            verify(ubuntuAccountService).deleteUbuntuAccount("testuser", "farm1");
+            verify(podService).deletePod(eq("pod-testuser-orphan"), any());
+            verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
             verify(request).revertToPending();
         }
 

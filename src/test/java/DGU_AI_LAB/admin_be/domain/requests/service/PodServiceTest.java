@@ -75,7 +75,7 @@ class PodServiceTest {
         @Test
         @DisplayName("podName이 null이면 API를 호출하지 않고 정상 반환한다")
         void deletePod_skipsApiCall_whenPodNameIsNull() {
-            assertThatCode(() -> podService.deletePod(null))
+            assertThatCode(() -> podService.deletePod(null, 1L))
                     .doesNotThrowAnyException();
 
             verify(webClient, never()).post();
@@ -87,8 +87,40 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(Map.class))
                     .thenReturn(Mono.just(Map.of("status", "ok")));
 
-            assertThatCode(() -> podService.deletePod("test-pod-name"))
+            assertThatCode(() -> podService.deletePod("test-pod-name", 1L))
                     .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("requestId를 request_id 키로 요청 본문에 실어 보낸다 (작업 이력을 승인 단위로 묶는 키)")
+        void deletePod_sendsRequestIdInBody() {
+            when(responseSpec.bodyToMono(Map.class))
+                    .thenReturn(Mono.just(Map.of("status", "ok")));
+
+            podService.deletePod("test-pod-name", 4821L);
+
+            ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+            verify(requestBodySpec).bodyValue(bodyCaptor.capture());
+            JsonNode json = new ObjectMapper().valueToTree(bodyCaptor.getValue());
+
+            assertThat(json.get("pod_name").asText()).isEqualTo("test-pod-name");
+            assertThat(json.get("request_id").asLong()).isEqualTo(4821L);
+        }
+
+        @Test
+        @DisplayName("requestId가 null이면 request_id 키 자체를 빼서 config-server의 임시 키 생성 경로를 탄다")
+        void deletePod_omitsRequestIdKey_whenNull() {
+            when(responseSpec.bodyToMono(Map.class))
+                    .thenReturn(Mono.just(Map.of("status", "ok")));
+
+            podService.deletePod("orphan-pod", null);
+
+            ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+            verify(requestBodySpec).bodyValue(bodyCaptor.capture());
+            JsonNode json = new ObjectMapper().valueToTree(bodyCaptor.getValue());
+
+            assertThat(json.get("pod_name").asText()).isEqualTo("orphan-pod");
+            assertThat(json.has("request_id")).isFalse();
         }
 
         @Test
@@ -97,7 +129,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(Map.class))
                     .thenReturn(Mono.error(new BusinessException("Pod 삭제 실패", ErrorCode.POD_DELETION_FAILED)));
 
-            assertThatThrownBy(() -> podService.deletePod("error-pod"))
+            assertThatThrownBy(() -> podService.deletePod("error-pod", 1L))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("Pod 삭제 실패");
         }
@@ -108,14 +140,14 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(Map.class))
                     .thenReturn(Mono.error(new RuntimeException("connection timeout")));
 
-            assertThatThrownBy(() -> podService.deletePod("timeout-pod"))
+            assertThatThrownBy(() -> podService.deletePod("timeout-pod", 1L))
                     .isInstanceOf(BusinessException.class);
         }
 
         @Test
         @DisplayName("deletePod 메서드에 @Transactional 어노테이션이 없다")
         void deletePod_hasNoTransactionalAnnotation() throws NoSuchMethodException {
-            var method = PodService.class.getMethod("deletePod", String.class);
+            var method = PodService.class.getMethod("deletePod", String.class, Long.class);
             var txAnnotation = method.getAnnotation(Transactional.class);
 
             assertThat(txAnnotation)
