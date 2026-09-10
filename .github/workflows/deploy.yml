@@ -19,6 +19,8 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      # 2단계에서 뺀다. 1단계 동안은 실행 시 주입(차트의 admin-prod-config Secret)과 함께 두어,
+      # 배포가 되돌려져도 이미지 안 설정으로 동작하게 한다.
       - name: 🛠 application.yml 생성
         run: |
           mkdir -p ./src/main/resources
@@ -30,8 +32,9 @@ jobs:
       - name: 🐳 Docker Build & Push to Docker Hub
         run: |
           echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/admin-prod:latest .
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/admin-prod:latest -t ${{ secrets.DOCKER_USERNAME }}/admin-prod:${{ github.sha }} .
           docker push ${{ secrets.DOCKER_USERNAME }}/admin-prod:latest
+          docker push ${{ secrets.DOCKER_USERNAME }}/admin-prod:${{ github.sha }}
           docker logout
 
   deploy:
@@ -39,6 +42,21 @@ jobs:
     needs: build
 
     steps:
+      - name: 📦 차트 체크아웃
+        uses: actions/checkout@v7
+
+      # 배포 서버에 따로 두던 차트 사본(/opt/admin_be/helm/admin-prod) 대신 레포의 차트를 쓴다.
+      - name: 📤 Helm 차트를 서버로 복사
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.K8S_HOST }}
+          port: ${{ secrets.K8S_PORT }}
+          username: ${{ secrets.K8S_USERNAME }}
+          key: ${{ secrets.K8S_PRIVATE_KEY }}
+          source: "helm/admin-prod"
+          target: "~/deploy-temp-admin"
+          rm: true
+
       - name: 🚀 Helm을 통한 쿠버네티스 배포
         uses: appleboy/ssh-action@v1.2.5
         with:
@@ -53,14 +71,20 @@ jobs:
             echo "✅ 쿠버네티스 연결 테스트"
             kubectl get nodes
 
-            echo "📦 Helm 차트 배포 (절대 경로 사용)"
-            helm upgrade --install admin-prod /opt/admin_be/helm/admin-prod \
+            echo "📦 Helm 차트 배포 (레포 차트, 커밋 SHA 태그)"
+            # 이미지를 커밋 SHA로 지정해야 되돌릴 때 정확히 직전 이미지로 돌아간다(latest는 이미 새 이미지를 가리킴).
+            if ! helm upgrade --install admin-prod ~/deploy-temp-admin/helm/admin-prod \
               --namespace default \
               --create-namespace \
               --set image.repository=${{ secrets.DOCKER_USERNAME }}/admin-prod \
-              --set image.tag=latest \
+              --set image.tag=${{ github.sha }} \
               --set env.application="$(echo "${{ secrets.APPLICATION }}" | base64 -w 0)" \
               --set args[0]="--spring.profiles.active=prod" \
-              --set forceReload=$(date +%s)
+              --set forceReload=$(date +%s) \
+              --wait --timeout 10m; then
+              echo "❌ 새 버전이 준비 상태에 이르지 못해 직전 버전으로 되돌립니다"
+              helm rollback admin-prod --namespace default --wait --timeout 10m
+              exit 1
+            fi
 
             echo "🎉 배포 완료!"

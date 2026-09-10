@@ -27,3 +27,23 @@ spec:
               value: "-1"
           args:
             {{- toYaml .Values.args | nindent 12 }}
+          # 기동이 끝나 포트를 열기 전에는 트래픽을 받지 않는다. 배포 워크플로의 helm --wait도
+          # 이 신호로 성공 여부를 판단한다.
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            failureThreshold: 60
+          {{- if .Values.env.application }}
+          volumeMounts:
+            - name: app-config
+              mountPath: /app/config
+              readOnly: true
+          {{- end }}
+      {{- if .Values.env.application }}
+      volumes:
+        - name: app-config
+          secret:
+            secretName: admin-prod-config
+      {{- end }}
