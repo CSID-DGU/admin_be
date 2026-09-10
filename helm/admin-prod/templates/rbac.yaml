@@ -1,3 +1,5 @@
+{{- if .Values.rbac.create }}
+# 이 권한은 배포 서버의 차트 사본에 없어 한 번도 helm으로 배포된 적이 없다. 운영 상태를 확인한 뒤 켠다.
 # ~/admin_be/helm/admin-prod/templates/rbac.yaml
 #
 # PodQueryService(KubernetesClient)가 /api/admin/pods/**에서 ailab-infra 네임스페이스의
@@ -40,3 +42,4 @@ roleRef:
   kind: Role
   name: admin-prod-pod-reader
   apiGroup: rbac.authorization.k8s.io
+{{- end }}
