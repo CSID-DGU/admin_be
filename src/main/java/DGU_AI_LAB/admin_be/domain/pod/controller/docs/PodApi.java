@@ -18,7 +18,7 @@ import java.util.Map;
 @Tag(name = "3. 관리자 시스템", description = "컨테이너 이미지, K8s Pod, 알림 템플릿 관리 API")
 public interface PodApi {
 
-    @Operation(summary = "전체 Pod 목록 조회", description = "ailab-infra 네임스페이스의 모든 Pod 이름을 조회합니다.")
+    @Operation(summary = "전체 Pod 목록 조회", description = "사용자 Pod 네임스페이스(kubernetes.pod-namespace, 기본 ailab-infra)의 모든 Pod 이름을 조회합니다.")
     @ApiResponse(responseCode = "200", description = "조회 성공")
     @ApiResponse(responseCode = "500", description = "K8s 연동 오류", content = @Content)
     List<String> getPods();
