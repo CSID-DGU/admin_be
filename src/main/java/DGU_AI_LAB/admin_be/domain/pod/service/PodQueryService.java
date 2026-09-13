@@ -7,8 +7,8 @@ import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.PodResource;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
@@ -23,19 +23,26 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class PodQueryService {
 
-    private static final String NAMESPACE = "ailab-infra";
     private static final int LOG_TAIL_LINES = 500;
     private static final int EVENT_LIMIT = 50;
 
     private final KubernetesClient client;
+    // 사용자 Pod가 만들어지는 네임스페이스. 운영은 ailab-infra이고, 실험 스택은 스택 네임스페이스에
+    // Pod를 만들므로 설정으로 바꾼다. 고정해 두면 스택 관리자 화면에서 모든 컨테이너가 "확인 불가"로 보인다.
+    private final String namespace;
+
+    public PodQueryService(KubernetesClient client,
+                           @Value("${kubernetes.pod-namespace:ailab-infra}") String namespace) {
+        this.client = client;
+        this.namespace = namespace;
+    }
 
     public List<String> getPodNames() {
         try {
             return client.pods()
-                    .inNamespace(NAMESPACE)
+                    .inNamespace(namespace)
                     .list()
                     .getItems()
                     .stream()
@@ -51,7 +58,7 @@ public class PodQueryService {
         Pod pod;
         try {
             pod = client.pods()
-                    .inNamespace(NAMESPACE)
+                    .inNamespace(namespace)
                     .withName(podName)
                     .get();
         } catch (Exception e) {
@@ -70,7 +77,7 @@ public class PodQueryService {
      * @param containerName 생략하면(null) 첫 번째 컨테이너의 로그를 반환한다.
      */
     public String getPodLogs(String podName, String containerName) {
-        PodResource podResource = client.pods().inNamespace(NAMESPACE).withName(podName);
+        PodResource podResource = client.pods().inNamespace(namespace).withName(podName);
         Pod pod;
         try {
             pod = podResource.get();
@@ -101,7 +108,7 @@ public class PodQueryService {
     public List<PodEventDTO> getPodEvents(String podName) {
         try {
             return client.v1().events()
-                    .inNamespace(NAMESPACE)
+                    .inNamespace(namespace)
                     .withField("involvedObject.name", podName)
                     .list()
                     .getItems()
