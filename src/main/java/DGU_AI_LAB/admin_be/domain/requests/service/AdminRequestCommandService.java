@@ -12,10 +12,12 @@ import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.PortRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.ProvisionRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.UserCreationRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
@@ -36,6 +38,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
@@ -72,11 +75,18 @@ public class AdminRequestCommandService {
     private final GroupService groupService;
     private final PodExternalPortRepository podExternalPortRepository;
     private final PodService podService;
+    private final OperationJobService operationJobService;
     private final UbuntuAccountService ubuntuAccountService;
     private final PortRequestService portRequestService;
     private final ObjectMapper objectMapper;
 
     private final @Qualifier("configWebClient") WebClient userCreationWebClient;
+
+    // 제안 시스템(v2.0) 실행 구조. 켜면 승인 API가 작업만 등록하고 바로 돌아가며, 계정·컨테이너 생성은
+    // config-server의 제어기가 한다. Operational Baseline은 동기식 순차 실행이 정의이므로 기본값은 꺼짐이고,
+    // 실험 스택에서만 켠다.
+    @Value("${proposed.async-approval.enabled:false}")
+    private boolean asyncApprovalEnabled;
     private final PlatformTransactionManager transactionManager;
 
     // 동시 처리 한도. Pod 생성 대기(최대 600초)가 그만큼 Tomcat 워커 스레드를 붙잡으므로,
@@ -107,6 +117,9 @@ public class AdminRequestCommandService {
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SaveRequestResponseDTO approveRequest(ApproveRequestDTO dto) {
+        if (asyncApprovalEnabled) {
+            return registerApprovalJob(dto);
+        }
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
 
         // 1. 상태 검증 + PROCESSING 전환 + HTTP 요청 데이터 추출 (짧은 트랜잭션, 이후 커넥션 반납)
@@ -352,6 +365,231 @@ public class AdminRequestCommandService {
         );
 
         return SaveRequestResponseDTO.fromEntity(savedRequest);
+    }
+
+    /**
+     * 제안 시스템(v2.0) 승인: config-server에 생성 작업만 등록하고 바로 돌아온다. 계정과 컨테이너는
+     * config-server의 제어기가 단계별로 만들고, 그 결과는 {@link #completeApprovalJob}/{@link #failApprovalJob}이
+     * 받아 신청에 반영한다. 이 메서드가 정상 반환한 시점의 신청은 아직 PROCESSING이다 — 동기 경로처럼
+     * "반환 = 승인 완료"가 아니다.
+     *
+     * <p>같은 사용자의 신청 두 건을 동시에 승인하면 뒤쪽 작업은 계정이 이미 있다는 이유로 실패하고
+     * PENDING으로 되돌아간다. 다시 승인하면 그때는 계정을 재사용해 정상 처리된다 — 동기 경로에서
+     * 계정 생성 API가 409로 실패하던 것과 같은 결과다.
+     */
+    private SaveRequestResponseDTO registerApprovalJob(ApproveRequestDTO dto) {
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+
+        final Long[] userIdRef = {null};
+        final String[] usernameRef = {null};
+        final String[] serverNameRef = {null};
+        final UserCreationRequestDTO[] creationDtoRef = {null};
+        final Request[] savedRequestRef = {null};
+        tx.execute(status -> {
+            Request req = requestRepository.findByIdForUpdate(dto.requestId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+            if (req.getStatus() != Status.PENDING) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+            }
+            req.markAsProcessing(); // 다른 관리자의 중복 승인 시도 차단
+            // 관리자가 고른 이미지/자원그룹/코멘트는 작업이 끝난 뒤 다른 스레드가 확정하므로 지금 남겨 둔다.
+            ContainerImage image = containerImageRepository.findById(dto.imageId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+            ResourceGroup resourceGroup = resourceGroupRepository.findById(dto.resourceGroupId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+            req.prepareAsyncApproval(image, resourceGroup, dto.adminComment());
+
+            List<UserCreationRequestDTO.SupplementaryGroup> supplementaryGroups = req.getRequestGroups().stream()
+                    .map(rg -> new UserCreationRequestDTO.SupplementaryGroup(rg.getGroup().getGroupName(), rg.getGroup().getUbuntuGid()))
+                    .toList();
+            creationDtoRef[0] = new UserCreationRequestDTO(
+                    dto.requestId(),
+                    req.getUbuntuUsername(),
+                    req.getUbuntuPasswordBase64(),
+                    req.getUser().getName(),
+                    req.getUbuntuUsername(),
+                    false,
+                    supplementaryGroups
+            );
+            userIdRef[0] = req.getUser().getUserId();
+            usernameRef[0] = req.getUbuntuUsername();
+            serverNameRef[0] = req.getResourceGroup().getServerName();
+            // 트랜잭션 종료 후 사용되는 모든 lazy 연관 초기화
+            req.getUser().getEmail();
+            req.getContainerImage().getImageName();
+            req.getRequestGroups().size();
+            savedRequestRef[0] = req;
+            return null;
+        });
+        Long requestId = dto.requestId();
+        Long userId = userIdRef[0];
+        String username = usernameRef[0];
+        String serverName = serverNameRef[0];
+
+        // 이미 리눅스 계정이 있는 사용자면 계정 정보를 빼고 등록한다 — 그래야 제어기가 계정 단계를
+        // 건너뛰고 컨테이너만 만들어, 기존 홈 디렉터리를 그대로 물려받는다.
+        final boolean[] reuseAccountRef = {false};
+        synchronized (approvalLockFor(userId)) {
+            new TransactionTemplate(transactionManager).execute(status -> {
+                User owner = userRepository.findByIdForUpdate(userId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+                reuseAccountRef[0] = owner.hasUbuntuAccount();
+                return null;
+            });
+        }
+        boolean reuseAccount = reuseAccountRef[0];
+
+        // 계정을 새로 만드는 경우의 그룹은 작업이 계정을 만들 때 함께 넣는다. 재사용 계정은 그 경로가
+        // 없으므로 여기서 더해 준다(집합-추가라 여러 번 불러도 안전하다).
+        if (reuseAccount) {
+            List<String> requestGroupNames = creationDtoRef[0].supplementaryGroups().stream()
+                    .map(UserCreationRequestDTO.SupplementaryGroup::name)
+                    .toList();
+            try {
+                groupService.addUserToGroups(username, requestGroupNames);
+            } catch (Exception e) {
+                log.warn("[보상 트랜잭션] 그룹 추가 실패 → 상태 복구 시작: {}", username, e);
+                notifyApprovalFailure(String.format(
+                        "[승인 실패] 그룹 추가 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, groups=%s, error=%s",
+                        username, requestId, requestGroupNames, e.getMessage()), serverName);
+                revertToPendingIfStillProcessing(requestId, serverName);
+                throw e;
+            }
+        }
+
+        ProvisionRegisterRequestDTO body = reuseAccount
+                ? ProvisionRegisterRequestDTO.podOnly(requestId, username)
+                : ProvisionRegisterRequestDTO.withAccount(creationDtoRef[0]);
+        try {
+            operationJobService.registerProvision(body);
+        } catch (Exception e) {
+            // 등록 자체가 실패했으면 아직 아무것도 만들어지지 않았다 — 정리할 자원 없이 되돌린다.
+            log.warn("[보상 트랜잭션] 생성 작업 등록 실패 → 상태 복구 시작: {}", username, e);
+            notifyApprovalFailure(String.format(
+                    "[승인 실패] 생성 작업 등록 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
+                    username, requestId, e.getMessage()), serverName);
+            revertToPendingIfStillProcessing(requestId, serverName);
+            throw e;
+        }
+
+        return SaveRequestResponseDTO.fromEntity(savedRequestRef[0]);
+    }
+
+    /**
+     * 등록해 둔 생성 작업이 성공했을 때 신청에 반영하고 안내 메일을 보낸다. 작업 결과 폴러가 호출한다.
+     * 동기 경로의 "5. DB 저장 + 6. 이메일 발송"에 해당한다.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void completeApprovalJob(Long requestId, JobResultResponseDTO.Result made) {
+        if (made == null || made.podName() == null) {
+            // 작업은 성공했는데 만든 자원을 받지 못했다(결과 보관 기간이 지난 경우 등). 그대로 확정하면
+            // 컨테이너 이름도 포트도 없는 신청이 승인 완료로 남으므로, 사람이 확인하도록 알리고 멈춘다.
+            log.error("생성 작업 성공 결과에 자원 정보가 없어 신청에 반영하지 못함: requestId={}", requestId);
+            notifyApprovalFailure(String.format(
+                    "[승인 확인 필요] 생성 작업은 성공했으나 결과 정보를 받지 못해 신청에 반영하지 못했습니다: requestId=%d",
+                    requestId), serverNameOf(requestId));
+            return;
+        }
+
+        final Request[] savedRequestRef = {null};
+        new TransactionTemplate(transactionManager).execute(status -> {
+            Request req = requestRepository.findByIdForUpdate(requestId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+            if (req.getStatus() != Status.PROCESSING) {
+                // 작업이 도는 동안 다른 관리자가 거절했을 수 있다. 덮어쓰지 않는다.
+                log.warn("생성 작업 성공을 반영하려 했으나 상태가 변경됨 - requestId={}, 현재 상태={}",
+                        requestId, req.getStatus());
+                return null;
+            }
+            User owner = userRepository.findByIdForUpdate(req.getUser().getUserId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+            if (made.uid() != null && made.gid() != null) {
+                // 작업이 계정을 새로 만든 경우다. 재사용한 경우엔 결과에 uid가 없고 User에 이미 있다.
+                owner.assignUbuntuAccount(made.uid(), made.gid());
+            }
+            req.assignUbuntuIds(owner.getUbuntuUid(), owner.getUbuntuGid());
+            req.assignPodInfo(made.podName(), made.node());
+            req.completeApproval();
+            if (made.ports() != null) {
+                for (CreatePodResponseDTO.PortInfo port : made.ports()) {
+                    podExternalPortRepository.save(PodExternalPort.builder()
+                            .request(req)
+                            .internalPort(port.internalPort())
+                            .externalPort(port.externalPort())
+                            .usagePurpose(port.usagePurpose())
+                            .build());
+                }
+            }
+            // 트랜잭션 종료 후 사용되는 모든 lazy 연관 초기화
+            req.getUser().getEmail();
+            req.getContainerImage().getImageName();
+            req.getResourceGroup().getServerName();
+            req.getRequestGroups().size();
+            savedRequestRef[0] = req;
+            return null;
+        });
+
+        Request savedRequest = savedRequestRef[0];
+        if (savedRequest == null) {
+            return;
+        }
+        String sshPort = externalPortOf(made, "ssh");
+        String jupyterPort = externalPortOf(made, "jupyter");
+        sendNotificationSafely(
+                () -> alarmService.sendContainerCreatedEmail(savedRequest, sshPort, jupyterPort),
+                () -> log.info("사용자 '{}'에게 컨테이너 배정 안내 메일을 발송했습니다.", savedRequest.getUser().getName()),
+                e -> log.warn("사용자 '{}'에게 배정 안내 메일 발송 실패. (RequestId: {})",
+                        savedRequest.getUser().getName(), savedRequest.getRequestId(), e)
+        );
+    }
+
+    /**
+     * 등록해 둔 생성 작업이 실패했을 때 정리한다. 이번 작업이 만든 계정을 되돌리는 것은 config-server가
+     * 동기 경로와 같은 조건으로 이미 수행했으므로(노드를 모르거나 그 계정의 다른 컨테이너가 남아 있으면
+     * 보류), 여기서는 신청 상태만 되돌리고 알린다.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void failApprovalJob(Long requestId, JobResultResponseDTO result) {
+        String serverName = serverNameOf(requestId);
+        notifyApprovalFailure(String.format(
+                "[승인 실패] 생성 작업이 실패해 상태를 PENDING으로 되돌렸습니다: requestId=%d, error=%s",
+                requestId, result.errorCode()), serverName);
+        revertToPendingIfStillProcessing(requestId, serverName);
+    }
+
+    /**
+     * 결과 불명(UNKNOWN)인 작업을 알린다. 실행 여부 자체를 알 수 없는 상태라 되돌리지 않는다 —
+     * 되돌리면 실제로는 만들어진 자원이 남은 채 신청만 PENDING이 되어, 재승인 때 중복 생성으로
+     * 이어질 수 있다. 신청은 PROCESSING에 둔 채 관리자 점검 대상으로 남긴다.
+     */
+    public void reportUnknownApprovalJob(Long requestId, JobResultResponseDTO result) {
+        notifyApprovalFailure(String.format(
+                "[승인 확인 필요] 생성 작업의 결과가 불명입니다. 자원이 남아 있는지 확인이 필요합니다: requestId=%d, error=%s",
+                requestId, result.errorCode()), serverNameOf(requestId));
+    }
+
+    /** 알림을 관리자가 실제로 보는 farm/lab 채널로 보내기 위한 서버 구분. 조회 실패는 알림 실패로 번지지 않게 삼킨다. */
+    private String serverNameOf(Long requestId) {
+        try {
+            return new TransactionTemplate(transactionManager).execute(status ->
+                    requestRepository.findById(requestId)
+                            .map(req -> req.getResourceGroup().getServerName())
+                            .orElse(null));
+        } catch (Exception e) {
+            log.warn("서버 구분 조회 실패: requestId={}", requestId, e);
+            return null;
+        }
+    }
+
+    /** 작업 결과의 포트 목록에서 usage_purpose가 일치하는 첫 외부 포트(문자열). 없으면 "". */
+    private String externalPortOf(JobResultResponseDTO.Result made, String purpose) {
+        if (made.ports() == null) {
+            return "";
+        }
+        return made.ports().stream()
+                .filter(p -> purpose.equalsIgnoreCase(p.usagePurpose()))
+                .map(p -> String.valueOf(p.externalPort()))
+                .findFirst().orElse("");
     }
 
     private UserCreationResponse callUserCreationApi(UserCreationRequestDTO userCreationDto) {

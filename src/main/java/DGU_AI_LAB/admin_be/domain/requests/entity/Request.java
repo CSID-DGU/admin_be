@@ -150,6 +150,27 @@ public class Request extends BaseTimeEntity {
         }
     }
 
+    /**
+     * 제안 시스템(v2.0) 승인: 작업을 등록하는 시점에 관리자가 고른 값만 먼저 신청에 남긴다.
+     * 계정·컨테이너는 config-server의 제어기가 뒤에서 만들고, 그 작업이 성공해야
+     * {@link #completeApproval()}로 FULFILLED가 된다. 상태를 여기서 바꾸지 않는 이유는,
+     * 아직 컨테이너가 없는 신청이 승인 완료로 보이면 안 되기 때문이다.
+     */
+    public void prepareAsyncApproval(ContainerImage image, ResourceGroup resourceGroup, String adminComment) {
+        this.containerImage = image;
+        this.resourceGroup = resourceGroup;
+
+        if (adminComment != null && !adminComment.isBlank()) {
+            this.adminComment = adminComment;
+        }
+    }
+
+    /** 등록해 둔 생성 작업이 성공했을 때 승인을 확정한다. 관리자가 고른 값은 이미 반영돼 있다. */
+    public void completeApproval() {
+        this.status = Status.FULFILLED;
+        this.approvedAt = LocalDateTime.now();
+    }
+
     public void reject(String comment) {
         this.status = Status.DENIED;
         this.adminComment = comment;

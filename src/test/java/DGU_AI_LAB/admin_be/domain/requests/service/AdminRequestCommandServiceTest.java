@@ -59,6 +59,10 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.ProvisionRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
+import org.springframework.test.util.ReflectionTestUtils;
+
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class AdminRequestCommandServiceTest {
@@ -73,6 +77,7 @@ class AdminRequestCommandServiceTest {
     @Mock private GroupService groupService;
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private PodService podService;
+    @Mock private OperationJobService operationJobService;
     @Mock private UbuntuAccountService ubuntuAccountService;
     @Mock private PortRequestService portRequestService;
     @Mock private WebClient mockWebClient;
@@ -100,7 +105,7 @@ class AdminRequestCommandServiceTest {
         service = new AdminRequestCommandService(
                 alarmService, requestRepository, userRepository, containerImageRepository,
                 resourceGroupRepository, changeRequestRepository,
-                groupRepository, groupService, podExternalPortRepository, podService, ubuntuAccountService, portRequestService, new ObjectMapper(),
+                groupRepository, groupService, podExternalPortRepository, podService, operationJobService, ubuntuAccountService, portRequestService, new ObjectMapper(),
                 mockWebClient, transactionManager
         );
         // 공유 엔티티 기본 설정
@@ -1363,5 +1368,189 @@ class AdminRequestCommandServiceTest {
         when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
         when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
         return request;
+    }
+
+    @Nested
+    @DisplayName("제안 시스템(v2.0) 비동기 승인")
+    class AsyncApproval {
+
+        @BeforeEach
+        void enableAsyncApproval() {
+            ReflectionTestUtils.setField(service, "asyncApprovalEnabled", true);
+            when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
+            when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
+        }
+
+        private Request processingRequest(Long requestId) {
+            Request request = mock(Request.class);
+            when(request.getRequestId()).thenReturn(requestId);
+            when(request.getStatus()).thenReturn(Status.PROCESSING);
+            when(request.getUser()).thenReturn(mockUser);
+            when(request.getResourceGroup()).thenReturn(mockRg);
+            when(request.getContainerImage()).thenReturn(mockImage);
+            when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
+            when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+            return request;
+        }
+
+        @Test
+        @DisplayName("계정이 없는 사용자는 계정 정보를 담아 생성 작업으로 등록하고, 동기 경로는 타지 않는다")
+        void registersProvisionWithAccount() {
+            // Given
+            Long requestId = 201L;
+            Request request = buildMockedRequest(requestId);
+
+            // When
+            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인합니다"));
+
+            // Then
+            ArgumentCaptor<ProvisionRegisterRequestDTO> captor =
+                    ArgumentCaptor.forClass(ProvisionRegisterRequestDTO.class);
+            verify(operationJobService).registerProvision(captor.capture());
+            ProvisionRegisterRequestDTO body = captor.getValue();
+            assertThat(body.requestId()).isEqualTo(requestId);
+            assertThat(body.username()).isEqualTo("testuser");
+            assertThat(body.account()).isNotNull();
+            assertThat(body.account().passwordBase64()).isEqualTo("cGxhaW5fdGV4dF9wdw==");
+            assertThat(body.account().primaryGroupName()).isEqualTo("testuser");
+            assertThat(body.account().gecos()).isEqualTo("테스트유저");
+
+            // 승인은 작업 등록까지만 한다 — 계정 생성 API도 컨테이너 생성 API도 부르지 않는다.
+            verify(mockWebClient, never()).put();
+            verify(podService, never()).createPod(anyString(), anyLong());
+            // 관리자가 고른 값은 미리 남기고, 승인 확정은 작업이 성공한 뒤에 한다.
+            verify(request).markAsProcessing();
+            verify(request).prepareAsyncApproval(mockImage, mockRg, "승인합니다");
+            verify(request, never()).completeApproval();
+        }
+
+        @Test
+        @DisplayName("계정이 있는 사용자는 계정 정보를 빼고 등록하고, 이번 신청의 그룹만 따로 추가한다")
+        void registersPodOnlyWhenAccountExists() {
+            // Given
+            Long requestId = 202L;
+            buildMockedRequest(requestId);
+            when(mockUser.hasUbuntuAccount()).thenReturn(true);
+
+            // When
+            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
+
+            // Then
+            ArgumentCaptor<ProvisionRegisterRequestDTO> captor =
+                    ArgumentCaptor.forClass(ProvisionRegisterRequestDTO.class);
+            verify(operationJobService).registerProvision(captor.capture());
+            assertThat(captor.getValue().account()).isNull();
+            // 계정을 새로 만들 때는 작업이 그룹까지 넣지만, 재사용 계정은 그 경로가 없다.
+            verify(groupService).addUserToGroups(eq("testuser"), anyList());
+        }
+
+        @Test
+        @DisplayName("작업 등록이 실패하면 신청을 PENDING으로 되돌린다")
+        void revertsWhenRegistrationFails() {
+            // Given
+            Long requestId = 203L;
+            Request request = buildMockedRequest(requestId);
+            doThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED))
+                    .when(operationJobService).registerProvision(any());
+
+            // When & Then
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
+                    .isInstanceOf(BusinessException.class);
+            verify(request).revertToPending();
+        }
+
+        @Test
+        @DisplayName("작업이 성공하면 계정·컨테이너 정보와 포트를 반영하고 승인을 확정한다")
+        void completesApprovalFromJobResult() {
+            // Given
+            Long requestId = 204L;
+            Request request = processingRequest(requestId);
+            when(mockUser.getUbuntuUid()).thenReturn(50001L);
+            when(mockUser.getUbuntuGid()).thenReturn(50001L);
+            when(podExternalPortRepository.save(any(PodExternalPort.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            JobResultResponseDTO.Result made = new JobResultResponseDTO.Result(
+                    50001L, 50001L, "ailab-testuser-abcd", "farm2",
+                    List.of(new CreatePodResponseDTO.PortInfo("ssh", 22, 32001),
+                            new CreatePodResponseDTO.PortInfo("jupyter", 8888, 32002)));
+
+            // When
+            service.completeApprovalJob(requestId, made);
+
+            // Then
+            verify(mockUser).assignUbuntuAccount(50001L, 50001L);
+            verify(request).assignUbuntuIds(50001L, 50001L);
+            verify(request).assignPodInfo("ailab-testuser-abcd", "farm2");
+            verify(request).completeApproval();
+            verify(podExternalPortRepository, times(2)).save(any(PodExternalPort.class));
+            verify(alarmService).sendContainerCreatedEmail(request, "32001", "32002");
+        }
+
+        @Test
+        @DisplayName("작업이 도는 사이 신청 상태가 바뀌었으면 승인을 확정하지 않는다")
+        void doesNotCompleteWhenStatusChanged() {
+            // Given - 다른 관리자가 거절해 PROCESSING이 아닌 신청
+            Long requestId = 205L;
+            Request request = mock(Request.class);
+            when(request.getStatus()).thenReturn(Status.DENIED);
+            when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+
+            // When
+            service.completeApprovalJob(requestId, new JobResultResponseDTO.Result(
+                    null, null, "ailab-testuser-abcd", "farm2", List.of()));
+
+            // Then
+            verify(request, never()).completeApproval();
+            verify(alarmService, never()).sendContainerCreatedEmail(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("작업 결과에 자원 정보가 없으면 확정하지 않고 관리자에게 알린다")
+        void reportsWhenResultMissing() {
+            // Given
+            Long requestId = 206L;
+            Request request = processingRequest(requestId);
+
+            // When
+            service.completeApprovalJob(requestId, null);
+
+            // Then
+            verify(request, never()).completeApproval();
+            verify(alarmService).sendAdminSlackNotification(any(), contains("결과 정보를 받지 못해"));
+        }
+
+        @Test
+        @DisplayName("작업이 실패하면 신청을 PENDING으로 되돌리고 알린다")
+        void failRevertsToPending() {
+            // Given
+            Long requestId = 207L;
+            Request request = processingRequest(requestId);
+            JobResultResponseDTO result = new JobResultResponseDTO(
+                    String.valueOf(requestId), "provision", 9L, "FAIL", "KDC_FAILED", null, null);
+
+            // When
+            service.failApprovalJob(requestId, result);
+
+            // Then
+            verify(request).revertToPending();
+            verify(alarmService).sendAdminSlackNotification(any(), contains("KDC_FAILED"));
+        }
+
+        @Test
+        @DisplayName("결과 불명이면 되돌리지 않고 관리자 확인 대상으로만 알린다")
+        void unknownKeepsRequestUntouched() {
+            // Given - 자원이 남아 있을 수 있어 되돌리면 재승인 때 중복 생성이 된다.
+            Long requestId = 208L;
+            Request request = processingRequest(requestId);
+            JobResultResponseDTO result = new JobResultResponseDTO(
+                    String.valueOf(requestId), "provision", 10L, "UNKNOWN", "WAIT_READY_TIMEOUT", null, null);
+
+            // When
+            service.reportUnknownApprovalJob(requestId, result);
+
+            // Then
+            verify(request, never()).revertToPending();
+            verify(alarmService).sendAdminSlackNotification(any(), contains("결과가 불명"));
+        }
     }
 }
