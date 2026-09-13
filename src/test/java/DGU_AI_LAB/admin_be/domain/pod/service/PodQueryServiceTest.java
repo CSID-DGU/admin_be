@@ -38,6 +38,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -60,7 +62,7 @@ class PodQueryServiceTest {
 
     @BeforeEach
     void setUp() {
-        podQueryService = new PodQueryService(client);
+        podQueryService = new PodQueryService(client, "ailab-infra");
         when(client.pods()).thenReturn(pods);
         when(pods.inNamespace("ailab-infra")).thenReturn(inNamespace);
     }
@@ -212,5 +214,21 @@ class PodQueryServiceTest {
             assertThat(result).extracting(PodEventDTO::reason).containsExactly("FailedScheduling", "Scheduled");
             assertThat(result.get(0).count()).isEqualTo(3);
         }
+    }
+
+    @Test
+    @DisplayName("설정한 네임스페이스에서 Pod를 조회한다 (실험 스택은 스택 네임스페이스에 Pod를 만든다)")
+    void usesConfiguredNamespace() {
+        PodQueryService stackService = new PodQueryService(client, "ailab-noprobe");
+        when(pods.inNamespace("ailab-noprobe")).thenReturn(inNamespace);
+
+        try {
+            stackService.getPodNames();
+        } catch (Exception ignored) {
+            // 목록 결과는 이 테스트의 관심사가 아니다 — 어느 네임스페이스로 조회했는지만 본다.
+        }
+
+        verify(pods).inNamespace("ailab-noprobe");
+        verify(pods, never()).inNamespace("ailab-infra");
     }
 }
