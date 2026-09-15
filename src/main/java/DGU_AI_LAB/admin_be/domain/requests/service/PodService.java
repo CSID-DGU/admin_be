@@ -1,7 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
-import DGU_AI_LAB.admin_be.domain.requests.dto.request.CreatePodRequestDTO;
-import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigratePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.PodCreationStatusResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -10,8 +9,6 @@ import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.webclient.WebClientErrorHandler;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -23,7 +20,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Pod 생성/삭제 관련 Infra API 호출 서비스
+ * Pod 회수·마이그레이션·생성 진행 상황 관련 Infra API 호출 서비스.
+ * Pod 생성은 승인 때 등록하는 생성 작업(OperationJobService)이 한다.
  */
 @Slf4j
 @Service
@@ -33,31 +31,12 @@ public class PodService {
     private final @Qualifier("podWebClient") WebClient webClient;
     private final @Qualifier("configWebClient") WebClient configWebClient;
     private final RequestRepository requestRepository;
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private final OperationJobService operationJobService;
 
-    /**
-     * config-server 에러 응답 바디(JSON 문자열)에서 "node" 필드만 뽑아낸다. 실패 응답에
-     * 어느 farm에 배포를 시도했는지가 담겨있는데, 그래야 계정 삭제 보상 트랜잭션이 그
-     * 노드로만 정리를 좁힐 수 있다. 파싱 실패나 필드 부재는 흔한 경우(모든 에러 응답에
-     * node가 있는 건 아님)이므로 조용히 null을 반환한다.
-     */
-    private static String extractNode(String body) {
-        try {
-            JsonNode json = OBJECT_MAPPER.readTree(body);
-            JsonNode node = json.get("node");
-            return (node != null && !node.isNull()) ? node.asText() : null;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    // request_id는 config-server가 작업 이력을 승인 1건 단위로 묶는 키다. 안 보내면
-    // config-server가 username+시각으로 임시 키를 만들어, 같은 승인의 생성 이력과
-    // 회수 이력이 갈라져 회수 소요시간을 산출할 수 없다.
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    private record DeletePodRequest(
-            @com.fasterxml.jackson.annotation.JsonProperty("pod_name") String podName,
-            @JsonProperty("request_id") Long requestId
+    // 대응하는 신청이 없는 고아 Pod 정리 전용. 작업 인터페이스는 신청 번호로만 작업을 식별하므로
+    // 이 경우만 config-server의 Pod 삭제 API를 직접 부른다.
+    private record DeleteOrphanPodRequest(
+            @JsonProperty("pod_name") String podName
     ) {}
 
     // config-server는 min_improvement_ratio 키가 아예 없어야 자체 기본값(0.2)을 쓴다.
@@ -74,74 +53,26 @@ public class PodService {
             @JsonProperty("min_improvement_ratio") Double minImprovementRatio
     ) {}
 
-    public CreatePodResponseDTO createPod(String username, Long requestId) {
-        try {
-            log.info("Pod 생성 API 요청 시작: 사용자: {}, requestId: {}", username, requestId);
-
-            CreatePodResponseDTO response = WebClientErrorHandler.onError(
-                            webClient.post()
-                                    .uri("/create-pod")
-                                    .bodyValue(new CreatePodRequestDTO(username, requestId))
-                                    .retrieve(),
-                            (status, body) -> new PodCreationFailedException("Pod 생성 실패: " + body, ErrorCode.POD_CREATION_FAILED, extractNode(body))
-                    )
-                    .bodyToMono(CreatePodResponseDTO.class)
-                    .block();
-
-            if (response == null || response.podName() == null) {
-                log.error("Pod 생성 API가 빈 응답을 반환했습니다. 사용자: {}", username);
-                throw new BusinessException(ErrorCode.POD_CREATION_FAILED);
-            }
-            log.info("Pod 생성 API 요청 성공: 사용자: {}, pod: {}", username, response.podName());
-            return response;
-
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Pod 생성 API 호출 중 예기치 않은 오류 발생.", e);
-            throw new BusinessException(ErrorCode.POD_CREATION_FAILED);
-        }
-    }
-
     /**
-     * @param requestId 이 회수를 유발한 신청 PK. config-server가 작업 이력을 이 값으로 묶으므로
-     *                  아는 호출자는 반드시 넘겨야 한다. 대응하는 신청이 아예 없는 고아 Pod
-     *                  정리처럼 승인 번호가 존재하지 않는 경우에만 null을 넘긴다.
+     * 신청에 딸린 컨테이너를 회수한다. config-server에 회수 작업을 등록하고 끝날 때까지 기다린다 —
+     * 호출자(만료 정리·사용자 정리)는 이 메서드가 정상 반환하면 컨테이너가 사라진 것으로 보고 신청을 정리한다.
+     * 이미 없는 Pod도 성공으로 끝난다.
+     *
+     * @param requestId 이 회수를 유발한 신청 PK. 작업은 신청 번호로 식별되므로 반드시 넘긴다.
+     *                  대응하는 신청이 없는 고아 Pod는 {@link #deleteOrphanPod}를 쓴다.
      */
     public void deletePod(String podName, Long requestId) {
         if (podName == null) {
             log.warn("pod_name이 없어 Pod 삭제를 건너뜁니다.");
             return;
         }
-
-        try {
-            log.info("Pod 삭제 API 요청 시작: {}, requestId: {}", podName, requestId);
-
-            WebClientErrorHandler.onError(
-                            webClient.post()
-                                    .uri("/delete-pod")
-                                    .bodyValue(new DeletePodRequest(podName, requestId))
-                                    .retrieve(),
-                            (status, body) -> {
-                                if (status == HttpStatus.NOT_FOUND) {
-                                    log.warn("Pod가 이미 존재하지 않음 (404): {}", podName);
-                                    return null;
-                                }
-                                log.error("Pod 삭제 실패 ({}): {}", status, body);
-                                return new BusinessException("Pod 삭제 실패: " + body, ErrorCode.POD_DELETION_FAILED);
-                            }
-                    )
-                    .bodyToMono(Map.class)
-                    .block();
-
-            log.info("Pod 삭제 API 요청 성공: {}", podName);
-
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Pod 삭제 API 호출 중 예기치 않은 오류: {}", podName, e);
-            throw new BusinessException("Pod 삭제 API 호출 오류", ErrorCode.POD_DELETION_FAILED);
+        if (requestId == null) {
+            throw new BusinessException("신청 번호 없이 컨테이너를 회수할 수 없습니다: " + podName, ErrorCode.POD_DELETION_FAILED);
         }
+        log.info("컨테이너 회수 작업 요청: {}, requestId: {}", podName, requestId);
+        operationJobService.revokeAndWait(
+                new RevokeRegisterRequestDTO(requestId, podName, null, null, false), ErrorCode.POD_DELETION_FAILED);
+        log.info("컨테이너 회수 완료: {}, requestId: {}", podName, requestId);
     }
 
     /**
@@ -156,8 +87,34 @@ public class PodService {
         if (requestRepository.existsByPodName(podName)) {
             throw new BusinessException(ErrorCode.POD_NOT_ORPHAN);
         }
-        // 대응하는 신청이 없는 것이 이 경로의 전제이므로 넘길 승인 번호가 없다.
-        deletePod(podName, null);
+        try {
+            log.info("고아 Pod 삭제 API 요청 시작: {}", podName);
+
+            WebClientErrorHandler.onError(
+                            webClient.post()
+                                    .uri("/delete-pod")
+                                    .bodyValue(new DeleteOrphanPodRequest(podName))
+                                    .retrieve(),
+                            (status, body) -> {
+                                if (status == HttpStatus.NOT_FOUND) {
+                                    log.warn("Pod가 이미 존재하지 않음 (404): {}", podName);
+                                    return null;
+                                }
+                                log.error("Pod 삭제 실패 ({}): {}", status, body);
+                                return new BusinessException("Pod 삭제 실패: " + body, ErrorCode.POD_DELETION_FAILED);
+                            }
+                    )
+                    .bodyToMono(Map.class)
+                    .block();
+
+            log.info("고아 Pod 삭제 API 요청 성공: {}", podName);
+
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("고아 Pod 삭제 API 호출 중 예기치 않은 오류: {}", podName, e);
+            throw new BusinessException("Pod 삭제 API 호출 오류", ErrorCode.POD_DELETION_FAILED);
+        }
     }
 
     public MigratePodResponseDTO migratePod(String username, String podName, Long requestId, List<String> nodes, Double minImprovementRatio) {

@@ -7,6 +7,8 @@ import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageReposi
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.service.OperationJobService;
 import DGU_AI_LAB.admin_be.domain.requests.service.UbuntuAccountService;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
@@ -37,6 +39,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest(classes = AdminBeApplication.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
@@ -54,6 +57,9 @@ public class RequestSchedulerServiceTest {
 
     @MockitoBean
     private UbuntuAccountService ubuntuAccountService;
+
+    @MockitoBean
+    private OperationJobService operationJobService;
 
     @Autowired private RequestRepository requestRepository;
     @Autowired private UserRepository userRepository;
@@ -236,6 +242,10 @@ public class RequestSchedulerServiceTest {
             return null;
         });
         em.clear();
+
+        // 생성 작업이 등록되지 않은 채 멈춘 신청 — 되돌림 대상이다.
+        when(operationJobService.getResult(anyString(), anyLong())).thenReturn(
+                new JobResultResponseDTO(null, OperationJobService.KIND_PROVISION, null, OperationJobService.PHASE_NONE, null, null, null));
 
         try (MockedStatic<LocalDateTime> mockedTime = Mockito.mockStatic(LocalDateTime.class, Mockito.CALLS_REAL_METHODS)) {
             mockedTime.when(LocalDateTime::now).thenReturn(MOCK_NOW);

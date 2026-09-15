@@ -1,10 +1,12 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
+import DGU_AI_LAB.admin_be.domain.requests.service.OperationJobService;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
@@ -31,14 +33,10 @@ public class RequestSchedulerService {
     private final MessageUtils messageUtils;
     private final RequestNotificationService requestNotificationService;
     private final AdminRequestCommandService adminRequestCommandService;
+    private final OperationJobService operationJobService;
 
-    // approveRequest 비동기 전환(#475) 이후 정상 처리 시간은 계정 생성(최대 120초,
-    // config.timeout-seconds) + Pod 생성(최대 600초, config.pod-timeout-seconds)을 더한
-    // 최대 720초(12분)까지 걸릴 수 있다. 예전 주석("보통 몇 초~1분")은 동기 시절 값이라
-    // 더 이상 맞지 않는다 — 10분으로 두면 정상 처리 중인 요청을 스케줄러가 먼저 회수해
-    // PENDING으로 되돌리고, 그 사이 관리자가 재승인하면 원래 처리와 새 처리가 동시에
-    // 같은 사용자로 Pod를 두 번 만드는 경합이 생긴다. 최대 소요시간(12분)보다 확실히 길게
-    // 잡아 그 창을 닫는다.
+    // 이 시간 넘게 상태가 바뀌지 않은 요청을 재조정 대상으로 본다. PROCESSING은 여기에 더해 생성 작업의
+    // 상태를 확인하고 되돌리므로(reconcileStaleProcessing), 재시도로 길어진 작업을 시간만 보고 되돌리지 않는다.
     private static final long STALE_IN_FLIGHT_THRESHOLD_MINUTES = 20;
 
     @Scheduled(cron = "0 00 08 * * ?", zone = "Asia/Seoul")
@@ -79,9 +77,29 @@ public class RequestSchedulerService {
         }
     }
 
+    /**
+     * PROCESSING은 승인 때 등록한 생성 작업이 도는 동안의 상태다. 작업은 재시도로 길어질 수 있어, 시간만
+     * 보고 되돌리면 작업은 계속 도는데 신청만 PENDING이 되고 재승인 때 컨테이너가 두 번 만들어진다.
+     * 그래서 작업이 없거나(등록 전에 admin_be가 죽음) 실패로 끝났을 때만 되돌린다. 성공·결과 불명은 작업
+     * 결과 폴러가 처리하고, 실행 중이면 다음 바퀴에 다시 본다. 작업 상태를 조회하지 못하면 되돌리지 않는다.
+     */
     private void reconcileStaleProcessing(Request request) {
-        log.warn("🔧 [재조정] {}분 넘게 PROCESSING 상태로 방치된 요청을 PENDING으로 복구 시도: requestId={}",
-                STALE_IN_FLIGHT_THRESHOLD_MINUTES, request.getRequestId());
+        Long requestId = request.getRequestId();
+        String phase;
+        try {
+            JobResultResponseDTO job = operationJobService.getResult(OperationJobService.KIND_PROVISION, requestId);
+            // 자원을 남긴 실패(DEGRADED)는 되돌리면 안 되므로 결과 불명과 같이 취급한다.
+            phase = OperationJobService.isDegraded(job) ? OperationJobService.ERROR_DEGRADED : job.phase();
+        } catch (Exception e) {
+            log.warn("🔧 [재조정] 생성 작업 상태를 조회하지 못해 PROCESSING 요청을 그대로 둔다: requestId={}", requestId, e);
+            return;
+        }
+        if (!OperationJobService.PHASE_NONE.equals(phase) && !OperationJobService.PHASE_FAIL.equals(phase)) {
+            log.info("🔧 [재조정] 생성 작업이 {} 상태라 PROCESSING 요청을 되돌리지 않는다: requestId={}", phase, requestId);
+            return;
+        }
+        log.warn("🔧 [재조정] {}분 넘게 PROCESSING 상태로 방치된 요청을 PENDING으로 복구 시도 (생성 작업 {}): requestId={}",
+                STALE_IN_FLIGHT_THRESHOLD_MINUTES, phase, requestId);
         // 락 + 상태 재확인은 revertToPendingIfStillProcessing 내부에서 수행 — 그 사이 정상
         // 처리(승인/거절)됐으면 건드리지 않는다.
         adminRequestCommandService.revertToPendingIfStillProcessing(

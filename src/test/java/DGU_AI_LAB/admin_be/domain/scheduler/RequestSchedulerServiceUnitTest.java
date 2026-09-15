@@ -1,10 +1,12 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
+import DGU_AI_LAB.admin_be.domain.requests.service.OperationJobService;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
@@ -39,6 +41,7 @@ class RequestSchedulerServiceUnitTest {
     @Mock private MessageUtils messageUtils;
     @Mock private RequestNotificationService requestNotificationService;
     @Mock private AdminRequestCommandService adminRequestCommandService;
+    @Mock private OperationJobService operationJobService;
 
     @Mock private ResourceGroup mockRg;
 
@@ -48,9 +51,11 @@ class RequestSchedulerServiceUnitTest {
     void setUp() {
         service = new RequestSchedulerService(
                 requestRepository, alarmService, requestExpiryService, messageUtils, requestNotificationService,
-                adminRequestCommandService
+                adminRequestCommandService, operationJobService
         );
         when(mockRg.getServerName()).thenReturn("FARM-01");
+        // 기본: 등록된 생성 작업이 없는 신청 (승인 도중 admin_be가 죽어 작업 등록 전에 멈춘 경우)
+        when(operationJobService.getResult(eq(OperationJobService.KIND_PROVISION), any())).thenReturn(provisionJob(OperationJobService.PHASE_NONE));
     }
 
     private Request buildMockedRequest(Long requestId) {
@@ -163,5 +168,78 @@ class RequestSchedulerServiceUnitTest {
 
         verify(adminRequestCommandService, never()).revertToPendingIfStillProcessing(any(), any());
         verify(alarmService, never()).sendSlackAlert(any(), any());
+    }
+
+    private static JobResultResponseDTO provisionJob(String phase) {
+        return new JobResultResponseDTO(null, OperationJobService.KIND_PROVISION, null, phase, null, null, null);
+    }
+
+    @Test
+    @DisplayName("정지된 PROCESSING 요청이라도 생성 작업이 아직 실행 중이면 되돌리지 않는다 — 되돌리면 재승인 때 컨테이너가 두 번 만들어진다")
+    void reconcile_staleProcessing_jobStillRunning_doesNotRevert() {
+        Request request = buildMockedRequest(11L);
+        when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.PROCESSING), any())).thenReturn(List.of(request));
+        when(operationJobService.getResult(OperationJobService.KIND_PROVISION, 11L))
+                .thenReturn(provisionJob(OperationJobService.PHASE_START));
+
+        service.reconcileStaleInFlightRequests();
+
+        verify(adminRequestCommandService, never()).revertToPendingIfStillProcessing(any(), any());
+        verify(alarmService, never()).sendSlackAlert(any(), any());
+    }
+
+    @Test
+    @DisplayName("생성 작업이 실패로 끝난 정지 PROCESSING 요청은 되돌린다")
+    void reconcile_staleProcessing_jobFailed_reverts() {
+        Request request = buildMockedRequest(12L);
+        when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.PROCESSING), any())).thenReturn(List.of(request));
+        when(operationJobService.getResult(OperationJobService.KIND_PROVISION, 12L))
+                .thenReturn(provisionJob(OperationJobService.PHASE_FAIL));
+
+        service.reconcileStaleInFlightRequests();
+
+        verify(adminRequestCommandService).revertToPendingIfStillProcessing(12L, "FARM-01");
+    }
+
+    @Test
+    @DisplayName("자원을 남긴 실패(DEGRADED)는 정지된 PROCESSING이어도 되돌리지 않는다")
+    void reconcile_staleProcessing_jobDegraded_doesNotRevert() {
+        Request request = buildMockedRequest(16L);
+        when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.PROCESSING), any())).thenReturn(List.of(request));
+        when(operationJobService.getResult(OperationJobService.KIND_PROVISION, 16L)).thenReturn(
+                new JobResultResponseDTO(null, OperationJobService.KIND_PROVISION, null, OperationJobService.PHASE_FAIL, "DEGRADED", null, null));
+
+        service.reconcileStaleInFlightRequests();
+
+        verify(adminRequestCommandService, never()).revertToPendingIfStillProcessing(any(), any());
+    }
+
+    @Test
+    @DisplayName("생성 작업이 성공·결과 불명이면 작업 결과 폴러에 맡기고 되돌리지 않는다")
+    void reconcile_staleProcessing_jobFinishedOrUnknown_leftToPoller() {
+        Request succeeded = buildMockedRequest(13L);
+        Request unknown = buildMockedRequest(14L);
+        when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.PROCESSING), any())).thenReturn(List.of(succeeded, unknown));
+        when(operationJobService.getResult(OperationJobService.KIND_PROVISION, 13L))
+                .thenReturn(provisionJob(OperationJobService.PHASE_SUCCESS));
+        when(operationJobService.getResult(OperationJobService.KIND_PROVISION, 14L))
+                .thenReturn(provisionJob(OperationJobService.PHASE_UNKNOWN));
+
+        service.reconcileStaleInFlightRequests();
+
+        verify(adminRequestCommandService, never()).revertToPendingIfStillProcessing(any(), any());
+    }
+
+    @Test
+    @DisplayName("생성 작업 상태를 조회하지 못하면 되돌리지 않는다")
+    void reconcile_staleProcessing_jobLookupFails_doesNotRevert() {
+        Request request = buildMockedRequest(15L);
+        when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.PROCESSING), any())).thenReturn(List.of(request));
+        when(operationJobService.getResult(OperationJobService.KIND_PROVISION, 15L))
+                .thenThrow(new RuntimeException("config-server down"));
+
+        service.reconcileStaleInFlightRequests();
+
+        verify(adminRequestCommandService, never()).revertToPendingIfStillProcessing(any(), any());
     }
 }
