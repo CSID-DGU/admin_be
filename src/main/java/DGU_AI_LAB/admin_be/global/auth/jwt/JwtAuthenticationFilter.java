@@ -42,12 +42,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         try {
-            log.info("[JwtAuthFilter] 요청 URI: {}", request.getRequestURI());
+            log.debug("[JwtAuthFilter] 요청 URI: {}", request.getRequestURI());
 
             final String accessToken = getAccessTokenFromHttpServletRequest(request);
 
             jwtProvider.validateAccessToken(accessToken);
-            log.info("[JwtAuthFilter] AccessToken 유효성 검사 통과");
+            log.debug("[JwtAuthFilter] AccessToken 유효성 검사 통과");
 
             final Long userId = jwtProvider.getSubject(accessToken);
             User user = customUserDetailsService.loadUserEntityById(userId);
@@ -58,7 +58,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
             SecurityContextHolder.getContext().setAuthentication(authentication);
 
-            log.info("[JwtAuthFilter] SecurityContextHolder 인증 객체 설정 완료");
+            log.debug("[JwtAuthFilter] SecurityContextHolder 인증 객체 설정 완료");
 
         } catch (UnauthorizedException e) {
             log.warn("[JwtAuthFilter] 인증 실패 - {}", e.getMessage());
@@ -94,11 +94,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
-        log.info("[JwtAuthFilter] 현재 요청 URI = {}", path);
+        log.debug("[JwtAuthFilter] 현재 요청 URI = {}", path);
 
         for (String pattern : SecurityWhitelist.UNPROTECTED_PATHS) {
             if (pathMatcher.match(pattern, path)) {
-                log.info("[JwtAuthFilter] 인증 불필요한 경로: {}", pattern);
+                log.debug("[JwtAuthFilter] 인증 불필요한 경로: {}", pattern);
                 return true;
             }
         }
