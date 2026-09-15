@@ -54,6 +54,14 @@ public interface AdminRequestApi {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     ResponseEntity<SuccessResponse<?>> rejectRequest(RejectRequestDTO dto);
 
+    @Operation(summary = "신청 작업 단계 기록 조회",
+            description = "신청의 생성(승인)·회수 작업을 최근 순으로 최대 5개씩, 작업마다 단계별 결과(성공·실패·재시도), "
+                    + "시각(UTC), 시도 번호, 접근 시험 요약과 함께 조회합니다.")
+    @ApiResponse(responseCode = "200", description = "성공 — 작업이 없으면 jobs가 빈 목록")
+    @ApiResponse(responseCode = "502", description = "config-server 작업 기록 조회 실패",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    ResponseEntity<SuccessResponse<?>> getJobSteps(Long requestId);
+
     @Operation(summary = "Pod GPU 노드 마이그레이션", description = "FULFILLED 상태 신청의 Pod를 더 나은 GPU 노드로 이동시킵니다. 개선 폭이 기준 미만이면 스킵됩니다.")
     @ApiResponse(responseCode = "200", description = "마이그레이션 성공 또는 스킵")
     @ApiResponse(responseCode = "404", description = "신청을 찾을 수 없음",

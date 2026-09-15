@@ -2,7 +2,9 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ProvisionRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobHistoryResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobStepsResponseDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.webclient.WebClientErrorHandler;
@@ -177,6 +179,40 @@ public class OperationJobService {
         } catch (Exception e) {
             log.error("작업 등록 중 예기치 않은 오류: {}, requestId: {}", uri, requestId, e);
             throw new BusinessException(failureCode);
+        }
+    }
+
+    /** 신청 상세 화면용: 한 신청의 생성·회수 작업 단계 기록을 함께 조회한다. */
+    public JobHistoryResponseDTO getJobHistory(Long requestId) {
+        return new JobHistoryResponseDTO(getSteps(KIND_PROVISION, requestId), getSteps(KIND_REVOKE, requestId));
+    }
+
+    /**
+     * 작업 단계 기록을 조회한다. 작업이 없으면 jobs가 빈 목록으로 온다.
+     *
+     * @param kind {@link #KIND_PROVISION} 또는 {@link #KIND_REVOKE}
+     */
+    public JobStepsResponseDTO getSteps(String kind, Long requestId) {
+        try {
+            JobStepsResponseDTO response = WebClientErrorHandler.onError(
+                            webClient.get()
+                                    .uri("/operations/" + kind + "/" + requestId + "/steps")
+                                    .retrieve(),
+                            (status, body) -> new BusinessException("작업 단계 기록 조회 실패: " + body,
+                                    ErrorCode.EXTERNAL_API_ERROR))
+                    .bodyToMono(JobStepsResponseDTO.class)
+                    .block();
+
+            if (response == null || response.jobs() == null) {
+                log.error("작업 단계 기록 조회 API가 빈 응답을 반환했습니다. kind: {}, requestId: {}", kind, requestId);
+                throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+            }
+            return response;
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("작업 단계 기록 조회 중 예기치 않은 오류. kind: {}, requestId: {}", kind, requestId, e);
+            throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
         }
     }
 
