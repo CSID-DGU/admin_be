@@ -1,5 +1,8 @@
 package DGU_AI_LAB.admin_be.global.webclient;
 
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -42,6 +45,15 @@ public final class WebClientErrorHandler {
                             });
                 }
         );
+    }
+
+    /**
+     * 인프라 서버가 요청 내용 때문에 거절한 4xx는 {@link ErrorCode#INFRA_REQUEST_REJECTED}(422)로, 서버 장애(5xx)는
+     * 호출 목적의 오류 코드로 바꾼다. 4xx까지 502로 바꾸면 화면에서는 원인이 요청에 있는지 서버에 있는지 구분할 수 없다.
+     */
+    public static BusinessException rejectedOr(HttpStatusCode status, String body, String message, ErrorCode failureCode) {
+        ErrorCode code = status.is4xxClientError() ? ErrorCode.INFRA_REQUEST_REJECTED : failureCode;
+        return new BusinessException(message + ": " + body, code);
     }
 
     private static String truncate(String body) {

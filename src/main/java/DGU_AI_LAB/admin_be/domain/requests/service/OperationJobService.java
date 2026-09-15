@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
+
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ProvisionRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobHistoryResponseDTO;
@@ -54,6 +56,7 @@ public class OperationJobService {
 
     public static final String KIND_PROVISION = "provision";
     public static final String KIND_REVOKE = "revoke";
+    public static final String KIND_MIGRATE = "migrate";
 
     /** 신청 생성 시각이 저장된 시간대. 운영 이미지가 TZ=Asia/Seoul로 돈다. */
     static final ZoneId REQUEST_ZONE = ZoneId.of("Asia/Seoul");
@@ -79,6 +82,15 @@ public class OperationJobService {
      */
     public void registerProvision(ProvisionRegisterRequestDTO body) {
         register("/operations/provision", body, body.requestId(), ErrorCode.POD_CREATION_FAILED);
+    }
+
+    /**
+     * 마이그레이션 작업을 등록한다. 결과는 {@code MigrationJobPoller}가 조회해 신청에 반영한다.
+     *
+     * @throws BusinessException 같은 신청의 마이그레이션 작업이 아직 끝나지 않았거나(409) 등록이 거절·실패한 경우
+     */
+    public void registerMigrate(MigrateRegisterRequestDTO body) {
+        register("/operations/migrate", body, body.requestId(), ErrorCode.POD_MIGRATION_FAILED);
     }
 
     /** 회수 작업을 등록한다. 결과를 기다리지 않는다. */
@@ -180,7 +192,7 @@ public class OperationJobService {
                                             "이미 처리 중인 작업이 있습니다: " + responseBody,
                                             ErrorCode.INVALID_REQUEST_STATUS);
                                 }
-                                return new BusinessException("작업 등록 실패: " + responseBody, failureCode);
+                                return WebClientErrorHandler.rejectedOr(status, responseBody, "작업 등록 실패", failureCode);
                             })
                     .bodyToMono(Map.class)
                     .block();
@@ -205,7 +217,8 @@ public class OperationJobService {
         Instant notBefore = requestCreatedAt.atZone(REQUEST_ZONE).toInstant().minus(CLOCK_SKEW);
         return new JobHistoryResponseDTO(
                 withoutJobsStartedBefore(getSteps(KIND_PROVISION, requestId), notBefore),
-                withoutJobsStartedBefore(getSteps(KIND_REVOKE, requestId), notBefore));
+                withoutJobsStartedBefore(getSteps(KIND_REVOKE, requestId), notBefore),
+                withoutJobsStartedBefore(getSteps(KIND_MIGRATE, requestId), notBefore));
     }
 
     private static JobStepsResponseDTO withoutJobsStartedBefore(JobStepsResponseDTO steps, Instant notBefore) {

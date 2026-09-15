@@ -113,7 +113,7 @@ class AdminUserControllerTest extends WebMvcTestSupport {
     }
 
     @Nested
-    @DisplayName("PATCH /api/admin/users/{id}/reactivate")
+    @DisplayName("PATCH /api/admin/users/{id} active=true")
     class ReactivateUser {
 
         private final UserSummaryDTO reactivatedUser = UserSummaryDTO.builder()
@@ -128,7 +128,7 @@ class AdminUserControllerTest extends WebMvcTestSupport {
         void reactivateUser_returns200() throws Exception {
             when(adminUserService.reactivateUser(1L)).thenReturn(reactivatedUser);
 
-            mockMvc.perform(patch("/api/admin/users/1/reactivate").contentType(MediaType.APPLICATION_JSON))
+            mockMvc.perform(patch("/api/admin/users/1").contentType(MediaType.APPLICATION_JSON).content("{\"active\": true}"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.isActive").value(true))
                     .andExpect(jsonPath("$.data.name").value("홍길동"));
@@ -140,7 +140,7 @@ class AdminUserControllerTest extends WebMvcTestSupport {
             when(adminUserService.reactivateUser(99L))
                     .thenThrow(new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
 
-            mockMvc.perform(patch("/api/admin/users/99/reactivate").contentType(MediaType.APPLICATION_JSON))
+            mockMvc.perform(patch("/api/admin/users/99").contentType(MediaType.APPLICATION_JSON).content("{\"active\": true}"))
                     .andExpect(status().isNotFound());
         }
 
@@ -150,8 +150,31 @@ class AdminUserControllerTest extends WebMvcTestSupport {
             when(adminUserService.reactivateUser(1L))
                     .thenThrow(new ConflictException(ErrorCode.USER_ALREADY_ACTIVE));
 
-            mockMvc.perform(patch("/api/admin/users/1/reactivate").contentType(MediaType.APPLICATION_JSON))
+            mockMvc.perform(patch("/api/admin/users/1").contentType(MediaType.APPLICATION_JSON).content("{\"active\": true}"))
                     .andExpect(status().isConflict());
         }
+    }
+
+    @Test
+    @DisplayName("PATCH /api/admin/users/{id} active=false면 비활성화한다")
+    void deactivateByActiveFalse() throws Exception {
+        mockMvc.perform(patch("/api/admin/users/5").contentType(MediaType.APPLICATION_JSON).content("{\"active\": false}"))
+                .andExpect(status().isOk());
+        org.mockito.Mockito.verify(adminUserService).deactivateUser(5L);
+    }
+
+    @Test
+    @DisplayName("PATCH /api/admin/users/{id} active가 없으면 400이다")
+    void activationRequiresActive() throws Exception {
+        mockMvc.perform(patch("/api/admin/users/5").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("DELETE /api/admin/users/{id}/ubuntu-account는 사용자 번호로 계정을 회수한다")
+    void deleteUbuntuAccountByUserId() throws Exception {
+        mockMvc.perform(delete("/api/admin/users/5/ubuntu-account").contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk());
+        org.mockito.Mockito.verify(adminUserService).deleteUbuntuAccountOfUser(5L);
     }
 }

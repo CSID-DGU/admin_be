@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.users.controller;
 
+import DGU_AI_LAB.admin_be.domain.users.dto.request.UserActivationRequestDTO;
+
 import DGU_AI_LAB.admin_be.domain.users.controller.docs.AdminUserApi;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.ChangeRoleRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.service.AdminUserService;
@@ -34,20 +36,19 @@ public class AdminUserController implements AdminUserApi {
         return SuccessResponse.ok(null);
     }
 
-    @DeleteMapping("/ubuntu/{username}")
-    public ResponseEntity<SuccessResponse<?>> deleteUbuntuAccount(@PathVariable String username) {
-        adminUserService.deleteUbuntuAccount(username);
+    @DeleteMapping("/{id}/ubuntu-account")
+    public ResponseEntity<SuccessResponse<?>> deleteUbuntuAccount(@PathVariable Long id) {
+        adminUserService.deleteUbuntuAccountOfUser(id);
         return SuccessResponse.ok(null);
     }
 
-    @PatchMapping("/{id}/reactivate")
-    public ResponseEntity<SuccessResponse<?>> reactivateUser(@PathVariable Long id) {
-        return SuccessResponse.ok(adminUserService.reactivateUser(id));
-    }
-
-    @PatchMapping("/{id}/deactivate")
-    public ResponseEntity<SuccessResponse<?>> deactivateUser(@PathVariable Long id) {
-        return SuccessResponse.ok(adminUserService.deactivateUser(id));
+    /** 활성 상태 변경. {"active": false}면 비활성화(컨테이너·계정 정리), true면 재활성화. */
+    @PatchMapping("/{id}")
+    public ResponseEntity<SuccessResponse<?>> updateUserActivation(@PathVariable Long id,
+                                                                   @RequestBody @Valid UserActivationRequestDTO dto) {
+        return SuccessResponse.ok(Boolean.TRUE.equals(dto.active())
+                ? adminUserService.reactivateUser(id)
+                : adminUserService.deactivateUser(id));
     }
 
     @PatchMapping("/{id}/role")

@@ -18,6 +18,7 @@ public enum SuccessCode {
      * 201 Created
      */
     CREATED(HttpStatus.CREATED, "요청이 성공했습니다."),
+    ACCEPTED(HttpStatus.ACCEPTED, "요청이 접수되었습니다."),
 
     /**
      * Email Success

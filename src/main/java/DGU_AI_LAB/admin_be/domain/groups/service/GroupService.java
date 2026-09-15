@@ -95,8 +95,8 @@ public class GroupService {
 
             apiResponse = WebClientErrorHandler.onError(
                             groupCreationWebClient
-                                    .put()
-                                    .uri("/accounts/groups")
+                                    .post()
+                                    .uri("/groups")
                                     .bodyValue(apiDto)
                                     .retrieve(),
                             (status, body) -> {
@@ -199,8 +199,8 @@ public class GroupService {
         log.info("[addUserToGroups] 사용자 그룹 추가 API 호출 시작: username={}, groups={}", username, groupNames);
         WebClientErrorHandler.onError(
                         groupCreationWebClient
-                                .put()
-                                .uri("/accounts/users/{username}/groups", username)
+                                .post()
+                                .uri("/users/{username}/groups", username)
                                 .bodyValue(new AddUserGroupsRequest(groupNames))
                                 .retrieve(),
                         (status, body) -> {

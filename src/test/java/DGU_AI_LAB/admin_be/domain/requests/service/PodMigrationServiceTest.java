@@ -1,19 +1,20 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
-import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
-import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
-import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigratePodResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigrationResultResponseDTO;
+import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -30,7 +31,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -40,301 +42,144 @@ class PodMigrationServiceTest {
 
     @Mock private RequestRepository requestRepository;
     @Mock private PodExternalPortRepository podExternalPortRepository;
-    @Mock private PodService podService;
+    @Mock private OperationJobService operationJobService;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
-    @Mock private Request mockRequest;
     @Mock private AlarmService alarmService;
+    @Mock private Request request;
 
     private PodMigrationService service;
 
     @BeforeEach
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
-        service = new PodMigrationService(requestRepository, podExternalPortRepository, podService, transactionManager, alarmService);
+        service = new PodMigrationService(requestRepository, podExternalPortRepository, operationJobService, transactionManager, alarmService);
+        when(request.getUbuntuUsername()).thenReturn("testuser");
+        when(request.getPodName()).thenReturn("ailab-testuser-old");
+        when(requestRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(request));
     }
 
-    /**
-     * 1단계는 findByIdForUpdate(행 잠금)로 조회한 뒤 beginMigration()으로 FULFILLED -> MIGRATING 전환,
-     * 3단계는 findById로 재조회해 결과 반영 후 endMigration()으로 되돌린다.
-     * mockRequest는 Mockito mock이라 beginMigration()의 실제 상태 검증 로직이 실행되지 않으므로,
-     * FULFILLED가 아닌 상태로 스텁할 때는 beginMigration() 호출 시 예외를 던지도록 명시적으로 재현한다.
-     */
-    private void stubExistingRequest(Long requestId, Status status) {
-        when(mockRequest.getStatus()).thenReturn(status);
-        when(mockRequest.getUbuntuUsername()).thenReturn("testuser");
-        when(mockRequest.getPodName()).thenReturn("pod-testuser");
-        when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(mockRequest));
-        when(requestRepository.findById(requestId)).thenReturn(Optional.of(mockRequest));
-        if (status != Status.FULFILLED) {
-            doThrow(new BusinessException("이미 마이그레이션이 진행 중이거나 처리 가능한 상태가 아닙니다.", ErrorCode.INVALID_REQUEST_STATUS))
-                    .when(mockRequest).beginMigration();
-        }
+    private static JobResultResponseDTO.Result migrated(String cleanup) {
+        return new JobResultResponseDTO.Result(null, null, "ailab-testuser-new", "farm7",
+                List.of(new CreatePodResponseDTO.PortInfo("ssh", 22, 32010)),
+                "migrated", null, "farm2", "farm7", "ailab-testuser-old", cleanup);
     }
 
-    @Nested
-    @DisplayName("정상 케이스")
-    class Success {
+    @Test
+    @DisplayName("시작하면 MIGRATING으로 바꾸고 기존 Pod·노드 목록·force로 작업을 등록한다")
+    void startRegistersJob() {
+        service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2", "farm7"), null, true));
 
-        @Test
-        @DisplayName("migrated 응답이면 assignPodInfo와 포트 재저장이 호출된다")
-        void migratePod_migrated_updatesRequestAndReplacesPorts() {
-            Long requestId = 1L;
-            stubExistingRequest(requestId, Status.FULFILLED);
-
-            MigratePodResponseDTO response = new MigratePodResponseDTO(
-                    "migrated", null, "farm1", "farm2", "pod-testuser-2",
-                    List.of(
-                            new CreatePodResponseDTO.PortInfo("ssh", 22, 30099),
-                            new CreatePodResponseDTO.PortInfo("jupyter", 8888, 30988)
-                    ),
-                    null, null, null, null, null
-            );
-            when(podService.migratePod("testuser", "pod-testuser", requestId, List.of("farm1", "farm2"), 0.2, null)).thenReturn(response);
-            when(podExternalPortRepository.save(any(PodExternalPort.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            MigratePodRequestDTO dto = new MigratePodRequestDTO(List.of("farm1", "farm2"), 0.2, null);
-            MigratePodResponseDTO result = service.migratePod(requestId, dto);
-
-            assertThat(result).isEqualTo(response);
-            verify(mockRequest).assignPodInfo("pod-testuser-2", "farm2");
-            verify(podExternalPortRepository).deleteByRequestRequestId(requestId);
-
-            ArgumentCaptor<PodExternalPort> captor = ArgumentCaptor.forClass(PodExternalPort.class);
-            verify(podExternalPortRepository, times(2)).save(captor.capture());
-            assertThat(captor.getAllValues())
-                    .extracting(PodExternalPort::getUsagePurpose)
-                    .containsExactly("ssh", "jupyter");
-        }
-
-        @Test
-        @DisplayName("skipped 응답이면 DB를 건드리지 않고 그대로 반환한다")
-        void migratePod_skipped_doesNotTouchDb() {
-            Long requestId = 2L;
-            stubExistingRequest(requestId, Status.FULFILLED);
-
-            MigratePodResponseDTO response = new MigratePodResponseDTO(
-                    "skipped", "no_significant_improvement", null, null, null, null, null,
-                    "farm1", 1.5, "farm2", 1.4
-            );
-            when(podService.migratePod(eq("testuser"), any(), any(), any(), any(), any())).thenReturn(response);
-
-            MigratePodRequestDTO dto = new MigratePodRequestDTO(List.of("farm1", "farm2"), null, null);
-            MigratePodResponseDTO result = service.migratePod(requestId, dto);
-
-            assertThat(result.isMigrated()).isFalse();
-            assertThat(result.reason()).isEqualTo("no_significant_improvement");
-            verify(mockRequest, never()).assignPodInfo(any(), any());
-            verify(podExternalPortRepository, never()).deleteByRequestRequestId(any());
-            verify(podExternalPortRepository, never()).save(any());
-        }
-
-        @Test
-        @DisplayName("1단계는 행 잠금 조회(findByIdForUpdate)로 상태를 선점한다 — 동시 마이그레이션 요청으로 인한 고아 Pod 방지")
-        void migratePod_usesRowLock_forInitialClaim() {
-            Long requestId = 7L;
-            stubExistingRequest(requestId, Status.FULFILLED);
-            when(podService.migratePod(any(), any(), any(), any(), any(), any())).thenReturn(
-                    new MigratePodResponseDTO("skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null)
-            );
-
-            service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1"), null, null));
-
-            // 1단계(선점)와 3단계(결과 반영) 모두 행 잠금으로 조회한다.
-            verify(requestRepository, times(2)).findByIdForUpdate(requestId);
-            verify(requestRepository, never()).findById(requestId);
-            verify(mockRequest).beginMigration();
-            verify(mockRequest).endMigration();
-        }
-
-        @Test
-        @DisplayName("min_improvement_ratio를 생략하면 null로 config-server에 그대로 전달된다")
-        void migratePod_passesNullRatio_whenOmitted() {
-            Long requestId = 3L;
-            stubExistingRequest(requestId, Status.FULFILLED);
-            when(podService.migratePod(any(), any(), any(), any(), any(), any())).thenReturn(
-                    new MigratePodResponseDTO("skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null)
-            );
-
-            service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1"), null, null));
-
-            verify(podService).migratePod("testuser", "pod-testuser", requestId, List.of("farm1"), null, null);
-        }
-
-        @Test
-        @DisplayName("force=true면 개선 비율 값을 바꾸지 않고 force 플래그로 config-server에 전달한다")
-        void migratePod_force_passesForceFlag() {
-            Long requestId = 11L;
-            stubExistingRequest(requestId, Status.FULFILLED);
-            when(podService.migratePod(any(), any(), any(), any(), any(), any())).thenReturn(
-                    new MigratePodResponseDTO("migrated", null, "farm1", "farm2", "pod-testuser-11", List.of(), null, null, null, null, null)
-            );
-
-            service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1", "farm2"), 0.9, true));
-
-            verify(podService).migratePod("testuser", "pod-testuser", requestId, List.of("farm1", "farm2"), 0.9, true);
-        }
+        verify(request).beginMigration();
+        ArgumentCaptor<MigrateRegisterRequestDTO> captor = ArgumentCaptor.forClass(MigrateRegisterRequestDTO.class);
+        verify(operationJobService).registerMigrate(captor.capture());
+        assertThat(captor.getValue()).isEqualTo(new MigrateRegisterRequestDTO(1L, "ailab-testuser-old", "testuser",
+                List.of("farm2", "farm7"), null, true));
     }
 
-    @Nested
-    @DisplayName("실패 케이스")
-    class Failure {
+    @Test
+    @DisplayName("FULFILLED가 아니면 작업을 등록하지 않는다")
+    void startRejectsWrongStatus() {
+        doThrow(new BusinessException(ErrorCode.INVALID_REQUEST_STATUS)).when(request).beginMigration();
 
-        @Test
-        @DisplayName("존재하지 않는 requestId면 RESOURCE_NOT_FOUND 예외가 발생하고 외부 API를 호출하지 않는다")
-        void migratePod_requestNotFound_throwsAndSkipsExternalCall() {
-            Long requestId = 99L;
-            when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.empty());
-
-            assertThatThrownBy(() -> service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1"), null, null)))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
-
-            verify(podService, never()).migratePod(any(), any(), any(), any(), any(), any());
-        }
-
-        @Test
-        @DisplayName("FULFILLED 상태가 아니면 INVALID_REQUEST_STATUS 예외가 발생하고 외부 API를 호출하지 않는다")
-        void migratePod_notFulfilled_throwsAndSkipsExternalCall() {
-            Long requestId = 4L;
-            stubExistingRequest(requestId, Status.PENDING);
-
-            assertThatThrownBy(() -> service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1"), null, null)))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
-
-            verify(podService, never()).migratePod(any(), any(), any(), any(), any(), any());
-        }
-
-        @Test
-        @DisplayName("config-server 호출이 BusinessException을 던지면 DB를 건드리지 않고 그대로 전파한다")
-        void migratePod_externalCallFails_propagatesAndSkipsDbUpdate() {
-            Long requestId = 5L;
-            stubExistingRequest(requestId, Status.FULFILLED);
-            when(podService.migratePod(any(), any(), any(), any(), any(), any()))
-                    .thenThrow(new BusinessException("Pod 마이그레이션 실패", ErrorCode.POD_MIGRATION_FAILED));
-
-            assertThatThrownBy(() -> service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1"), null, null)))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.POD_MIGRATION_FAILED);
-
-            verify(mockRequest, never()).assignPodInfo(any(), any());
-            verify(podExternalPortRepository, never()).deleteByRequestRequestId(any());
-        }
-
-        @Test
-        @DisplayName("DB 반영(3단계)이 실패하면 FULFILLED로 되돌리지 않고 MIGRATING으로 남긴 채 Slack 알림만 보낸다")
-        void migratePod_dbReconciliationFails_doesNotRevertAndAlertsInstead() {
-            Long requestId = 10L;
-            stubExistingRequest(requestId, Status.FULFILLED);
-            MigratePodResponseDTO response = new MigratePodResponseDTO(
-                    "migrated", null, "farm1", "farm2", "pod-testuser-7", List.of(), null,
-                    null, null, null, null
-            );
-            when(podService.migratePod(any(), any(), any(), any(), any(), any())).thenReturn(response);
-            doThrow(new RuntimeException("db error")).when(mockRequest).endMigration();
-
-            assertThatThrownBy(() -> service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1", "farm2"), null, null)))
-                    .isInstanceOf(RuntimeException.class)
-                    .hasMessage("db error");
-
-            // revertToFulfilled()가 호출되지 않았다면 행 잠금 조회는 1단계와 3단계에서 두 번만
-            // 일어난다. 되돌리기를 시도했다면 복구용 조회가 한 번 더 있었을 것이다.
-            verify(requestRepository, times(2)).findByIdForUpdate(requestId);
-
-            ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
-            verify(alarmService, times(1)).sendSlackAlert(messageCaptor.capture(), eq(null));
-            assertThat(messageCaptor.getValue())
-                    .contains("requestId=10")
-                    .contains("username=testuser");
-        }
-
-        @Test
-        @DisplayName("migrated 응답인데 ports가 비어있으면 기존 포트만 삭제하고 새로 저장하지 않는다")
-        void migratePod_migratedWithEmptyPorts_deletesOldPortsOnly() {
-            Long requestId = 6L;
-            stubExistingRequest(requestId, Status.FULFILLED);
-            MigratePodResponseDTO response = new MigratePodResponseDTO(
-                    "migrated", null, "farm1", "farm2", "pod-testuser-3", List.of(), null,
-                    null, null, null, null
-            );
-            when(podService.migratePod(any(), any(), any(), any(), any(), any())).thenReturn(response);
-
-            service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1", "farm2"), null, null));
-
-            verify(podExternalPortRepository).deleteByRequestRequestId(requestId);
-            verify(podExternalPortRepository, never()).save(any());
-        }
+        assertThatThrownBy(() -> service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null)))
+                .isInstanceOf(BusinessException.class);
+        verifyNoInteractions(operationJobService);
     }
 
-    @Nested
-    @DisplayName("기존 Pod 정리 실패 신호(old_pod_cleanup)")
-    class OldPodCleanupSignal {
+    @Test
+    @DisplayName("등록이 실패하면 FULFILLED로 되돌리고 오류를 전파한다")
+    void startRevertsWhenRegistrationFails() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        doThrow(new BusinessException(ErrorCode.INFRA_REQUEST_REJECTED)).when(operationJobService).registerMigrate(any());
 
-        @Test
-        @DisplayName("oldPodCleanup이 null이면(정상 정리) 알림을 보내지 않는다")
-        void migratePod_oldPodCleanupNull_doesNotAlert() {
-            Long requestId = 7L;
-            stubExistingRequest(requestId, Status.FULFILLED);
-            MigratePodResponseDTO response = new MigratePodResponseDTO(
-                    "migrated", null, "farm1", "farm2", "pod-testuser-4", List.of(), null,
-                    null, null, null, null
-            );
-            when(podService.migratePod(any(), any(), any(), any(), any(), any())).thenReturn(response);
+        assertThatThrownBy(() -> service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null)))
+                .isInstanceOf(BusinessException.class);
+        verify(request).endMigration();
+    }
 
-            service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1", "farm2"), null, null));
+    @Test
+    @DisplayName("옮겼으면 새 Pod·노드·포트로 바꾸고 FULFILLED로 돌린다")
+    void completeMigratedUpdatesPod() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
 
-            verify(mockRequest).assignPodInfo("pod-testuser-4", "farm2");
-            verify(alarmService, never()).sendSlackAlert(any(), any());
-        }
+        service.completeMigrationJob(1L, migrated(null));
 
-        @Test
-        @DisplayName("oldPodCleanup이 'failed'면 DB는 정상 반영되고 Slack 알림이 발송된다")
-        void migratePod_oldPodCleanupFailed_updatesDbAndAlerts() {
-            Long requestId = 8L;
-            stubExistingRequest(requestId, Status.FULFILLED);
-            MigratePodResponseDTO response = new MigratePodResponseDTO(
-                    "migrated", null, "farm1", "farm2", "pod-testuser-5",
-                    List.of(new CreatePodResponseDTO.PortInfo("ssh", 22, 30099)),
-                    "failed",
-                    null, null, null, null
-            );
-            when(podService.migratePod(any(), any(), any(), any(), any(), any())).thenReturn(response);
-            when(podExternalPortRepository.save(any(PodExternalPort.class))).thenAnswer(inv -> inv.getArgument(0));
+        verify(request).assignPodInfo("ailab-testuser-new", "farm7");
+        verify(podExternalPortRepository).deleteByRequestRequestId(1L);
+        verify(podExternalPortRepository).save(any(PodExternalPort.class));
+        verify(request).endMigration();
+        verify(alarmService, never()).sendSlackAlert(anyString(), any());
+    }
 
-            service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1", "farm2"), null, null));
+    @Test
+    @DisplayName("건너뛰었으면 Pod 정보는 그대로 두고 FULFILLED로만 돌린다")
+    void completeSkippedKeepsPod() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        JobResultResponseDTO.Result skipped = new JobResultResponseDTO.Result(null, null, null, null, List.of(),
+                "skipped", "no_candidate_node", "farm2", null, "ailab-testuser-old", null);
 
-            // 새 Pod 추적은 정리 실패와 무관하게 정상적으로 반영돼야 한다
-            verify(mockRequest).assignPodInfo("pod-testuser-5", "farm2");
-            verify(podExternalPortRepository).save(any(PodExternalPort.class));
+        service.completeMigrationJob(1L, skipped);
 
-            ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
-            verify(alarmService, times(1)).sendSlackAlert(messageCaptor.capture(), eq(null));
-            assertThat(messageCaptor.getValue())
-                    .contains("requestId=8")
-                    .contains("username=testuser")
-                    .contains("oldNode=farm1");
-        }
+        verify(request, never()).assignPodInfo(any(), any());
+        verifyNoInteractions(podExternalPortRepository);
+        verify(request).endMigration();
+    }
 
-        @Test
-        @DisplayName("알림 발송 자체가 실패해도 마이그레이션 결과는 정상 반환된다")
-        void migratePod_alertSendingFails_stillReturnsResult() {
-            Long requestId = 9L;
-            stubExistingRequest(requestId, Status.FULFILLED);
-            MigratePodResponseDTO response = new MigratePodResponseDTO(
-                    "migrated", null, "farm1", "farm2", "pod-testuser-6", List.of(), "failed",
-                    null, null, null, null
-            );
-            when(podService.migratePod(any(), any(), any(), any(), any(), any())).thenReturn(response);
-            doThrow(new RuntimeException("slack down")).when(alarmService).sendSlackAlert(any(), any());
+    @Test
+    @DisplayName("상태가 이미 바뀌었으면 결과를 반영하지 않는다")
+    void completeIgnoresChangedStatus() {
+        when(request.getStatus()).thenReturn(Status.FULFILLED);
 
-            MigratePodResponseDTO result = service.migratePod(requestId, new MigratePodRequestDTO(List.of("farm1", "farm2"), null, null));
+        service.completeMigrationJob(1L, migrated(null));
 
-            assertThat(result).isEqualTo(response);
-            verify(mockRequest).assignPodInfo("pod-testuser-6", "farm2");
-        }
+        verify(request, never()).assignPodInfo(any(), any());
+        verify(request, never()).endMigration();
+    }
+
+    @Test
+    @DisplayName("기존 Pod 정리가 실패했으면 반영은 하고 관리자에게 알린다")
+    void completeAlertsOldPodCleanupFailure() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+
+        service.completeMigrationJob(1L, migrated("failed"));
+
+        verify(request).endMigration();
+        verify(alarmService).sendSlackAlert(contains("기존 Pod 정리 실패"), any());
+    }
+
+    @Test
+    @DisplayName("작업이 실패하면 FULFILLED로 되돌리고 알린다")
+    void failReverts() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+
+        service.failMigrationJob(1L, new JobResultResponseDTO("1", "migrate", 9L, "FAIL", "POD_NOT_FOUND", null, null));
+
+        verify(request).endMigration();
+        verify(alarmService).sendSlackAlert(contains("POD_NOT_FOUND"), any());
+    }
+
+    @Test
+    @DisplayName("결과 불명이면 MIGRATING으로 두고 알리기만 한다")
+    void unresolvedKeepsMigrating() {
+        service.reportUnresolvedMigrationJob(1L, new JobResultResponseDTO("1", "migrate", 9L, "UNKNOWN", "DEGRADED", null, null));
+
+        verify(request, never()).endMigration();
+        verify(alarmService).sendSlackAlert(contains("확인 필요"), any());
+    }
+
+    @Test
+    @DisplayName("마지막 마이그레이션 결과를 화면용으로 바꿔 준다")
+    void latestMigration() {
+        when(requestRepository.existsById(1L)).thenReturn(true);
+        when(operationJobService.getResult("migrate", 1L)).thenReturn(
+                new JobResultResponseDTO("1", "migrate", 9L, "SUCCESS", null, "2026-09-15 12:00:00", migrated(null)));
+
+        MigrationResultResponseDTO result = service.getLatestMigration(1L);
+
+        assertThat(result.phase()).isEqualTo("SUCCESS");
+        assertThat(result.status()).isEqualTo("migrated");
+        assertThat(result.fromNode()).isEqualTo("farm2");
+        assertThat(result.toNode()).isEqualTo("farm7");
     }
 }

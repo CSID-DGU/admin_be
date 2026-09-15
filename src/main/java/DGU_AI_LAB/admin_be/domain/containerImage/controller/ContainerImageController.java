@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.containerImage.controller;
 
+import org.springframework.http.HttpStatus;
+
 import DGU_AI_LAB.admin_be.domain.containerImage.controller.docs.ContainerImageApi;
 import DGU_AI_LAB.admin_be.domain.containerImage.dto.request.ContainerImageCreateRequest;
 import DGU_AI_LAB.admin_be.domain.containerImage.dto.response.ContainerImageResponseDTO;
@@ -23,7 +25,7 @@ public class ContainerImageController implements ContainerImageApi {
             @RequestBody @Valid ContainerImageCreateRequest request
     ) {
         ContainerImageResponseDTO createdImage = containerImageService.createImage(request);
-        return ResponseEntity.ok(createdImage);
+        return ResponseEntity.status(HttpStatus.CREATED).body(createdImage);
     }
 
     @GetMapping

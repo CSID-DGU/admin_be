@@ -28,6 +28,22 @@ public record JobResultResponseDTO(
             Long gid,
             @JsonProperty("pod_name") String podName,
             String node,
-            List<CreatePodResponseDTO.PortInfo> ports
-    ) {}
+            List<CreatePodResponseDTO.PortInfo> ports,
+            // 마이그레이션 작업만: migrated / skipped, 건너뛴 이유, 옮긴 노드, 기존 Pod와 그 정리 실패 여부
+            String status,
+            String reason,
+            @JsonProperty("from_node") String fromNode,
+            @JsonProperty("to_node") String toNode,
+            @JsonProperty("old_pod_name") String oldPodName,
+            @JsonProperty("old_pod_cleanup") String oldPodCleanup
+    ) {
+        /** 생성 작업 결과. */
+        public Result(Long uid, Long gid, String podName, String node, List<CreatePodResponseDTO.PortInfo> ports) {
+            this(uid, gid, podName, node, ports, null, null, null, null, null, null);
+        }
+
+        public boolean isMigrated() {
+            return "migrated".equals(status);
+        }
+    }
 }

@@ -101,7 +101,7 @@ class GroupServiceTest {
             WebClient.RequestBodyUriSpec uriSpec = mock(WebClient.RequestBodyUriSpec.class);
             WebClient.RequestBodySpec bodySpec = mock(WebClient.RequestBodySpec.class);
             WebClient.ResponseSpec responseSpec = mock(WebClient.ResponseSpec.class);
-            doReturn(uriSpec).when(groupCreationWebClient).put();
+            doReturn(uriSpec).when(groupCreationWebClient).post();
             doReturn(bodySpec).when(uriSpec).uri(anyString());
             doReturn(bodySpec).when(bodySpec).bodyValue(any());
             doReturn(responseSpec).when(bodySpec).retrieve();
@@ -191,7 +191,7 @@ class GroupServiceTest {
             WebClient.RequestBodyUriSpec uriSpec = mock(WebClient.RequestBodyUriSpec.class);
             WebClient.RequestBodySpec bodySpec = mock(WebClient.RequestBodySpec.class);
             WebClient.ResponseSpec responseSpec = mock(WebClient.ResponseSpec.class);
-            doReturn(uriSpec).when(groupCreationWebClient).put();
+            doReturn(uriSpec).when(groupCreationWebClient).post();
             doReturn(bodySpec).when(uriSpec).uri(anyString());
             doReturn(bodySpec).when(bodySpec).bodyValue(any());
             doReturn(responseSpec).when(bodySpec).retrieve();
@@ -215,7 +215,7 @@ class GroupServiceTest {
             WebClient.RequestBodyUriSpec uriSpec = mock(WebClient.RequestBodyUriSpec.class);
             WebClient.RequestBodySpec bodySpec = mock(WebClient.RequestBodySpec.class);
             WebClient.ResponseSpec responseSpec = mock(WebClient.ResponseSpec.class);
-            doReturn(uriSpec).when(groupCreationWebClient).put();
+            doReturn(uriSpec).when(groupCreationWebClient).post();
             doReturn(bodySpec).when(uriSpec).uri(anyString());
             doReturn(bodySpec).when(bodySpec).bodyValue(any());
             doReturn(responseSpec).when(bodySpec).retrieve();
@@ -240,7 +240,7 @@ class GroupServiceTest {
             WebClient.RequestBodyUriSpec uriSpec = mock(WebClient.RequestBodyUriSpec.class);
             WebClient.RequestBodySpec bodySpec = mock(WebClient.RequestBodySpec.class);
             WebClient.ResponseSpec responseSpec = mock(WebClient.ResponseSpec.class);
-            doReturn(uriSpec).when(groupCreationWebClient).put();
+            doReturn(uriSpec).when(groupCreationWebClient).post();
             doReturn(bodySpec).when(uriSpec).uri(anyString());
             doReturn(bodySpec).when(bodySpec).bodyValue(any());
             doReturn(responseSpec).when(bodySpec).retrieve();

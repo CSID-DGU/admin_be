@@ -1,13 +1,15 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
-import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
-import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
-import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigratePodResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigrationResultResponseDTO;
+import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -20,8 +22,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Pod GPU 노드 마이그레이션을 config-server에 위임하고, 결과를 DB에 반영하는 서비스.
- * approveRequest와 동일하게 외부 호출 동안 DB 커넥션을 붙잡지 않도록 짧은 트랜잭션으로 분리한다.
+ * Pod 노드 마이그레이션. config-server에 마이그레이션 작업을 등록하고 바로 돌아오며, 결과는
+ * {@code MigrationJobPoller}가 조회해 {@link #completeMigrationJob}·{@link #failMigrationJob}으로 반영한다.
+ * 생성·회수와 같은 작업 방식이라 화면 요청이 새 Pod 준비(수 분)를 기다리지 않는다.
  */
 @Slf4j
 @Service
@@ -31,21 +34,18 @@ public class PodMigrationService {
 
     private final RequestRepository requestRepository;
     private final PodExternalPortRepository podExternalPortRepository;
-    private final PodService podService;
+    private final OperationJobService operationJobService;
     private final PlatformTransactionManager transactionManager;
     private final AlarmService alarmService;
 
-
-    public MigratePodResponseDTO migratePod(Long requestId, MigratePodRequestDTO dto) {
-        TransactionTemplate tx = new TransactionTemplate(transactionManager);
-
-        // 1. 대상 요청 조회 + FULFILLED -> MIGRATING 전환 (짧은 트랜잭션, 이후 커넥션 반납)
-        // 행 잠금 조회와 상태 전환을 같은 트랜잭션에서 커밋해야, 동시에 들어온 두 번째 호출이
-        // beginMigration()의 상태 검증에서 실제로 막힌다 (조회만으로는 막히지 않는다 —
-        // 아무것도 쓰지 않는 조회 트랜잭션은 두 번째 호출을 저지하지 못한다).
+    /**
+     * 신청을 MIGRATING으로 바꾸고 마이그레이션 작업을 등록한다. 행 잠금과 상태 전환을 같은 트랜잭션에서 커밋해야
+     * 동시에 들어온 두 번째 요청이 상태 검증에서 막힌다. 등록이 실패하면 FULFILLED로 되돌린다.
+     */
+    public void startMigration(Long requestId, MigratePodRequestDTO dto) {
         final String[] usernameRef = {null};
         final String[] podNameRef = {null};
-        tx.execute(status -> {
+        new TransactionTemplate(transactionManager).execute(status -> {
             Request req = requestRepository.findByIdForUpdate(requestId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
             req.beginMigration();
@@ -53,33 +53,35 @@ public class PodMigrationService {
             podNameRef[0] = req.getPodName();
             return null;
         });
-        String username = usernameRef[0];
-        String podName = podNameRef[0];
-
-        // 2. 외부 HTTP 호출 (DB 커넥션 미보유). 실패 시 MIGRATING에 갇히지 않도록 되돌린다.
-        MigratePodResponseDTO response;
         try {
-            response = podService.migratePod(username, podName, requestId, dto.nodes(), dto.minImprovementRatio(), dto.force());
+            operationJobService.registerMigrate(new MigrateRegisterRequestDTO(
+                    requestId, podNameRef[0], usernameRef[0], dto.nodes(), dto.minImprovementRatio(), dto.force()));
         } catch (RuntimeException e) {
             revertToFulfilled(requestId);
             throw e;
         }
+        log.info("마이그레이션 작업 등록: requestId={}, username={}, pod={}", requestId, usernameRef[0], podNameRef[0]);
+    }
 
-        // 3. 결과 반영 (새 트랜잭션, HTTP 완료 후 짧게만 커넥션 보유).
-        // migrated 여부와 무관하게 MIGRATING -> FULFILLED로 되돌려야 한다.
+    /**
+     * 작업이 성공으로 끝났을 때 반영한다. 옮겼으면 새 Pod·노드·포트로 바꾸고, 건너뛰었으면 그대로 둔 채 FULFILLED로 돌린다.
+     * DB 반영이 실패하면 MIGRATING으로 남겨 재마이그레이션을 막고 관리자에게 알린다(실제 Pod는 이미 옮겨졌을 수 있다).
+     */
+    public void completeMigrationJob(Long requestId, JobResultResponseDTO.Result made) {
+        final boolean[] applied = {false};
         try {
-            tx.execute(status -> {
-                // 행 잠금 조회: 외부 마이그레이션이 도는 동안 다른 경로가 같은 행을 건드릴 수 있어,
-                // 결과를 반영하기 전에 1단계와 동일하게 행을 다시 잠근다.
+            new TransactionTemplate(transactionManager).execute(status -> {
                 Request req = requestRepository.findByIdForUpdate(requestId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-
-                if (response.isMigrated()) {
-                    req.assignPodInfo(response.newPod(), response.to());
-
+                if (req.getStatus() != Status.MIGRATING) {
+                    log.warn("마이그레이션 결과를 반영하려 했으나 상태가 변경됨 - requestId={}, 현재 상태={}", requestId, req.getStatus());
+                    return null;
+                }
+                if (made != null && made.isMigrated()) {
+                    req.assignPodInfo(made.podName(), made.node());
                     podExternalPortRepository.deleteByRequestRequestId(requestId);
-                    if (response.ports() != null) {
-                        for (CreatePodResponseDTO.PortInfo port : response.ports()) {
+                    if (made.ports() != null) {
+                        for (CreatePodResponseDTO.PortInfo port : made.ports()) {
                             podExternalPortRepository.save(PodExternalPort.builder()
                                     .request(req)
                                     .internalPort(port.internalPort())
@@ -90,83 +92,72 @@ public class PodMigrationService {
                     }
                 }
                 req.endMigration();
+                applied[0] = true;
                 return null;
             });
         } catch (RuntimeException e) {
-            // 이 시점엔 podService.migratePod() 응답을 이미 받은 뒤(물리적으로는 이미 마이그레이션이
-            // 끝났을 수 있음)라서, FULFILLED로 되돌리면 실제 Pod/포트 상태와 DB가 어긋난 채로
-            // "정상"처럼 보이게 된다. MIGRATING으로 남겨 beginMigration() 가드가 재마이그레이션을
-            // 막도록 하고, 관리자가 직접 대조해 수동으로 정리하도록 알림만 남긴다.
-            String msg = String.format(
-                    "[마이그레이션] 결과 DB 반영 실패 - Pod/포트 상태 수동 확인 필요: requestId=%d, username=%s",
-                    requestId, username);
-            log.error(msg, e);
-            try {
-                alarmService.sendSlackAlert(msg, null);
-            } catch (Exception ignored) {
-                // 알림 발송 실패가 원래 예외 전파를 막으면 안 된다.
-            }
+            alert(String.format("[마이그레이션] 결과 DB 반영 실패 - Pod/포트 상태 수동 확인 필요: requestId=%d", requestId), e);
             throw e;
         }
-
-        if (response.isMigrated()) {
-            log.info("Pod 마이그레이션 완료: requestId={}, username={}, from={}, to={}, newPod={}",
-                    requestId, username, response.from(), response.to(), response.newPod());
-
-            if ("failed".equals(response.oldPodCleanup())) {
-                warnOldPodCleanupFailed(requestId, username, response.from());
+        if (!applied[0]) {
+            return;
+        }
+        if (made != null && made.isMigrated()) {
+            log.info("Pod 마이그레이션 완료: requestId={}, from={}, to={}, newPod={}",
+                    requestId, made.fromNode(), made.toNode(), made.podName());
+            if ("failed".equals(made.oldPodCleanup())) {
+                alert(String.format("[마이그레이션] 새 Pod는 정상 반영됐지만 기존 Pod 정리 실패 - 수동 확인 필요: requestId=%d, oldPod=%s, oldNode=%s",
+                        requestId, made.oldPodName(), made.fromNode()), null);
             }
         } else {
-            log.info("Pod 마이그레이션 스킵: requestId={}, username={}, reason={}", requestId, username, response.reason());
+            log.info("Pod 마이그레이션 건너뜀: requestId={}, reason={}", requestId, made == null ? null : made.reason());
         }
-
-        return response;
     }
 
-    /**
-     * 2단계(외부 호출) 또는 3단계(DB 반영) 실패 시 MIGRATING에 갇힌 요청을 FULFILLED로 되돌린다.
-     * 이 복구 자체가 실패하면(예: 그 사이 상태가 다른 경로로 바뀐 경우) 수동 확인이 필요하므로
-     * Slack 알림만 남기고, 원래 예외는 그대로 호출자에게 전파되도록 여기서 삼킨다.
-     */
+    /** 작업이 실패로 끝났다. 제어기가 새 Pod를 정리했고 기존 Pod는 그대로이므로 FULFILLED로 되돌리고 알린다. */
+    public void failMigrationJob(Long requestId, JobResultResponseDTO result) {
+        revertToFulfilled(requestId);
+        alert(String.format("[마이그레이션 실패] 기존 컨테이너를 유지합니다: requestId=%d, error=%s",
+                requestId, result == null ? null : result.errorCode()), null);
+    }
+
+    /** 결과 불명이거나 자원을 남긴 실패. 실제 Pod 상태를 확인하기 전에는 되돌리지 않고 MIGRATING으로 둔 채 알린다. */
+    public void reportUnresolvedMigrationJob(Long requestId, JobResultResponseDTO result) {
+        alert(String.format("[마이그레이션 확인 필요] 결과를 확정할 수 없어 MIGRATING으로 둡니다. Pod 상태를 확인하세요: requestId=%d, phase=%s, error=%s",
+                requestId, result.phase(), result.errorCode()), null);
+    }
+
+    /** 신청의 마지막 마이그레이션 작업 결과. */
+    public MigrationResultResponseDTO getLatestMigration(Long requestId) {
+        if (!requestRepository.existsById(requestId)) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        return MigrationResultResponseDTO.from(operationJobService.getResult(OperationJobService.KIND_MIGRATE, requestId));
+    }
+
     private void revertToFulfilled(Long requestId) {
         try {
-            TransactionTemplate tx = new TransactionTemplate(transactionManager);
-            tx.execute(status -> {
-                // 상태 확인 후 되돌리기까지가 원자적이어야 하므로 여기서도 행을 잠근다.
-                Request req = requestRepository.findByIdForUpdate(requestId)
-                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-                if (req.getStatus() == Status.MIGRATING) {
-                    req.endMigration();
-                }
+            new TransactionTemplate(transactionManager).execute(status -> {
+                requestRepository.findByIdForUpdate(requestId)
+                        .filter(req -> req.getStatus() == Status.MIGRATING)
+                        .ifPresent(Request::endMigration);
                 return null;
             });
         } catch (Exception e) {
-            String msg = String.format(
-                    "[마이그레이션] MIGRATING 상태 복구 실패 - 수동 확인 필요: requestId=%d", requestId);
-            log.error(msg, e);
-            try {
-                alarmService.sendSlackAlert(msg, null);
-            } catch (Exception ignored) {
-                // 알림 발송 실패가 원래 예외 전파를 막으면 안 된다.
-            }
+            alert(String.format("[마이그레이션] MIGRATING 상태 복구 실패 - 수동 확인 필요: requestId=%d", requestId), e);
         }
     }
 
-    /**
-     * 새 Pod는 정상 생성·반영됐지만 config-server가 기존(이전 노드) Pod 정리에 실패한 경우.
-     * 정확한 기존 Pod 이름은 이 응답에 담겨오지 않으므로, 어느 노드에 남아있었는지까지만 알려주고
-     * 실제 정리는 수동 확인이 필요하다.
-     */
-    private void warnOldPodCleanupFailed(Long requestId, String username, String oldNode) {
-        String msg = String.format(
-                "[마이그레이션] 새 Pod는 정상 반영됐지만 기존 Pod 정리 실패 - 수동 확인 필요: requestId=%d, username=%s, oldNode=%s",
-                requestId, username, oldNode
-        );
-        log.warn(msg);
+    private void alert(String message, Exception cause) {
+        if (cause != null) {
+            log.error(message, cause);
+        } else {
+            log.warn(message);
+        }
         try {
-            alarmService.sendSlackAlert(msg, null);
+            alarmService.sendSlackAlert(message, null);
         } catch (Exception ignored) {
-            // 알림 발송 실패가 마이그레이션 성공 응답을 막으면 안 된다.
+            // 알림 발송 실패가 원래 흐름을 막으면 안 된다.
         }
     }
 }

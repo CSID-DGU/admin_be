@@ -32,8 +32,9 @@ public class ResourceGroupService {
         List<GpuRepository.GpuSummary> gpuSummaries = gpuRepository.findGpuSummary();
 
         if (gpuSummaries.isEmpty()) {
+            // 결과가 없는 조회는 오류가 아니다 — 빈 목록을 돌려준다.
             log.warn("[getGpuTypeResources] 조회된 GPU 기종별 리소스가 없습니다.");
-            throw new BusinessException(ErrorCode.NO_AVAILABLE_RESOURCES);
+            return List.of();
         }
 
         var response = gpuSummaries.stream()

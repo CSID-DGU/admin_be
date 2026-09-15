@@ -68,12 +68,11 @@ class ResourceGroupServiceTest {
     class GetGpuTypeResources {
 
         @Test
-        @DisplayName("GPU 요약 정보가 없으면 BusinessException을 던진다")
+        @DisplayName("GPU 요약 정보가 없으면 빈 목록을 돌려준다")
         void getGpuTypeResources_throwsException_whenEmpty() {
             when(gpuRepository.findGpuSummary()).thenReturn(List.of());
 
-            assertThatThrownBy(() -> resourceGroupService.getGpuTypeResources())
-                    .isInstanceOf(BusinessException.class);
+            assertThat(resourceGroupService.getGpuTypeResources()).isEmpty();
         }
 
         @Test

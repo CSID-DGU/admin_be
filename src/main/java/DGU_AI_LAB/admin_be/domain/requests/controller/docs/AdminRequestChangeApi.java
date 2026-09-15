@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller.docs;
 
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.ChangeDecisionRequestDTO;
+
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectModificationDTO;
 import DGU_AI_LAB.admin_be.error.dto.ErrorResponse;
@@ -24,7 +26,7 @@ public interface AdminRequestChangeApi {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "404", description = "변경 요청 또는 관리자 계정을 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
-    ResponseEntity<SuccessResponse<?>> approveModification(Long adminId, ApproveModificationDTO dto);
+    ResponseEntity<SuccessResponse<?>> approveModification(Long adminId, Long changeRequestId, ChangeDecisionRequestDTO dto);
 
     @Operation(summary = "변경 요청 거절", description = "PENDING 상태의 변경 요청을 거절합니다.")
     @ApiResponse(responseCode = "200", description = "성공")
@@ -32,5 +34,5 @@ public interface AdminRequestChangeApi {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "404", description = "변경 요청 또는 관리자 계정을 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
-    ResponseEntity<SuccessResponse<?>> rejectModification(Long adminId, RejectModificationDTO dto);
+    ResponseEntity<SuccessResponse<?>> rejectModification(Long adminId, Long changeRequestId, ChangeDecisionRequestDTO dto);
 }

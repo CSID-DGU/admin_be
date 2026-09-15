@@ -56,7 +56,7 @@ public class RequestController implements RequestApi {
                                                                    @RequestBody @Valid SingleChangeRequestDTO dto
     ) {
         requestCommandService.createSingleChangeRequest(userId, requestId, dto);
-        return SuccessResponse.ok(null);
+        return SuccessResponse.created(null);
     }
 
     /**

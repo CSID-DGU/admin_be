@@ -1,11 +1,17 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller;
 
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApprovalRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectionRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+
 import DGU_AI_LAB.admin_be.domain.requests.controller.docs.AdminRequestApi;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
-import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigratePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
@@ -54,22 +60,22 @@ public class AdminRequestController implements AdminRequestApi {
     }
 
 
-    @PatchMapping("/approve")
-    public ResponseEntity<SuccessResponse<?>> approveRequest(@RequestBody @Valid ApproveRequestDTO dto) {
-        SaveRequestResponseDTO responseDto = adminRequestCommandService.approveRequest(dto);
+    @PostMapping("/{requestId}/approval")
+    public ResponseEntity<SuccessResponse<?>> approveRequest(@PathVariable Long requestId,
+                                                             @RequestBody @Valid ApprovalRequestDTO dto) {
+        SaveRequestResponseDTO responseDto = adminRequestCommandService.approveRequest(
+                new ApproveRequestDTO(requestId, dto.imageId(), dto.resourceGroupId(), dto.adminComment()));
+        return SuccessResponse.accepted(responseDto);
+    }
+
+    @PostMapping("/{requestId}/rejection")
+    public ResponseEntity<SuccessResponse<?>> rejectRequest(@PathVariable Long requestId,
+                                                            @RequestBody @Valid RejectionRequestDTO dto) {
+        SaveRequestResponseDTO responseDto = adminRequestCommandService.rejectRequest(
+                new RejectRequestDTO(requestId, dto.adminComment()));
         return SuccessResponse.ok(responseDto);
     }
 
-    @PatchMapping("/reject")
-    public ResponseEntity<SuccessResponse<?>> rejectRequest(@RequestBody @Valid RejectRequestDTO dto) {
-        SaveRequestResponseDTO responseDto = adminRequestCommandService.rejectRequest(dto);
-        return SuccessResponse.ok(responseDto);
-    }
-
-    /**
-     * 신청의 생성·회수 작업 단계 기록 (신청 상세 화면용). 접근 시험 근거에 내부 정보가 섞일 수 있어
-     * 인증 없이 config-server로 넘어가는 화면 경로(/pod-status/)가 아니라 이 관리자 API로만 준다.
-     */
     @GetMapping("/{requestId}/job-steps")
     public ResponseEntity<SuccessResponse<?>> getJobSteps(@PathVariable Long requestId) {
         // 신청 조회 트랜잭션을 config-server 호출 동안 붙잡지 않도록 생성 시각만 먼저 받는다.
@@ -77,9 +83,15 @@ public class AdminRequestController implements AdminRequestApi {
                 requestId, adminRequestQueryService.getRequestCreatedAt(requestId)));
     }
 
-    @PostMapping("/{requestId}/migrate")
-    public ResponseEntity<SuccessResponse<?>> migratePod(@PathVariable Long requestId, @RequestBody @Valid MigratePodRequestDTO dto) {
-        MigratePodResponseDTO responseDto = podMigrationService.migratePod(requestId, dto);
-        return SuccessResponse.ok(responseDto);
+    @PostMapping("/{requestId}/migrations")
+    public ResponseEntity<SuccessResponse<?>> startMigration(@PathVariable Long requestId,
+                                                             @RequestBody @Valid MigratePodRequestDTO dto) {
+        podMigrationService.startMigration(requestId, dto);
+        return SuccessResponse.accepted(null);
+    }
+
+    @GetMapping("/{requestId}/migrations/latest")
+    public ResponseEntity<SuccessResponse<?>> getLatestMigration(@PathVariable Long requestId) {
+        return SuccessResponse.ok(podMigrationService.getLatestMigration(requestId));
     }
 }

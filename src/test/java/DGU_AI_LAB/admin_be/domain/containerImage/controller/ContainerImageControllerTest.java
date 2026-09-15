@@ -54,7 +54,7 @@ class ContainerImageControllerTest extends WebMvcTestSupport {
     class CreateImage {
 
         @Test
-        @DisplayName("유효한 요청으로 이미지를 생성하면 200 OK와 DTO를 반환한다")
+        @DisplayName("유효한 요청으로 이미지를 생성하면 201 Created와 DTO를 반환한다")
         void createImage_returns200WithDto() throws Exception {
             when(containerImageService.createImage(any())).thenReturn(sampleDto());
 
@@ -65,7 +65,7 @@ class ContainerImageControllerTest extends WebMvcTestSupport {
             mockMvc.perform(post("/api/images")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
-                    .andExpect(status().isOk())
+                    .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.imageName").value("pytorch"));
         }
     }

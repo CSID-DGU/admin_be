@@ -23,6 +23,12 @@ public class SuccessResponse<T> {
                 .body(SuccessResponse.of(SuccessCode.CREATED, data));
     }
 
+    /** 작업을 등록만 하고 결과는 나중에 반영되는 요청(승인·마이그레이션). */
+    public static <T> ResponseEntity<SuccessResponse<?>> accepted(T data) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(SuccessResponse.of(SuccessCode.ACCEPTED, data));
+    }
+
     public static <T> SuccessResponse<?> of(SuccessCode successCode, T data) {
         return SuccessResponse.builder()
                 .status(successCode.getHttpStatus().value())

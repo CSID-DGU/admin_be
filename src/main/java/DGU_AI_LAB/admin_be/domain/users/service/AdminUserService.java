@@ -343,6 +343,19 @@ public class AdminUserService {
     }
 
     /**
+     * 사용자 번호로 그 사용자의 우분투 계정을 회수한다. 살아 있는 신청의 컨테이너를 모두 회수한 뒤 계정을 지운다.
+     */
+    public void deleteUbuntuAccountOfUser(Long userId) {
+        User user = new TransactionTemplate(transactionManager).execute(status -> userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND)));
+        if (!user.hasUbuntuAccount()) {
+            throw new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND);
+        }
+        log.warn("[deleteUbuntuAccount] 우분투 계정 삭제 시도: userId={}", userId);
+        cleanupUserRequests(user, "deleteUbuntuAccount");
+    }
+
+    /**
      * 인프라 삭제에 실패했을 때 EXPIRING에 갇힌 요청을 FULFILLED로 되돌린다.
      * 되돌리지 않으면 그 요청은 재시도도 취소도 못 하는 상태로 남는다. 이 복구 자체의 실패가
      * 원래 예외 전파를 막으면 안 되므로 여기서 삼키고, 정지된 EXPIRING은 재조정 스케줄러가 회수한다.
