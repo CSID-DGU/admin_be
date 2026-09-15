@@ -195,6 +195,14 @@ class AdminUserServiceTest {
         return mockFulfilledRequest(username, requestId, "farm1");
     }
 
+    /** 지난 신청 이력 — 계정 회수 작업은 그 노드를 마지막으로 쓴 신청 번호로 등록한다. */
+    private Request nodeHistory(String nodeName, long requestId) {
+        Request request = mock(Request.class);
+        lenient().when(request.getNodeName()).thenReturn(nodeName);
+        lenient().when(request.getRequestId()).thenReturn(requestId);
+        return request;
+    }
+
     private Request mockFulfilledRequest(String username, long requestId, String nodeName) {
         Request request = mock(Request.class);
         AtomicReference<Status> current = new AtomicReference<>(Status.FULFILLED);
@@ -236,7 +244,8 @@ class AdminUserServiceTest {
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of());
             // 컨테이너는 이미 만료됐지만 지난 신청 이력에 노드가 남아 있어 삭제 범위를 좁힐 수 있다.
-            when(requestRepository.findNodeNamesByUserIdOrderByRequestIdDesc(any())).thenReturn(List.of("farm1"));
+            Request nodeHistory = nodeHistory("farm1", 777L);
+            when(requestRepository.findAllWithNodeByUserIdOrderByRequestIdDesc(any())).thenReturn(List.of(nodeHistory));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
             adminUserService.deleteUser(1L);
@@ -246,7 +255,7 @@ class AdminUserServiceTest {
             verifyNoInteractions(podService);
             // 컨테이너는 이미 만료로 정리됐어도 리눅스 계정은 웹 계정에 남아 있다 —
             // 사용자 삭제가 그 계정을 실제로 회수하는 유일한 지점이다.
-            verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
+            verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm1"), eq(777L));
             assertThat(mockUser.hasUbuntuAccount()).isFalse();
             assertThat(mockUser.getUbuntuUsername()).isEqualTo("testuser");
             verify(alarmService).sendAllAlerts(eq("홍길동"), eq("test@dgu.ac.kr"), anyString(), anyString());
@@ -270,7 +279,7 @@ class AdminUserServiceTest {
         void deleteUser_withUnknownAccountNode_skipsDeletionAndAlerts() {
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of());
-            when(requestRepository.findNodeNamesByUserIdOrderByRequestIdDesc(any())).thenReturn(List.of());
+            when(requestRepository.findAllWithNodeByUserIdOrderByRequestIdDesc(any())).thenReturn(List.of());
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
             adminUserService.deleteUser(1L);
@@ -289,7 +298,8 @@ class AdminUserServiceTest {
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of());
             // 컨테이너는 이미 만료됐지만 지난 신청 이력에 노드가 남아 있어 삭제 범위를 좁힐 수 있다.
-            when(requestRepository.findNodeNamesByUserIdOrderByRequestIdDesc(any())).thenReturn(List.of("farm1"));
+            Request nodeHistory = nodeHistory("farm1", 777L);
+            when(requestRepository.findAllWithNodeByUserIdOrderByRequestIdDesc(any())).thenReturn(List.of(nodeHistory));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
             adminUserService.deleteUser(1L);
@@ -618,7 +628,8 @@ class AdminUserServiceTest {
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of());
             // 컨테이너는 이미 만료됐지만 지난 신청 이력에 노드가 남아 있어 삭제 범위를 좁힐 수 있다.
-            when(requestRepository.findNodeNamesByUserIdOrderByRequestIdDesc(any())).thenReturn(List.of("farm1"));
+            Request nodeHistory = nodeHistory("farm1", 777L);
+            when(requestRepository.findAllWithNodeByUserIdOrderByRequestIdDesc(any())).thenReturn(List.of(nodeHistory));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
             UserSummaryDTO result = adminUserService.deactivateUser(1L);
@@ -658,7 +669,8 @@ class AdminUserServiceTest {
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of());
             // 컨테이너는 이미 만료됐지만 지난 신청 이력에 노드가 남아 있어 삭제 범위를 좁힐 수 있다.
-            when(requestRepository.findNodeNamesByUserIdOrderByRequestIdDesc(any())).thenReturn(List.of("farm1"));
+            Request nodeHistory = nodeHistory("farm1", 777L);
+            when(requestRepository.findAllWithNodeByUserIdOrderByRequestIdDesc(any())).thenReturn(List.of(nodeHistory));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
 
             adminUserService.deactivateUser(1L);
@@ -831,7 +843,8 @@ class AdminUserServiceTest {
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of());
             // 컨테이너는 이미 만료됐지만 지난 신청 이력에 노드가 남아 있어 삭제 범위를 좁힐 수 있다.
-            when(requestRepository.findNodeNamesByUserIdOrderByRequestIdDesc(any())).thenReturn(List.of("farm1"));
+            Request nodeHistory = nodeHistory("farm1", 777L);
+            when(requestRepository.findAllWithNodeByUserIdOrderByRequestIdDesc(any())).thenReturn(List.of(nodeHistory));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
             doThrow(new RuntimeException("Slack/메일 발송 실패"))
                     .when(alarmService).sendAllAlerts(anyString(), anyString(), anyString(), anyString());

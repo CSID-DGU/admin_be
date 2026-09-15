@@ -27,9 +27,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -93,13 +93,12 @@ public class AdminUserService {
         }
 
         List<Long> failedRequestIds = new ArrayList<>();
-        // 마지막에 우분투 계정을 지울 때 config-server에 넘길 farm 노드 목록. 살아있던
-        // 컨테이너가 있었다면 그 노드들로 삭제 범위를 좁힌다 — 안 넘기면 config-server가
-        // 모든 farm 노드를 훑어서 같은 유저네임의 무관한 레거시 계정까지 지울 수 있다.
-        // 한 사용자가 신청을 여러 개 동시에 가질 수 있어 서로 다른 노드에 컨테이너가 떠
-        // 있을 수 있으므로, 마지막 신청의 노드 하나만 남기면 다른 노드의 계정이 안 지워진
-        // 채로 남는다 — Set으로 정리한 노드를 전부 모아 releaseUbuntuAccount에서 각각 지운다.
-        Set<String> cleanedNodeNames = new LinkedHashSet<>();
+        // 마지막에 우분투 계정을 지울 때 config-server에 넘길 farm 노드와, 그 노드에서 이 계정을
+        // 마지막으로 쓴 신청 번호(회수 작업은 신청 번호로 등록된다). 살아있던 컨테이너가 있었다면 그
+        // 노드들로 삭제 범위를 좁힌다 — 안 넘기면 모든 farm 노드를 훑어서 같은 유저네임의 무관한
+        // 레거시 계정까지 지울 수 있다. 한 사용자가 신청을 여러 개 동시에 가질 수 있어 서로 다른
+        // 노드에 컨테이너가 떠 있을 수 있으므로, 정리한 노드를 전부 모아 releaseUbuntuAccount에서 각각 지운다.
+        Map<String, Long> cleanedNodes = new LinkedHashMap<>();
         for (Request request : userRequests) {
             Long requestId = request.getRequestId();
             if (request.getStatus() == Status.FULFILLED) {
@@ -151,7 +150,7 @@ public class AdminUserService {
                 // 건너뛴다 — Set에 null이 섞이면 releaseUbuntuAccount가 node_name=null로 계정
                 // 삭제를 호출해, 모든 farm 노드를 훑는 "hold-and-alert" 안전장치를 우회하게 된다.
                 if (nodeNameRef[0] != null) {
-                    cleanedNodeNames.add(nodeNameRef[0]);
+                    cleanedNodes.put(nodeNameRef[0], requestId);
                 }
                 final Request[] deletedRef = {null};
                 newTx.execute(status -> {
@@ -183,7 +182,7 @@ public class AdminUserService {
             // Pod가 남아있는 요청이 있으면 계정을 지우지 않는다 — 계정 없이 떠 있는 Pod가 된다.
             throw new BusinessException(ErrorCode.USER_REQUEST_CLEANUP_PARTIALLY_FAILED);
         }
-        releaseUbuntuAccount(user.getUserId(), cleanedNodeNames, logPrefix);
+        releaseUbuntuAccount(user.getUserId(), cleanedNodes, logPrefix);
         log.info("[{}] userId={}와 연결된 Request 정리 완료", logPrefix, user.getUserId());
     }
 
@@ -193,22 +192,22 @@ public class AdminUserService {
      * UID는 삭제 즉시 다른 사용자에게 재할당될 수 있어, 들고 있으면 이 계정이 되살아났을 때
      * 남의 UID로 Pod를 만든다.
      *
-     * @param cleanedNodeNames 방금 정리한 컨테이너들이 떠 있던 노드 전부. 한 사용자가 신청을
-     *                         여러 개 동시에 가질 수 있어 서로 다른 노드에 컨테이너가 있을 수
-     *                         있으므로, 노드마다 개별적으로 계정 삭제를 호출해야 한다.
-     *                         컨테이너가 이미 만료된 사용자는 비어있으므로 그때는 신청 이력에서
-     *                         노드를 되찾는다.
+     * @param cleanedNodes 방금 정리한 컨테이너들이 떠 있던 노드 전부와 각 노드의 신청 번호. 한 사용자가
+     *                     신청을 여러 개 동시에 가질 수 있어 서로 다른 노드에 컨테이너가 있을 수
+     *                     있으므로, 노드마다 개별적으로 계정 회수 작업을 등록해야 한다.
+     *                     컨테이너가 이미 만료된 사용자는 비어있으므로 그때는 신청 이력에서
+     *                     가장 최근 신청의 노드와 신청 번호를 되찾는다.
      * 일부 노드에서만 계정 삭제가 실패하면 UID/GID는 회수하지 않고
      * {@link ErrorCode#USER_REQUEST_CLEANUP_PARTIALLY_FAILED}를 던진다 — 이미 지워진
      * 노드와 실패한 노드가 섞인 채로 회수해버리면, 남은 노드의 계정이 DB엔 없는 걸로
      * 기록된 채 실제로는 살아남는다.
      */
-    private void releaseUbuntuAccount(Long userId, Set<String> cleanedNodeNames, String logPrefix) {
+    private void releaseUbuntuAccount(Long userId, Map<String, Long> cleanedNodes, String logPrefix) {
         TransactionTemplate newTx = new TransactionTemplate(transactionManager);
         newTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 
         final String[] usernameRef = {null};
-        final Set<String> nodeNamesRef = new LinkedHashSet<>(cleanedNodeNames);
+        final Map<String, Long> nodesRef = new LinkedHashMap<>(cleanedNodes);
         newTx.execute(status -> {
             User managed = userRepository.findByIdForUpdate(userId)
                     .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
@@ -216,9 +215,10 @@ public class AdminUserService {
                 return null;
             }
             usernameRef[0] = managed.getUbuntuUsername();
-            if (nodeNamesRef.isEmpty()) {
-                requestRepository.findNodeNamesByUserIdOrderByRequestIdDesc(userId)
-                        .stream().findFirst().ifPresent(nodeNamesRef::add);
+            if (nodesRef.isEmpty()) {
+                requestRepository.findAllWithNodeByUserIdOrderByRequestIdDesc(userId)
+                        .stream().findFirst()
+                        .ifPresent(last -> nodesRef.put(last.getNodeName(), last.getRequestId()));
             }
             return null;
         });
@@ -226,7 +226,7 @@ public class AdminUserService {
             log.info("[{}] userId={} 배정된 우분투 계정이 없어 계정 삭제를 건너뜁니다.", logPrefix, userId);
             return;
         }
-        if (nodeNamesRef.isEmpty()) {
+        if (nodesRef.isEmpty()) {
             // node_name 없이 삭제를 호출하면 config-server가 모든 farm 노드를 훑어서 같은
             // 유저네임의 무관한 레거시 계정까지 지운다. 그 위험을 감수하느니 계정을 남기고
             // 관리자에게 알린다 — 남은 계정은 수동으로 정리할 수 있지만, 잘못 지운 남의
@@ -244,11 +244,12 @@ public class AdminUserService {
         }
 
         List<String> failedNodeNames = new ArrayList<>();
-        for (String nodeName : nodeNamesRef) {
+        for (Map.Entry<String, Long> node : nodesRef.entrySet()) {
+            String nodeName = node.getKey();
             try {
-                // 이 경로는 이 웹 계정에 딸린 신청을 전부 정리한 뒤 계정을 한 번만 회수하므로
-                // 어느 승인 한 건에 귀속시킬 수 없다. config-server가 임시 키로 기록한다.
-                ubuntuAccountService.deleteUbuntuAccount(usernameRef[0], nodeName, null);
+                // 계정은 웹 계정에 귀속돼 어느 승인 한 건의 것이 아니지만, 회수 작업은 신청 번호로 등록된다.
+                // 그 노드에서 이 계정을 마지막으로 쓴 신청 번호로 등록해 작업 이력이 그 신청에 이어지게 한다.
+                ubuntuAccountService.deleteUbuntuAccount(usernameRef[0], nodeName, node.getValue());
             } catch (Exception e) {
                 log.error("[{}] userId={} 우분투 계정 삭제 실패 - 수동 확인 필요: username={}, node={}",
                         logPrefix, userId, usernameRef[0], nodeName, e);
@@ -274,7 +275,7 @@ public class AdminUserService {
             userRepository.findByIdForUpdate(userId).ifPresent(User::releaseUbuntuAccount);
             return null;
         });
-        log.info("[{}] userId={} 우분투 계정 삭제 완료: username={}, nodes={}", logPrefix, userId, usernameRef[0], nodeNamesRef);
+        log.info("[{}] userId={} 우분투 계정 삭제 완료: username={}, nodes={}", logPrefix, userId, usernameRef[0], nodesRef.keySet());
     }
 
     /**

@@ -8,6 +8,7 @@ import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.webclient.WebClientErrorHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -15,18 +16,17 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.util.Map;
 
 /**
- * 제안 시스템(v2.0)의 작업 등록 경로. 승인·회수를 config-server에 작업으로 등록만 하고 바로 돌아오며,
- * 실제 실행은 config-server의 제어기가 한다. 결과는 작업 결과 조회로 받는다.
+ * config-server 작업 인터페이스. 승인·회수를 작업으로 등록하고(POST /operations/provision·revoke)
+ * 결과를 조회한다(GET /operations/{kind}/{신청번호}). 실제 실행은 config-server의 제어기가 한다.
  *
- * <p>Operational Baseline(동기식 순차 실행)은 이 경로를 쓰지 않는다. 승인 API가 계정 생성부터 컨테이너
- * 생성까지 직접 호출하고 끝까지 기다리는 흐름은 그대로 두고, {@code proposed.async-approval.enabled}가
- * 켜진 실험 스택에서만 이 경로로 전환된다.
+ * <p>baseline·noprobe·full 세 방식이 모두 이 인터페이스를 쓴다. 방식 차이(재시도, 결과 확인, 접근 시험)는
+ * 제어기 쪽에서만 나므로 admin_be는 방식을 모른다.
  */
 @Slf4j
 @Service
 public class OperationJobService {
 
-    /** 등록 이력이 없다. 아직 등록 전이거나 동기 경로로 처리 중인 신청이다. */
+    /** 등록 이력이 없다. */
     public static final String PHASE_NONE = "none";
     /** 등록됐고 아직 끝나지 않았다(대기 또는 실행 중). */
     public static final String PHASE_START = "START";
@@ -42,9 +42,15 @@ public class OperationJobService {
     public static final String KIND_REVOKE = "revoke";
 
     private final WebClient webClient;
+    private final long revokePollMillis;
+    private final long revokeTimeoutMillis;
 
-    public OperationJobService(@Qualifier("configWebClient") WebClient configWebClient) {
+    public OperationJobService(@Qualifier("configWebClient") WebClient configWebClient,
+                               @Value("${operations.revoke.poll-ms:2000}") long revokePollMillis,
+                               @Value("${operations.revoke.timeout-seconds:900}") long revokeTimeoutSeconds) {
         this.webClient = configWebClient;
+        this.revokePollMillis = revokePollMillis;
+        this.revokeTimeoutMillis = revokeTimeoutSeconds * 1000;
     }
 
     /**
@@ -56,9 +62,82 @@ public class OperationJobService {
         register("/operations/provision", body, body.requestId(), ErrorCode.POD_CREATION_FAILED);
     }
 
-    /** 회수 작업을 등록한다. */
+    /** 회수 작업을 등록한다. 결과를 기다리지 않는다. */
     public void registerRevoke(RevokeRegisterRequestDTO body) {
         register("/operations/revoke", body, body.requestId(), ErrorCode.POD_DELETION_FAILED);
+    }
+
+    /**
+     * 회수 작업을 등록하고 끝날 때까지 기다린다. 만료 정리·사용자 정리처럼 회수 결과를 보고 다음 단계
+     * (신청 DELETED 전환, 계정 회수, UID/GID 반환)를 정하는 호출자가 쓴다.
+     *
+     * <p>같은 신청의 회수 작업이 이미 도는 중이면(409) 새로 등록하지 않고 그 작업의 결과를 기다린다.
+     * 이미 없는 계정을 지우려다 실패한 것은 성공으로 본다 — 목표 상태(계정 없음)에 이미 도달했기 때문이다.
+     *
+     * @param failureCode 작업이 실패·결과 불명으로 끝났거나 제한 시간 안에 끝나지 않았을 때 던질 오류 코드
+     */
+    public void revokeAndWait(RevokeRegisterRequestDTO body, ErrorCode failureCode) {
+        Long requestId = body.requestId();
+        try {
+            register("/operations/revoke", body, requestId, failureCode);
+        } catch (BusinessException e) {
+            if (e.getErrorCode() != ErrorCode.INVALID_REQUEST_STATUS) {
+                throw e;
+            }
+            log.info("같은 신청의 회수 작업이 이미 진행 중 — 그 결과를 기다린다: requestId={}", requestId);
+        }
+
+        long deadline = System.currentTimeMillis() + revokeTimeoutMillis;
+        while (true) {
+            JobResultResponseDTO result = null;
+            try {
+                result = getResult(KIND_REVOKE, requestId);
+            } catch (BusinessException e) {
+                // 조회 한 번의 실패로 회수 전체를 실패로 만들지 않는다. 제한 시간까지 다시 조회한다.
+                log.warn("회수 작업 결과 조회 실패, 다시 조회한다: requestId={}", requestId, e);
+            }
+            if (result != null) {
+                switch (result.phase()) {
+                    case PHASE_SUCCESS -> {
+                        return;
+                    }
+                    case PHASE_FAIL -> {
+                        if (body.deleteAccount() && isAccountAlreadyAbsent(result.errorCode())) {
+                            log.info("회수할 계정이 이미 없어 삭제된 것으로 처리: requestId={}, username={}",
+                                    requestId, body.username());
+                            return;
+                        }
+                        throw new BusinessException("회수 작업 실패: " + result.errorCode(), failureCode);
+                    }
+                    case PHASE_UNKNOWN ->
+                            throw new BusinessException("회수 작업 결과 불명: " + result.errorCode(), failureCode);
+                    default -> {
+                        // START: 아직 실행 중. none: 등록 직후 조회가 먼저 도착한 경우.
+                    }
+                }
+            }
+            if (System.currentTimeMillis() >= deadline) {
+                throw new BusinessException("회수 작업이 제한 시간 안에 끝나지 않음: requestId=" + requestId, failureCode);
+            }
+            sleep(revokePollMillis, failureCode);
+        }
+    }
+
+    private static boolean isAccountAlreadyAbsent(String errorCode) {
+        return errorCode != null
+                && (errorCode.equalsIgnoreCase("user not found") || errorCode.equalsIgnoreCase("USER_NOT_FOUND"));
+    }
+
+    private static void sleep(long millis, ErrorCode failureCode) {
+        if (millis <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException("회수 작업 대기 중 중단됨", failureCode);
+        }
     }
 
     private void register(String uri, Object body, Long requestId, ErrorCode failureCode) {

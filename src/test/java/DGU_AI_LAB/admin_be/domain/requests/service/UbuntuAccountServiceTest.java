@@ -1,118 +1,65 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
-import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
 
-import java.util.Map;
-
-import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("UbuntuAccountService")
 class UbuntuAccountServiceTest {
 
     @InjectMocks
     private UbuntuAccountService ubuntuAccountService;
 
-    @Mock private WebClient webClient;
-    @Mock private WebClient.RequestHeadersUriSpec deleteUriSpec;
-    @Mock private WebClient.RequestHeadersSpec<?> requestHeadersSpec;
-    @Mock private WebClient.ResponseSpec responseSpec;
+    @Mock
+    private OperationJobService operationJobService;
 
-    @BeforeEach
-    @SuppressWarnings("unchecked")
-    void setUp() {
-        when(webClient.delete()).thenReturn(deleteUriSpec);
-        when(deleteUriSpec.uri(anyString())).thenReturn(requestHeadersSpec);
-        when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
-        when(responseSpec.onStatus(any(), any())).thenReturn(responseSpec);
+    @Test
+    @DisplayName("계정 회수 작업을 신청 번호·노드와 함께 등록하고 끝날 때까지 기다린다 — Pod는 대상이 아니다")
+    void registersAccountRevokeAndWaits() {
+        ubuntuAccountService.deleteUbuntuAccount("testuser", "farm2", 4821L);
+
+        ArgumentCaptor<RevokeRegisterRequestDTO> captor = ArgumentCaptor.forClass(RevokeRegisterRequestDTO.class);
+        verify(operationJobService).revokeAndWait(captor.capture(), eq(ErrorCode.UBUNTU_USER_DELETION_FAILED));
+        RevokeRegisterRequestDTO body = captor.getValue();
+        assertThat(body.requestId()).isEqualTo(4821L);
+        assertThat(body.username()).isEqualTo("testuser");
+        assertThat(body.nodeName()).isEqualTo("farm2");
+        assertThat(body.podName()).isNull();
+        assertThat(body.deleteAccount()).isTrue();
     }
 
-    @Nested
-    @DisplayName("deleteUbuntuAccount")
-    class DeleteUbuntuAccount {
+    @Test
+    @DisplayName("신청 번호가 없으면 작업을 등록하지 않고 실패한다 — 작업은 신청 번호로만 식별된다")
+    void requiresRequestId() {
+        assertThatThrownBy(() -> ubuntuAccountService.deleteUbuntuAccount("testuser", "farm2", null))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_USER_DELETION_FAILED);
 
-        @Test
-        @DisplayName("정상 응답이면 계정 삭제에 성공한다")
-        void deleteUbuntuAccount_success_whenApiReturnsOk() {
-            when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "deleted")));
+        verifyNoInteractions(operationJobService);
+    }
 
-            assertThatCode(() -> ubuntuAccountService.deleteUbuntuAccount("testuser"))
-                    .doesNotThrowAnyException();
+    @Test
+    @DisplayName("회수 작업이 실패하면 예외를 그대로 전파한다")
+    void propagatesJobFailure() {
+        doThrow(new BusinessException("회수 작업 실패: ACCOUNT_IN_USE", ErrorCode.UBUNTU_USER_DELETION_FAILED))
+                .when(operationJobService).revokeAndWait(any(), any());
 
-            verify(deleteUriSpec).uri("/accounts/users/testuser");
-        }
-
-        @Test
-        @DisplayName("nodeName과 requestId를 모두 넘기면 두 쿼리 파라미터를 &로 이어 붙인다")
-        void deleteUbuntuAccount_appendsNodeNameAndRequestId() {
-            when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "deleted")));
-
-            ubuntuAccountService.deleteUbuntuAccount("testuser", "farm2", 4821L);
-
-            verify(deleteUriSpec).uri("/accounts/users/testuser?node_name=farm2&request_id=4821");
-        }
-
-        @Test
-        @DisplayName("requestId만 있으면 request_id가 첫 쿼리 파라미터가 된다")
-        void deleteUbuntuAccount_appendsOnlyRequestId_whenNodeNameMissing() {
-            when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "deleted")));
-
-            ubuntuAccountService.deleteUbuntuAccount("testuser", null, 4821L);
-
-            verify(deleteUriSpec).uri("/accounts/users/testuser?request_id=4821");
-        }
-
-        @Test
-        @DisplayName("requestId가 null이면 request_id 파라미터를 붙이지 않는다 (승인 번호를 특정할 수 없는 계정 회수)")
-        void deleteUbuntuAccount_omitsRequestId_whenNull() {
-            when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "deleted")));
-
-            ubuntuAccountService.deleteUbuntuAccount("testuser", "farm2", null);
-
-            verify(deleteUriSpec).uri("/accounts/users/testuser?node_name=farm2");
-        }
-
-        @Test
-        @DisplayName("반응형 체인 내부에서 BusinessException이 발생해도 바깥 catch(Exception)에 잡혀 INTERNAL_SERVER_ERROR로 재래핑된다")
-        void deleteUbuntuAccount_wrapsInnerBusinessException_asInternalServerError() {
-            // UbuntuAccountService는 PodService와 달리 catch(BusinessException e){throw e;} 분기가 없어서,
-            // onStatus 매퍼가 만든 BusinessException도 바깥 catch(Exception)에 그대로 잡혀 재래핑된다 (기존 동작 그대로).
-            when(responseSpec.bodyToMono(Map.class))
-                    .thenReturn(Mono.error(new BusinessException("사용자 삭제 실패", ErrorCode.UBUNTU_USER_DELETION_FAILED)));
-
-            assertThatThrownBy(() -> ubuntuAccountService.deleteUbuntuAccount("testuser"))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.INTERNAL_SERVER_ERROR);
-        }
-
-        @Test
-        @DisplayName("API 호출 중 일반 예외가 발생하면 BusinessException으로 래핑한다")
-        void deleteUbuntuAccount_wrapsGeneralException_asBusinessException() {
-            when(responseSpec.bodyToMono(Map.class))
-                    .thenReturn(Mono.error(new RuntimeException("connection timeout")));
-
-            assertThatThrownBy(() -> ubuntuAccountService.deleteUbuntuAccount("testuser"))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.INTERNAL_SERVER_ERROR);
-        }
+        assertThatThrownBy(() -> ubuntuAccountService.deleteUbuntuAccount("testuser", "farm2", 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("ACCOUNT_IN_USE");
     }
 }

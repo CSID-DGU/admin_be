@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigratePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.PodCreationStatusResponseDTO;
@@ -49,11 +50,12 @@ class PodServiceTest {
     @Mock private WebClient configWebClient;
     @Mock private WebClient.RequestHeadersUriSpec<?> requestHeadersUriSpec;
     @Mock private RequestRepository requestRepository;
+    @Mock private OperationJobService operationJobService;
 
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setUp() {
-        podService = new PodService(webClient, configWebClient, requestRepository);
+        podService = new PodService(webClient, configWebClient, requestRepository, operationJobService);
 
         when(webClient.post()).thenReturn(requestBodyUriSpec);
         when(requestBodyUriSpec.uri(anyString())).thenReturn(requestBodySpec);
@@ -73,75 +75,46 @@ class PodServiceTest {
     class DeletePod {
 
         @Test
-        @DisplayName("podName이 null이면 API를 호출하지 않고 정상 반환한다")
-        void deletePod_skipsApiCall_whenPodNameIsNull() {
+        @DisplayName("podName이 null이면 회수 작업을 등록하지 않고 정상 반환한다")
+        void deletePod_skips_whenPodNameIsNull() {
             assertThatCode(() -> podService.deletePod(null, 1L))
                     .doesNotThrowAnyException();
 
+            verifyNoInteractions(operationJobService);
+        }
+
+        @Test
+        @DisplayName("신청 번호와 Pod 이름으로 회수 작업을 등록하고 끝날 때까지 기다린다 — 계정은 회수하지 않는다")
+        void deletePod_revokesPodThroughJob() {
+            podService.deletePod("ailab-testuser-abcd", 4821L);
+
+            ArgumentCaptor<RevokeRegisterRequestDTO> captor = ArgumentCaptor.forClass(RevokeRegisterRequestDTO.class);
+            verify(operationJobService).revokeAndWait(captor.capture(), eq(ErrorCode.POD_DELETION_FAILED));
+            assertThat(captor.getValue().requestId()).isEqualTo(4821L);
+            assertThat(captor.getValue().podName()).isEqualTo("ailab-testuser-abcd");
+            assertThat(captor.getValue().deleteAccount()).isFalse();
             verify(webClient, never()).post();
         }
 
         @Test
-        @DisplayName("정상 응답이면 Pod 삭제에 성공한다")
-        void deletePod_success_whenApiReturnsOk() {
-            when(responseSpec.bodyToMono(Map.class))
-                    .thenReturn(Mono.just(Map.of("status", "ok")));
+        @DisplayName("신청 번호가 없으면 회수하지 않고 실패한다 — 고아 Pod는 deleteOrphanPod를 쓴다")
+        void deletePod_requiresRequestId() {
+            assertThatThrownBy(() -> podService.deletePod("orphan-pod", null))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.POD_DELETION_FAILED);
 
-            assertThatCode(() -> podService.deletePod("test-pod-name", 1L))
-                    .doesNotThrowAnyException();
+            verifyNoInteractions(operationJobService);
         }
 
         @Test
-        @DisplayName("requestId를 request_id 키로 요청 본문에 실어 보낸다 (작업 이력을 승인 단위로 묶는 키)")
-        void deletePod_sendsRequestIdInBody() {
-            when(responseSpec.bodyToMono(Map.class))
-                    .thenReturn(Mono.just(Map.of("status", "ok")));
-
-            podService.deletePod("test-pod-name", 4821L);
-
-            ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
-            verify(requestBodySpec).bodyValue(bodyCaptor.capture());
-            JsonNode json = new ObjectMapper().valueToTree(bodyCaptor.getValue());
-
-            assertThat(json.get("pod_name").asText()).isEqualTo("test-pod-name");
-            assertThat(json.get("request_id").asLong()).isEqualTo(4821L);
-        }
-
-        @Test
-        @DisplayName("requestId가 null이면 request_id 키 자체를 빼서 config-server의 임시 키 생성 경로를 탄다")
-        void deletePod_omitsRequestIdKey_whenNull() {
-            when(responseSpec.bodyToMono(Map.class))
-                    .thenReturn(Mono.just(Map.of("status", "ok")));
-
-            podService.deletePod("orphan-pod", null);
-
-            ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
-            verify(requestBodySpec).bodyValue(bodyCaptor.capture());
-            JsonNode json = new ObjectMapper().valueToTree(bodyCaptor.getValue());
-
-            assertThat(json.get("pod_name").asText()).isEqualTo("orphan-pod");
-            assertThat(json.has("request_id")).isFalse();
-        }
-
-        @Test
-        @DisplayName("API 호출 중 BusinessException이 발생하면 그대로 전파한다")
-        void deletePod_propagatesBusinessException() {
-            when(responseSpec.bodyToMono(Map.class))
-                    .thenReturn(Mono.error(new BusinessException("Pod 삭제 실패", ErrorCode.POD_DELETION_FAILED)));
+        @DisplayName("회수 작업이 실패하면 예외를 그대로 전파한다")
+        void deletePod_propagatesJobFailure() {
+            doThrow(new BusinessException("회수 작업 실패", ErrorCode.POD_DELETION_FAILED))
+                    .when(operationJobService).revokeAndWait(any(), any());
 
             assertThatThrownBy(() -> podService.deletePod("error-pod", 1L))
                     .isInstanceOf(BusinessException.class)
-                    .hasMessageContaining("Pod 삭제 실패");
-        }
-
-        @Test
-        @DisplayName("API 호출 중 일반 예외가 발생하면 BusinessException으로 래핑한다")
-        void deletePod_wrapsGeneralException_asBusinessException() {
-            when(responseSpec.bodyToMono(Map.class))
-                    .thenReturn(Mono.error(new RuntimeException("connection timeout")));
-
-            assertThatThrownBy(() -> podService.deletePod("timeout-pod", 1L))
-                    .isInstanceOf(BusinessException.class);
+                    .hasMessageContaining("회수 작업 실패");
         }
 
         @Test
@@ -189,89 +162,6 @@ class PodServiceTest {
 
     // ───────────────────────────────────────────────────────────────
     // createPod
-    // ───────────────────────────────────────────────────────────────
-    @Nested
-    @DisplayName("createPod")
-    class CreatePod {
-
-        @Test
-        @DisplayName("Pod 생성 API가 성공 응답을 반환하면 CreatePodResponseDTO를 반환한다")
-        void createPod_returnsDto_whenApiSucceeds() {
-            CreatePodResponseDTO mockResponse = new CreatePodResponseDTO(
-                    "running", "node-01", "pod-testuser-abc",
-                    List.of(new CreatePodResponseDTO.PortInfo("ssh", 22, 30022))
-            );
-            when(responseSpec.bodyToMono(CreatePodResponseDTO.class))
-                    .thenReturn(Mono.just(mockResponse));
-
-            CreatePodResponseDTO result = podService.createPod("testuser", 42L);
-
-            assertThat(result).isEqualTo(mockResponse);
-            assertThat(result.podName()).isEqualTo("pod-testuser-abc");
-        }
-
-        @Test
-        @DisplayName("C-3: API가 빈 응답(null)을 반환하면 POD_CREATION_FAILED 예외가 발생한다")
-        void createPod_throwsBusinessException_whenApiReturnsEmpty() {
-            when(responseSpec.bodyToMono(CreatePodResponseDTO.class))
-                    .thenReturn(Mono.empty());
-
-            assertThatThrownBy(() -> podService.createPod("testuser", 42L))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.POD_CREATION_FAILED);
-        }
-
-        @Test
-        @DisplayName("C-3: podName이 null인 응답이면 POD_CREATION_FAILED 예외가 발생한다")
-        void createPod_throwsBusinessException_whenPodNameIsNull() {
-            CreatePodResponseDTO badResponse = new CreatePodResponseDTO(
-                    "unknown", "farm1", null, List.of()
-            );
-            when(responseSpec.bodyToMono(CreatePodResponseDTO.class))
-                    .thenReturn(Mono.just(badResponse));
-
-            assertThatThrownBy(() -> podService.createPod("testuser", 42L))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.POD_CREATION_FAILED);
-        }
-
-        @Test
-        @DisplayName("Pod 생성 API 호출 중 BusinessException이 발생하면 그대로 전파한다")
-        void createPod_propagatesBusinessException() {
-            when(responseSpec.bodyToMono(CreatePodResponseDTO.class))
-                    .thenReturn(Mono.error(new BusinessException("Pod 생성 실패", ErrorCode.POD_CREATION_FAILED)));
-
-            assertThatThrownBy(() -> podService.createPod("testuser", 42L))
-                    .isInstanceOf(BusinessException.class)
-                    .hasMessageContaining("Pod 생성 실패");
-        }
-
-        @Test
-        @DisplayName("Pod 생성 API 호출 중 일반 예외가 발생하면 BusinessException으로 래핑한다")
-        void createPod_wrapsGeneralException_asBusinessException() {
-            when(responseSpec.bodyToMono(CreatePodResponseDTO.class))
-                    .thenReturn(Mono.error(new RuntimeException("network error")));
-
-            assertThatThrownBy(() -> podService.createPod("testuser", 42L))
-                    .isInstanceOf(BusinessException.class);
-        }
-
-        @Test
-        @DisplayName("올바른 username으로 /create-pod URI에 요청한다")
-        void createPod_callsCorrectUri() {
-            when(responseSpec.bodyToMono(CreatePodResponseDTO.class))
-                    .thenReturn(Mono.just(new CreatePodResponseDTO("running", "node", "pod-user", List.of())));
-
-            podService.createPod("myuser", 7L);
-
-            verify(requestBodyUriSpec).uri("/create-pod");
-        }
-    }
-
-    // ───────────────────────────────────────────────────────────────
-    // migratePod
     // ───────────────────────────────────────────────────────────────
     @Nested
     @DisplayName("migratePod")
