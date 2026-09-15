@@ -19,13 +19,8 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # 2단계에서 뺀다. 1단계 동안은 실행 시 주입(차트의 admin-prod-config Secret)과 함께 두어,
-      # 배포가 되돌려져도 이미지 안 설정으로 동작하게 한다.
-      - name: 🛠 application.yml 생성
-        run: |
-          mkdir -p ./src/main/resources
-          echo "${{ secrets.APPLICATION }}" > ./src/main/resources/application.yml
-
+      # 설정 파일은 이미지에 넣지 않는다. 운영 설정은 배포 단계에서 차트의 admin-prod-config Secret으로
+      # 만들어 /app/config/application.yml에 마운트한다(Spring Boot가 jar 안 설정보다 우선해서 읽는 위치).
       - name: ⚡ Gradle Build (테스트 제외)
         run: ./gradlew build -x test
 
