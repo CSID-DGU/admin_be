@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.users.dto.request;
 
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.global.validation.UbuntuUsername;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -16,8 +17,9 @@ public record UserRegisterRequestDTO(
         @Email @NotBlank @Size(max = 100)
         String email,
 
+        // 화면도 8자 이상을 요구한다. BCrypt는 72바이트 뒤를 버리므로 그 이상은 받지 않는다.
         @Schema(description = "비밀번호", example = "strongPassword123!")
-        @NotBlank @Size(max = 255)
+        @NotBlank @Size(min = 8, max = 72, message = "비밀번호는 8~72자여야 합니다.")
         String password,
 
         @Schema(description = "사용자 이름", example = "이소은")
@@ -32,16 +34,16 @@ public record UserRegisterRequestDTO(
         @NotBlank @Size(max = 100)
         String studentId,
 
+        // 연락처 변경(PhoneUpdateRequestDTO)과 같은 형식을 요구한다.
         @Schema(description = "전화번호", example = "010-1234-5678")
         @NotBlank @Size(max = 100)
+        @Pattern(regexp = "^\\d{2,3}-\\d{3,4}-\\d{4}$", message = "유효한 전화번호 형식이 아닙니다. (예: 010-1234-5678)")
         String phone,
 
         // 웹 계정 하나당 우분투 계정 하나 — 가입 시 정하면 이후 모든 컨테이너가 이 이름을
-        // 쓰므로 홈 디렉터리(/home/<username>)가 그대로 이어진다. 리눅스 유저네임 규칙에
-        // 맞춰 소문자로 시작하고 소문자/숫자/밑줄/하이픈만 허용한다.
-        @Schema(description = "Ubuntu 계정명 (3~50자, 소문자로 시작)", example = "hongildong")
-        @NotBlank @Size(min = 3, max = 50)
-        @Pattern(regexp = "^[a-z][a-z0-9_-]*$", message = "Ubuntu username must start with a lowercase letter and contain only lowercase letters, digits, '_' or '-'")
+        // 쓰므로 홈 디렉터리(/home/<username>)가 그대로 이어진다. 규칙은 @UbuntuUsername 참고.
+        @Schema(description = "Ubuntu 계정명 (3~32자, 소문자로 시작, 소문자·숫자·하이픈)", example = "hongildong")
+        @UbuntuUsername
         String ubuntuUsername
 ) {
         /** 비밀번호는 서비스에서 암호화한 값을 넘겨서 처리 */

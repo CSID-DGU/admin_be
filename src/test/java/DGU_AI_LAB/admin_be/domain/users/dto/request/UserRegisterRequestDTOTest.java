@@ -113,10 +113,29 @@ class UserRegisterRequestDTOTest {
     @DisplayName("컬럼 길이와 같은 100자는 통과한다 (경계값)")
     void exactly100_isAccepted() {
         UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
-                "user@dgu.ac.kr", repeat(255), repeat(100),
-                repeat(100), repeat(100), repeat(100), "a".repeat(50));
+                "user@dgu.ac.kr", repeat(72), repeat(100),
+                repeat(100), repeat(100), "010-1234-5678", "a".repeat(32));
 
         assertThat(validator.validate(dto)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("password가 8자 미만이거나 72자를 넘으면 위반이 발생한다 (BCrypt는 72바이트까지만 쓴다)")
+    void password_lengthBounds() {
+        assertThat(violatedFields(new UserRegisterRequestDTO(
+                "user@dgu.ac.kr", repeat(7), "이소은", "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi")))
+                .contains("password");
+        assertThat(violatedFields(new UserRegisterRequestDTO(
+                "user@dgu.ac.kr", repeat(73), "이소은", "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi")))
+                .contains("password");
+    }
+
+    @Test
+    @DisplayName("phone은 연락처 변경과 같은 형식이어야 한다")
+    void phone_mustMatchFormat() {
+        assertThat(violatedFields(new UserRegisterRequestDTO(
+                "user@dgu.ac.kr", "strongPassword123!", "이소은", "컴퓨터공학과", "202312345", "01012345678", "sochoi")))
+                .contains("phone");
     }
 
     @Test
@@ -140,18 +159,49 @@ class UserRegisterRequestDTOTest {
     }
 
     @Test
-    @DisplayName("ubuntuUsername이 리눅스 유저네임 규칙(소문자 시작, 소문자/숫자/_/-)을 어기면 위반이 발생한다")
+    @DisplayName("ubuntuUsername이 계정 이름 규칙(소문자 시작, 소문자/숫자/하이픈, 소문자·숫자로 끝남)을 어기면 위반이 발생한다")
     void ubuntuUsername_invalidCharacters_isRejected() {
         assertThat(violatedFields(registerWithUbuntuUsername("Uppercase"))).contains("ubuntuUsername");
         assertThat(violatedFields(registerWithUbuntuUsername("1starts"))).contains("ubuntuUsername");
         assertThat(violatedFields(registerWithUbuntuUsername("has space"))).contains("ubuntuUsername");
         assertThat(violatedFields(registerWithUbuntuUsername("has.dot"))).contains("ubuntuUsername");
+        assertThat(violatedFields(registerWithUbuntuUsername("ends-"))).contains("ubuntuUsername");
     }
 
     @Test
-    @DisplayName("소문자/숫자/밑줄/하이픈 조합은 통과한다")
+    @DisplayName("밑줄은 쿠버네티스 Secret 이름 규칙에 없어 거절한다")
+    void ubuntuUsername_underscore_isRejected() {
+        assertThat(violatedFields(registerWithUbuntuUsername("so_eun"))).contains("ubuntuUsername");
+    }
+
+    @Test
+    @DisplayName("리눅스 계정 이름 상한 32자를 넘으면 거절한다")
+    void ubuntuUsername_over32_isRejected() {
+        assertThat(violatedFields(registerWithUbuntuUsername("a".repeat(33)))).contains("ubuntuUsername");
+    }
+
+    @Test
+    @DisplayName("시스템 계정 이름은 거절한다")
+    void ubuntuUsername_reserved_isRejected() {
+        assertThat(violatedFields(registerWithUbuntuUsername("root"))).contains("ubuntuUsername");
+        assertThat(violatedFields(registerWithUbuntuUsername("svmanager"))).contains("ubuntuUsername");
+    }
+
+    @Test
+    @DisplayName("소문자/숫자/하이픈 조합은 통과하고, 예약어를 포함하기만 한 이름도 통과한다")
     void ubuntuUsername_validPattern_isAccepted() {
-        assertThat(violatedFields(registerWithUbuntuUsername("so-eun_2024"))).doesNotContain("ubuntuUsername");
+        assertThat(violatedFields(registerWithUbuntuUsername("so-eun-2024"))).doesNotContain("ubuntuUsername");
+        assertThat(violatedFields(registerWithUbuntuUsername("exp-fu-yoon6yo"))).doesNotContain("ubuntuUsername");
+        assertThat(violatedFields(registerWithUbuntuUsername("rootuser"))).doesNotContain("ubuntuUsername");
+    }
+
+    @Test
+    @DisplayName("위반 메시지는 한 건으로 합쳐 보고한다")
+    void ubuntuUsername_reportsSingleViolation() {
+        long count = validator.validate(registerWithUbuntuUsername("Bad_Name")).stream()
+                .filter(v -> v.getPropertyPath().toString().equals("ubuntuUsername"))
+                .count();
+        assertThat(count).isEqualTo(1);
     }
 
     private UserRegisterRequestDTO registerWithUbuntuUsername(String ubuntuUsername) {

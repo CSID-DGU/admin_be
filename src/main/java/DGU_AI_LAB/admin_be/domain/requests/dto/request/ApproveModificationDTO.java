@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.requests.dto.request;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 @Schema(description = "관리자용 변경 요청 승인 DTO")
 public record ApproveModificationDTO(
@@ -11,7 +12,9 @@ public record ApproveModificationDTO(
         @NotNull(message = "변경 요청 ID는 필수입니다.")
         Long changeRequestId,
 
+        // change_request.admin_comment가 500자다.
         @Schema(description = "관리자 승인 코멘트", example = "변경 요청을 승인합니다.")
         @NotBlank(message = "승인 사유는 필수입니다.")
+        @Size(max = 500, message = "승인 사유는 500자 이하여야 합니다.")
         String adminComment
 ) {}

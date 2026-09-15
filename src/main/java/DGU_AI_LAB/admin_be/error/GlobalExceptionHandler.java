@@ -3,6 +3,8 @@ package DGU_AI_LAB.admin_be.error;
 import DGU_AI_LAB.admin_be.error.dto.ErrorResponse;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -13,6 +15,7 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -25,9 +28,44 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     protected ResponseEntity<ErrorResponse> handleMethodArgumentNotValidException(MethodArgumentNotValidException e) {
-        log.error(">>> handle: MethodArgumentNotValidException ", e);
-        final ErrorResponse errorBaseResponse = ErrorResponse.of(ErrorCode.BAD_REQUEST);
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorBaseResponse);
+        // 화면이 어떤 항목이 왜 틀렸는지 보여줄 수 있도록 첫 위반의 메시지를 담는다. 전체 위반은 로그에만 남긴다.
+        String firstMessage = e.getBindingResult().getAllErrors().stream()
+                .map(error -> error.getDefaultMessage())
+                .filter(message -> message != null && !message.isBlank())
+                .findFirst()
+                .orElse(null);
+        log.warn(">>> handle: MethodArgumentNotValidException - {}", e.getBindingResult().getAllErrors());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ErrorResponse.of(ErrorCode.BAD_REQUEST, firstMessage));
+    }
+
+    /**
+     * 컨트롤러 메서드 파라미터(경로 변수·요청 파라미터·목록 본문)에 붙은 제약 위반을 handling합니다.
+     */
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    protected ResponseEntity<ErrorResponse> handleHandlerMethodValidationException(HandlerMethodValidationException e) {
+        String firstMessage = e.getParameterValidationResults().stream()
+                .flatMap(result -> result.getResolvableErrors().stream())
+                .map(error -> error.getDefaultMessage())
+                .filter(message -> message != null && !message.isBlank())
+                .findFirst()
+                .orElse(null);
+        log.warn(">>> handle: HandlerMethodValidationException - {}", firstMessage);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ErrorResponse.of(ErrorCode.BAD_REQUEST, firstMessage));
+    }
+
+    /**
+     * 클래스에 @Validated가 붙은 빈의 메서드 검증이나 엔티티 저장 전 검증에서 올라온 제약 위반을 handling합니다.
+     * 입력값 문제이므로 500이 아니라 400으로 돌려준다.
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    protected ResponseEntity<ErrorResponse> handleConstraintViolationException(ConstraintViolationException e) {
+        String firstMessage = e.getConstraintViolations().stream()
+                .map(ConstraintViolation::getMessage)
+                .filter(message -> message != null && !message.isBlank())
+                .findFirst()
+                .orElse(null);
+        log.warn(">>> handle: ConstraintViolationException - {}", firstMessage);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ErrorResponse.of(ErrorCode.BAD_REQUEST, firstMessage));
     }
 
     /**
