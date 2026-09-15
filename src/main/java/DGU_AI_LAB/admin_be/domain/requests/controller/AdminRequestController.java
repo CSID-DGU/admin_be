@@ -82,7 +82,9 @@ public class AdminRequestController implements AdminRequestApi {
      */
     @GetMapping("/{requestId}/job-steps")
     public ResponseEntity<SuccessResponse<?>> getJobSteps(@PathVariable Long requestId) {
-        return SuccessResponse.ok(operationJobService.getJobHistory(requestId));
+        // 신청 조회 트랜잭션을 config-server 호출 동안 붙잡지 않도록 생성 시각만 먼저 받는다.
+        return SuccessResponse.ok(operationJobService.getJobHistory(
+                requestId, adminRequestQueryService.getRequestCreatedAt(requestId)));
     }
 
     @PostMapping("/{requestId}/migrate")
