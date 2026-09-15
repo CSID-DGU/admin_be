@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.users.controller.docs;
 
+import DGU_AI_LAB.admin_be.domain.users.dto.request.UserActivationRequestDTO;
+
 import DGU_AI_LAB.admin_be.domain.users.dto.request.ChangeRoleRequestDTO;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -37,43 +39,19 @@ public interface AdminUserApi {
     @DeleteMapping("/{id}")
     ResponseEntity<SuccessResponse<?>> deleteUser(@PathVariable @Parameter(description = "사용자 ID") Long id);
 
-    @Operation(
-            summary = "우분투 계정 삭제",
-            description = "외부 Config Server에 계정 삭제를 요청하고 해당 Request를 DELETED 상태로 전환합니다."
-    )
+    @Operation(summary = "사용자의 우분투 계정 회수", description = "사용자의 살아 있는 신청 컨테이너를 모두 회수하고 우분투 계정을 지웁니다. 홈 디렉터리는 보존합니다.")
     @ApiResponse(responseCode = "200", description = "성공")
-    @ApiResponse(responseCode = "404", description = "우분투 계정(요청)을 찾을 수 없음")
-    @ApiResponse(responseCode = "502", description = "외부 서버 오류 또는 Config Server 연동 실패")
-    @DeleteMapping("/ubuntu/{username}")
-    ResponseEntity<SuccessResponse<?>> deleteUbuntuAccount(
-            @PathVariable @Parameter(description = "우분투 계정명") String username
-    );
+    @ApiResponse(responseCode = "404", description = "사용자 또는 우분투 계정이 없음")
+    @ApiResponse(responseCode = "502", description = "config-server 회수 작업 실패")
+    ResponseEntity<SuccessResponse<?>> deleteUbuntuAccount(@PathVariable @Parameter(description = "사용자 ID") Long id);
 
-    @Operation(
-            summary = "비활성화 사용자 재활성화",
-            description = "비활성화(isActive=false) 처리된 사용자 계정을 재활성화합니다. deletedAt을 초기화하고 isActive를 true로 전환합니다."
-    )
+    @Operation(summary = "사용자 활성 상태 변경", description = "active=false면 비활성화(컨테이너·계정 정리 포함), true면 재활성화합니다.")
     @ApiResponse(responseCode = "200", description = "성공")
     @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음")
-    @ApiResponse(responseCode = "409", description = "이미 활성화된 사용자")
-    @PatchMapping("/{id}/reactivate")
-    ResponseEntity<SuccessResponse<?>> reactivateUser(
-            @PathVariable @Parameter(description = "사용자 ID") Long id
-    );
-
-    @Operation(
-            summary = "사용자 계정 임시 비활성화",
-            description = "soft-delete(deleteUser)와 동일하게 소유한 모든 우분투 계정/컨테이너를 삭제하지만, "
-                    + "User 엔티티는 deletedAt 없이 isActive만 false로 전환해 재활성화가 가능하다. "
-                    + "단, 컨테이너는 이미 삭제되었으므로 재활성화 후에는 다시 신청해야 한다."
-    )
-    @ApiResponse(responseCode = "200", description = "성공")
-    @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음")
-    @ApiResponse(responseCode = "409", description = "이미 비활성화된 사용자")
-    @ApiResponse(responseCode = "409", description = "마이그레이션이 진행 중인 요청이 있어 정리할 수 없음")
-    @PatchMapping("/{id}/deactivate")
-    ResponseEntity<SuccessResponse<?>> deactivateUser(
-            @PathVariable @Parameter(description = "사용자 ID") Long id
+    @ApiResponse(responseCode = "409", description = "이미 그 상태이거나 마이그레이션이 진행 중인 요청이 있음")
+    ResponseEntity<SuccessResponse<?>> updateUserActivation(
+            @PathVariable @Parameter(description = "사용자 ID") Long id,
+            @RequestBody @Valid UserActivationRequestDTO dto
     );
 
     @Operation(

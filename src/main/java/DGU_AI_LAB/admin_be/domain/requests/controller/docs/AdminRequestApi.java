@@ -1,5 +1,9 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller.docs;
 
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApprovalRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectionRequestDTO;
+import io.swagger.v3.oas.annotations.media.Content;
+
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
@@ -34,13 +38,13 @@ public interface AdminRequestApi {
     @Schema(name = "SuccessResponseListContainerInfoDTO", description = "활성 컨테이너 목록 응답")
     record ContainerListResponseDoc(int status, String message, List<ContainerInfoDTO> data) {}
 
-    @Operation(summary = "사용 신청 승인", description = "PENDING 상태의 신청을 승인하고 우분투 계정을 생성합니다.")
-    @ApiResponse(responseCode = "200", description = "성공")
+    @Operation(summary = "사용 신청 승인", description = "PENDING 상태의 신청을 PROCESSING으로 바꾸고 계정·컨테이너 생성 작업을 등록합니다.")
+    @ApiResponse(responseCode = "202", description = "생성 작업 등록됨 — 결과는 신청 상태로 확인")
     @ApiResponse(responseCode = "404", description = "신청 또는 리소스를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "409", description = "우분투 계정명 중복",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
-    ResponseEntity<SuccessResponse<?>> approveRequest(ApproveRequestDTO dto);
+    ResponseEntity<SuccessResponse<?>> approveRequest(Long requestId, ApprovalRequestDTO dto);
 
     @Operation(summary = "사용 신청 거절", description = "PENDING 또는 FULFILLED 상태의 신청을 거절 처리합니다.")
     @ApiResponse(responseCode = "200", description = "성공")
@@ -48,7 +52,7 @@ public interface AdminRequestApi {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "400", description = "이미 거절/삭제된 상태",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
-    ResponseEntity<SuccessResponse<?>> rejectRequest(RejectRequestDTO dto);
+    ResponseEntity<SuccessResponse<?>> rejectRequest(Long requestId, RejectionRequestDTO dto);
 
     @Operation(summary = "신청 작업 단계 기록 조회",
             description = "신청의 생성(승인)·회수 작업을 최근 순으로 최대 5개씩, 작업마다 단계별 결과(성공·실패·재시도), "
@@ -58,13 +62,16 @@ public interface AdminRequestApi {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     ResponseEntity<SuccessResponse<?>> getJobSteps(Long requestId);
 
-    @Operation(summary = "Pod GPU 노드 마이그레이션", description = "FULFILLED 상태 신청의 Pod를 더 나은 GPU 노드로 이동시킵니다. 개선 폭이 기준 미만이면 스킵됩니다.")
-    @ApiResponse(responseCode = "200", description = "마이그레이션 성공 또는 스킵")
-    @ApiResponse(responseCode = "404", description = "신청을 찾을 수 없음",
-            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
-    @ApiResponse(responseCode = "409", description = "FULFILLED 상태가 아님",
-            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
-    @ApiResponse(responseCode = "502", description = "config-server 마이그레이션 API 호출 실패",
-            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
-    ResponseEntity<SuccessResponse<?>> migratePod(Long requestId, MigratePodRequestDTO dto);
+    @Operation(summary = "마이그레이션 작업 등록", description = "FULFILLED 상태 신청을 MIGRATING으로 바꾸고 다른 노드로 옮기는 작업을 등록합니다. " +
+            "force면 개선 비율을 보지 않습니다. 결과는 신청 상태와 마지막 마이그레이션 결과로 확인합니다. 홈 디렉터리만 유지됩니다.")
+    @ApiResponse(responseCode = "202", description = "작업 등록됨")
+    @ApiResponse(responseCode = "404", description = "신청을 찾을 수 없음", content = @Content)
+    @ApiResponse(responseCode = "409", description = "FULFILLED 상태가 아니거나 이미 진행 중", content = @Content)
+    @ApiResponse(responseCode = "422", description = "config-server가 요청을 거절함", content = @Content)
+    @ApiResponse(responseCode = "502", description = "config-server 작업 등록 실패", content = @Content)
+    ResponseEntity<SuccessResponse<?>> startMigration(Long requestId, MigratePodRequestDTO dto);
+
+    @Operation(summary = "마지막 마이그레이션 결과", description = "신청의 마지막 마이그레이션 작업 phase와 결과(migrated/skipped, 노드, 기존 Pod 정리 여부)를 조회합니다.")
+    @ApiResponse(responseCode = "200", description = "성공 — 작업이 없으면 phase가 none")
+    ResponseEntity<SuccessResponse<?>> getLatestMigration(Long requestId);
 }

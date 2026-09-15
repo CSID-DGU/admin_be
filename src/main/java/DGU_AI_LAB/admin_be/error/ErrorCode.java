@@ -85,7 +85,7 @@ public enum ErrorCode {
     USER_ALREADY_INACTIVE(HttpStatus.CONFLICT, "이미 비활성화된 사용자입니다."),
     USER_ALREADY_HAS_ROLE(HttpStatus.CONFLICT, "이미 해당 권한을 가진 사용자입니다."),
     DUPLICATE_NAME(HttpStatus.CONFLICT, "중복된 닉네임입니다."),
-    INVALID_LOGIN_INFO(HttpStatus.BAD_REQUEST, "잘못된 로그인 입력값입니다."),
+    INVALID_LOGIN_INFO(HttpStatus.UNAUTHORIZED, "잘못된 로그인 입력값입니다."),
     TOO_MANY_LOGIN_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "로그인 시도 횟수를 초과했습니다. 15분 후 다시 시도해주세요."),
     INVALID_AUTH_CODE(HttpStatus.BAD_REQUEST, "올바르지 않은 인증 코드입니다."),
     GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "지정된 그룹을 찾을 수 없습니다."),
@@ -113,7 +113,7 @@ public enum ErrorCode {
     DUPLICATE_GROUP_NAME(HttpStatus.CONFLICT, "중복된 그룹 이름입니다."),
     GROUP_CREATION_FAILED(HttpStatus.BAD_GATEWAY, "외부 API: 필수 필드 누락 또는 형식 오류 "),
     GID_ALLOCATION_FAILED(HttpStatus.BAD_GATEWAY, "외부 API 응답에서 GID를 확인할 수 없습니다."),
-    FORBIDDEN_REQUEST(HttpStatus.BAD_REQUEST, "요청된 우분투 사용자 이름은 로그인한 사용자의 계정이 아닙니다."),
+    FORBIDDEN_REQUEST(HttpStatus.FORBIDDEN, "요청된 우분투 사용자 이름은 로그인한 사용자의 계정이 아닙니다."),
     INVALID_GROUP_MEMBER(HttpStatus.BAD_REQUEST, "존재하지 않는 사용자입니다."),
 
     /**
@@ -154,6 +154,8 @@ public enum ErrorCode {
     POD_CREATION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 생성 API 요청에 실패했습니다."),
     POD_DELETION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 삭제 API 요청에 실패했습니다."),
     POD_CREATION_CONCURRENCY_LIMIT(HttpStatus.TOO_MANY_REQUESTS, "현재 동시에 처리 중인 Pod 생성 요청이 많습니다. 잠시 후 다시 시도해주세요."),
+    // 인프라 서버(config-server)가 요청 내용 때문에 거절했다(4xx). 서버 장애(502)와 구분한다.
+    INFRA_REQUEST_REJECTED(HttpStatus.UNPROCESSABLE_ENTITY, "인프라 서버가 요청을 거절했습니다."),
     POD_MIGRATION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 마이그레이션 API 요청에 실패했습니다."),
     POD_NOT_ORPHAN(HttpStatus.CONFLICT, "신청 이력이 있는 Pod입니다. 개별 삭제 대신 사용자/신청 관리 화면에서 정리해주세요."),
 

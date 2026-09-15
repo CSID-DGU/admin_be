@@ -2,7 +2,6 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
-import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigratePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -47,6 +46,7 @@ class PodServiceTest {
 
     @Mock private WebClient configWebClient;
     @Mock private WebClient.RequestHeadersUriSpec<?> requestHeadersUriSpec;
+    @Mock private WebClient.RequestHeadersUriSpec<?> deleteUriSpec;
     @Mock private RequestRepository requestRepository;
     @Mock private OperationJobService operationJobService;
 
@@ -63,6 +63,8 @@ class PodServiceTest {
 
         doReturn(requestHeadersUriSpec).when(configWebClient).get();
         doReturn(requestHeadersSpec).when(requestHeadersUriSpec).uri(anyString());
+        doReturn(deleteUriSpec).when(webClient).delete();
+        doReturn(requestHeadersSpec).when(deleteUriSpec).uri(anyString(), any(Object[].class));
     }
 
     // ───────────────────────────────────────────────────────────────
@@ -141,7 +143,7 @@ class PodServiceTest {
             assertThatCode(() -> podService.deleteOrphanPod("orphan-pod"))
                     .doesNotThrowAnyException();
 
-            verify(webClient).post();
+            verify(webClient).delete();
         }
 
         @Test
@@ -154,165 +156,11 @@ class PodServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_NOT_ORPHAN);
 
-            verify(webClient, never()).post();
+            verify(webClient, never()).delete();
         }
     }
 
     // ───────────────────────────────────────────────────────────────
     // createPod
     // ───────────────────────────────────────────────────────────────
-    @Nested
-    @DisplayName("migratePod")
-    class MigratePod {
-
-        @Test
-        @DisplayName("마이그레이션 성공 시 status=migrated 응답을 그대로 반환한다")
-        void migratePod_returnsMigratedResponse_whenApiSucceeds() {
-            MigratePodResponseDTO mockResponse = new MigratePodResponseDTO(
-                    "migrated", null, "farm1", "farm2", "pod-testuser-2",
-                    List.of(new CreatePodResponseDTO.PortInfo("ssh", 22, 30099)),
-                    null, null, null, null, null
-            );
-            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
-                    .thenReturn(Mono.just(mockResponse));
-
-            MigratePodResponseDTO result = podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1", "farm2"), 0.2, null);
-
-            assertThat(result).isEqualTo(mockResponse);
-            assertThat(result.isMigrated()).isTrue();
-            assertThat(result.newPod()).isEqualTo("pod-testuser-2");
-        }
-
-        @Test
-        @DisplayName("개선 폭이 기준 미만이면 status=skipped 응답을 그대로 반환한다")
-        void migratePod_returnsSkippedResponse_whenNoSignificantImprovement() {
-            MigratePodResponseDTO mockResponse = new MigratePodResponseDTO(
-                    "skipped", "no_significant_improvement", null, null, null, null, null,
-                    "farm1", 1.5, "farm2", 1.4
-            );
-            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
-                    .thenReturn(Mono.just(mockResponse));
-
-            MigratePodResponseDTO result = podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1", "farm2"), 0.2, null);
-
-            assertThat(result.isMigrated()).isFalse();
-            assertThat(result.reason()).isEqualTo("no_significant_improvement");
-        }
-
-        @Test
-        @DisplayName("API가 빈 응답(null)을 반환하면 POD_MIGRATION_FAILED 예외가 발생한다")
-        void migratePod_throwsBusinessException_whenApiReturnsEmpty() {
-            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
-                    .thenReturn(Mono.empty());
-
-            assertThatThrownBy(() -> podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1"), null, null))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.POD_MIGRATION_FAILED);
-        }
-
-        @Test
-        @DisplayName("status가 null인 응답이면 POD_MIGRATION_FAILED 예외가 발생한다")
-        void migratePod_throwsBusinessException_whenStatusIsNull() {
-            MigratePodResponseDTO badResponse = new MigratePodResponseDTO(
-                    null, null, null, null, null, null, null, null, null, null, null
-            );
-            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
-                    .thenReturn(Mono.just(badResponse));
-
-            assertThatThrownBy(() -> podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1"), null, null))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.POD_MIGRATION_FAILED);
-        }
-
-        @Test
-        @DisplayName("API 호출 중 BusinessException이 발생하면 그대로 전파한다")
-        void migratePod_propagatesBusinessException() {
-            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
-                    .thenReturn(Mono.error(new BusinessException("Pod 마이그레이션 실패", ErrorCode.POD_MIGRATION_FAILED)));
-
-            assertThatThrownBy(() -> podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1"), null, null))
-                    .isInstanceOf(BusinessException.class)
-                    .hasMessageContaining("Pod 마이그레이션 실패");
-        }
-
-        @Test
-        @DisplayName("API 호출 중 일반 예외가 발생하면 BusinessException으로 래핑한다")
-        void migratePod_wrapsGeneralException_asBusinessException() {
-            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
-                    .thenReturn(Mono.error(new RuntimeException("network error")));
-
-            assertThatThrownBy(() -> podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1"), null, null))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.POD_MIGRATION_FAILED);
-        }
-
-        @Test
-        @DisplayName("올바른 username/nodes로 /migrate URI에 요청한다")
-        void migratePod_callsCorrectUri() {
-            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
-                    .thenReturn(Mono.just(new MigratePodResponseDTO(
-                            "skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null
-                    )));
-
-            podService.migratePod("myuser", "pod-myuser", 1L, List.of("farm1"), 0.3, null);
-
-            verify(requestBodyUriSpec).uri("/migrate");
-        }
-
-        @Test
-        @DisplayName("minImprovementRatio가 null이면 min_improvement_ratio 키 자체를 요청 본문에서 뺀다 (config-server 기본값 사용)")
-        void migratePod_omitsMinImprovementRatioKey_whenNull() throws Exception {
-            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
-                    .thenReturn(Mono.just(new MigratePodResponseDTO(
-                            "skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null
-                    )));
-
-            podService.migratePod("myuser", "pod-myuser", 1L, List.of("farm1"), null, null);
-
-            ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
-            verify(requestBodySpec).bodyValue(bodyCaptor.capture());
-            JsonNode json = new ObjectMapper().valueToTree(bodyCaptor.getValue());
-
-            assertThat(json.has("min_improvement_ratio")).isFalse();
-        }
-
-        @Test
-        @DisplayName("minImprovementRatio가 있으면 min_improvement_ratio 키로 그대로 전달한다")
-        void migratePod_includesMinImprovementRatioKey_whenPresent() throws Exception {
-            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
-                    .thenReturn(Mono.just(new MigratePodResponseDTO(
-                            "skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null
-                    )));
-
-            podService.migratePod("myuser", "pod-myuser", 1L, List.of("farm1"), 0.3, null);
-
-            ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
-            verify(requestBodySpec).bodyValue(bodyCaptor.capture());
-            JsonNode json = new ObjectMapper().valueToTree(bodyCaptor.getValue());
-
-            assertThat(json.get("min_improvement_ratio").asDouble()).isEqualTo(0.3);
-        }
-
-        @Test
-        @DisplayName("force가 있으면 force 키로 보내고, 없으면 키를 뺀다")
-        void migratePod_sendsForceKeyOnlyWhenPresent() throws Exception {
-            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
-                    .thenReturn(Mono.just(new MigratePodResponseDTO(
-                            "skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null
-                    )));
-
-            podService.migratePod("myuser", "pod-myuser", 1L, List.of("farm1"), null, true);
-            podService.migratePod("myuser", "pod-myuser", 1L, List.of("farm1"), null, null);
-
-            ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
-            verify(requestBodySpec, times(2)).bodyValue(bodyCaptor.capture());
-            ObjectMapper mapper = new ObjectMapper();
-            assertThat(mapper.valueToTree(bodyCaptor.getAllValues().get(0)).get("force").asBoolean()).isTrue();
-            assertThat(mapper.<JsonNode>valueToTree(bodyCaptor.getAllValues().get(1)).has("force")).isFalse();
-            assertThat(mapper.<JsonNode>valueToTree(bodyCaptor.getAllValues().get(0)).has("min_improvement_ratio")).isFalse();
-        }
-    }
 }

@@ -5,5 +5,10 @@ package DGU_AI_LAB.admin_be.domain.requests.dto.response;
  */
 public record JobHistoryResponseDTO(
         JobStepsResponseDTO provision,
-        JobStepsResponseDTO revoke
-) {}
+        JobStepsResponseDTO revoke,
+        JobStepsResponseDTO migrate
+) {
+    public JobHistoryResponseDTO(JobStepsResponseDTO provision, JobStepsResponseDTO revoke) {
+        this(provision, revoke, null);
+    }
+}

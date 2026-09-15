@@ -12,12 +12,15 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doNothing;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
 
 @WebMvcTest(
         value = AdminRequestChangeController.class,
@@ -35,108 +38,65 @@ class AdminRequestChangeControllerTest extends WebMvcTestSupport {
     private AdminRequestQueryService adminRequestQueryService;
 
     @Nested
-    @DisplayName("PATCH /api/admin/requests/change/approve")
+    @DisplayName("POST /api/admin/change-requests/{id}/approval")
     class ApproveModification {
 
         @Test
-        @DisplayName("변경 요청 승인 시 200 OK와 SuccessResponse 형식의 body를 반환한다")
-        void approveModification_returns200WithSuccessResponseBody() throws Exception {
-            doNothing().when(adminRequestCommandService).approveModification(anyLong(), any());
-
-            mockMvc.perform(patch("/api/admin/requests/change/approve")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"changeRequestId\": 1, \"adminComment\": \"승인합니다.\"}"))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.status").value(200))
-                    .andExpect(jsonPath("$.message").exists())
-                    .andExpect(jsonPath("$.data").isEmpty());
-        }
-
-        @Test
-        @DisplayName("changeRequestId가 없으면 400 Bad Request를 반환한다")
-        void approveModification_returns400_whenChangeRequestIdMissing() throws Exception {
-            mockMvc.perform(patch("/api/admin/requests/change/approve")
+        @DisplayName("경로의 변경 요청 번호로 승인하고 200과 SuccessResponse를 반환한다")
+        void approvesByPathId() throws Exception {
+            mockMvc.perform(post("/api/admin/change-requests/7/approval")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"adminComment\": \"승인합니다.\"}"))
-                    .andExpect(status().isBadRequest());
-        }
-
-        @Test
-        @DisplayName("adminComment가 없으면 400 Bad Request를 반환한다")
-        void approveModification_returns400_whenAdminCommentMissing() throws Exception {
-            mockMvc.perform(patch("/api/admin/requests/change/approve")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"changeRequestId\": 1}"))
-                    .andExpect(status().isBadRequest());
-        }
-
-        @Test
-        @DisplayName("응답 body가 비어있지 않고 SuccessResponse 구조를 포함한다")
-        void approveModification_responseBodyIsNotEmpty() throws Exception {
-            doNothing().when(adminRequestCommandService).approveModification(anyLong(), any());
-
-            String responseBody = mockMvc.perform(patch("/api/admin/requests/change/approve")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"changeRequestId\": 1, \"adminComment\": \"승인\"}"))
                     .andExpect(status().isOk())
-                    .andReturn().getResponse().getContentAsString();
+                    .andExpect(jsonPath("$.status").value(200))
+                    .andExpect(jsonPath("$.data").isEmpty());
 
-            org.assertj.core.api.Assertions.assertThat(responseBody).isNotBlank();
-            org.assertj.core.api.Assertions.assertThat(responseBody).contains("status");
-            org.assertj.core.api.Assertions.assertThat(responseBody).contains("message");
+            verify(adminRequestCommandService).approveModification(isNull(),
+                    argThat(dto -> dto.changeRequestId() == 7L && "승인합니다.".equals(dto.adminComment())));
+        }
+
+        @Test
+        @DisplayName("adminComment가 없으면 400을 반환한다")
+        void returns400WhenCommentMissing() throws Exception {
+            mockMvc.perform(post("/api/admin/change-requests/7/approval")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{}"))
+                    .andExpect(status().isBadRequest());
         }
     }
 
     @Nested
-    @DisplayName("PATCH /api/admin/requests/change/reject")
+    @DisplayName("POST /api/admin/change-requests/{id}/rejection")
     class RejectModification {
 
         @Test
-        @DisplayName("변경 요청 거절 시 200 OK와 SuccessResponse 형식의 body를 반환한다")
-        void rejectModification_returns200WithSuccessResponseBody() throws Exception {
-            doNothing().when(adminRequestCommandService).rejectModification(anyLong(), any());
-
-            mockMvc.perform(patch("/api/admin/requests/change/reject")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"changeRequestId\": 1, \"adminComment\": \"거절합니다.\"}"))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.status").value(200))
-                    .andExpect(jsonPath("$.message").exists())
-                    .andExpect(jsonPath("$.data").isEmpty());
-        }
-
-        @Test
-        @DisplayName("changeRequestId가 없으면 400 Bad Request를 반환한다")
-        void rejectModification_returns400_whenChangeRequestIdMissing() throws Exception {
-            mockMvc.perform(patch("/api/admin/requests/change/reject")
+        @DisplayName("경로의 변경 요청 번호로 거절하고 200을 반환한다")
+        void rejectsByPathId() throws Exception {
+            mockMvc.perform(post("/api/admin/change-requests/8/rejection")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"adminComment\": \"거절합니다.\"}"))
-                    .andExpect(status().isBadRequest());
+                    .andExpect(status().isOk());
+
+            verify(adminRequestCommandService).rejectModification(isNull(),
+                    argThat(dto -> dto.changeRequestId() == 8L && "거절합니다.".equals(dto.adminComment())));
         }
 
         @Test
-        @DisplayName("adminComment가 없으면 400 Bad Request를 반환한다")
-        void rejectModification_returns400_whenAdminCommentMissing() throws Exception {
-            mockMvc.perform(patch("/api/admin/requests/change/reject")
+        @DisplayName("adminComment가 없으면 400을 반환한다")
+        void returns400WhenCommentMissing() throws Exception {
+            mockMvc.perform(post("/api/admin/change-requests/8/rejection")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"changeRequestId\": 1}"))
+                            .content("{}"))
                     .andExpect(status().isBadRequest());
         }
+    }
 
-        @Test
-        @DisplayName("응답 body가 비어있지 않고 SuccessResponse 구조를 포함한다")
-        void rejectModification_responseBodyIsNotEmpty() throws Exception {
-            doNothing().when(adminRequestCommandService).rejectModification(anyLong(), any());
-
-            String responseBody = mockMvc.perform(patch("/api/admin/requests/change/reject")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"changeRequestId\": 1, \"adminComment\": \"거절\"}"))
-                    .andExpect(status().isOk())
-                    .andReturn().getResponse().getContentAsString();
-
-            org.assertj.core.api.Assertions.assertThat(responseBody).isNotBlank();
-            org.assertj.core.api.Assertions.assertThat(responseBody).contains("status");
-            org.assertj.core.api.Assertions.assertThat(responseBody).contains("message");
-        }
+    @Test
+    @DisplayName("옛 경로 PATCH /api/admin/requests/change/approve는 없다")
+    void oldPathIsGone() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/admin/requests/change/approve")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"changeRequestId\": 1, \"adminComment\": \"x\"}"))
+                .andExpect(result -> org.assertj.core.api.Assertions.assertThat(result.getResponse().getStatus()).isIn(404, 405, 500));
     }
 }

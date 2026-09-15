@@ -1,7 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
-import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigratePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -32,27 +31,7 @@ public class PodService {
     private final RequestRepository requestRepository;
     private final OperationJobService operationJobService;
 
-    // 대응하는 신청이 없는 고아 Pod 정리 전용. 작업 인터페이스는 신청 번호로만 작업을 식별하므로
-    // 이 경우만 config-server의 Pod 삭제 API를 직접 부른다.
-    private record DeleteOrphanPodRequest(
-            @JsonProperty("pod_name") String podName
-    ) {}
 
-    // config-server는 min_improvement_ratio 키가 아예 없어야 자체 기본값(0.2)을 쓴다.
-    // null을 그대로 보내면 data.get(key, default)가 "키는 있지만 값이 None"이라 default가
-    // 적용되지 않고 그대로 None을 반환해 마이그레이션이 500으로 실패한다.
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    private record MigratePodRequest(
-            String username,
-            // 한 사용자가 Pod를 여러 개 동시에 가질 수 있어, username만으로는 config-server가
-            // "그 유저의 Pod"를 하나로 특정 못 한다. 정확한 대상을 짚어주기 위해 함께 보낸다.
-            @JsonProperty("pod_name") String podName,
-            @JsonProperty("request_id") Long requestId,
-            List<String> nodes,
-            @JsonProperty("min_improvement_ratio") Double minImprovementRatio,
-            // true면 config-server가 개선 비율을 보지 않고 이전한다.
-            Boolean force
-    ) {}
 
     /**
      * 신청에 딸린 컨테이너를 회수한다. config-server에 회수 작업을 등록하고 끝날 때까지 기다린다 —
@@ -92,9 +71,8 @@ public class PodService {
             log.info("고아 Pod 삭제 API 요청 시작: {}", podName);
 
             WebClientErrorHandler.onError(
-                            webClient.post()
-                                    .uri("/delete-pod")
-                                    .bodyValue(new DeleteOrphanPodRequest(podName))
+                            webClient.delete()
+                                    .uri("/pods/{podName}", podName)
                                     .retrieve(),
                             (status, body) -> {
                                 if (status == HttpStatus.NOT_FOUND) {
@@ -102,7 +80,7 @@ public class PodService {
                                     return null;
                                 }
                                 log.error("Pod 삭제 실패 ({}): {}", status, body);
-                                return new BusinessException("Pod 삭제 실패: " + body, ErrorCode.POD_DELETION_FAILED);
+                                return WebClientErrorHandler.rejectedOr(status, body, "Pod 삭제 실패", ErrorCode.POD_DELETION_FAILED);
                             }
                     )
                     .bodyToMono(Map.class)
@@ -118,32 +96,4 @@ public class PodService {
         }
     }
 
-    public MigratePodResponseDTO migratePod(String username, String podName, Long requestId, List<String> nodes, Double minImprovementRatio, Boolean force) {
-        try {
-            log.info("Pod 마이그레이션 API 요청 시작: 사용자: {}, pod: {}, requestId: {}, 후보 노드: {}", username, podName, requestId, nodes);
-
-            MigratePodResponseDTO response = WebClientErrorHandler.onError(
-                            webClient.post()
-                                    .uri("/migrate")
-                                    .bodyValue(new MigratePodRequest(username, podName, requestId, nodes, minImprovementRatio, force))
-                                    .retrieve(),
-                            (status, body) -> new BusinessException("Pod 마이그레이션 실패: " + body, ErrorCode.POD_MIGRATION_FAILED)
-                    )
-                    .bodyToMono(MigratePodResponseDTO.class)
-                    .block();
-
-            if (response == null || response.status() == null) {
-                log.error("Pod 마이그레이션 API가 빈 응답을 반환했습니다. 사용자: {}", username);
-                throw new BusinessException(ErrorCode.POD_MIGRATION_FAILED);
-            }
-            log.info("Pod 마이그레이션 API 요청 성공: 사용자: {}, 결과: {}", username, response.status());
-            return response;
-
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Pod 마이그레이션 API 호출 중 예기치 않은 오류 발생.", e);
-            throw new BusinessException(ErrorCode.POD_MIGRATION_FAILED);
-        }
-    }
 }
