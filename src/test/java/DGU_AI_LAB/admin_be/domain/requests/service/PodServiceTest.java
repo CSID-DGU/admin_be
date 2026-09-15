@@ -178,7 +178,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
                     .thenReturn(Mono.just(mockResponse));
 
-            MigratePodResponseDTO result = podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1", "farm2"), 0.2);
+            MigratePodResponseDTO result = podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1", "farm2"), 0.2, null);
 
             assertThat(result).isEqualTo(mockResponse);
             assertThat(result.isMigrated()).isTrue();
@@ -195,7 +195,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
                     .thenReturn(Mono.just(mockResponse));
 
-            MigratePodResponseDTO result = podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1", "farm2"), 0.2);
+            MigratePodResponseDTO result = podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1", "farm2"), 0.2, null);
 
             assertThat(result.isMigrated()).isFalse();
             assertThat(result.reason()).isEqualTo("no_significant_improvement");
@@ -207,7 +207,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
                     .thenReturn(Mono.empty());
 
-            assertThatThrownBy(() -> podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1"), null))
+            assertThatThrownBy(() -> podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1"), null, null))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_MIGRATION_FAILED);
@@ -222,7 +222,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
                     .thenReturn(Mono.just(badResponse));
 
-            assertThatThrownBy(() -> podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1"), null))
+            assertThatThrownBy(() -> podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1"), null, null))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_MIGRATION_FAILED);
@@ -234,7 +234,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
                     .thenReturn(Mono.error(new BusinessException("Pod 마이그레이션 실패", ErrorCode.POD_MIGRATION_FAILED)));
 
-            assertThatThrownBy(() -> podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1"), null))
+            assertThatThrownBy(() -> podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1"), null, null))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("Pod 마이그레이션 실패");
         }
@@ -245,7 +245,7 @@ class PodServiceTest {
             when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
                     .thenReturn(Mono.error(new RuntimeException("network error")));
 
-            assertThatThrownBy(() -> podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1"), null))
+            assertThatThrownBy(() -> podService.migratePod("testuser", "pod-testuser", 1L, List.of("farm1"), null, null))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_MIGRATION_FAILED);
@@ -259,7 +259,7 @@ class PodServiceTest {
                             "skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null
                     )));
 
-            podService.migratePod("myuser", "pod-myuser", 1L, List.of("farm1"), 0.3);
+            podService.migratePod("myuser", "pod-myuser", 1L, List.of("farm1"), 0.3, null);
 
             verify(requestBodyUriSpec).uri("/migrate");
         }
@@ -272,7 +272,7 @@ class PodServiceTest {
                             "skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null
                     )));
 
-            podService.migratePod("myuser", "pod-myuser", 1L, List.of("farm1"), null);
+            podService.migratePod("myuser", "pod-myuser", 1L, List.of("farm1"), null, null);
 
             ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
             verify(requestBodySpec).bodyValue(bodyCaptor.capture());
@@ -289,13 +289,32 @@ class PodServiceTest {
                             "skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null
                     )));
 
-            podService.migratePod("myuser", "pod-myuser", 1L, List.of("farm1"), 0.3);
+            podService.migratePod("myuser", "pod-myuser", 1L, List.of("farm1"), 0.3, null);
 
             ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
             verify(requestBodySpec).bodyValue(bodyCaptor.capture());
             JsonNode json = new ObjectMapper().valueToTree(bodyCaptor.getValue());
 
             assertThat(json.get("min_improvement_ratio").asDouble()).isEqualTo(0.3);
+        }
+
+        @Test
+        @DisplayName("force가 있으면 force 키로 보내고, 없으면 키를 뺀다")
+        void migratePod_sendsForceKeyOnlyWhenPresent() throws Exception {
+            when(responseSpec.bodyToMono(MigratePodResponseDTO.class))
+                    .thenReturn(Mono.just(new MigratePodResponseDTO(
+                            "skipped", "no_candidate_node", null, null, null, null, null, null, null, null, null
+                    )));
+
+            podService.migratePod("myuser", "pod-myuser", 1L, List.of("farm1"), null, true);
+            podService.migratePod("myuser", "pod-myuser", 1L, List.of("farm1"), null, null);
+
+            ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+            verify(requestBodySpec, times(2)).bodyValue(bodyCaptor.capture());
+            ObjectMapper mapper = new ObjectMapper();
+            assertThat(mapper.valueToTree(bodyCaptor.getAllValues().get(0)).get("force").asBoolean()).isTrue();
+            assertThat(mapper.<JsonNode>valueToTree(bodyCaptor.getAllValues().get(1)).has("force")).isFalse();
+            assertThat(mapper.<JsonNode>valueToTree(bodyCaptor.getAllValues().get(0)).has("min_improvement_ratio")).isFalse();
         }
     }
 
