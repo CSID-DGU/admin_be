@@ -22,10 +22,6 @@ public interface AdminRequestApi {
     @ApiResponse(responseCode = "200", description = "성공")
     ResponseEntity<SuccessResponse<?>> getAllRequests();
 
-    @Operation(summary = "신규 신청 목록 조회", description = "PENDING 상태의 신청 목록을 조회합니다.")
-    @ApiResponse(responseCode = "200", description = "성공")
-    ResponseEntity<SuccessResponse<?>> getNewRequests();
-
     @Operation(summary = "전체 리소스 사용량 조회", description = "FULFILLED 상태인 모든 서버의 리소스 사용량을 조회합니다.")
     @ApiResponse(responseCode = "200", description = "성공")
     ResponseEntity<SuccessResponse<?>> getAllResourceUsage();

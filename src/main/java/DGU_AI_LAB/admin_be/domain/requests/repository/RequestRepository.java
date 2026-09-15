@@ -46,8 +46,6 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     @Query("SELECT r FROM Request r WHERE r.user.userId = :userId AND r.nodeName IS NOT NULL ORDER BY r.requestId DESC")
     List<Request> findAllWithNodeByUserIdOrderByRequestIdDesc(@Param("userId") Long userId);
 
-    @Query("SELECT r.ubuntuUsername FROM Request r WHERE r.status = :status")
-    List<String> findUbuntuUsernamesByStatus(@Param("status") Status status);
 
     @Query("SELECT r.ubuntuUsername FROM Request r WHERE r.status IN :statuses")
     List<String> findUbuntuUsernamesByStatusIn(@Param("statuses") List<Status> statuses);
@@ -61,14 +59,18 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     @Query("SELECT r FROM Request r WHERE r.requestId = :requestId")
     Optional<Request> findByIdForUpdate(@Param("requestId") Long requestId);
 
+    /**
+     * 관리자 전체 신청 목록용. 응답 변환이 신청마다 사용자·서버·이미지·그룹을 읽으므로 한 번에 함께 읽는다
+     * (따로 읽으면 신청 수만큼 추가 조회가 나간다).
+     */
     @Query("SELECT DISTINCT r FROM Request r " +
            "JOIN FETCH r.user " +
            "LEFT JOIN FETCH r.resourceGroup " +
            "LEFT JOIN FETCH r.containerImage " +
            "LEFT JOIN FETCH r.requestGroups rg " +
            "LEFT JOIN FETCH rg.group " +
-           "WHERE r.status = :status")
-    List<Request> findAllByStatusWithAssociations(@Param("status") Status status);
+           "ORDER BY r.requestId DESC")
+    List<Request> findAllWithAssociations();
 
     @Query("SELECT DISTINCT r FROM Request r " +
            "JOIN FETCH r.user " +

@@ -26,11 +26,6 @@ public class ContainerImageController implements ContainerImageApi {
         return ResponseEntity.ok(createdImage);
     }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<ContainerImageResponseDTO> getImageById(@PathVariable Long id) {
-        return ResponseEntity.ok(containerImageService.getImageById(id));
-    }
-
     @GetMapping
     public ResponseEntity<List<ContainerImageResponseDTO>> getAllImages() {
         return ResponseEntity.ok(containerImageService.getAllImages());

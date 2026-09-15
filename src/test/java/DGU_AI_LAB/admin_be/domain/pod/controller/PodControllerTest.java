@@ -2,7 +2,6 @@ package DGU_AI_LAB.admin_be.domain.pod.controller;
 
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.pod.service.PodQueryService;
-import DGU_AI_LAB.admin_be.domain.requests.dto.response.PodCreationStatusResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodService;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -100,36 +99,6 @@ class PodControllerTest extends WebMvcTestSupport {
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.status").value(404))
                     .andExpect(jsonPath("$.message").value(ErrorCode.RESOURCE_NOT_FOUND.getMessage()));
-        }
-    }
-
-    @Nested
-    @DisplayName("GET /api/admin/pods/status/{requestId}")
-    class GetPodCreationStatus {
-
-        @Test
-        @DisplayName("진행 상태를 200 OK로 반환한다")
-        void getPodCreationStatus_returns200WithStatus() throws Exception {
-            PodCreationStatusResponseDTO dto = new PodCreationStatusResponseDTO(
-                    82702L, "waiting_ready", "이미지 pull / 컨테이너 기동 대기 중", "2026-08-27T17:56:17.862769+00:00"
-            );
-            when(podService.getPodCreationStatus(82702L)).thenReturn(dto);
-
-            mockMvc.perform(get("/api/admin/pods/status/82702").contentType(MediaType.APPLICATION_JSON))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.request_id").value(82702))
-                    .andExpect(jsonPath("$.stage").value("waiting_ready"));
-        }
-
-        @Test
-        @DisplayName("config-server 연동 오류 시 502를 반환한다")
-        void getPodCreationStatus_returns502_whenExternalApiFails() throws Exception {
-            when(podService.getPodCreationStatus(999L))
-                    .thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
-
-            mockMvc.perform(get("/api/admin/pods/status/999").contentType(MediaType.APPLICATION_JSON))
-                    .andExpect(status().isBadGateway())
-                    .andExpect(jsonPath("$.message").value(ErrorCode.EXTERNAL_API_ERROR.getMessage()));
         }
     }
 }

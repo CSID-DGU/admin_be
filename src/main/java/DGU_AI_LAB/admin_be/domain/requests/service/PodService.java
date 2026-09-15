@@ -2,7 +2,6 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigratePodResponseDTO;
-import DGU_AI_LAB.admin_be.domain.requests.dto.response.PodCreationStatusResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -145,31 +144,6 @@ public class PodService {
         } catch (Exception e) {
             log.error("Pod 마이그레이션 API 호출 중 예기치 않은 오류 발생.", e);
             throw new BusinessException(ErrorCode.POD_MIGRATION_FAILED);
-        }
-    }
-
-    public PodCreationStatusResponseDTO getPodCreationStatus(Long requestId) {
-        try {
-            PodCreationStatusResponseDTO response = WebClientErrorHandler.onError(
-                            configWebClient.get()
-                                    .uri("/requests/" + requestId + "/status")
-                                    .retrieve(),
-                            (status, body) -> new BusinessException("Pod 생성 상태 조회 실패: " + body, ErrorCode.EXTERNAL_API_ERROR)
-                    )
-                    .bodyToMono(PodCreationStatusResponseDTO.class)
-                    .block();
-
-            if (response == null) {
-                log.error("Pod 생성 상태 조회 API가 빈 응답을 반환했습니다. requestId: {}", requestId);
-                throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
-            }
-            return response;
-
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Pod 생성 상태 조회 API 호출 중 예기치 않은 오류 발생. requestId: {}", requestId, e);
-            throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
         }
     }
 }

@@ -4,7 +4,6 @@ import DGU_AI_LAB.admin_be.domain.containerImage.dto.request.ContainerImageCreat
 import DGU_AI_LAB.admin_be.domain.containerImage.dto.response.ContainerImageResponseDTO;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
-import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -15,10 +14,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -62,30 +59,6 @@ class ContainerImageServiceTest {
             assertThat(result.imageName()).isEqualTo("pytorch");
             assertThat(result.imageVersion()).isEqualTo("2.1.0");
             assertThat(result.cudaVersion()).isEqualTo("11.8");
-        }
-    }
-
-    @Nested
-    @DisplayName("getImageById")
-    class GetImageById {
-
-        @Test
-        @DisplayName("존재하는 id로 조회하면 DTO를 반환한다")
-        void getImageById_returnsDTO_whenExists() {
-            when(imageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
-
-            ContainerImageResponseDTO result = containerImageService.getImageById(1L);
-
-            assertThat(result.imageName()).isEqualTo("pytorch");
-        }
-
-        @Test
-        @DisplayName("존재하지 않는 id로 조회하면 BusinessException을 던진다")
-        void getImageById_throwsException_whenNotFound() {
-            when(imageRepository.findById(99L)).thenReturn(Optional.empty());
-
-            assertThatThrownBy(() -> containerImageService.getImageById(99L))
-                    .isInstanceOf(BusinessException.class);
         }
     }
 

@@ -10,7 +10,6 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 import java.util.List;
@@ -23,13 +22,6 @@ public interface ContainerImageApi {
             content = @Content(schema = @Schema(implementation = ContainerImageResponseDTO.class)))
     ResponseEntity<ContainerImageResponseDTO> createImage(
             @RequestBody @Valid ContainerImageCreateRequest request
-    );
-
-    @Operation(summary = "단일 이미지 조회", description = "이미지 ID로 단일 이미지를 조회합니다.")
-    @ApiResponse(responseCode = "200", description = "이미지 조회 성공",
-            content = @Content(schema = @Schema(implementation = ContainerImageResponseDTO.class)))
-    ResponseEntity<ContainerImageResponseDTO> getImageById(
-            @PathVariable Long id
     );
 
     @Operation(summary = "전체 이미지 목록 조회", description = "등록된 모든 이미지를 조회합니다.")

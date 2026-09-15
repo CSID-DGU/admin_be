@@ -77,11 +77,6 @@ public interface RequestApi {
             content = @Content(schema = @Schema(implementation = SaveRequestListResponseDoc.class)))
     ResponseEntity<SuccessResponse<?>> getMyApprovedRequests(@Parameter(hidden = true) CustomUserDetails user);
 
-    @Operation(summary = "승인된 우분투 계정명 목록 조회", description = "FULFILLED 상태인 모든 신청의 ubuntuUsername 목록을 조회합니다. 그룹 생성 시 멤버 선택에 활용합니다.")
-    @ApiResponse(responseCode = "200", description = "조회 성공",
-            content = @Content(schema = @Schema(implementation = FulfilledUsernameListResponseDoc.class)))
-    ResponseEntity<SuccessResponse<?>> getAllFulfilledUsernames();
-
     @Operation(summary = "내 변경 요청 목록 조회", description = "로그인된 사용자가 제출한 모든 변경 요청 내역(전체 상태 포함)을 조회합니다.")
     @ApiResponse(responseCode = "200", description = "조회 성공",
             content = @Content(schema = @Schema(implementation = ChangeRequestListResponseDoc.class)))
