@@ -50,7 +50,9 @@ public class PodService {
             @JsonProperty("pod_name") String podName,
             @JsonProperty("request_id") Long requestId,
             List<String> nodes,
-            @JsonProperty("min_improvement_ratio") Double minImprovementRatio
+            @JsonProperty("min_improvement_ratio") Double minImprovementRatio,
+            // true면 config-server가 개선 비율을 보지 않고 이전한다.
+            Boolean force
     ) {}
 
     /**
@@ -117,14 +119,14 @@ public class PodService {
         }
     }
 
-    public MigratePodResponseDTO migratePod(String username, String podName, Long requestId, List<String> nodes, Double minImprovementRatio) {
+    public MigratePodResponseDTO migratePod(String username, String podName, Long requestId, List<String> nodes, Double minImprovementRatio, Boolean force) {
         try {
             log.info("Pod 마이그레이션 API 요청 시작: 사용자: {}, pod: {}, requestId: {}, 후보 노드: {}", username, podName, requestId, nodes);
 
             MigratePodResponseDTO response = WebClientErrorHandler.onError(
                             webClient.post()
                                     .uri("/migrate")
-                                    .bodyValue(new MigratePodRequest(username, podName, requestId, nodes, minImprovementRatio))
+                                    .bodyValue(new MigratePodRequest(username, podName, requestId, nodes, minImprovementRatio, force))
                                     .retrieve(),
                             (status, body) -> new BusinessException("Pod 마이그레이션 실패: " + body, ErrorCode.POD_MIGRATION_FAILED)
                     )
