@@ -41,16 +41,6 @@ public class AdminRequestController implements AdminRequestApi {
         return SuccessResponse.ok(requests);
     }
 
-    /**
-     * 신규 신청 목록 조회 (관리자용)
-     * PENDING 상태의 Request 목록을 반환합니다.
-     */
-    @GetMapping("/new")
-    public ResponseEntity<SuccessResponse<?>> getNewRequests() {
-        List<SaveRequestResponseDTO> requests = adminRequestQueryService.getNewRequests();
-        return SuccessResponse.ok(requests);
-    }
-
     @GetMapping("/usage")
     public ResponseEntity<SuccessResponse<?>> getAllResourceUsage() {
         List<ResourceUsageDTO> usage = adminRequestQueryService.getAllFulfilledResourceUsage();

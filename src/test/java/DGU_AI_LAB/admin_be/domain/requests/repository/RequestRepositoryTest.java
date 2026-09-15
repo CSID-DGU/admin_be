@@ -18,7 +18,6 @@ import org.springframework.test.context.ActiveProfiles;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -183,15 +182,21 @@ class RequestRepositoryTest {
     }
 
     @Nested
-    @DisplayName("findUbuntuUsernamesByStatus")
-    class FindUbuntuUsernamesByStatus {
+    @DisplayName("findAllWithAssociations")
+    class FindAllWithAssociations {
 
         @Test
-        @DisplayName("FULFILLED 상태 요청들의 ubuntuUsername 목록을 반환한다")
-        void findUbuntuUsernamesByStatus_returnsFulfilledUsernames() {
-            List<String> result = requestRepository.findUbuntuUsernamesByStatus(Status.FULFILLED);
+        @DisplayName("모든 상태의 신청을 최신순으로 사용자·서버·이미지와 함께 읽는다")
+        void loadsAllStatusesNewestFirstWithAssociations() {
+            List<Request> result = requestRepository.findAllWithAssociations();
 
-            assertThat(result).containsExactly("fulfilleduser");
+            assertThat(result).isNotEmpty();
+            assertThat(result).extracting(Request::getRequestId).isSortedAccordingTo(java.util.Comparator.reverseOrder());
+            Request first = result.get(0);
+            assertThat(org.hibernate.Hibernate.isInitialized(first.getUser())).isTrue();
+            assertThat(org.hibernate.Hibernate.isInitialized(first.getResourceGroup())).isTrue();
+            assertThat(org.hibernate.Hibernate.isInitialized(first.getContainerImage())).isTrue();
+            assertThat(org.hibernate.Hibernate.isInitialized(first.getRequestGroups())).isTrue();
         }
     }
 

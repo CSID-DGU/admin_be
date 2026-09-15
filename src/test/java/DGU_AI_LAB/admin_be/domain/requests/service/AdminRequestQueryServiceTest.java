@@ -75,12 +75,12 @@ class AdminRequestQueryServiceTest {
         @Test
         @DisplayName("모든 요청 목록을 반환한다")
         void getAllRequests_returnsList() {
-            when(requestRepository.findAll()).thenReturn(List.of());
+            when(requestRepository.findAllWithAssociations()).thenReturn(List.of());
 
             List<SaveRequestResponseDTO> result = adminRequestQueryService.getAllRequests();
 
             assertThat(result).isEmpty();
-            verify(requestRepository).findAll();
+            verify(requestRepository).findAllWithAssociations();
         }
 
         @Test
@@ -89,29 +89,13 @@ class AdminRequestQueryServiceTest {
             Request request = mock(Request.class);
             SaveRequestResponseDTO dto = mock(SaveRequestResponseDTO.class);
 
-            when(requestRepository.findAll()).thenReturn(List.of(request));
+            when(requestRepository.findAllWithAssociations()).thenReturn(List.of(request));
             when(requestQueryService.toResponseDTOs(List.of(request))).thenReturn(List.of(dto));
 
             List<SaveRequestResponseDTO> result = adminRequestQueryService.getAllRequests();
 
             assertThat(result).hasSize(1);
             verify(requestQueryService, times(1)).toResponseDTOs(List.of(request));
-        }
-    }
-
-    @Nested
-    @DisplayName("getNewRequests")
-    class GetNewRequests {
-
-        @Test
-        @DisplayName("PENDING 상태 요청 목록을 반환한다")
-        void getNewRequests_returnsPendingList() {
-            when(requestRepository.findAllByStatus(Status.PENDING)).thenReturn(List.of());
-
-            List<SaveRequestResponseDTO> result = adminRequestQueryService.getNewRequests();
-
-            assertThat(result).isEmpty();
-            verify(requestRepository).findAllByStatus(Status.PENDING);
         }
     }
 
@@ -160,22 +144,6 @@ class AdminRequestQueryServiceTest {
             List<ContainerInfoDTO> result = adminRequestQueryService.getAllActiveContainers();
 
             assertThat(result).isEmpty();
-        }
-    }
-
-    @Nested
-    @DisplayName("getChangeRequests")
-    class GetChangeRequests {
-
-        @Test
-        @DisplayName("PENDING 상태 변경 요청 목록을 반환한다")
-        void getChangeRequests_returnsPendingChangeRequests() {
-            when(changeRequestRepository.findAllByStatus(Status.PENDING)).thenReturn(List.of());
-
-            List<ChangeRequestResponseDTO> result = adminRequestQueryService.getChangeRequests();
-
-            assertThat(result).isEmpty();
-            verify(changeRequestRepository).findAllByStatus(Status.PENDING);
         }
     }
 

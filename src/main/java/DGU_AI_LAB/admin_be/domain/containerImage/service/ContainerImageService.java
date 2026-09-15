@@ -4,8 +4,6 @@ import DGU_AI_LAB.admin_be.domain.containerImage.dto.request.ContainerImageCreat
 import DGU_AI_LAB.admin_be.domain.containerImage.dto.response.ContainerImageResponseDTO;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
-import DGU_AI_LAB.admin_be.error.ErrorCode;
-import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,13 +28,6 @@ public class ContainerImageService {
 
         ContainerImage saved = imageRepository.save(image);
         return ContainerImageResponseDTO.fromEntity(saved);
-    }
-
-    @Transactional(readOnly = true)
-    public ContainerImageResponseDTO getImageById(Long id) {
-        ContainerImage image = imageRepository.findById(id)
-                .orElseThrow(() -> new BusinessException(ErrorCode.ENTITY_NOT_FOUND));
-        return ContainerImageResponseDTO.fromEntity(image);
     }
 
     @Transactional(readOnly = true)

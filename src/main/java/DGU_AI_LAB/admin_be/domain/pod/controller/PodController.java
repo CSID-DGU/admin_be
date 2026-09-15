@@ -4,7 +4,6 @@ import DGU_AI_LAB.admin_be.domain.pod.controller.docs.PodApi;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodEventDTO;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.pod.service.PodQueryService;
-import DGU_AI_LAB.admin_be.domain.requests.dto.response.PodCreationStatusResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodService;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import lombok.RequiredArgsConstructor;
@@ -52,13 +51,6 @@ public class PodController implements PodApi {
     @GetMapping("/{podName}/events")
     public List<PodEventDTO> getPodEvents(@PathVariable String podName) {
         return podQueryService.getPodEvents(podName);
-    }
-
-    // 신청 단위 Pod 생성 진행 상태 조회 (한 사용자가 여러 신청을 동시에 가질 수 있어
-    // username이 아니라 requestId로 조회한다)
-    @GetMapping("/status/{requestId}")
-    public PodCreationStatusResponseDTO getPodCreationStatus(@PathVariable Long requestId) {
-        return podService.getPodCreationStatus(requestId);
     }
 
     // DB에 대응하는 신청이 없는 고아 Pod 직접 삭제 (신청 이력이 있으면 409로 거부)

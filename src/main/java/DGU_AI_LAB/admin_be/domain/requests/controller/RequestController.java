@@ -79,15 +79,6 @@ public class RequestController implements RequestApi {
     }
 
     /**
-     * 나의 사용 신청에 대한 모든 ubuntu_username 조회
-     */
-    @GetMapping("/fulfilled-usernames")
-    public ResponseEntity<SuccessResponse<?>> getAllFulfilledUsernames() {
-        List<String> usernames = requestQueryService.getAllFulfilledUsernames();
-        return SuccessResponse.ok(usernames);
-    }
-
-    /**
      * 나의 변경 요청 목록 조회
      */
     @GetMapping("/my/changes")

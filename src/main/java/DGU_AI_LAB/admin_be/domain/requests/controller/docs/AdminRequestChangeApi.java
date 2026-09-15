@@ -14,10 +14,6 @@ import org.springframework.http.ResponseEntity;
 @Tag(name = "3. 관리자 변경 요청 관리", description = "서버 설정 변경 요청 조회 및 승인·거절 API")
 public interface AdminRequestChangeApi {
 
-    @Operation(summary = "대기 중인 변경 요청 목록 조회", description = "PENDING 상태의 변경 요청 목록을 조회합니다.")
-    @ApiResponse(responseCode = "200", description = "성공")
-    ResponseEntity<SuccessResponse<?>> getChangeRequests();
-
     @Operation(summary = "전체 변경 요청 목록 조회", description = "모든 상태(PENDING, APPROVED, DENIED)의 변경 요청 목록을 조회합니다.")
     @ApiResponse(responseCode = "200", description = "성공")
     ResponseEntity<SuccessResponse<?>> getAllChangeRequests();

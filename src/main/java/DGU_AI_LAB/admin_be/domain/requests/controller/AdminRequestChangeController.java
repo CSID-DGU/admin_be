@@ -24,16 +24,6 @@ public class AdminRequestChangeController implements AdminRequestChangeApi {
     private final AdminRequestQueryService adminRequestQueryService;
 
     /**
-     * 변경 요청 목록 조회 (관리자용)
-     * PENDING 상태의 ChangeRequest 목록을 반환합니다.
-     */
-    @GetMapping
-    public ResponseEntity<SuccessResponse<?>> getChangeRequests() {
-        List<ChangeRequestResponseDTO> changeRequests = adminRequestQueryService.getChangeRequests();
-        return SuccessResponse.ok(changeRequests);
-    }
-
-    /**
      * 모든 변경 요청 목록 조회 (관리자용)
      * 모든 상태의 ChangeRequest 목록을 반환합니다.
      */

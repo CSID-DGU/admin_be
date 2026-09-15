@@ -88,13 +88,6 @@ public class RequestQueryService {
     }
 
 
-    /**
-     * 승인 완료(FULFILLED) 또는 마이그레이션 중(MIGRATING)인 모든 요청의 ubuntuUsername 목록을 조회합니다.
-     */
-    public List<String> getAllFulfilledUsernames() {
-        return requestRepository.findUbuntuUsernamesByStatusIn(Status.activeStatuses());
-    }
-
     /** 내 신청 목록 중 승인 완료(FULFILLED) 또는 마이그레이션 중(MIGRATING)인 것만 조회 */
     public List<SaveRequestResponseDTO> getApprovedRequestsByUserId(Long userId) {
         if (!userRepository.existsById(userId)) {

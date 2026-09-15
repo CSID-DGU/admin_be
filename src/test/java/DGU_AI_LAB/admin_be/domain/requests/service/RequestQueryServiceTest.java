@@ -156,22 +156,6 @@ class RequestQueryServiceTest {
     }
 
     @Nested
-    @DisplayName("getAllFulfilledUsernames")
-    class GetAllFulfilledUsernames {
-
-        @Test
-        @DisplayName("FULFILLED 상태 요청들의 ubuntu username 목록을 반환한다")
-        void getAllFulfilledUsernames_returnsList() {
-            when(requestRepository.findUbuntuUsernamesByStatusIn(Status.activeStatuses()))
-                    .thenReturn(List.of("user1", "user2"));
-
-            List<String> result = requestQueryService.getAllFulfilledUsernames();
-
-            assertThat(result).containsExactlyInAnyOrder("user1", "user2");
-        }
-    }
-
-    @Nested
     @DisplayName("getMyChangeRequests")
     class GetMyChangeRequests {
 

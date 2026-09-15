@@ -35,12 +35,7 @@ public class AdminRequestQueryService {
     }
 
     public List<SaveRequestResponseDTO> getAllRequests() {
-        List<Request> requests = requestRepository.findAll();
-        return requestQueryService.toResponseDTOs(requests);
-    }
-
-    public List<SaveRequestResponseDTO> getNewRequests() {
-        List<Request> requests = requestRepository.findAllByStatus(Status.PENDING);
+        List<Request> requests = requestRepository.findAllWithAssociations();
         return requestQueryService.toResponseDTOs(requests);
     }
 
@@ -54,12 +49,6 @@ public class AdminRequestQueryService {
         return requestRepository.findAllByStatusInWithAssociations(Status.activeStatuses()).stream()
                 .map(ContainerInfoDTO::fromEntity)
                 .toList();
-    }
-
-    public List<ChangeRequestResponseDTO> getChangeRequests() {
-        return changeRequestRepository.findAllByStatus(Status.PENDING).stream()
-                .map(ChangeRequestResponseDTO::fromEntity)
-                .collect(Collectors.toList());
     }
 
     public List<ChangeRequestResponseDTO> getAllChangeRequests() {

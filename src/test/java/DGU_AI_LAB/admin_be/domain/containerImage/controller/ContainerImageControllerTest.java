@@ -3,8 +3,6 @@ package DGU_AI_LAB.admin_be.domain.containerImage.controller;
 import DGU_AI_LAB.admin_be.domain.containerImage.dto.request.ContainerImageCreateRequest;
 import DGU_AI_LAB.admin_be.domain.containerImage.dto.response.ContainerImageResponseDTO;
 import DGU_AI_LAB.admin_be.domain.containerImage.service.ContainerImageService;
-import DGU_AI_LAB.admin_be.error.ErrorCode;
-import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.support.WebMvcTestSupport;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
@@ -69,31 +67,6 @@ class ContainerImageControllerTest extends WebMvcTestSupport {
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.imageName").value("pytorch"));
-        }
-    }
-
-    @Nested
-    @DisplayName("GET /api/images/{id}")
-    class GetImageById {
-
-        @Test
-        @DisplayName("존재하는 id로 조회하면 200 OK와 DTO를 반환한다")
-        void getImageById_returns200WithDto() throws Exception {
-            when(containerImageService.getImageById(1L)).thenReturn(sampleDto());
-
-            mockMvc.perform(get("/api/images/1").contentType(MediaType.APPLICATION_JSON))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.imageName").value("pytorch"));
-        }
-
-        @Test
-        @DisplayName("존재하지 않는 id로 조회하면 404 Not Found를 반환한다")
-        void getImageById_returns404_whenNotFound() throws Exception {
-            when(containerImageService.getImageById(99L))
-                    .thenThrow(new BusinessException(ErrorCode.ENTITY_NOT_FOUND));
-
-            mockMvc.perform(get("/api/images/99").contentType(MediaType.APPLICATION_JSON))
-                    .andExpect(status().isNotFound());
         }
     }
 
