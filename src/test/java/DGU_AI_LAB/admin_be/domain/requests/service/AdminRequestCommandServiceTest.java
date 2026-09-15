@@ -253,6 +253,17 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
+        @DisplayName("거절하면 신청의 초기 비밀번호를 지운다")
+        void rejectRequest_clearsPassword() {
+            Request request = buildMockedRequestWithStatus(37L, Status.PENDING);
+
+            service.rejectRequest(new RejectRequestDTO(37L, "사유"));
+
+            verify(request).reject("사유");
+            verify(request).clearUbuntuPassword();
+        }
+
+        @Test
         @DisplayName("거절 사유가 이메일 발송 메서드에 그대로 전달된다")
         void rejectRequest_passesAdminCommentToEmail() {
             Request request = buildMockedRequestWithStatus(36L, Status.PENDING);
@@ -796,6 +807,59 @@ class AdminRequestCommandServiceTest {
             verify(request).completeApproval();
             verify(podExternalPortRepository, times(2)).save(any(PodExternalPort.class));
             verify(alarmService).sendContainerCreatedEmail(request, "32001", "32002");
+        }
+
+        @Test
+        @DisplayName("배정 안내 메일을 보낸 뒤 신청의 초기 비밀번호를 지운다")
+        void clearsPasswordAfterCreatedEmail() {
+            // Given
+            Long requestId = 208L;
+            Request request = processingRequest(requestId);
+            when(podExternalPortRepository.save(any(PodExternalPort.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            // When
+            service.completeApprovalJob(requestId, new JobResultResponseDTO.Result(
+                    50001L, 50001L, "ailab-testuser-abcd", "farm2",
+                    List.of(new CreatePodResponseDTO.PortInfo("ssh", 22, 32001))));
+
+            // Then - 메일이 비밀번호를 읽은 다음에 지운다
+            var order = inOrder(alarmService, request);
+            order.verify(alarmService).sendContainerCreatedEmail(eq(request), any(), any());
+            order.verify(request).clearUbuntuPassword();
+        }
+
+        @Test
+        @DisplayName("배정 안내 메일 발송이 실패해도 신청의 초기 비밀번호는 지운다")
+        void clearsPasswordEvenWhenEmailFails() {
+            // Given
+            Long requestId = 209L;
+            Request request = processingRequest(requestId);
+            when(podExternalPortRepository.save(any(PodExternalPort.class))).thenAnswer(inv -> inv.getArgument(0));
+            doThrow(new RuntimeException("smtp down")).when(alarmService).sendContainerCreatedEmail(any(), any(), any());
+
+            // When
+            service.completeApprovalJob(requestId, new JobResultResponseDTO.Result(
+                    50001L, 50001L, "ailab-testuser-abcd", "farm2", List.of()));
+
+            // Then
+            verify(request).clearUbuntuPassword();
+        }
+
+        @Test
+        @DisplayName("작업이 도는 사이 상태가 바뀌어 승인을 확정하지 않으면 비밀번호도 건드리지 않는다")
+        void keepsPasswordWhenNotCompleted() {
+            // Given
+            Long requestId = 210L;
+            Request request = mock(Request.class);
+            when(request.getStatus()).thenReturn(Status.DENIED);
+            when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+
+            // When
+            service.completeApprovalJob(requestId, new JobResultResponseDTO.Result(
+                    null, null, "ailab-testuser-abcd", "farm2", List.of()));
+
+            // Then
+            verify(request, never()).clearUbuntuPassword();
         }
 
         @Test

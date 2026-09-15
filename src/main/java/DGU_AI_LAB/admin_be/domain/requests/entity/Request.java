@@ -177,6 +177,15 @@ public class Request extends BaseTimeEntity {
     }
 
     /**
+     * 초기 로그인 비밀번호를 신청에서 지운다. 비밀번호는 생성 작업 등록과 배정 안내 메일에만 필요하고,
+     * 그 뒤 컨테이너를 다시 만들 때(마이그레이션)는 config-server가 옛 Pod의 비밀번호 Secret을 이어받는다.
+     * 컬럼이 NOT NULL이라 빈 문자열로 둔다.
+     */
+    public void clearUbuntuPassword() {
+        this.ubuntuPassword = "";
+    }
+
+    /**
      * 사용자의 변경 요청을 엔티티에 반영합니다.
      */
     public void update(LocalDateTime newExpiresAt, String reason) {
