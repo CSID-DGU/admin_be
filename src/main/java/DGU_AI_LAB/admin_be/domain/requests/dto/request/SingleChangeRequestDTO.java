@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.LocalDateTime;
@@ -32,8 +33,10 @@ public record SingleChangeRequestDTO(
         @NotBlank(message = "새로운 값은 필수입니다.")
         String newValue,
 
+        // change_request.reason이 1000자다.
         @Schema(description = "변경 요청 사유", example = "프로젝트 요구사항 변경으로 인한 용량 증설")
         @NotBlank(message = "변경 사유는 필수입니다.")
+        @Size(max = 1000, message = "변경 사유는 1000자 이하여야 합니다.")
         String reason
 ) {
 

@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.requests.dto.request;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 @Schema(description = "관리자용 요청 승인 요청 DTO")
 public record ApproveRequestDTO(
@@ -18,6 +19,8 @@ public record ApproveRequestDTO(
         @NotNull(message = "리소스 그룹 ID는 필수로 입력해야 합니다.")
         Integer resourceGroupId,
 
+        // requests.admin_comment가 300자다.
         @Schema(description = "관리자 승인 코멘트 (선택 사항)", example = "사용 목적에 따라 리소스를 할당함")
+        @Size(max = 300, message = "승인 코멘트는 300자 이하여야 합니다.")
         String adminComment
 ) {}
