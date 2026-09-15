@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -86,7 +87,9 @@ public class RequestSchedulerService {
         Long requestId = request.getRequestId();
         String phase;
         try {
-            phase = operationJobService.getResult(OperationJobService.KIND_PROVISION, requestId).phase();
+            JobResultResponseDTO job = operationJobService.getResult(OperationJobService.KIND_PROVISION, requestId);
+            // 자원을 남긴 실패(DEGRADED)는 되돌리면 안 되므로 결과 불명과 같이 취급한다.
+            phase = OperationJobService.isDegraded(job) ? OperationJobService.ERROR_DEGRADED : job.phase();
         } catch (Exception e) {
             log.warn("🔧 [재조정] 생성 작업 상태를 조회하지 못해 PROCESSING 요청을 그대로 둔다: requestId={}", requestId, e);
             return;

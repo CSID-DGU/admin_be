@@ -56,6 +56,14 @@ public class ProvisionJobPoller {
                 adminRequestCommandService.completeApprovalJob(requestId, result.result());
             }
             case OperationJobService.PHASE_FAIL -> {
+                if (OperationJobService.isDegraded(result)) {
+                    // 제어기가 자원을 남긴 채 넘긴 실패다. 되돌리면 컨테이너는 살아 있는데 신청만 PENDING이 되고,
+                    // 재승인 때 컨테이너가 하나 더 만들어진다. 결과 불명과 같이 신청을 그대로 두고 한 번만 알린다.
+                    if (reportedUnknown.add(requestId)) {
+                        adminRequestCommandService.reportDegradedApprovalJob(requestId, result);
+                    }
+                    return;
+                }
                 reportedUnknown.remove(requestId);
                 adminRequestCommandService.failApprovalJob(requestId, result);
             }

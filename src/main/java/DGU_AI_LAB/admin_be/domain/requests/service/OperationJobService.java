@@ -38,6 +38,12 @@ public class OperationJobService {
      */
     public static final String PHASE_UNKNOWN = "UNKNOWN";
 
+    /**
+     * FAIL 중에서, 재시도로 해소되지 않아 제어기가 만든 자원을 되돌리지 않고 관리자에게 넘긴 경우의 error_code.
+     * 자원(계정·컨테이너)이 남아 있으므로 일반 실패처럼 신청을 되돌리면 안 된다.
+     */
+    public static final String ERROR_DEGRADED = "DEGRADED";
+
     public static final String KIND_PROVISION = "provision";
     public static final String KIND_REVOKE = "revoke";
 
@@ -121,6 +127,11 @@ public class OperationJobService {
             }
             sleep(revokePollMillis, failureCode);
         }
+    }
+
+    /** 자원을 남긴 채 관리자에게 넘겨진 실패인가. 되돌리면 남은 자원과 신청 상태가 어긋난다. */
+    public static boolean isDegraded(JobResultResponseDTO result) {
+        return result != null && ERROR_DEGRADED.equals(result.errorCode());
     }
 
     private static boolean isAccountAlreadyAbsent(String errorCode) {

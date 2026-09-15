@@ -287,6 +287,17 @@ public class AdminRequestCommandService {
                 requestId, result.errorCode()), serverNameOf(requestId));
     }
 
+    /**
+     * 제어기가 재시도로 해소하지 못하고 자원을 남긴 채 넘긴 작업(DEGRADED)을 알린다. 컨테이너·계정이 남아
+     * 있으므로 되돌리지 않는다 — 되돌리면 재승인 때 컨테이너가 하나 더 만들어진다. 신청은 PROCESSING에 둔 채
+     * 관리자가 원인을 확인하고 정리하도록 넘긴다.
+     */
+    public void reportDegradedApprovalJob(Long requestId, JobResultResponseDTO result) {
+        notifyApprovalFailure(String.format(
+                "[승인 확인 필요] 생성 작업이 복구되지 않아 관리자 확인으로 넘어왔습니다. 만든 자원은 남아 있습니다: requestId=%d, jobId=%s",
+                requestId, result.jobId()), serverNameOf(requestId));
+    }
+
     /** 알림을 관리자가 실제로 보는 farm/lab 채널로 보내기 위한 서버 구분. 조회 실패는 알림 실패로 번지지 않게 삼킨다. */
     private String serverNameOf(Long requestId) {
         try {

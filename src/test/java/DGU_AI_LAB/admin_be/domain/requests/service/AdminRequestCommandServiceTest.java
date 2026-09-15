@@ -849,6 +849,20 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
+        @DisplayName("자원을 남긴 실패(DEGRADED)는 되돌리지 않고 자원이 남았다고 알린다")
+        void degradedKeepsRequestUntouched() {
+            Long requestId = 209L;
+            Request request = processingRequest(requestId);
+            JobResultResponseDTO result = new JobResultResponseDTO(
+                    String.valueOf(requestId), "provision", 183L, "FAIL", "DEGRADED", null, null);
+
+            service.reportDegradedApprovalJob(requestId, result);
+
+            verify(request, never()).revertToPending();
+            verify(alarmService).sendAdminSlackNotification(any(), contains("자원은 남아 있습니다"));
+        }
+
+        @Test
         @DisplayName("결과 불명이면 되돌리지 않고 관리자 확인 대상으로만 알린다")
         void unknownKeepsRequestUntouched() {
             // Given - 자원이 남아 있을 수 있어 되돌리면 재승인 때 중복 생성이 된다.

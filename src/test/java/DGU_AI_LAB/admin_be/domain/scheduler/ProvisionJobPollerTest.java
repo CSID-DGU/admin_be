@@ -93,6 +93,20 @@ class ProvisionJobPollerTest {
     }
 
     @Test
+    @DisplayName("자원을 남긴 실패(DEGRADED)는 되돌리지 않고 신청당 한 번만 관리자 확인으로 알린다")
+    void degradedIsReportedOnceWithoutRevert() {
+        givenProcessing(7L);
+        JobResultResponseDTO degraded = new JobResultResponseDTO("7", "provision", 1L, "FAIL", "DEGRADED", null, null);
+        when(operationJobService.getResult("provision", 7L)).thenReturn(degraded);
+
+        poller.pollProvisionJobs();
+        poller.pollProvisionJobs();
+
+        verify(adminRequestCommandService, never()).failApprovalJob(anyLong(), any());
+        verify(adminRequestCommandService, times(1)).reportDegradedApprovalJob(7L, degraded);
+    }
+
+    @Test
     @DisplayName("결과 불명은 신청당 한 번만 알린다")
     void reportsUnknownOnce() {
         givenProcessing(4L);

@@ -202,6 +202,19 @@ class RequestSchedulerServiceUnitTest {
     }
 
     @Test
+    @DisplayName("자원을 남긴 실패(DEGRADED)는 정지된 PROCESSING이어도 되돌리지 않는다")
+    void reconcile_staleProcessing_jobDegraded_doesNotRevert() {
+        Request request = buildMockedRequest(16L);
+        when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.PROCESSING), any())).thenReturn(List.of(request));
+        when(operationJobService.getResult(OperationJobService.KIND_PROVISION, 16L)).thenReturn(
+                new JobResultResponseDTO(null, OperationJobService.KIND_PROVISION, null, OperationJobService.PHASE_FAIL, "DEGRADED", null, null));
+
+        service.reconcileStaleInFlightRequests();
+
+        verify(adminRequestCommandService, never()).revertToPendingIfStillProcessing(any(), any());
+    }
+
+    @Test
     @DisplayName("생성 작업이 성공·결과 불명이면 작업 결과 폴러에 맡기고 되돌리지 않는다")
     void reconcile_staleProcessing_jobFinishedOrUnknown_leftToPoller() {
         Request succeeded = buildMockedRequest(13L);
