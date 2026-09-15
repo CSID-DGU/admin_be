@@ -3,7 +3,9 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ProvisionRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.UserCreationRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobHistoryResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobStepsResponseDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -109,6 +111,31 @@ class OperationJobServiceTest {
         when(responseSpec.bodyToMono(JobResultResponseDTO.class)).thenReturn(Mono.empty());
 
         assertThatThrownBy(() -> service.getResult(OperationJobService.KIND_PROVISION, 41L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EXTERNAL_API_ERROR);
+    }
+
+    @Test
+    @DisplayName("작업 단계 기록은 생성·회수를 각각 조회해 함께 돌려준다")
+    void getsJobHistory() {
+        JobStepsResponseDTO provision = new JobStepsResponseDTO("41", "provision", List.of());
+        JobStepsResponseDTO revoke = new JobStepsResponseDTO("41", "revoke", List.of());
+        when(responseSpec.bodyToMono(JobStepsResponseDTO.class)).thenReturn(Mono.just(provision), Mono.just(revoke));
+
+        JobHistoryResponseDTO history = service.getJobHistory(41L);
+
+        verify(getUriSpec).uri("/operations/provision/41/steps");
+        verify(getUriSpec).uri("/operations/revoke/41/steps");
+        assertThat(history.provision()).isEqualTo(provision);
+        assertThat(history.revoke()).isEqualTo(revoke);
+    }
+
+    @Test
+    @DisplayName("작업 단계 기록 조회가 빈 응답이면 외부 API 오류로 실패시킨다")
+    void failsOnEmptySteps() {
+        when(responseSpec.bodyToMono(JobStepsResponseDTO.class)).thenReturn(Mono.empty());
+
+        assertThatThrownBy(() -> service.getSteps(OperationJobService.KIND_PROVISION, 41L))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EXTERNAL_API_ERROR);
     }
@@ -301,6 +328,32 @@ class OperationJobServiceTest {
             assertThat(result.result().ports()).hasSize(1);
             assertThat(result.result().ports().get(0).externalPort()).isEqualTo(32001);
             assertThat(result.result().ports().get(0).usagePurpose()).isEqualTo("ssh");
+        }
+
+        @Test
+        @DisplayName("작업 단계 기록 응답을 그대로 읽고, 화면에 같은 이름(snake_case)으로 내보낸다")
+        void readsAndWritesStepsResponse() throws Exception {
+            String body = """
+                    {"request_id":"3","kind":"provision","jobs":[{"job_id":432,"started_at":"2026-09-15T05:07:41Z",
+                      "finished_at":"2026-09-15T05:07:50Z","phase":"SUCCESS","error_code":null,
+                      "steps":[{"at":"2026-09-15T05:07:48Z","action":"PROVISION","phase":"RETRY","attempt":2,
+                                "probe":null,"step":"step_verify_endpoint","error_code":"VERIFY_ENDPOINT_FAILED","summary":null},
+                               {"at":"2026-09-15T05:07:50Z","action":"VERIFY_ACCESS","phase":"SUCCESS","attempt":2,
+                                "probe":"endpoint","step":null,"error_code":null,"summary":{"connected":true}}]}]}
+                    """;
+
+            JobStepsResponseDTO steps = objectMapper.readValue(body, JobStepsResponseDTO.class);
+
+            JobStepsResponseDTO.Job job = steps.jobs().get(0);
+            assertThat(job.jobId()).isEqualTo(432L);
+            assertThat(job.finishedAt()).isEqualTo("2026-09-15T05:07:50Z");
+            assertThat(job.steps().get(0).step()).isEqualTo("step_verify_endpoint");
+            assertThat(job.steps().get(1).probe()).isEqualTo("endpoint");
+            assertThat(job.steps().get(1).summary()).containsEntry("connected", true);
+
+            JsonNode out = objectMapper.readTree(objectMapper.writeValueAsString(steps));
+            assertThat(out.get("jobs").get(0).get("job_id").asLong()).isEqualTo(432L);
+            assertThat(out.get("jobs").get(0).get("steps").get(0).get("error_code").asText()).isEqualTo("VERIFY_ENDPOINT_FAILED");
         }
 
         @Test

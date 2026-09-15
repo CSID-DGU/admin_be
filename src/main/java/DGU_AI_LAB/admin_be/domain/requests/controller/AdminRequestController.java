@@ -10,6 +10,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestQueryService;
+import DGU_AI_LAB.admin_be.domain.requests.service.OperationJobService;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodMigrationService;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import jakarta.validation.Valid;
@@ -27,6 +28,7 @@ public class AdminRequestController implements AdminRequestApi {
     private final AdminRequestCommandService adminRequestCommandService;
     private final AdminRequestQueryService adminRequestQueryService;
     private final PodMigrationService podMigrationService;
+    private final OperationJobService operationJobService;
 
 
     /**
@@ -72,6 +74,15 @@ public class AdminRequestController implements AdminRequestApi {
     public ResponseEntity<SuccessResponse<?>> rejectRequest(@RequestBody @Valid RejectRequestDTO dto) {
         SaveRequestResponseDTO responseDto = adminRequestCommandService.rejectRequest(dto);
         return SuccessResponse.ok(responseDto);
+    }
+
+    /**
+     * 신청의 생성·회수 작업 단계 기록 (신청 상세 화면용). 접근 시험 근거에 내부 정보가 섞일 수 있어
+     * 인증 없이 config-server로 넘어가는 화면 경로(/pod-status/)가 아니라 이 관리자 API로만 준다.
+     */
+    @GetMapping("/{requestId}/job-steps")
+    public ResponseEntity<SuccessResponse<?>> getJobSteps(@PathVariable Long requestId) {
+        return SuccessResponse.ok(operationJobService.getJobHistory(requestId));
     }
 
     @PostMapping("/{requestId}/migrate")
