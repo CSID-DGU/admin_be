@@ -8,10 +8,13 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -23,6 +26,13 @@ public class AdminRequestQueryService {
     private final RequestRepository requestRepository;
     private final ChangeRequestRepository changeRequestRepository;
     private final RequestQueryService requestQueryService;
+
+    /** 작업 기록을 이 신청의 것으로만 거르는 기준 시각. */
+    public LocalDateTime getRequestCreatedAt(Long requestId) {
+        return requestRepository.findById(requestId)
+                .map(Request::getCreatedAt)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+    }
 
     public List<SaveRequestResponseDTO> getAllRequests() {
         List<Request> requests = requestRepository.findAll();

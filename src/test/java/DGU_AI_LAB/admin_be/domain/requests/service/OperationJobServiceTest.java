@@ -23,6 +23,7 @@ import org.mockito.quality.Strictness;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -115,19 +116,68 @@ class OperationJobServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EXTERNAL_API_ERROR);
     }
 
+    private static JobStepsResponseDTO.Job jobStartedAt(long jobId, String startedAt) {
+        return new JobStepsResponseDTO.Job(jobId, startedAt, startedAt, "SUCCESS", null, List.of());
+    }
+
+    // 신청 생성 2026-09-15 10:20:41 (서울) = 01:20:41Z
+    private static final LocalDateTime REQUEST_CREATED_AT = LocalDateTime.of(2026, 9, 15, 10, 20, 41);
+
     @Test
     @DisplayName("작업 단계 기록은 생성·회수를 각각 조회해 함께 돌려준다")
     void getsJobHistory() {
-        JobStepsResponseDTO provision = new JobStepsResponseDTO("41", "provision", List.of());
+        JobStepsResponseDTO provision = new JobStepsResponseDTO("41", "provision", List.of(jobStartedAt(183, "2026-09-15T04:12:06Z")));
         JobStepsResponseDTO revoke = new JobStepsResponseDTO("41", "revoke", List.of());
         when(responseSpec.bodyToMono(JobStepsResponseDTO.class)).thenReturn(Mono.just(provision), Mono.just(revoke));
 
-        JobHistoryResponseDTO history = service.getJobHistory(41L);
+        JobHistoryResponseDTO history = service.getJobHistory(41L, REQUEST_CREATED_AT);
 
         verify(getUriSpec).uri("/operations/provision/41/steps");
         verify(getUriSpec).uri("/operations/revoke/41/steps");
         assertThat(history.provision()).isEqualTo(provision);
         assertThat(history.revoke()).isEqualTo(revoke);
+    }
+
+    @Test
+    @DisplayName("신청이 만들어지기 전에 시작된 작업은 같은 번호를 쓰던 옛 신청의 것이라 뺀다")
+    void dropsJobsStartedBeforeRequestCreated() {
+        JobStepsResponseDTO provision = new JobStepsResponseDTO("2", "provision", List.of(
+                jobStartedAt(275, "2026-09-15T04:24:23Z"),
+                jobStartedAt(103, "2026-09-14T23:58:24Z")));
+        JobStepsResponseDTO revoke = new JobStepsResponseDTO("2", "revoke", List.of(
+                jobStartedAt(123, "2026-09-14T23:59:58Z")));
+        when(responseSpec.bodyToMono(JobStepsResponseDTO.class)).thenReturn(Mono.just(provision), Mono.just(revoke));
+
+        JobHistoryResponseDTO history = service.getJobHistory(2L, REQUEST_CREATED_AT);
+
+        assertThat(history.provision().jobs()).extracting(JobStepsResponseDTO.Job::jobId).containsExactly(275L);
+        assertThat(history.revoke().jobs()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("신청 직후 시작된 작업은 시계 차이가 조금 있어도 남긴다")
+    void keepsJobsWithinClockSkew() {
+        JobStepsResponseDTO provision = new JobStepsResponseDTO("2", "provision", List.of(
+                jobStartedAt(7, "2026-09-15T01:20:11Z")));
+        when(responseSpec.bodyToMono(JobStepsResponseDTO.class))
+                .thenReturn(Mono.just(provision), Mono.just(new JobStepsResponseDTO("2", "revoke", List.of())));
+
+        JobHistoryResponseDTO history = service.getJobHistory(2L, REQUEST_CREATED_AT);
+
+        assertThat(history.provision().jobs()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("시작 시각을 읽을 수 없는 작업은 거르지 않는다")
+    void keepsJobsWithUnreadableStart() {
+        JobStepsResponseDTO provision = new JobStepsResponseDTO("2", "provision", List.of(
+                jobStartedAt(7, null), jobStartedAt(8, "not-a-time")));
+        when(responseSpec.bodyToMono(JobStepsResponseDTO.class))
+                .thenReturn(Mono.just(provision), Mono.just(new JobStepsResponseDTO("2", "revoke", List.of())));
+
+        JobHistoryResponseDTO history = service.getJobHistory(2L, REQUEST_CREATED_AT);
+
+        assertThat(history.provision().jobs()).hasSize(2);
     }
 
     @Test

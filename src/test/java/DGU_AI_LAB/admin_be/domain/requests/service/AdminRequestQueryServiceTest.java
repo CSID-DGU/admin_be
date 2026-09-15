@@ -16,9 +16,15 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -35,6 +41,32 @@ class AdminRequestQueryServiceTest {
 
     @Mock
     private RequestQueryService requestQueryService;
+
+    @Nested
+    @DisplayName("getRequestCreatedAt")
+    class GetRequestCreatedAt {
+
+        @Test
+        @DisplayName("신청 생성 시각을 돌려준다")
+        void returnsCreatedAt() {
+            Request request = mock(Request.class);
+            LocalDateTime createdAt = LocalDateTime.of(2026, 9, 15, 10, 20, 41);
+            when(request.getCreatedAt()).thenReturn(createdAt);
+            when(requestRepository.findById(2L)).thenReturn(Optional.of(request));
+
+            assertThat(adminRequestQueryService.getRequestCreatedAt(2L)).isEqualTo(createdAt);
+        }
+
+        @Test
+        @DisplayName("없는 신청이면 리소스 없음으로 실패한다")
+        void failsWhenMissing() {
+            when(requestRepository.findById(99L)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> adminRequestQueryService.getRequestCreatedAt(99L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.RESOURCE_NOT_FOUND);
+        }
+    }
 
     @Nested
     @DisplayName("getAllRequests")
