@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.global.event.RequestContainerDeletedEvent;
 import DGU_AI_LAB.admin_be.global.event.RequestExpiredEvent;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +49,36 @@ public class RequestEventListener {
             // properties: notification.admin.delete.success ({0}타입, {1}계정, {2}서버)
             String adminMsg = messageUtils.get("notification.admin.delete.success",
                     type, username, serverName);
+
+            alarmService.sendAdminSlackNotification(serverName, adminMsg);
+        } catch (Exception e) {
+            log.warn("관리자 알림 전송 실패: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 관리자가 컨테이너 하나를 회수한 경우. 사용자 안내 문구만 만료와 다르고(만료일이 없다),
+     * 관리자 슬랙 문구는 "리소스 삭제 완료"라 만료와 같은 것을 그대로 쓴다.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void handleContainerDeletedEvent(RequestContainerDeletedEvent event) {
+        String userName = event.userName();
+        String serverName = event.serverName();
+        String username = event.ubuntuUsername();
+
+        try {
+            String subject = messageUtils.get("notification.deleted.detail.subject");
+            String message = messageUtils.get("notification.deleted.detail.body",
+                    userName, serverName, username, event.podName(), event.portSummary());
+
+            alarmService.sendAllAlerts(userName, event.userEmail(), subject, message);
+        } catch (Exception e) {
+            log.warn("컨테이너 회수 안내 전송 실패: {}", e.getMessage());
+        }
+
+        try {
+            String adminMsg = messageUtils.get("notification.admin.delete.success",
+                    getServerType(serverName), username, serverName);
 
             alarmService.sendAdminSlackNotification(serverName, adminMsg);
         } catch (Exception e) {

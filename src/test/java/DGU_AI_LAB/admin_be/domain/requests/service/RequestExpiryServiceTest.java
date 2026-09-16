@@ -9,6 +9,7 @@ import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
+import DGU_AI_LAB.admin_be.global.event.RequestContainerDeletedEvent;
 import DGU_AI_LAB.admin_be.global.event.RequestExpiredEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -312,6 +313,96 @@ class RequestExpiryServiceTest {
             service.revertStaleExpiring(requestId);
 
             verify(request, never()).endExpiry();
+        }
+    }
+
+    /**
+     * 관리자가 컨테이너 하나만 회수하는 경로. 예전에는 이 버튼이 계정 회수 API를 불러 그 사용자의
+     * 컨테이너가 전부 사라졌다(실제로 한 번 눌러 세 개가 날아갔다). 여기서 지키려는 것은 두 가지다 —
+     * 회수 범위가 그 신청 하나로 끝날 것, 그리고 만료가 아닌 것을 만료라고 통보하지 않을 것.
+     */
+    @Nested
+    @DisplayName("관리자가 컨테이너 하나만 회수한다")
+    class AdminContainerDelete {
+
+        @Test
+        @DisplayName("Pod만 회수하고 계정은 건드리지 않는다 — 같은 사용자의 다른 컨테이너가 살아남는 근거다")
+        void deletesPodOnly_keepsAccount() {
+            Long requestId = 40L;
+            Request request = buildMockedRequest(Status.FULFILLED);
+            when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+            when(podExternalPortRepository.findByRequestRequestId(requestId)).thenReturn(List.of());
+
+            service.deleteContainerByAdmin(requestId);
+
+            verify(podService).deletePod("pod-testuser-xxxx", requestId);
+            verify(request).deleteAfterCleanup();
+            verifyNoMoreInteractions(podService);
+        }
+
+        @Test
+        @DisplayName("만료가 아니므로 만료 안내 이벤트가 아니라 회수 안내 이벤트를 발행한다")
+        void publishesDeletedEvent_notExpiredEvent() {
+            Long requestId = 41L;
+            Request request = buildMockedRequest(Status.FULFILLED);
+            when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+            when(podExternalPortRepository.findByRequestRequestId(requestId)).thenReturn(List.of());
+
+            service.deleteContainerByAdmin(requestId);
+
+            ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue()).isInstanceOf(RequestContainerDeletedEvent.class);
+            assertThat(((RequestContainerDeletedEvent) captor.getValue()).ubuntuUsername()).isEqualTo("testuser");
+        }
+
+        @Test
+        @DisplayName("만료 경로는 그대로 만료 안내 이벤트를 발행한다 (기존 동작 유지)")
+        void expiryPathStillPublishesExpiredEvent() {
+            Long requestId = 42L;
+            Request request = buildMockedRequest(Status.FULFILLED);
+            when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+            when(podExternalPortRepository.findByRequestRequestId(requestId)).thenReturn(List.of());
+
+            service.deleteExpiredRequest(requestId);
+
+            ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue()).isInstanceOf(RequestExpiredEvent.class);
+        }
+
+        @Test
+        @DisplayName("FULFILLED가 아니면 조용히 넘기지 않고 409로 알린다 — 관리자가 누른 버튼은 결과를 돌려줘야 한다")
+        void notFulfilled_throwsInsteadOfSilentlyDoingNothing() {
+            Long requestId = 43L;
+            Request request = buildMockedRequest(Status.PENDING);
+            when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+
+            assertThatThrownBy(() -> service.deleteContainerByAdmin(requestId))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+
+            verify(podService, never()).deletePod(any(), any());
+            verify(eventPublisher, never()).publishEvent(any());
+        }
+
+        @Test
+        @DisplayName("회수에 실패하면 FULFILLED로 되돌리고 DELETED로 전환하지 않는다")
+        void deletionFails_revertsAndDoesNotMarkDeleted() {
+            Long requestId = 44L;
+            Request request = buildMockedRequest(Status.FULFILLED);
+            when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+            when(podExternalPortRepository.findByRequestRequestId(requestId)).thenReturn(List.of());
+            doThrow(new BusinessException(ErrorCode.POD_DELETION_FAILED))
+                    .when(podService).deletePod(eq("pod-testuser-xxxx"), any());
+
+            assertThatThrownBy(() -> service.deleteContainerByAdmin(requestId))
+                    .isInstanceOf(BusinessException.class);
+
+            verify(request).endExpiry();
+            verify(request, never()).deleteAfterCleanup();
+            verify(eventPublisher, never()).publishEvent(any());
         }
     }
 }

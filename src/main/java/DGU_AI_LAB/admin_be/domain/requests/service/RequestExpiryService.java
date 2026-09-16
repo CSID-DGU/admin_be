@@ -9,6 +9,7 @@ import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
+import DGU_AI_LAB.admin_be.global.event.RequestContainerDeletedEvent;
 import DGU_AI_LAB.admin_be.global.event.RequestExpiredEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +37,22 @@ public class RequestExpiryService {
     ) {}
 
     public void deleteExpiredRequest(Long requestId) {
+        cleanupContainer(requestId, true);
+    }
+
+    /**
+     * 관리자가 화면에서 컨테이너 하나만 회수한다. 우분투 계정과 홈 디렉터리는 남고, 같은 사용자의
+     * 다른 신청은 건드리지 않는다 — 계정까지 회수하려면 사용자 관리의 계정 회수를 써야 한다.
+     *
+     * <p>만료 정리와 절차가 같아 같은 코드를 쓴다. 다른 것은 통보 문구뿐이다(만료가 아니므로
+     * 만료일을 말하지 않는다). 대상이 FULFILLED가 아니면 조용히 넘기지 않고 409로 알린다 —
+     * 만료 정리는 스케줄러가 훑다가 지나치는 것이 맞지만, 관리자가 누른 버튼은 결과를 돌려줘야 한다.
+     */
+    public void deleteContainerByAdmin(Long requestId) {
+        cleanupContainer(requestId, false);
+    }
+
+    private void cleanupContainer(Long requestId, boolean expired) {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
 
         // 1. 행 잠금 조회 + FULFILLED -> EXPIRING 선점 + lazy 연관 필드 추출
@@ -69,7 +86,12 @@ public class RequestExpiryService {
 
         ExpiryContext ctx = contextRef[0];
         if (ctx == null) {
-            return; // FULFILLED 상태가 아니면 정리 대상이 아님
+            // FULFILLED 상태가 아니면 정리 대상이 아니다. 만료 스케줄러는 다음 회차에 다시 보면 되지만,
+            // 관리자가 누른 버튼은 아무 일도 일어나지 않은 것을 성공으로 돌려주면 안 된다.
+            if (!expired) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+            }
+            return;
         }
 
         // 2. 외부 HTTP 호출 (DB 커넥션·행 잠금 미보유). Pod만 지운다.
@@ -102,9 +124,11 @@ public class RequestExpiryService {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
             }
             request.deleteAfterCleanup();
-            eventPublisher.publishEvent(new RequestExpiredEvent(
-                    ctx.userName(), ctx.userEmail(), ctx.ubuntuUsername(), ctx.serverName(), ctx.podName(), ctx.portSummary(), ctx.expiresAt()
-            ));
+            eventPublisher.publishEvent(expired
+                    ? new RequestExpiredEvent(ctx.userName(), ctx.userEmail(), ctx.ubuntuUsername(),
+                            ctx.serverName(), ctx.podName(), ctx.portSummary(), ctx.expiresAt())
+                    : new RequestContainerDeletedEvent(ctx.userName(), ctx.userEmail(), ctx.ubuntuUsername(),
+                            ctx.serverName(), ctx.podName(), ctx.portSummary()));
             return null;
         });
 
