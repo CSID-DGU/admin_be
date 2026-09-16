@@ -65,6 +65,48 @@ class PodMigrationServiceTest {
                 "migrated", null, "farm2", "farm7", "ailab-testuser-old", cleanup);
     }
 
+    private static JobResultResponseDTO result(String phase, JobResultResponseDTO.Result made) {
+        return new JobResultResponseDTO("1", "migrate", 10L, phase, null, null, made);
+    }
+
+    @Test
+    @DisplayName("이미 끝난 마이그레이션은 상태 검증 전에 앞당겨 반영한다")
+    void settleAppliesFinishedResult() {
+        when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        when(operationJobService.getResult(OperationJobService.KIND_MIGRATE, 1L))
+                .thenReturn(result(OperationJobService.PHASE_SUCCESS, migrated(null)));
+
+        service.settleFinishedMigration(1L);
+
+        verify(request).assignPodInfo("ailab-testuser-new", "farm7");
+        verify(request).endMigration();
+    }
+
+    @Test
+    @DisplayName("아직 실행 중인 마이그레이션은 건드리지 않는다")
+    void settleIgnoresRunningJob() {
+        when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        when(operationJobService.getResult(OperationJobService.KIND_MIGRATE, 1L))
+                .thenReturn(result(OperationJobService.PHASE_START, null));
+
+        service.settleFinishedMigration(1L);
+
+        verify(request, never()).endMigration();
+    }
+
+    @Test
+    @DisplayName("마이그레이션 중이 아니면 작업 결과를 조회하지 않는다")
+    void settleSkipsWhenNotMigrating() {
+        when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
+        when(request.getStatus()).thenReturn(Status.FULFILLED);
+
+        service.settleFinishedMigration(1L);
+
+        verify(operationJobService, never()).getResult(anyString(), any());
+    }
+
     @Test
     @DisplayName("시작하면 MIGRATING으로 바꾸고 기존 Pod·노드 목록·force로 작업을 등록한다")
     void startRegistersJob() {

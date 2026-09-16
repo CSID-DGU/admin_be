@@ -42,7 +42,40 @@ public class PodMigrationService {
      * 신청을 MIGRATING으로 바꾸고 마이그레이션 작업을 등록한다. 행 잠금과 상태 전환을 같은 트랜잭션에서 커밋해야
      * 동시에 들어온 두 번째 요청이 상태 검증에서 막힌다. 등록이 실패하면 FULFILLED로 되돌린다.
      */
+    /**
+     * 이미 끝난 마이그레이션 결과를 앞당겨 반영한다.
+     *
+     * <p>완료 여부는 작업 결과를 직접 조회해 판단하는데, 신청을 MIGRATING에서 되돌리는 것은 3초 주기
+     * 폴러다. 그래서 결과가 성공으로 보이는 시점과 신청이 되돌아오는 시점 사이에 틈이 생기고(실측 2초),
+     * 그 틈에 들어온 재마이그레이션·회수가 상태 검증에 막힌다. 검증 직전에 한 번 당겨 반영해 없앤다.
+     *
+     * <p>반영은 폴러가 쓰는 메서드를 그대로 재사용해 두 경로의 동작이 갈리지 않게 한다. 자원을 남긴
+     * 실패(DEGRADED)와 결과 불명은 폴러와 같이 신청을 건드리지 않는다. 조회가 실패하면 삼킨다 —
+     * 원래 검증이 그대로 판단하면 된다.
+     */
+    public void settleFinishedMigration(Long requestId) {
+        try {
+            Request req = requestRepository.findById(requestId).orElse(null);
+            if (req == null || req.getStatus() != Status.MIGRATING) {
+                return;
+            }
+            JobResultResponseDTO result = operationJobService.getResult(OperationJobService.KIND_MIGRATE, requestId);
+            switch (result.phase()) {
+                case OperationJobService.PHASE_SUCCESS -> completeMigrationJob(requestId, result.result());
+                case OperationJobService.PHASE_FAIL -> {
+                    if (!OperationJobService.isDegraded(result)) {
+                        failMigrationJob(requestId, result);
+                    }
+                }
+                default -> { }
+            }
+        } catch (Exception e) {
+            log.debug("마이그레이션 결과를 앞당겨 반영하지 못함 - requestId={}", requestId, e);
+        }
+    }
+
     public void startMigration(Long requestId, MigratePodRequestDTO dto) {
+        settleFinishedMigration(requestId);
         final String[] usernameRef = {null};
         final String[] podNameRef = {null};
         new TransactionTemplate(transactionManager).execute(status -> {
