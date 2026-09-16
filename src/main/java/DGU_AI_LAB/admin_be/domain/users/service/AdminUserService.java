@@ -4,6 +4,7 @@ import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.requests.service.PodMigrationService;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodService;
 import DGU_AI_LAB.admin_be.domain.requests.service.UbuntuAccountService;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserUpdateRequestDTO;
@@ -41,6 +42,7 @@ public class AdminUserService {
     private final RequestRepository requestRepository;
     private final UbuntuAccountService ubuntuAccountService;
     private final PodService podService;
+    private final PodMigrationService podMigrationService;
     private final AlarmService alarmService;
     private final MessageUtils messageUtils;
     private final TokenService tokenService;
@@ -77,6 +79,16 @@ public class AdminUserService {
         // 호출자(deleteUser/deactivateUser)는 아래 HTTP 호출 동안 커넥션을 붙잡지 않으려고
         // 트랜잭션을 열지 않는다. 따라서 대상 목록 조회도 여기서 짧은 트랜잭션으로 직접 연다.
         List<Request> userRequests = newTx.execute(status -> requestRepository.findAllByUser(user));
+
+        // 마이그레이션이 방금 끝났는데 아직 상태가 되돌아오지 않았을 수 있다(결과 반영은 주기 작업이
+        // 한다). 그 틈 때문에 정리가 통째로 거부되지 않도록, 검사 전에 끝난 결과를 먼저 반영하고
+        // 목록을 다시 읽는다.
+        if (userRequests != null && userRequests.stream().anyMatch(r -> r.getStatus() == Status.MIGRATING)) {
+            userRequests.stream()
+                    .filter(r -> r.getStatus() == Status.MIGRATING)
+                    .forEach(r -> podMigrationService.settleFinishedMigration(r.getRequestId()));
+            userRequests = newTx.execute(status -> requestRepository.findAllByUser(user));
+        }
 
         // MIGRATING뿐 아니라 PROCESSING(승인 처리 중)도 막는다 — 승인 트랜잭션이 진행 중인
         // 사이에 요청이 delete()로 넘어가면, 그 승인이 나중에 완료될 때 이미 소유자가 정리된

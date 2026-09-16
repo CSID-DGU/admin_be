@@ -4,6 +4,7 @@ import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.requests.service.PodMigrationService;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodService;
 import DGU_AI_LAB.admin_be.domain.requests.service.UbuntuAccountService;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
@@ -63,6 +64,9 @@ class AdminUserServiceTest {
 
     @Mock
     private PodService podService;
+
+    @Mock
+    private PodMigrationService podMigrationService;
 
     @Mock
     private AlarmService alarmService;

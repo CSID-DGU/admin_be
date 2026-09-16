@@ -39,3 +39,6 @@ application.yml
 
 ### Local notes ###
 status.md
+
+### OMC (oh-my-claudecode) runtime state ###
+.omc/
