@@ -74,4 +74,12 @@ public interface AdminRequestApi {
     @Operation(summary = "마지막 마이그레이션 결과", description = "신청의 마지막 마이그레이션 작업 phase와 결과(migrated/skipped, 노드, 기존 Pod 정리 여부)를 조회합니다.")
     @ApiResponse(responseCode = "200", description = "성공 — 작업이 없으면 phase가 none")
     ResponseEntity<SuccessResponse<?>> getLatestMigration(Long requestId);
+
+    @Operation(summary = "컨테이너 회수", description = "신청 하나의 컨테이너만 회수합니다. 우분투 계정과 홈 디렉터리는 남고, "
+            + "같은 사용자의 다른 컨테이너는 영향받지 않습니다. 계정까지 회수하려면 사용자 관리의 계정 회수를 사용하세요.")
+    @ApiResponse(responseCode = "200", description = "회수 완료")
+    @ApiResponse(responseCode = "404", description = "신청을 찾을 수 없음", content = @Content)
+    @ApiResponse(responseCode = "409", description = "FULFILLED 상태가 아님", content = @Content)
+    @ApiResponse(responseCode = "502", description = "config-server 회수 실패", content = @Content)
+    ResponseEntity<SuccessResponse<?>> deleteContainer(Long requestId);
 }

@@ -18,6 +18,7 @@ import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestQueryService;
 import DGU_AI_LAB.admin_be.domain.requests.service.OperationJobService;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodMigrationService;
+import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +36,7 @@ public class AdminRequestController implements AdminRequestApi {
     private final AdminRequestQueryService adminRequestQueryService;
     private final PodMigrationService podMigrationService;
     private final OperationJobService operationJobService;
+    private final RequestExpiryService requestExpiryService;
 
 
     /**
@@ -93,5 +95,16 @@ public class AdminRequestController implements AdminRequestApi {
     @GetMapping("/{requestId}/migrations/latest")
     public ResponseEntity<SuccessResponse<?>> getLatestMigration(@PathVariable Long requestId) {
         return SuccessResponse.ok(podMigrationService.getLatestMigration(requestId));
+    }
+
+    /**
+     * 컨테이너 하나만 회수한다. 우분투 계정과 홈 디렉터리는 남고, 같은 사용자의 다른 컨테이너는
+     * 건드리지 않는다. 계정까지 회수하려면 사용자 관리의 계정 회수(DELETE /api/admin/users/{id}/ubuntu-account)를
+     * 쓴다 — 그쪽은 그 사용자의 컨테이너를 전부 정리한다.
+     */
+    @DeleteMapping("/{requestId}/container")
+    public ResponseEntity<SuccessResponse<?>> deleteContainer(@PathVariable Long requestId) {
+        requestExpiryService.deleteContainerByAdmin(requestId);
+        return SuccessResponse.ok(null);
     }
 }
