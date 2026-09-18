@@ -9,6 +9,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.Duration;
@@ -57,8 +58,31 @@ public class SlackApiService {
                 log.warn("Slack Webhook 전송 응답 이상: {}", response.getStatusCode());
                 throw new BusinessException(ErrorCode.SLACK_SEND_FAILED);
             }
+        } catch (HttpClientErrorException e) {
+            // 웹훅이 지워졌거나(404/410) 채널·앱 권한이 없어진(401/403) 경우다. 네트워크가 살아있고
+            // Slack이 명확히 응답했다는 뜻이라 재시도해도 똑같이 실패한다 — SLACK_SEND_FAILED와 달리
+            // 구분해서 던져야 Worker가 조용히 버리지 않고 격상할 수 있다.
+            HttpStatusCode status = e.getStatusCode();
+            log.error("Slack Webhook 전송 실패(설정 문제로 추정): status={}", status);
+            if (status.value() == 404 || status.value() == 410 || status.value() == 401 || status.value() == 403) {
+                throw new BusinessException(ErrorCode.SLACK_CONFIG_DEAD);
+            }
+            throw new BusinessException(ErrorCode.SLACK_SEND_FAILED);
         } catch (Exception e) {
-            log.error("Slack Webhook 전송 실패: {}", e.toString(), e);
+            // 주의: webhookUrl 자체가 인증 정보다. ResourceAccessException 등은 메시지에 요청 URL을
+            // 그대로 담아서 만들어지므로(RestTemplate가 "I/O error on POST request for \"<url>\": ..."
+            // 형태로 직접 구성한다) e.getMessage()/e.toString()이나 e 객체를 로그 인자로 그대로
+            // 넘기면 안 된다 — logger가 예외 인자를 렌더링할 때도 그 메시지가 그대로 찍힌다.
+            // 원인 예외(cause, 예: ConnectException/SocketTimeoutException)의 메시지에는
+            // URL이 없으므로 그것만 안전하게 남긴다.
+            Throwable cause = e.getCause();
+            if (cause != null) {
+                // cause를 {} 자리에 그대로 넘기면 SLF4J가 Throwable 인자를 스택 트레이스용으로
+                // 다뤄 마지막 자리 치환이 비어버린다 — 문자열로 미리 바꿔 넘긴다.
+                log.error("Slack Webhook 전송 실패: {}: {}", e.getClass().getSimpleName(), cause.toString());
+            } else {
+                log.error("Slack Webhook 전송 실패: {}", e.getClass().getName());
+            }
             throw new BusinessException(ErrorCode.SLACK_SEND_FAILED);
         }
     }

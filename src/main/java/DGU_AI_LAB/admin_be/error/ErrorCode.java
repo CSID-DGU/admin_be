@@ -73,6 +73,10 @@ public enum ErrorCode {
      * 503 Service Unavailable
      */
     SLACK_SEND_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "Slack 메시지 전송에 실패하였습니다."),
+    // 일시적 네트워크 장애가 아니라 웹훅이 삭제됐거나(404/410) 봇 토큰이 폐기된(401/403) 경우.
+    // 재시도해도 똑같이 실패하므로 SlackNotificationWorker가 이 값만 보고 즉시 폐기하지 않고
+    // 별도로 격상해 로그를 남긴다.
+    SLACK_CONFIG_DEAD(HttpStatus.SERVICE_UNAVAILABLE, "Slack 설정이 더 이상 유효하지 않습니다(웹훅 삭제 또는 봇 토큰 폐기)."),
 
     /**
      * User Error
