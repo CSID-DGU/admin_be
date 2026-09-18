@@ -607,11 +607,21 @@ class AlarmServiceTest {
     private Request mockRequest(String userName, String serverName) {
         User user = mock(User.class);
         when(user.getName()).thenReturn(userName);
+        // sendNewRequestNotification이 승인 판단용 정보를 전부 채워 넣으므로, 실제 엔티티라면
+        // nullable=false인 이 필드들도 여기서 채워야 한다(안 채우면 null 역참조로 시험이 깨진다).
+        when(user.getStudentId()).thenReturn("20260000");
+        when(user.getDepartment()).thenReturn("컴퓨터공학과");
+        when(user.getEmail()).thenReturn(userName.toLowerCase() + "@dgu.ac.kr");
+        when(user.getPhone()).thenReturn("010-0000-0000");
         ResourceGroup rg = mock(ResourceGroup.class);
         when(rg.getServerName()).thenReturn(serverName);
+        when(rg.getResourceGroupName()).thenReturn("3090ti");
         Request request = mock(Request.class);
         when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(rg);
+        when(request.getUbuntuUsername()).thenReturn("testuser");
+        when(request.getUsagePurpose()).thenReturn("테스트 목적");
+        when(request.getExpiresAt()).thenReturn(java.time.LocalDateTime.of(2026, 12, 31, 23, 59));
         return request;
     }
 
