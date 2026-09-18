@@ -139,10 +139,19 @@ public class AlarmService {
         else return errorLogWebhookUrl;
     }
 
+    /**
+     * 신청이 들어오면 FARM/LAB 관리 교수님 채널에 승인 판단에 필요한 정보를 전부 담아 보낸다.
+     * 이 채널에서 교수님이 직접 보고 승인 여부를 판단하므로(관리자 페이지를 거치지 않을 수 있다),
+     * 신청자 신원·연락처·사용 목적·희망 기간까지 한 메시지 안에 다 있어야 한다.
+     */
     public void sendNewRequestNotification(Request request) {
-        String serverName = request.getResourceGroup().getServerName();
+        User user = request.getUser();
+        var resourceGroup = request.getResourceGroup();
+        String serverName = resourceGroup.getServerName();
         String message = messageUtils.get("notification.admin.new-request",
-                request.getUser().getName(), serverName);
+                user.getName(), user.getStudentId(), user.getDepartment(), user.getEmail(), user.getPhone(),
+                request.getUbuntuUsername(), resourceGroup.getResourceGroupName(), serverName,
+                request.getUsagePurpose(), request.getExpiresAt().toLocalDate());
 
         sendSlackAlert(message, getAdminWebhookUrl(serverName));
     }
