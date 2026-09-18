@@ -180,6 +180,25 @@ class SlackNotificationWorkerTest {
         }
 
         @Test
+        @DisplayName("SLACK_CONFIG_DEAD 발생 시에도 재시도 없이 즉시 폐기한다 (웹훅 삭제·토큰 폐기)")
+        void processSlackQueue_dropsImmediately_onSlackConfigDead_withoutRequeue() throws Exception {
+            SlackMessageDto dto = SlackMessageDto.builder()
+                    .type(SlackMessageDto.MessageType.WEBHOOK)
+                    .webhookUrl("https://hooks.slack.com/deleted")
+                    .message("알림")
+                    .build();
+
+            when(listOperations.leftPop(QUEUE_KEY)).thenReturn(dto);
+            when(objectMapper.convertValue(dto, SlackMessageDto.class)).thenReturn(dto);
+            doThrow(new BusinessException(ErrorCode.SLACK_CONFIG_DEAD))
+                    .when(slackApiService).sendWebhook(anyString(), anyString());
+
+            worker.processSlackQueue();
+
+            verify(listOperations, never()).rightPush(anyString(), any());
+        }
+
+        @Test
         @DisplayName("역직렬화 실패 시 메시지를 폐기하고 예외를 전파하지 않는다")
         void processSlackQueue_dropsMessage_onDeserializationFailure() {
             Object invalidPayload = "invalid-json";

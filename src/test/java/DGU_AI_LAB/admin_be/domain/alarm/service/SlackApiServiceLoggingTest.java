@@ -14,6 +14,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
+import java.net.ConnectException;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,8 +52,14 @@ class SlackApiServiceLoggingTest {
     @Test
     @DisplayName("Webhook 전송 실패 시 URL을 로그로 남기지 않고 예외 타입만 남긴다")
     void doesNotLogWebhookUrlOnFailure() {
+        // RestTemplate이 실제로 만드는 형태 그대로 재현한다: ResourceAccessException의 메시지 자체에
+        // 요청 URL이 박혀 있다("I/O error on POST request for \"<url>\": ..."). 원인 없이 메시지만
+        // 있는 가짜 예외로 테스트하면 이 위험을 재현하지 못해 회귀를 놓친다.
+        ConnectException connectRefused = new ConnectException("Connection refused");
+        ResourceAccessException realistic = new ResourceAccessException(
+                "I/O error on POST request for \"" + WEBHOOK_URL + "\": Connection refused", connectRefused);
         when(restTemplate.postForEntity(eq(WEBHOOK_URL), any(), eq(String.class)))
-                .thenThrow(new ResourceAccessException("connect timed out"));
+                .thenThrow(realistic);
 
         try (LogCaptor logCaptor = LogCaptor.forClass(SlackApiService.class)) {
             assertThatThrownBy(() -> slackApiService.sendWebhook(WEBHOOK_URL, "메시지"))
@@ -63,7 +70,7 @@ class SlackApiServiceLoggingTest {
                     .doesNotContain(WEBHOOK_URL)
                     .doesNotContain("hooks.slack.com")
                     .doesNotContain("super-secret-token");
-            assertThat(logs).contains("ResourceAccessException");
+            assertThat(logs).contains("ResourceAccessException").contains("Connection refused");
         }
     }
 

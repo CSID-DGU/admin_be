@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.dto.SlackMessageDto;
 import DGU_AI_LAB.admin_be.domain.alarm.service.SlackApiService;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -51,7 +52,14 @@ public class SlackNotificationWorker {
             }
 
         } catch (BusinessException e) {
-            // 비즈니스 예외(유저 없음 등)는 재시도해도 동일하게 실패하므로 바로 폐기
+            if (e.getErrorCode() == ErrorCode.SLACK_CONFIG_DEAD) {
+                // 웹훅이 삭제됐거나 봇 토큰이 폐기된 경우다. "유저 없음" 같은 일회성 비즈니스
+                // 실패와 달리 이 채널이 살아있는 한 계속 반복된다 — WARN 한 줄로 묻히지 않게
+                // ERROR로 격상해 로그 기반 모니터링이 잡을 수 있게 한다.
+                log.error("[SLACK_CONFIG_DEAD] Slack 설정이 죽어 알림이 전달되지 않음, 즉시 확인 필요: {}", dto.getMessage());
+                return;
+            }
+            // 그 외 비즈니스 예외(유저 없음 등)는 재시도해도 동일하게 실패하므로 바로 폐기
             log.warn("Slack 알림 처리 실패 (Business, 폐기): {}", e.getMessage());
 
         } catch (Exception e) {
