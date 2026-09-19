@@ -11,6 +11,7 @@ import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -37,9 +38,12 @@ public class RequestSchedulerService {
 
     // 이 시간 넘게 상태가 바뀌지 않은 요청을 재조정 대상으로 본다. PROCESSING은 여기에 더해 생성 작업의
     // 상태를 확인하고 되돌리므로(reconcileStaleProcessing), 재시도로 길어진 작업을 시간만 보고 되돌리지 않는다.
-    private static final long STALE_IN_FLIGHT_THRESHOLD_MINUTES = 20;
+    // 실험 스택에서만 짧은 값을 주입하고 운영은 기본값(20)을 그대로 쓴다. @RequiredArgsConstructor가 만드는
+    // 생성자에 @Value가 따라가지 않도록 non-final 필드로 둔다(lombok.config의 copyableAnnotations 참고).
+    @Value("${scheduler.stale-threshold-minutes:20}")
+    private long staleInFlightThresholdMinutes = 20;
 
-    @Scheduled(cron = "0 00 08 * * ?", zone = "Asia/Seoul")
+    @Scheduled(cron = "${scheduler.expiry-cron:0 00 08 * * ?}", zone = "Asia/Seoul")
     public void runScheduler() {
         log.info("🗓️ [스케줄러 시작] 만료 계정 관리 작업");
         LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
@@ -61,10 +65,10 @@ public class RequestSchedulerService {
      * 요청을 찾아, PROCESSING은 안전하게 PENDING으로 되돌리고(재승인/재거절 가능하게),
      * MIGRATING은 실제 Pod 생성/삭제가 걸려있어 자동 복구 대신 관리자 알림만 보낸다.
      */
-    @Scheduled(fixedRate = 5 * 60 * 1000)
+    @Scheduled(fixedRateString = "${scheduler.reconcile-rate-ms:300000}")
     public void reconcileStaleInFlightRequests() {
         LocalDateTime staleBefore = LocalDateTime.now(ZoneId.of("Asia/Seoul"))
-                .minusMinutes(STALE_IN_FLIGHT_THRESHOLD_MINUTES);
+                .minusMinutes(staleInFlightThresholdMinutes);
 
         for (Request request : requestRepository.findAllByStatusAndUpdatedAtBefore(Status.PROCESSING, staleBefore)) {
             reconcileStaleProcessing(request);
@@ -99,14 +103,14 @@ public class RequestSchedulerService {
             return;
         }
         log.warn("🔧 [재조정] {}분 넘게 PROCESSING 상태로 방치된 요청을 PENDING으로 복구 시도 (생성 작업 {}): requestId={}",
-                STALE_IN_FLIGHT_THRESHOLD_MINUTES, phase, requestId);
+                staleInFlightThresholdMinutes, phase, requestId);
         // 락 + 상태 재확인은 revertToPendingIfStillProcessing 내부에서 수행 — 그 사이 정상
         // 처리(승인/거절)됐으면 건드리지 않는다.
         adminRequestCommandService.revertToPendingIfStillProcessing(
                 request.getRequestId(), request.getResourceGroup().getServerName());
         try {
             String msg = messageUtils.get("notification.admin.request.stale-processing",
-                    request.getRequestId(), request.getUbuntuUsername(), STALE_IN_FLIGHT_THRESHOLD_MINUTES);
+                    request.getRequestId(), request.getUbuntuUsername(), staleInFlightThresholdMinutes);
             alarmService.sendSlackAlert(msg, null);
         } catch (Exception ignored) {}
     }
@@ -118,17 +122,17 @@ public class RequestSchedulerService {
      */
     private void reconcileStaleExpiring(Request request) {
         log.warn("🔧 [재조정] {}분 넘게 EXPIRING 상태로 방치된 요청을 FULFILLED로 복구해 다음 만료 스케줄에서 재시도: requestId={}",
-                STALE_IN_FLIGHT_THRESHOLD_MINUTES, request.getRequestId());
+                staleInFlightThresholdMinutes, request.getRequestId());
         requestExpiryService.revertStaleExpiring(request.getRequestId());
     }
 
     private void alertStaleMigrating(Request request) {
         log.error("🔧 [재조정] {}분 넘게 MIGRATING 상태로 방치된 요청 발견 — 실제 인프라 상태와 충돌할 수 있어 " +
                         "자동 복구하지 않고 알림만 발송: requestId={}",
-                STALE_IN_FLIGHT_THRESHOLD_MINUTES, request.getRequestId());
+                staleInFlightThresholdMinutes, request.getRequestId());
         try {
             String msg = messageUtils.get("notification.admin.request.stale-migrating",
-                    request.getRequestId(), request.getUbuntuUsername(), STALE_IN_FLIGHT_THRESHOLD_MINUTES);
+                    request.getRequestId(), request.getUbuntuUsername(), staleInFlightThresholdMinutes);
             alarmService.sendSlackAlert(msg, null);
         } catch (Exception ignored) {}
     }
