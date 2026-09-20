@@ -159,37 +159,25 @@ public class AdminRequestCommandService {
         }
         boolean reuseAccount = reuseAccountRef[0];
 
-        // 계정을 새로 만드는 경우의 그룹은 작업이 계정을 만들 때 함께 넣는다. 재사용 계정은 그 경로가
-        // 없으므로 여기서 더해 준다(집합-추가라 여러 번 불러도 안전하다).
-        if (reuseAccount) {
-            List<String> requestGroupNames = creationDtoRef[0].supplementaryGroups().stream()
-                    .map(UserCreationRequestDTO.SupplementaryGroup::name)
-                    .toList();
-            try {
-                groupService.addUserToGroups(username, requestGroupNames);
-            } catch (Exception e) {
-                log.warn("[보상 트랜잭션] 그룹 추가 실패 → 상태 복구 시작: {}", username, e);
-                notifyApprovalFailure(String.format(
-                        "[승인 실패] 그룹 추가 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, groups=%s, error=%s",
-                        username, requestId, requestGroupNames, e.getMessage()), serverName);
-                revertToPendingIfStillProcessing(requestId, serverName);
-                throw e;
-            }
-        }
+        // 계정을 새로 만드는 경우의 그룹은 작업이 계정을 만들 때 함께 넣는다. 
+        // 재사용 계정의 경우, config-server의 provision 제어기가 Pod 생성 후 그룹을 추가하므로
+        // 여기서는 그룹 정보를 구성만 하고 로컬 호출은 하지 않는다.
+        List<UserCreationRequestDTO.SupplementaryGroup> requestGroupsToAdd = 
+               creationDtoRef[0].supplementaryGroups();
 
         ProvisionRegisterRequestDTO body = reuseAccount
-                ? ProvisionRegisterRequestDTO.podOnly(requestId, username)
-                : ProvisionRegisterRequestDTO.withAccount(creationDtoRef[0]);
+               ? ProvisionRegisterRequestDTO.podOnly(requestId, username, requestGroupsToAdd)
+               : ProvisionRegisterRequestDTO.withAccount(creationDtoRef[0]);
         try {
-            operationJobService.registerProvision(body);
+           operationJobService.registerProvision(body);
         } catch (Exception e) {
-            // 등록 자체가 실패했으면 아직 아무것도 만들어지지 않았다 — 정리할 자원 없이 되돌린다.
-            log.warn("[보상 트랜잭션] 생성 작업 등록 실패 → 상태 복구 시작: {}", username, e);
-            notifyApprovalFailure(String.format(
-                    "[승인 실패] 생성 작업 등록 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
-                    username, requestId, e.getMessage()), serverName);
-            revertToPendingIfStillProcessing(requestId, serverName);
-            throw e;
+           // 등록 자체가 실패했으면 아직 아무것도 만들어지지 않았다 — 정리할 자원 없이 되돌린다.
+           log.warn("[보상 트랜잭션] 생성 작업 등록 실패 → 상태 복구 시작: {}", username, e);
+           notifyApprovalFailure(String.format(
+                   "[승인 실패] 생성 작업 등록 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
+                   username, requestId, e.getMessage()), serverName);
+           revertToPendingIfStillProcessing(requestId, serverName);
+           throw e;
         }
 
         return SaveRequestResponseDTO.fromEntity(savedRequestRef[0]);
