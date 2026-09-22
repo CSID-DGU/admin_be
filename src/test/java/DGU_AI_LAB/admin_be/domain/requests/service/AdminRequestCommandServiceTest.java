@@ -19,6 +19,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -531,7 +532,7 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
-        @DisplayName("GROUP 변경 요청 승인 시 originalRequest.addGroup()이 호출된다")
+        @DisplayName("GROUP 변경 요청 승인 시 originalRequest가 아니라 그 소유 계정(User)에 addGroupIfAbsent()가 호출된다")
         void approveModification_group_success() throws Exception {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             Request originalRequest = buildMockedRequestWithStatus(25L, Status.FULFILLED);
@@ -548,7 +549,9 @@ class AdminRequestCommandServiceTest {
             ApproveModificationDTO dto = new ApproveModificationDTO(9L, "그룹 변경 승인");
             service.approveModification(100L, dto);
 
-            verify(originalRequest).addGroup(newGroup);
+            // 계정 단위로 누적된다 — originalRequest.addGroup()은 더 이상 이 경로에서 안 쓰인다.
+            verify(originalRequest, never()).addGroup(any());
+            verify(mockUser).addGroupIfAbsent(newGroup);
             verify(changeRequest).approve(mockUser, "그룹 변경 승인");
             verify(alarmService).sendModificationApprovedEmail(changeRequest, "그룹 변경 승인");
         }
@@ -578,7 +581,7 @@ class AdminRequestCommandServiceTest {
                     .isEqualTo(ErrorCode.AD_GROUP_SYNC_FAILED);
 
             // 외부 호출이 실패한 시점엔 1단계 트랜잭션이 이미 커밋 없이 끝난 뒤라 DB엔 아무 변경도 없어야 한다.
-            verify(originalRequest, never()).addGroup(any());
+            verify(mockUser, never()).addGroupIfAbsent(any());
             verify(changeRequest, never()).approve(any(), any());
             verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
         }
@@ -609,7 +612,7 @@ class AdminRequestCommandServiceTest {
 
             // AD 반영은 이미 끝났다 — 되돌릴 방법이 없으니(candidate 2 API 부재) DB는 그대로 두고 알림만 보낸다.
             verify(groupService).addUserToGroups(eq("testuser"), any());
-            verify(originalRequest, never()).addGroup(any());
+            verify(mockUser, never()).addGroupIfAbsent(any());
             verify(changeRequest, never()).approve(any(), any());
             verify(alarmService).sendAdminSlackNotification(any(), contains("AD 그룹 반영은 완료됐으나"));
         }
@@ -868,6 +871,30 @@ class AdminRequestCommandServiceTest {
             verify(request).completeApproval();
             verify(podExternalPortRepository, times(2)).save(any(PodExternalPort.class));
             verify(alarmService).sendContainerCreatedEmail(request, "32001", "32002");
+        }
+
+        @Test
+        @DisplayName("작업이 성공하면 이 신청이 요청한 그룹이 계정(User)에 누적된다")
+        void completeApprovalJob_mergesRequestedGroupsIntoUser() {
+            // Given
+            Long requestId = 207L;
+            Request request = processingRequest(requestId);
+            Group groupA = mock(Group.class);
+            Group groupB = mock(Group.class);
+            RequestGroup rgA = mock(RequestGroup.class);
+            RequestGroup rgB = mock(RequestGroup.class);
+            when(rgA.getGroup()).thenReturn(groupA);
+            when(rgB.getGroup()).thenReturn(groupB);
+            when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>(List.of(rgA, rgB)));
+            when(podExternalPortRepository.save(any(PodExternalPort.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            // When
+            service.completeApprovalJob(requestId, new JobResultResponseDTO.Result(
+                    50001L, 50001L, "ailab-testuser-abcd", "farm2", List.of()));
+
+            // Then - request_groups(신청 시점 그룹)는 그대로 두고, 계정에도 누적한다(교체 아님).
+            verify(mockUser).addGroupIfAbsent(groupA);
+            verify(mockUser).addGroupIfAbsent(groupB);
         }
 
         @Test

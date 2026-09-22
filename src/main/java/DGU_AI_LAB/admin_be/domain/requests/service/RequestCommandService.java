@@ -96,9 +96,9 @@ public class RequestCommandService {
 
         // 그룹 변경
         if (dto.requestedGroupIds() != null && !dto.requestedGroupIds().isEmpty()) {
-            // 변경 전 그룹 목록 조회
-            Set<Long> oldGroupIds = originalRequest.getRequestGroups().stream()
-                    .map(requestGroup -> requestGroup.getGroup().getUbuntuGid())
+            // 변경 전 그룹 목록 조회 — 계정(User) 단위 현재 그룹 기준(이 컨테이너만의 그룹이 아니다).
+            Set<Long> oldGroupIds = originalRequest.getUser().getUserGroups().stream()
+                    .map(userGroup -> userGroup.getGroup().getUbuntuGid())
                     .collect(Collectors.toSet());
 
             // 변경 후 그룹 존재 여부 확인

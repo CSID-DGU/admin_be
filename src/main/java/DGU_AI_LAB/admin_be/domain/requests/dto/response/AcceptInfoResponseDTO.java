@@ -59,10 +59,13 @@ public record AcceptInfoResponseDTO(
     public static AcceptInfoResponseDTO fromEntity(Request request, List<PortRequests> portRequests, List<Node> nodes) {
         var image = request.getContainerImage();
 
-        List<GroupDTO> groupDTOList = request.getRequestGroups().stream()
-                .map(rg -> GroupDTO.builder()
-                        .gid(rg.getGroup().getUbuntuGid())
-                        .name(rg.getGroup().getGroupName())
+        // 계정(User) 단위 그룹 전체를 보낸다 — 이 신청 하나만의 그룹이 아니라, 같은 계정의
+        // 다른 컨테이너에서 이후 추가된 그룹까지 포함해야 마이그레이션/재프로비저닝 시에도
+        // 새 Pod가 계정이 가진 전체 그룹을 받는다.
+        List<GroupDTO> groupDTOList = request.getUser().getUserGroups().stream()
+                .map(ug -> GroupDTO.builder()
+                        .gid(ug.getGroup().getUbuntuGid())
+                        .name(ug.getGroup().getGroupName())
                         .build())
                 .toList();
 

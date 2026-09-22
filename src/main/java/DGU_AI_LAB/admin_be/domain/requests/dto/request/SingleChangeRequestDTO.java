@@ -80,8 +80,10 @@ public record SingleChangeRequestDTO(
             return switch (changeType) {
                 case EXPIRES_AT -> objectMapper.writeValueAsString(originalRequest.getExpiresAt());
                 case GROUP -> {
-                    Set<Long> oldGroupIds = originalRequest.getRequestGroups().stream()
-                            .map(requestGroup -> requestGroup.getGroup().getUbuntuGid())
+                    // 계정(User) 단위 현재 그룹이 old value다 — 이 컨테이너만의 그룹이 아니라
+                    // 같은 계정이 실제로 AD에 갖고 있는 그룹 전체를 기준으로 비교해야 한다.
+                    Set<Long> oldGroupIds = originalRequest.getUser().getUserGroups().stream()
+                            .map(userGroup -> userGroup.getGroup().getUbuntuGid())
                             .collect(Collectors.toSet());
                     yield objectMapper.writeValueAsString(oldGroupIds);
                 }
