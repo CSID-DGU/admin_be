@@ -20,8 +20,8 @@ public class RequestGroup {
     @JoinColumn(name = "request_id", nullable = false)
     private Request request;
 
-    @ManyToOne(fetch = FetchType.LAZY) @MapsId("ubuntuGid")
-    @JoinColumn(name = "ubuntu_gid", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY) @MapsId("groupId")
+    @JoinColumn(name = "group_id", nullable = false)
     private Group group;
 
     @Column(name = "created_at", nullable = false)
@@ -29,7 +29,6 @@ public class RequestGroup {
 
     @Builder
     public RequestGroup(Request request, Group group) {
-        this.id = new RequestGroupId();
         this.request = request;
         this.group = group;
         this.id = new RequestGroupId(); // Hibernate 6.x @MapsId: flush 전 id 객체가 non-null이어야 함
@@ -42,7 +41,7 @@ public class RequestGroup {
         }
 
         if (this.id == null) {
-            this.id = new RequestGroupId(this.request.getRequestId(), this.group.getUbuntuGid());
+            this.id = new RequestGroupId(this.request.getRequestId(), this.group.getGroupId());
         }
     }
 }

@@ -26,7 +26,7 @@ class RequestGroupTest {
     }
 
     @Test
-    @DisplayName("builder: id의 requestId, ubuntuGid는 null이다 (@MapsId가 flush 시 채운다)")
+    @DisplayName("builder: id의 requestId, groupId는 null이다 (@MapsId가 flush 시 채운다)")
     void builder_idFieldsAreNullBeforeFlush() {
         RequestGroup rg = RequestGroup.builder()
                 .request(mock(Request.class))
@@ -34,7 +34,7 @@ class RequestGroupTest {
                 .build();
 
         assertThat(rg.getId().getRequestId()).isNull();
-        assertThat(rg.getId().getUbuntuGid()).isNull();
+        assertThat(rg.getId().getGroupId()).isNull();
     }
 
     @Test
@@ -43,7 +43,7 @@ class RequestGroupTest {
         Request request = mock(Request.class);
         Group group = mock(Group.class);
         when(request.getRequestId()).thenReturn(1L);
-        when(group.getUbuntuGid()).thenReturn(2000L);
+        when(group.getGroupId()).thenReturn(1L);
 
         RequestGroup rg = RequestGroup.builder()
                 .request(request)
@@ -63,7 +63,7 @@ class RequestGroupTest {
         Request request = mock(Request.class);
         Group group = mock(Group.class);
         when(request.getRequestId()).thenReturn(1L);
-        when(group.getUbuntuGid()).thenReturn(2000L);
+        when(group.getGroupId()).thenReturn(1L);
 
         RequestGroup rg = RequestGroup.builder()
                 .request(request)
@@ -84,7 +84,7 @@ class RequestGroupTest {
         Request request = mock(Request.class);
         Group group = mock(Group.class);
         when(request.getRequestId()).thenReturn(1L);
-        when(group.getUbuntuGid()).thenReturn(2000L);
+        when(group.getGroupId()).thenReturn(1L);
 
         RequestGroup rg = RequestGroup.builder()
                 .request(request)
