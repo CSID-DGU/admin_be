@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Builder
 @Schema(description = "사용자 대시보드 서버 목록 응답 DTO")
@@ -27,8 +28,19 @@ public record UserServerResponseDTO(
         @Schema(description = "컨테이너 이미지 정보")
         ContainerImageResponseDTO containerImage,
         @Schema(description = "서버 신청 상태", example = "FULFILLED", allowableValues = {"PENDING", "FULFILLED", "DENIED", "MODIFICATION_REQUESTED", "MODIFICATION_APPROVED", "MODIFICATION_REJECTED"})
-        Status status
+        Status status,
+        @Schema(description = "현재 소속된 보조 그룹 목록")
+        List<GroupSummaryDTO> groups
 ) {
+    @Schema(description = "보조 그룹 요약 정보")
+    @Builder
+    public record GroupSummaryDTO(
+            @Schema(description = "Ubuntu GID", example = "10004")
+            Long ubuntuGid,
+            @Schema(description = "그룹명", example = "ailab")
+            String groupName
+    ) {}
+
     public static UserServerResponseDTO fromEntity(Request request, String serverAddress, Integer cpuCoreCount, Integer memoryGB, String resourceGroupName, ContainerImageResponseDTO containerImage) {
         return UserServerResponseDTO.builder()
                 .requestId(request.getRequestId())
@@ -39,6 +51,14 @@ public record UserServerResponseDTO(
                 .resourceGroupName(resourceGroupName)
                 .containerImage(containerImage)
                 .status(request.getStatus())
+                .groups(
+                        request.getRequestGroups().stream()
+                                .map(rg -> GroupSummaryDTO.builder()
+                                        .ubuntuGid(rg.getGroup().getUbuntuGid())
+                                        .groupName(rg.getGroup().getGroupName())
+                                        .build())
+                                .toList()
+                )
                 .build();
     }
 }
