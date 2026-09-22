@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.groups.entity;
 
 import DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup;
+import DGU_AI_LAB.admin_be.domain.users.entity.UserGroup;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -28,6 +29,9 @@ public class Group {
 
     @OneToMany(mappedBy = "group", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<RequestGroup> requestGroups = new HashSet<>();
+
+    @OneToMany(mappedBy = "group", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<UserGroup> userGroups = new HashSet<>();
 
     @Builder
     public Group(String groupName, Long ubuntuGid) {

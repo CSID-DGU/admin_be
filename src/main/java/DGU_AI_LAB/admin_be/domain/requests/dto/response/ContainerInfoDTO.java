@@ -42,8 +42,8 @@ public record ContainerInfoDTO(
                 .podName(request.getPodName())
                 .nodeName(request.getNodeName())
                 .ubuntuGids(
-                        request.getRequestGroups().stream()
-                                .map(rg -> rg.getGroup().getUbuntuGid())
+                        request.getUser().getUserGroups().stream()
+                                .map(ug -> ug.getGroup().getUbuntuGid())
                                 .toList()
                 )
                 .resourceGroupId(request.getResourceGroup() != null

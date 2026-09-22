@@ -7,9 +7,14 @@ import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
+
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Entity
 @Table(name = "users", uniqueConstraints = {
@@ -78,6 +83,14 @@ public class User extends BaseTimeEntity {
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.REMOVE, orphanRemoval = true)
     private List<Request> requests = new ArrayList<>();
+
+    /**
+     * 이 계정이 실제로 가진 그룹. Request 단위가 아니라 계정 단위다 — 같은 웹 계정의
+     * 모든 컨테이너가 같은 우분투 계정을 쓰므로(ubuntuUsername), 그룹도 계정 하나에 대해
+     * 한 벌만 존재한다. AD에 실제로 반영된 뒤에만(승인 성공 확인 후) 채워진다.
+     */
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<UserGroup> userGroups = new HashSet<>();
 
     @Builder
     public User(String email, String password, String name, String studentId, String phone, String department, String ubuntuUsername) {
@@ -168,6 +181,27 @@ public class User extends BaseTimeEntity {
     public void releaseUbuntuAccount() {
         this.ubuntuUid = null;
         this.ubuntuGid = null;
+    }
+
+    /**
+     * 이 계정에 그룹을 추가한다. config-server의 add_user_groups가 추가 전용(멤버 제거
+     * API 없음)이라 DB도 같은 의미로만 맞춘다 — 이미 속한 그룹이면 조용히 무시한다(멱등).
+     * AD에 실제로 반영된 뒤에만(completeApprovalJob/approveModification의 그룹 반영
+     * 3단계) 호출해야 DB가 AD보다 앞서가는 거짓 상태가 생기지 않는다.
+     */
+    public void addGroupIfAbsent(Group group) {
+        boolean already = this.userGroups.stream()
+                .anyMatch(ug -> ug.getGroup().getGroupId().equals(group.getGroupId()));
+        if (already) {
+            return;
+        }
+        this.userGroups.add(UserGroup.builder().user(this).group(group).build());
+    }
+
+    public Set<Long> getUbuntuGidsOfGroups() {
+        return this.userGroups.stream()
+                .map(ug -> ug.getGroup().getUbuntuGid())
+                .collect(Collectors.toSet());
     }
 
     /**

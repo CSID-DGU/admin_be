@@ -63,21 +63,27 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
      * 관리자 전체 신청 목록용. 응답 변환이 신청마다 사용자·서버·이미지·그룹을 읽으므로 한 번에 함께 읽는다
      * (따로 읽으면 신청 수만큼 추가 조회가 나간다).
      */
+    // r.requestGroups(신청 시점 그룹)와 u.userGroups(계정 실제 그룹) 둘 다 응답 DTO가 읽으므로
+    // 함께 fetch한다 — 안 하면 신청 수만큼 u.userGroups 지연 로딩이 추가로 나간다.
     @Query("SELECT DISTINCT r FROM Request r " +
-           "JOIN FETCH r.user " +
+           "JOIN FETCH r.user u " +
            "LEFT JOIN FETCH r.resourceGroup " +
            "LEFT JOIN FETCH r.containerImage " +
            "LEFT JOIN FETCH r.requestGroups rg " +
            "LEFT JOIN FETCH rg.group " +
+           "LEFT JOIN FETCH u.userGroups ug " +
+           "LEFT JOIN FETCH ug.group " +
            "ORDER BY r.requestId DESC")
     List<Request> findAllWithAssociations();
 
     @Query("SELECT DISTINCT r FROM Request r " +
-           "JOIN FETCH r.user " +
+           "JOIN FETCH r.user u " +
            "LEFT JOIN FETCH r.resourceGroup " +
            "LEFT JOIN FETCH r.containerImage " +
            "LEFT JOIN FETCH r.requestGroups rg " +
            "LEFT JOIN FETCH rg.group " +
+           "LEFT JOIN FETCH u.userGroups ug " +
+           "LEFT JOIN FETCH ug.group " +
            "WHERE r.status IN :statuses")
     List<Request> findAllByStatusInWithAssociations(@Param("statuses") List<Status> statuses);
 
