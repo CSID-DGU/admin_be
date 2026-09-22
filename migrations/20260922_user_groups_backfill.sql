@@ -12,10 +12,14 @@ CREATE TABLE IF NOT EXISTS user_groups (
 );
 
 -- 기존 request_groups에 흩어진 그룹을 계정 단위로 합집합해 백필한다.
+-- request_groups에는 group_id 컬럼이 없다 — PK는 (request_id, ubuntu_gid)뿐이고, 그 ubuntu_gid
+-- 컬럼은 이름과 달리 실제 GID가 아니라 groups.group_id를 저장한다(RequestGroup의 @MapsId 매핑,
+-- admin_be#556). user_groups.group_id가 원하는 값(groups.group_id)과 그대로 일치하므로 컬럼명만
+-- 다를 뿐 변환은 필요 없다.
 -- DELETED 신청은 실제로 정리된 컨테이너라 반영 여부를 신뢰할 수 없어 제외한다.
 INSERT IGNORE INTO user_groups (user_id, group_id, created_at)
-SELECT r.user_id, rg.group_id, MIN(rg.created_at)
+SELECT r.user_id, rg.ubuntu_gid, MIN(rg.created_at)
 FROM requests r
 JOIN request_groups rg ON rg.request_id = r.request_id
 WHERE r.status <> 'DELETED'
-GROUP BY r.user_id, rg.group_id;
+GROUP BY r.user_id, rg.ubuntu_gid;
