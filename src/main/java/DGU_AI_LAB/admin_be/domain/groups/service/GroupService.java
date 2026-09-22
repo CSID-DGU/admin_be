@@ -110,10 +110,16 @@ public class GroupService {
                                     if (body.contains("invalid members")) {
                                         return new BusinessException(ErrorCode.INVALID_GROUP_MEMBER);
                                     }
+                                    if (body.contains("collides with an existing user")) {
+                                        return new BusinessException(ErrorCode.GROUP_NAME_CONFLICTS_USER);
+                                    }
                                     return new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
                                 } else if (status == HttpStatus.CONFLICT) {
                                     if (body.contains("group already exists")) {
                                         return new BusinessException(ErrorCode.DUPLICATE_GROUP_NAME);
+                                    }
+                                    if (body.contains("reserved by the container image")) {
+                                        return new BusinessException(ErrorCode.RESERVED_GROUP_NAME);
                                     }
                                     return new BusinessException(ErrorCode.DUPLICATE_GROUP_ID);
                                 }
