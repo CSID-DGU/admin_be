@@ -554,6 +554,67 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
+        @DisplayName("GROUP 변경 승인 중 addUserToGroups가 실패하면 DB에 반영되지 않고 예외가 그대로 전파된다(admin_be#554)")
+        void approveModification_group_externalCallFails_doesNotMutateDb() throws Exception {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            Request originalRequest = buildMockedRequestWithStatus(27L, Status.FULFILLED);
+            Group newGroup = mock(Group.class);
+            when(newGroup.getUbuntuGid()).thenReturn(43L);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.GROUP);
+            when(changeRequest.getNewValue()).thenReturn("[43]");
+            when(changeRequest.getRequest()).thenReturn(originalRequest);
+            when(changeRequestRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+            when(groupRepository.findByUbuntuGid(43L)).thenReturn(Optional.of(newGroup));
+            doThrow(new BusinessException(ErrorCode.AD_GROUP_SYNC_FAILED))
+                    .when(groupService).addUserToGroups(anyString(), any());
+
+            ApproveModificationDTO dto = new ApproveModificationDTO(10L, "그룹 변경 승인");
+
+            assertThatThrownBy(() -> service.approveModification(100L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.AD_GROUP_SYNC_FAILED);
+
+            // 외부 호출이 실패한 시점엔 1단계 트랜잭션이 이미 커밋 없이 끝난 뒤라 DB엔 아무 변경도 없어야 한다.
+            verify(originalRequest, never()).addGroup(any());
+            verify(changeRequest, never()).approve(any(), any());
+            verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
+        }
+
+        @Test
+        @DisplayName("GROUP 변경 승인 중 AD 반영 후 상태가 바뀌면 DB엔 반영하지 않고 관리자에게 알린 뒤 예외를 던진다(admin_be#554)")
+        void approveModification_group_statusChangedAfterExternalCall_alertsAndThrows() throws Exception {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            Request originalRequest = buildMockedRequestWithStatus(28L, Status.FULFILLED);
+            Group newGroup = mock(Group.class);
+            when(newGroup.getUbuntuGid()).thenReturn(44L);
+            // 1단계(사전 검증)에서는 PENDING, 3단계(외부 호출 완료 후 재검증)에서는 그 사이 다른 관리자가
+            // 거절해 DENIED로 바뀐 상황을 시뮬레이션한다.
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING, Status.DENIED);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.GROUP);
+            when(changeRequest.getNewValue()).thenReturn("[44]");
+            when(changeRequest.getRequest()).thenReturn(originalRequest);
+            when(changeRequestRepository.findByIdForUpdate(11L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+            when(groupRepository.findByUbuntuGid(44L)).thenReturn(Optional.of(newGroup));
+
+            ApproveModificationDTO dto = new ApproveModificationDTO(11L, "그룹 변경 승인");
+
+            assertThatThrownBy(() -> service.approveModification(100L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+
+            // AD 반영은 이미 끝났다 — 되돌릴 방법이 없으니(candidate 2 API 부재) DB는 그대로 두고 알림만 보낸다.
+            verify(groupService).addUserToGroups(eq("testuser"), any());
+            verify(originalRequest, never()).addGroup(any());
+            verify(changeRequest, never()).approve(any(), any());
+            verify(alarmService).sendAdminSlackNotification(any(), contains("AD 그룹 반영은 완료됐으나"));
+        }
+
+        @Test
         @DisplayName("PORT 변경 요청 승인 시 요청된 각 포트에 대해 portRequestService.createPortRequest()가 호출된다")
         void approveModification_port_success() throws Exception {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
