@@ -818,7 +818,7 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
-        @DisplayName("계정이 있는 사용자는 계정 정보를 빼고 등록하고, 이번 신청의 그룹만 따로 추가한다")
+        @DisplayName("계정이 있는 사용자는 계정 정보를 빼고 등록하고, 이번 신청의 그룹은 작업 등록 DTO에 실어 보낸다")
         void registersPodOnlyWhenAccountExists() {
             // Given
             Long requestId = 202L;
@@ -833,8 +833,10 @@ class AdminRequestCommandServiceTest {
                     ArgumentCaptor.forClass(ProvisionRegisterRequestDTO.class);
             verify(operationJobService).registerProvision(captor.capture());
             assertThat(captor.getValue().account()).isNull();
-            // 계정을 새로 만들 때는 작업이 그룹까지 넣지만, 재사용 계정은 그 경로가 없다.
-            verify(groupService).addUserToGroups(eq("testuser"), anyList());
+            assertThat(captor.getValue().supplementaryGroups()).isEmpty();
+            // 계정을 새로 만들 때는 작업이 그룹까지 넣지만, 재사용 계정은 config-server의
+            // provision 제어기가 Pod 생성 후 그룹을 추가하므로 로컬에서는 호출하지 않는다.
+            verify(groupService, never()).addUserToGroups(anyString(), anyList());
         }
 
         @Test
