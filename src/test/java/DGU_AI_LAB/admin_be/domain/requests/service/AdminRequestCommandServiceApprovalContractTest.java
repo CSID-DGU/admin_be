@@ -24,6 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -35,6 +36,7 @@ import org.springframework.transaction.TransactionStatus;
 import java.util.LinkedHashSet;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -137,19 +139,22 @@ class AdminRequestCommandServiceApprovalContractTest {
     }
 
     @Test
-    @DisplayName("계정을 재사용하는 승인은 그룹을 먼저 넣고 나서 작업을 등록한다")
-    void reusedAccountApprovalAddsGroupsBeforeRegistering() {
+    @DisplayName("계정을 재사용하는 승인은 그룹 정보를 작업 등록 DTO에 실어 보내고 로컬로는 그룹을 넣지 않는다")
+    void reusedAccountApprovalSendsGroupsWithRegistration() {
         Long requestId = 302L;
         Request request = approvableRequest(requestId);
         when(mockUser.hasUbuntuAccount()).thenReturn(true);
 
         service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
 
-        // 이 순서가 뒤집히면 작업이 그룹 없이 컨테이너를 만든다.
-        InOrder order = inOrder(request, groupService, operationJobService);
+        ArgumentCaptor<ProvisionRegisterRequestDTO> captor = ArgumentCaptor.forClass(ProvisionRegisterRequestDTO.class);
+        InOrder order = inOrder(request, operationJobService);
         order.verify(request).prepareAsyncApproval(mockImage, mockRg, null);
-        order.verify(groupService).addUserToGroups(eq("testuser"), anyList());
-        order.verify(operationJobService).registerProvision(any(ProvisionRegisterRequestDTO.class));
+        order.verify(operationJobService).registerProvision(captor.capture());
+        assertThat(captor.getValue().account()).isNull();
+
+        // config-server의 provision 제어기가 Pod 생성 후 그룹을 추가하므로 로컬에서는 호출하지 않는다.
+        verify(groupService, never()).addUserToGroups(anyString(), anyList());
     }
 
     @Test
