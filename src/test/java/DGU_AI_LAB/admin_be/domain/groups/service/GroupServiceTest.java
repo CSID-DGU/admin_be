@@ -28,6 +28,7 @@ import reactor.core.publisher.Mono;
 
 import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -378,6 +379,42 @@ class GroupServiceTest {
                     "{\"detail\":\"문구가 완전히 바뀐 설명\",\"error\":\"AD_GROUP_MEMBER_FAILED\"}";
             assertThat(codeOf(HttpStatus.INTERNAL_SERVER_ERROR, reworded))
                     .isEqualTo(ErrorCode.AD_GROUP_SYNC_FAILED);
+        }
+    }
+
+    @Nested
+    @DisplayName("triggerNasGssFlush(admin_infra-proposed#161)")
+    class TriggerNasGssFlush {
+
+        @SuppressWarnings("unchecked")
+        private WebClient.RequestHeadersSpec<?> mockPostChain() {
+            WebClient.RequestBodyUriSpec uriSpec = mock(WebClient.RequestBodyUriSpec.class);
+            WebClient.RequestHeadersSpec<?> headersSpec = mock(WebClient.RequestHeadersSpec.class);
+            WebClient.ResponseSpec responseSpec = mock(WebClient.ResponseSpec.class);
+            doReturn(uriSpec).when(groupCreationWebClient).post();
+            doReturn(headersSpec).when(uriSpec).uri("/operations/nas-gss-flush");
+            doReturn(responseSpec).when(headersSpec).retrieve();
+            doReturn(Mono.empty()).when(responseSpec).toBodilessEntity();
+            return headersSpec;
+        }
+
+        @Test
+        @DisplayName("성공하면 /operations/nas-gss-flush를 호출한다")
+        void callsTheEndpoint() {
+            mockPostChain();
+
+            groupService.triggerNasGssFlush("testuser");
+
+            verify(groupCreationWebClient).post();
+        }
+
+        @Test
+        @DisplayName("호출이 실패해도 예외를 밖으로 던지지 않는다 — 30분 크론이 안전망이라 승인 흐름을 막으면 안 된다")
+        void doesNotPropagateFailure() {
+            doThrow(new RuntimeException("config-server 연결 실패")).when(groupCreationWebClient).post();
+
+            assertThatCode(() -> groupService.triggerNasGssFlush("testuser"))
+                    .doesNotThrowAnyException();
         }
     }
 }

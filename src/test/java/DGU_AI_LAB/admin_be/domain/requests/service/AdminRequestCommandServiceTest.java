@@ -554,6 +554,8 @@ class AdminRequestCommandServiceTest {
             verify(mockUser).addGroupIfAbsent(newGroup);
             verify(changeRequest).approve(mockUser, "그룹 변경 승인");
             verify(alarmService).sendModificationApprovedEmail(changeRequest, "그룹 변경 승인");
+            // AD 반영 직후 NAS GSS 온디맨드 flush를 트리거한다(admin_infra-proposed#161).
+            verify(groupService).triggerNasGssFlush("testuser");
         }
 
         @Test
@@ -584,6 +586,8 @@ class AdminRequestCommandServiceTest {
             verify(mockUser, never()).addGroupIfAbsent(any());
             verify(changeRequest, never()).approve(any(), any());
             verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
+            // AD 반영 자체가 실패했으니 NAS flush를 트리거할 이유가 없다.
+            verify(groupService, never()).triggerNasGssFlush(any());
         }
 
         @Test
@@ -615,6 +619,8 @@ class AdminRequestCommandServiceTest {
             verify(mockUser, never()).addGroupIfAbsent(any());
             verify(changeRequest, never()).approve(any(), any());
             verify(alarmService).sendAdminSlackNotification(any(), contains("AD 그룹 반영은 완료됐으나"));
+            // AD는 이미 바뀌었으니 우리 DB 커밋 성공 여부와 무관하게 NAS flush는 그대로 트리거해야 한다.
+            verify(groupService).triggerNasGssFlush("testuser");
         }
 
         @Test
