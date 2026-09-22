@@ -464,6 +464,9 @@ public class AdminRequestCommandService {
             // 트랜잭션 밖 — 여기서 실패하면 위 트랜잭션이 이미 커밋 없이 끝난 뒤라 DB엔 아무 변경도
             // 없다. 신청은 그대로 PENDING에 남고, 예외가 그대로 호출자에게 전파된다.
             groupService.addUserToGroups(usernameRef.get(), newGroupNamesRef.get());
+            // AD 반영이 끝난 시점에 바로 트리거한다 — 아래 DB 커밋 성공 여부와 무관하게 AD는
+            // 이미 바뀌었으므로 NAS 쪽 반영도 그만큼 빨리 시작하는 게 맞다(admin_infra-proposed#161).
+            groupService.triggerNasGssFlush(usernameRef.get());
 
             tx.executeWithoutResult(status -> {
                 ChangeRequest changeRequest = changeRequestRepository.findByIdForUpdate(dto.changeRequestId())
