@@ -110,10 +110,16 @@ public class GroupService {
                                     if (body.contains("invalid members")) {
                                         return new BusinessException(ErrorCode.INVALID_GROUP_MEMBER);
                                     }
+                                    if (body.contains("collides with an existing user")) {
+                                        return new BusinessException(ErrorCode.GROUP_NAME_CONFLICTS_USER);
+                                    }
                                     return new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
                                 } else if (status == HttpStatus.CONFLICT) {
                                     if (body.contains("group already exists")) {
                                         return new BusinessException(ErrorCode.DUPLICATE_GROUP_NAME);
+                                    }
+                                    if (body.contains("reserved by the container image")) {
+                                        return new BusinessException(ErrorCode.RESERVED_GROUP_NAME);
                                     }
                                     return new BusinessException(ErrorCode.DUPLICATE_GROUP_ID);
                                 }
@@ -212,6 +218,25 @@ public class GroupService {
                 .toBodilessEntity()
                 .block();
         log.info("[addUserToGroups] 사용자 그룹 추가 완료: username={}, groups={}", username, groupNames);
+    }
+
+    /**
+     * NAS GSS 캐시 온디맨드 flush를 트리거한다(admin_infra-proposed#161). addUserToGroups로 AD
+     * 반영이 끝난 뒤 호출한다 — config-server가 백그라운드에서 재시도하다 최대 10분 안에 못
+     * 끝내면 포기하는 fire-and-forget이라, 여기서도 실패를 승인 흐름에 전파하지 않는다. 이게
+     * 실패해도 기존 30분 크론(krb5-reconcile)이 안전망으로 남아있어 결국은 반영된다.
+     */
+    public void triggerNasGssFlush(String username) {
+        try {
+            groupCreationWebClient
+                    .post()
+                    .uri("/operations/nas-gss-flush")
+                    .retrieve()
+                    .toBodilessEntity()
+                    .block();
+        } catch (Exception e) {
+            log.warn("[triggerNasGssFlush] 온디맨드 flush 트리거 실패 — 30분 크론이 대신 처리함: username={}", username, e);
+        }
     }
 
     /**
