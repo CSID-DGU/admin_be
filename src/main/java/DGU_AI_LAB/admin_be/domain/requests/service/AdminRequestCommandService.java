@@ -46,6 +46,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -358,61 +360,153 @@ public class AdminRequestCommandService {
         );
     }
 
-    @Transactional
+    /**
+     * GROUP 타입은 config-server 외부 호출(AD 반영)이 끼기 때문에 메서드 전체를 하나의 물리 트랜잭션으로
+     * 묶지 않는다 — 외부 호출 성공 후 트랜잭션이 롤백되면 DB는 되돌아가도 AD/원장은 반영된 채 남아,
+     * NAS가 AD를 보고 판정하는 접근 권한만 DB 기록 없이 새는 상태가 되기 때문이다(admin_be#554).
+     * 그래서 approveRequest(:99)와 같은 3단계 패턴을 쓴다: ①잠금+검증+그룹 해석(트랜잭션) →
+     * ②외부 호출(트랜잭션 밖) → ③재검증+커밋(새 트랜잭션). 나머지 4개 ChangeType은 외부 호출이 없어
+     * 단일 트랜잭션 그대로 처리한다.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void approveModification(Long adminId, ApproveModificationDTO dto) {
-        // 행 잠금 조회: 동시에 같은 변경 요청을 승인 시도하는 두 번째 트랜잭션은 첫 트랜잭션 커밋까지 대기하다가
-        // FULFILLED 상태를 보고 실패한다 (PORT 등 부수 효과의 중복 실행 방지)
-        ChangeRequest changeRequest = changeRequestRepository.findByIdForUpdate(dto.changeRequestId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
 
-        if (changeRequest.getStatus() != Status.PENDING) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
-        }
-        User admin = userRepository.findById(adminId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        AtomicReference<Long> originalRequestIdRef = new AtomicReference<>();
+        AtomicReference<String> usernameRef = new AtomicReference<>();
+        AtomicReference<String> serverNameRef = new AtomicReference<>();
+        AtomicReference<List<String>> newGroupNamesRef = new AtomicReference<>();
+        AtomicReference<Set<Long>> newGroupIdsRef = new AtomicReference<>();
+        AtomicBoolean deferredRef = new AtomicBoolean(false);
+        AtomicReference<ExpiryChangeResult> expiryChangeRef = new AtomicReference<>();
+        AtomicReference<ChangeRequest> committedChangeRequestRef = new AtomicReference<>();
+        AtomicReference<Request> committedOriginalRequestRef = new AtomicReference<>();
 
-        Request lazyOriginalRequest = changeRequest.getRequest();
-        if (lazyOriginalRequest == null) {
-            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
-        }
-        // 실제로 필드를 덮어쓰는 대상은 ChangeRequest가 아니라 이 Request다. 잠금이 걸린 건
-        // ChangeRequest 행뿐이므로, 여기서 Request 행도 직접 잠가야 한다 — 그러지 않으면
-        // 마이그레이션/만료 정리가 이 행을 동시에 다루는 중에도 검증을 통과한다.
-        Request originalRequest = requestRepository.findByIdForUpdate(lazyOriginalRequest.getRequestId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        // ChangeRequest는 FULFILLED 상태를 전제로 신청된다. 그 사이 원본 Request가 삭제되거나
-        // 마이그레이션/재승인 처리 중으로 넘어갔는데 상태 확인 없이 그대로 적용하면, 이미 죽었거나
-        // 다른 트랜잭션이 다루고 있는 Request의 필드를 조용히 덮어써 정합성이 깨진다.
-        // 잠금을 잡은 뒤에 다시 확인해야 잠금 대기 중 커밋된 최신 상태를 본다.
-        if (originalRequest.getStatus() != Status.FULFILLED) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+        tx.executeWithoutResult(status -> {
+            // 행 잠금 조회: 동시에 같은 변경 요청을 승인 시도하는 두 번째 트랜잭션은 첫 트랜잭션 커밋까지 대기하다가
+            // FULFILLED 상태를 보고 실패한다 (PORT 등 부수 효과의 중복 실행 방지)
+            ChangeRequest changeRequest = changeRequestRepository.findByIdForUpdate(dto.changeRequestId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+            if (changeRequest.getStatus() != Status.PENDING) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+            }
+            User admin = userRepository.findById(adminId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+            Request lazyOriginalRequest = changeRequest.getRequest();
+            if (lazyOriginalRequest == null) {
+                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+            }
+            // 실제로 필드를 덮어쓰는 대상은 ChangeRequest가 아니라 이 Request다. 잠금이 걸린 건
+            // ChangeRequest 행뿐이므로, 여기서 Request 행도 직접 잠가야 한다 — 그러지 않으면
+            // 마이그레이션/만료 정리가 이 행을 동시에 다루는 중에도 검증을 통과한다.
+            Request originalRequest = requestRepository.findByIdForUpdate(lazyOriginalRequest.getRequestId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+            // ChangeRequest는 FULFILLED 상태를 전제로 신청된다. 그 사이 원본 Request가 삭제되거나
+            // 마이그레이션/재승인 처리 중으로 넘어갔는데 상태 확인 없이 그대로 적용하면, 이미 죽었거나
+            // 다른 트랜잭션이 다루고 있는 Request의 필드를 조용히 덮어써 정합성이 깨진다.
+            // 잠금을 잡은 뒤에 다시 확인해야 잠금 대기 중 커밋된 최신 상태를 본다.
+            if (originalRequest.getStatus() != Status.FULFILLED) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+            }
+
+            if (changeRequest.getChangeType() == ChangeType.GROUP) {
+                Set<Long> newGroupIds;
+                try {
+                    newGroupIds = objectMapper.readValue(changeRequest.getNewValue(),
+                            objectMapper.getTypeFactory().constructCollectionType(Set.class, Long.class));
+                } catch (JsonProcessingException e) {
+                    log.error("Failed to parse change request value: {}", e.getMessage());
+                    throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
+                }
+                Set<Group> newGroups = resolveGroups(newGroupIds);
+
+                originalRequestIdRef.set(originalRequest.getRequestId());
+                usernameRef.set(originalRequest.getUbuntuUsername());
+                serverNameRef.set(originalRequest.getResourceGroup().getServerName());
+                newGroupNamesRef.set(newGroups.stream().map(Group::getGroupName).toList());
+                newGroupIdsRef.set(newGroupIds);
+                deferredRef.set(true);
+                return;
+            }
+
+            ChangeApplier applier = changeAppliers().get(changeRequest.getChangeType());
+            if (applier == null) {
+                throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
+            }
+
+            ExpiryChangeResult expiryChange;
+            try {
+                expiryChange = applier.apply(originalRequest, changeRequest.getNewValue());
+            } catch (JsonProcessingException e) {
+                log.error("Failed to parse change request value: {}", e.getMessage());
+                throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
+            }
+
+            changeRequest.approve(admin, dto.adminComment());
+
+            // 트랜잭션 종료 후(알림 발송 시점) 사용되는 지연 로딩 필드를 미리 초기화
+            originalRequest.getUser().getEmail();
+            expiryChangeRef.set(expiryChange);
+            committedChangeRequestRef.set(changeRequest);
+            committedOriginalRequestRef.set(originalRequest);
+        });
+
+        if (deferredRef.get()) {
+            // 트랜잭션 밖 — 여기서 실패하면 위 트랜잭션이 이미 커밋 없이 끝난 뒤라 DB엔 아무 변경도
+            // 없다. 신청은 그대로 PENDING에 남고, 예외가 그대로 호출자에게 전파된다.
+            groupService.addUserToGroups(usernameRef.get(), newGroupNamesRef.get());
+
+            tx.executeWithoutResult(status -> {
+                ChangeRequest changeRequest = changeRequestRepository.findByIdForUpdate(dto.changeRequestId())
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                Request originalRequest = requestRepository.findByIdForUpdate(originalRequestIdRef.get())
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+                if (changeRequest.getStatus() != Status.PENDING || originalRequest.getStatus() != Status.FULFILLED) {
+                    // AD 반영은 이미 끝났다 — candidate 2(보상 삭제) API가 config-server에 없어 여기서
+                    // 되돌릴 방법이 없다. 방치하면 아무도 모르는 채로 남으므로 반드시 알린다.
+                    log.error("[approveModification] AD 그룹 반영 완료 후 상태 불일치로 DB 커밋 실패 - 수동 확인 필요: " +
+                                    "changeRequestId={}, requestId={}, groups={}",
+                            dto.changeRequestId(), originalRequestIdRef.get(), newGroupNamesRef.get());
+                    notifyApprovalFailure(String.format(
+                            "[approveModification] AD 그룹 반영은 완료됐으나 상태 변경으로 DB에 기록하지 못했습니다 - " +
+                                    "수동 확인 필요: changeRequestId=%d, requestId=%d, username=%s, groups=%s",
+                            dto.changeRequestId(), originalRequestIdRef.get(), usernameRef.get(), newGroupNamesRef.get()
+                    ), serverNameRef.get());
+                    throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+                }
+
+                User admin = userRepository.findById(adminId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+                Set<Group> newGroups = resolveGroups(newGroupIdsRef.get());
+                originalRequest.getRequestGroups().clear();
+                for (Group g : newGroups) {
+                    originalRequest.addGroup(g);
+                }
+                changeRequest.approve(admin, dto.adminComment());
+
+                originalRequest.getUser().getEmail();
+                committedChangeRequestRef.set(changeRequest);
+                committedOriginalRequestRef.set(originalRequest);
+            });
         }
 
-        ChangeApplier applier = changeAppliers().get(changeRequest.getChangeType());
-        if (applier == null) {
-            throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
-        }
-
-        ExpiryChangeResult expiryChange;
-        try {
-            expiryChange = applier.apply(originalRequest, changeRequest.getNewValue());
-        } catch (JsonProcessingException e) {
-            log.error("Failed to parse change request value: {}", e.getMessage());
-            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
-        }
-
-        changeRequest.approve(admin, dto.adminComment());
+        ChangeRequest committedChangeRequest = committedChangeRequestRef.get();
+        Request committedOriginalRequest = committedOriginalRequestRef.get();
+        ExpiryChangeResult expiryChange = expiryChangeRef.get();
 
         if (expiryChange != null) {
             sendNotificationSafely(
-                    () -> alarmService.sendContainerExtendedEmail(originalRequest, expiryChange.oldExpiresAt(), expiryChange.newExpiresAt()),
-                    () -> log.info("사용자 '{}'에게 기간 연장 안내 메일을 발송했습니다.", originalRequest.getUser().getName()),
+                    () -> alarmService.sendContainerExtendedEmail(committedOriginalRequest, expiryChange.oldExpiresAt(), expiryChange.newExpiresAt()),
+                    () -> log.info("사용자 '{}'에게 기간 연장 안내 메일을 발송했습니다.", committedOriginalRequest.getUser().getName()),
                     e -> log.warn("기간 연장 안내 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e)
             );
         } else {
             sendNotificationSafely(
-                    () -> alarmService.sendModificationApprovedEmail(changeRequest, dto.adminComment()),
-                    () -> log.info("사용자 '{}'에게 변경 요청 승인 안내 메일을 발송했습니다.", originalRequest.getUser().getName()),
+                    () -> alarmService.sendModificationApprovedEmail(committedChangeRequest, dto.adminComment()),
+                    () -> log.info("사용자 '{}'에게 변경 요청 승인 안내 메일을 발송했습니다.", committedOriginalRequest.getUser().getName()),
                     e -> log.warn("변경 요청 승인 안내 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e)
             );
         }
@@ -422,10 +516,11 @@ public class AdminRequestCommandService {
     // Map으로 등록해두면 새 ChangeType이 추가될 때 이 메서드 자체를 수정하지 않고
     // applier 하나만 더 등록하면 된다 (개방-폐쇄 원칙).
 
+    // GROUP은 config-server 외부 호출이 끼어 있어 이 맵을 거치지 않고 approveModification에서
+    // 직접 분기한다(3단계 트랜잭션 분리, admin_be#554) — 여기 등록하면 죽은 코드가 된다.
     private Map<ChangeType, ChangeApplier> changeAppliers() {
         return Map.of(
                 ChangeType.EXPIRES_AT, this::applyExpiresAtChange,
-                ChangeType.GROUP, this::applyGroupChange,
                 ChangeType.RESOURCE_GROUP, this::applyResourceGroupChange,
                 ChangeType.CONTAINER_IMAGE, this::applyContainerImageChange,
                 ChangeType.PORT, this::applyPortChange
@@ -439,29 +534,12 @@ public class AdminRequestCommandService {
         return new ExpiryChangeResult(oldExpiresAt, newExpiresAt);
     }
 
-    private ExpiryChangeResult applyGroupChange(Request originalRequest, String newValueJson) throws JsonProcessingException {
-        // 그룹 변경은 복잡하기 때문에, 엔티티가 아닌 서비스 레이어에서 처리합니다.
-        originalRequest.getRequestGroups().clear();
-        Set<Long> newGroupIds = objectMapper.readValue(newValueJson,
-                objectMapper.getTypeFactory().constructCollectionType(Set.class, Long.class));
-        Set<Group> newGroups = newGroupIds.stream()
+    /** GID 목록을 Group 엔티티로 해석한다. approveModification의 1단계(사전 검증)와 3단계(재적용) 양쪽에서 쓴다. */
+    private Set<Group> resolveGroups(Set<Long> gids) {
+        return gids.stream()
                 .map(gid -> groupRepository.findByUbuntuGid(gid)
                         .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)))
                 .collect(Collectors.toSet());
-
-        for (Group g : newGroups) {
-            originalRequest.addGroup(g);
-        }
-
-        // DB에만 반영하고 끝내면 실제 리눅스 계정의 그룹 멤버십은 그대로다 — 이 그룹이
-        // 요구하는 파일에 실제로 접근이 안 되는 채로 "변경 승인됨"만 표시되는 상태가 된다.
-        // config-server의 그룹 추가는 집합-추가 방식이라(원래 그룹에서 빼지 않음) 여기서도
-        // 새로 추가된 그룹만 보내면 된다. approveModification 전체가 하나의 트랜잭션이라
-        // 이 안에서 외부 호출을 하면 그 시간만큼 커넥션을 붙들지만, 그룹 변경 자체가
-        // 드문 오퍼레이션이라 승인 흐름 전체를 다시 3단계로 쪼갤 정도는 아니라고 판단했다.
-        List<String> newGroupNames = newGroups.stream().map(Group::getGroupName).toList();
-        groupService.addUserToGroups(originalRequest.getUbuntuUsername(), newGroupNames);
-        return null;
     }
 
     private ExpiryChangeResult applyResourceGroupChange(Request originalRequest, String newValueJson) throws JsonProcessingException {

@@ -317,4 +317,67 @@ class GroupServiceTest {
             verify(alarmService).sendSlackAlert(contains("developers"), isNull());
         }
     }
+
+    @Nested
+    @DisplayName("addUserToGroups 오류 매핑")
+    class MapAddUserToGroupsError {
+
+        // config-server main.py add_user_groups 가 실제로 내는 본문 그대로.
+        private static final String AD_FAILED =
+                "{\"detail\":\"failed to add alice to groups in AD\",\"error\":\"AD_GROUP_MEMBER_FAILED\",\"step\":\"ADD_USER_GROUPS\"}";
+        private static final String GROUP_MISSING =
+                "{\"detail\":\"groups not found: teamx\",\"error\":\"GROUP_NOT_FOUND\",\"step\":\"ADD_USER_GROUPS\"}";
+        private static final String USER_MISSING =
+                "{\"detail\":\"user not found: alice\",\"error\":\"USER_NOT_FOUND\",\"step\":\"ADD_USER_GROUPS\"}";
+
+        private ErrorCode codeOf(HttpStatus status, String body) {
+            return GroupService.mapAddUserToGroupsError(status, body).getErrorCode();
+        }
+
+        @Test
+        @DisplayName("AD 반영 실패는 재시도 가능한 코드로 바꾼다 — 형식 오류와 섞이면 관리자가 신청을 되돌린다")
+        void adFailure_mapsToRetryableCode() {
+            assertThat(codeOf(HttpStatus.INTERNAL_SERVER_ERROR, AD_FAILED))
+                    .isEqualTo(ErrorCode.AD_GROUP_SYNC_FAILED);
+        }
+
+        @Test
+        @DisplayName("원장에 없는 그룹은 GROUP_NOT_FOUND")
+        void missingGroup_mapsToGroupNotFound() {
+            assertThat(codeOf(HttpStatus.NOT_FOUND, GROUP_MISSING))
+                    .isEqualTo(ErrorCode.GROUP_NOT_FOUND);
+        }
+
+        @Test
+        @DisplayName("원장에 없는 계정은 INVALID_GROUP_MEMBER")
+        void missingUser_mapsToInvalidGroupMember() {
+            assertThat(codeOf(HttpStatus.NOT_FOUND, USER_MISSING))
+                    .isEqualTo(ErrorCode.INVALID_GROUP_MEMBER);
+        }
+
+        @Test
+        @DisplayName("모르는 4xx 는 인프라가 요청을 거절한 것으로, 5xx 는 호출 목적 실패로 가른다")
+        void unknownErrors_fallBackToRejectedOr() {
+            assertThat(codeOf(HttpStatus.BAD_REQUEST, "{\"error\":\"SOMETHING_NEW\"}"))
+                    .isEqualTo(ErrorCode.INFRA_REQUEST_REJECTED);
+            assertThat(codeOf(HttpStatus.SERVICE_UNAVAILABLE, "{\"error\":\"SOMETHING_NEW\"}"))
+                    .isEqualTo(ErrorCode.GROUP_CREATION_FAILED);
+        }
+
+        @Test
+        @DisplayName("본문이 비어도 터지지 않는다 — 502 응답에 본문이 없는 경우가 있다")
+        void emptyBody_doesNotThrow() {
+            assertThat(codeOf(HttpStatus.BAD_GATEWAY, "")).isEqualTo(ErrorCode.GROUP_CREATION_FAILED);
+            assertThat(codeOf(HttpStatus.BAD_GATEWAY, null)).isEqualTo(ErrorCode.GROUP_CREATION_FAILED);
+        }
+
+        @Test
+        @DisplayName("문장이 아니라 error 필드로 가른다 — detail 문구가 바뀌어도 판정이 유지된다")
+        void branchesOnMachineCode_notProse() {
+            String reworded =
+                    "{\"detail\":\"문구가 완전히 바뀐 설명\",\"error\":\"AD_GROUP_MEMBER_FAILED\"}";
+            assertThat(codeOf(HttpStatus.INTERNAL_SERVER_ERROR, reworded))
+                    .isEqualTo(ErrorCode.AD_GROUP_SYNC_FAILED);
+        }
+    }
 }
