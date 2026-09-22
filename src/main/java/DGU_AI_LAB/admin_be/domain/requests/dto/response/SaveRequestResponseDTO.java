@@ -149,8 +149,8 @@ public record SaveRequestResponseDTO(
                 .ubuntuUid(request.getUbuntuUid())
                 .ubuntuGid(request.getUbuntuGid())
                 .ubuntuGids(
-                        request.getRequestGroups().stream()
-                                .map(rg -> rg.getGroup().getUbuntuGid())
+                        request.getUser().getUserGroups().stream()
+                                .map(ug -> ug.getGroup().getUbuntuGid())
                                 .toList()
                 )
                 .usagePurpose(request.getUsagePurpose())

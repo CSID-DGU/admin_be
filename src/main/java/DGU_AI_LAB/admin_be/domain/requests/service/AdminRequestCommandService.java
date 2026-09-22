@@ -22,6 +22,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -219,6 +220,12 @@ public class AdminRequestCommandService {
             req.assignUbuntuIds(owner.getUbuntuUid(), owner.getUbuntuGid());
             req.assignPodInfo(made.podName(), made.node());
             req.completeApproval();
+            // 작업이 성공했다는 건 이 신청이 요청한 그룹이 실제로 AD(계정 단위)에 반영됐다는 뜻이다.
+            // request_groups는 "신청 시점에 고른 그룹"만 담당하고, 실제 계정 상태는 User.userGroups로
+            // 옮겨 담는다 — 같은 계정의 다른 컨테이너에서도 이 그룹을 가진 것으로 보이게 하기 위함.
+            for (RequestGroup rg : req.getRequestGroups()) {
+                owner.addGroupIfAbsent(rg.getGroup());
+            }
             if (made.ports() != null) {
                 for (CreatePodResponseDTO.PortInfo port : made.ports()) {
                     podExternalPortRepository.save(PodExternalPort.builder()
@@ -480,10 +487,15 @@ public class AdminRequestCommandService {
 
                 User admin = userRepository.findById(adminId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+                // 계정(User) 단위로 누적한다 — config-server의 add_user_groups가 추가 전용이라
+                // AD에선 절대 안 빠지는데 여기서 clear()로 지우면 DB가 AD보다 뒤처진 거짓 상태가 된다.
+                // originalRequest가 아니라 그 소유자(User)에 반영해야 같은 계정의 다른 컨테이너에도
+                // 이 그룹이 반영된 것으로 보인다.
+                User owner = userRepository.findByIdForUpdate(originalRequest.getUser().getUserId())
+                        .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
                 Set<Group> newGroups = resolveGroups(newGroupIdsRef.get());
-                originalRequest.getRequestGroups().clear();
                 for (Group g : newGroups) {
-                    originalRequest.addGroup(g);
+                    owner.addGroupIfAbsent(g);
                 }
                 changeRequest.approve(admin, dto.adminComment());
 

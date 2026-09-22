@@ -8,9 +8,10 @@ import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
 import DGU_AI_LAB.admin_be.domain.portRequests.repository.PortRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.AcceptInfoResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
-import DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.domain.users.entity.UserGroup;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -27,7 +28,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -50,6 +50,13 @@ class ConfigRequestServiceTest {
         service = new ConfigRequestService(requestRepository, userRepository, portRequestRepository, nodeRepository);
     }
 
+    /** AcceptInfoResponseDTO.groups는 이제 request.getUser().getUserGroups()를 읽으므로 기본은 그룹 없는 계정. */
+    private User mockUserWithGroups(UserGroup... groups) {
+        User user = mock(User.class);
+        when(user.getUserGroups()).thenReturn(new LinkedHashSet<>(List.of(groups)));
+        return user;
+    }
+
     private Request mockRequest(long requestId, String username, ResourceGroup resourceGroup) {
         ContainerImage image = mock(ContainerImage.class);
         when(image.getImageName()).thenReturn("cuda");
@@ -59,7 +66,8 @@ class ConfigRequestServiceTest {
         when(request.getRequestId()).thenReturn(requestId);
         when(request.getUbuntuUsername()).thenReturn(username);
         when(request.getContainerImage()).thenReturn(image);
-        when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
+        User user = mockUserWithGroups(); // when(...).thenReturn() 인자 자리에서 다른 mock을 세팅하면 안 됨(Mockito 스터빙 상태 오염)
+        when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
 
         when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
@@ -101,17 +109,19 @@ class ConfigRequestServiceTest {
         when(group2.getUbuntuGid()).thenReturn(2001L);
         when(group2.getGroupName()).thenReturn("ailab");
 
-        RequestGroup rg1 = mock(RequestGroup.class);
-        when(rg1.getGroup()).thenReturn(group1);
+        // AcceptInfoResponseDTO.groups는 계정(User) 단위 그룹을 읽는다 — request_groups가 아니다.
+        UserGroup ug1 = mock(UserGroup.class);
+        when(ug1.getGroup()).thenReturn(group1);
 
-        RequestGroup rg2 = mock(RequestGroup.class);
-        when(rg2.getGroup()).thenReturn(group2);
+        UserGroup ug2 = mock(UserGroup.class);
+        when(ug2.getGroup()).thenReturn(group2);
 
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(1L);
         when(request.getUbuntuUsername()).thenReturn(username);
         when(request.getContainerImage()).thenReturn(image);
-        when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>(Set.of(rg1, rg2)));
+        User user = mockUserWithGroups(ug1, ug2);
+        when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
 
         when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
@@ -151,7 +161,8 @@ class ConfigRequestServiceTest {
         when(request.getRequestId()).thenReturn(2L);
         when(request.getUbuntuUsername()).thenReturn(username);
         when(request.getContainerImage()).thenReturn(image);
-        when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
+        User user = mockUserWithGroups();
+        when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
 
         when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
@@ -186,7 +197,8 @@ class ConfigRequestServiceTest {
         when(request.getRequestId()).thenReturn(1L);
         when(request.getUbuntuUsername()).thenReturn(username);
         when(request.getContainerImage()).thenReturn(image);
-        when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
+        User user = mockUserWithGroups();
+        when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
 
         when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
@@ -235,7 +247,8 @@ class ConfigRequestServiceTest {
         when(request.getRequestId()).thenReturn(2L);
         when(request.getUbuntuUsername()).thenReturn(username);
         when(request.getContainerImage()).thenReturn(image);
-        when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
+        User user = mockUserWithGroups();
+        when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
 
         when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
@@ -287,7 +300,8 @@ class ConfigRequestServiceTest {
         when(request.getRequestId()).thenReturn(5L);
         when(request.getStatus()).thenReturn(status);
         when(request.getContainerImage()).thenReturn(image);
-        when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
+        User user = mockUserWithGroups();
+        when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
 
         when(requestRepository.findById(5L)).thenReturn(Optional.of(request));

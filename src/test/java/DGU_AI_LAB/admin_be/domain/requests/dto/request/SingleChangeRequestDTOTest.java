@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.requests.dto.request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -78,7 +79,9 @@ class SingleChangeRequestDTOTest {
     void createValidatedChangeRequest_group_keepsRawNewValue() {
         // 운영에서는 Spring 주입 ObjectMapper에 JavaTimeModule이 등록돼 있다
         ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        // GROUP 타입의 oldValue는 이제 originalRequest.getUser().getUserGroups()를 읽으므로 user가 필요하다.
         Request originalRequest = Request.builder()
+                .user(User.builder().build())
                 .build();
         SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005,1006]", "reason");
 
