@@ -89,10 +89,15 @@ public class Request extends BaseTimeEntity {
     @OneToMany(mappedBy = "request", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<RequestGroup> requestGroups = new LinkedHashSet<>();
 
+    /** 신청 시 고른 noVNC 활성화 여부. config-server에 그대로 전달되어 Pod에 ENABLE_VNC로 주입된다. */
+    @Column(name = "enable_vnc", nullable = false)
+    private boolean enableVnc = false;
+
     @Builder
-    public Request(String ubuntuUsername, String ubuntuPassword, LocalDateTime expiresAt, String usagePurpose, String formAnswers, User user, ResourceGroup resourceGroup, ContainerImage containerImage) {
+    public Request(String ubuntuUsername, String ubuntuPassword, LocalDateTime expiresAt, String usagePurpose, String formAnswers, User user, ResourceGroup resourceGroup, ContainerImage containerImage, boolean enableVnc) {
         this.ubuntuUsername = ubuntuUsername;
         this.ubuntuPassword = ubuntuPassword;
+        this.enableVnc = enableVnc;
         this.expiresAt = expiresAt;
         this.usagePurpose = usagePurpose;
         this.formAnswers = formAnswers;
