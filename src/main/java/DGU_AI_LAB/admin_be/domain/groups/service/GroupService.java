@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -205,12 +206,40 @@ public class GroupService {
                                 .retrieve(),
                         (status, body) -> {
                             log.error("[addUserToGroups] 외부 API 오류: username={}, 상태 코드={}, 응답={}", username, status, body);
-                            return new BusinessException("사용자 그룹 추가 실패: " + body, ErrorCode.GROUP_CREATION_FAILED);
+                            return mapAddUserToGroupsError(status, body);
                         }
                 )
                 .toBodilessEntity()
                 .block();
         log.info("[addUserToGroups] 사용자 그룹 추가 완료: username={}, groups={}", username, groupNames);
+    }
+
+    /**
+     * config-server 가 이 경로에서 내는 실패는 셋이고 대응이 서로 다르다(main.py add_user_groups).
+     * 하나로 묶으면 "다시 승인하면 되는 것"과 "신청을 고쳐야 하는 것"을 관리자가 구분할 수 없다.
+     *
+     * 본문의 error 필드 값으로 가른다 — 사람이 읽는 문장이 아니라 기계 코드라 문구가 바뀌어도
+     * 깨지지 않는다. createGroup 쪽은 아직 문장 조각으로 분기하는데(#553), 그건 기존 분기까지
+     * 같이 바꿔야 해서 여기서는 손대지 않았다.
+     *
+     * 시험이 닿도록 람다에서 떼어 패키지 범위로 둔다.
+     */
+    static BusinessException mapAddUserToGroupsError(HttpStatusCode status, String body) {
+        String safeBody = body == null ? "" : body;
+        if (safeBody.contains("\"AD_GROUP_MEMBER_FAILED\"")) {
+            return new BusinessException("사용자 그룹 추가 실패(AD 반영): " + safeBody,
+                    ErrorCode.AD_GROUP_SYNC_FAILED);
+        }
+        if (safeBody.contains("\"GROUP_NOT_FOUND\"")) {
+            return new BusinessException("사용자 그룹 추가 실패(그룹 없음): " + safeBody,
+                    ErrorCode.GROUP_NOT_FOUND);
+        }
+        if (safeBody.contains("\"USER_NOT_FOUND\"")) {
+            return new BusinessException("사용자 그룹 추가 실패(계정 없음): " + safeBody,
+                    ErrorCode.INVALID_GROUP_MEMBER);
+        }
+        return WebClientErrorHandler.rejectedOr(status, safeBody,
+                "사용자 그룹 추가 실패", ErrorCode.GROUP_CREATION_FAILED);
     }
 
     record AddUserGroupsRequest(List<String> groups) {}

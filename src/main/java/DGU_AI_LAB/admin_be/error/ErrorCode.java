@@ -119,6 +119,9 @@ public enum ErrorCode {
     GID_ALLOCATION_FAILED(HttpStatus.BAD_GATEWAY, "외부 API 응답에서 GID를 확인할 수 없습니다."),
     FORBIDDEN_REQUEST(HttpStatus.FORBIDDEN, "요청된 우분투 사용자 이름은 로그인한 사용자의 계정이 아닙니다."),
     INVALID_GROUP_MEMBER(HttpStatus.BAD_REQUEST, "존재하지 않는 사용자입니다."),
+    // AD 반영 실패는 DC 접속 장애 같은 일시적 원인이 대부분이라 다시 승인하면 되는 경우가 많다.
+    // 이걸 형식 오류와 같은 코드로 묶으면 관리자가 신청이 잘못됐다고 판단하고 되돌린다.
+    AD_GROUP_SYNC_FAILED(HttpStatus.BAD_GATEWAY, "그룹을 AD에 반영하지 못했습니다. 잠시 후 다시 승인해 주세요."),
 
     /**
      * Approval Error
