@@ -22,6 +22,6 @@ public class RequestGroupId implements Serializable {
     @Column(name = "request_id")
     private Long requestId;
 
-    @Column(name = "ubuntu_gid")
-    private Long ubuntuGid;
+    @Column(name = "group_id")
+    private Long groupId;
 }
