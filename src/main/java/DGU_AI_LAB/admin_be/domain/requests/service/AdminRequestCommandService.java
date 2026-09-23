@@ -107,7 +107,7 @@ public class AdminRequestCommandService {
         final String[] usernameRef = {null};
         final String[] serverNameRef = {null};
         final UserCreationRequestDTO[] creationDtoRef = {null};
-        final Request[] savedRequestRef = {null};
+        final SaveRequestResponseDTO[] responseRef = {null};
         tx.execute(status -> {
             Request req = requestRepository.findByIdForUpdate(dto.requestId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
@@ -137,11 +137,9 @@ public class AdminRequestCommandService {
             userIdRef[0] = req.getUser().getUserId();
             usernameRef[0] = req.getUbuntuUsername();
             serverNameRef[0] = req.getResourceGroup().getServerName();
-            // 트랜잭션 종료 후 사용되는 모든 lazy 연관 초기화
-            req.getUser().getEmail();
-            req.getContainerImage().getImageName();
-            req.getRequestGroups().size();
-            savedRequestRef[0] = req;
+            // 응답은 트랜잭션 안에서 만든다. 밖에서 만들면 DTO가 새로 읽는 lazy 연관(예: user.userGroups)마다
+            // 초기화 목록을 따로 맞춰야 하고, 빠뜨리면 승인은 진행됐는데 관리자는 500을 받는다.
+            responseRef[0] = SaveRequestResponseDTO.fromEntity(req);
             return null;
         });
         Long requestId = dto.requestId();
@@ -183,7 +181,7 @@ public class AdminRequestCommandService {
            throw e;
         }
 
-        return SaveRequestResponseDTO.fromEntity(savedRequestRef[0]);
+        return responseRef[0];
     }
 
     /**
