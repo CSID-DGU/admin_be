@@ -5,6 +5,7 @@ import DGU_AI_LAB.admin_be.domain.pod.PodPortUtils;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.stream.Collectors;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
@@ -310,6 +311,28 @@ public class AlarmService {
                 user.getName(),    // {0}
                 changeType,        // {1}
                 adminComment);     // {2}
+
+        sendMailAlert(user.getEmail(), subject, body);
+        sendMonitoringLog(user.getName(), user.getEmail(), subject);
+    }
+
+    /**
+     * 그룹 추가 승인 안내. 승인 메일만 받은 사용자도 팀과 파일을 나눌 자리를 바로 찾도록 그룹마다 팀 디렉터리
+     * 경로를 적는다. ~/shared 링크는 새 이미지에서만 생기므로 실제 경로(/home/_g_<그룹>)를 같이 적는다.
+     */
+    public void sendGroupAddedEmail(ChangeRequest changeRequest, String adminComment, List<String> groupNames) {
+        User user = changeRequest.getRequestedBy();
+        String changeType = changeRequest.getChangeType().name();
+        String teamDirs = groupNames.stream()
+                .map(name -> "- " + name + ": ~/shared/" + name + " (/home/_g_" + name + ")")
+                .collect(Collectors.joining("\n"));
+
+        String subject = messageUtils.get("email.modification.approved.subject", changeType);
+        String body = messageUtils.get("email.modification.approved.group.body",
+                user.getName(),    // {0}
+                changeType,        // {1}
+                adminComment,      // {2}
+                teamDirs);         // {3}
 
         sendMailAlert(user.getEmail(), subject, body);
         sendMonitoringLog(user.getName(), user.getEmail(), subject);

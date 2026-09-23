@@ -516,6 +516,13 @@ public class AdminRequestCommandService {
                     () -> log.info("사용자 '{}'에게 기간 연장 안내 메일을 발송했습니다.", committedOriginalRequest.getUser().getName()),
                     e -> log.warn("기간 연장 안내 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e)
             );
+        } else if (deferredRef.get()) {
+            List<String> groupNames = newGroupNamesRef.get();
+            sendNotificationSafely(
+                    () -> alarmService.sendGroupAddedEmail(committedChangeRequest, dto.adminComment(), groupNames),
+                    () -> log.info("사용자 '{}'에게 그룹 추가 승인 안내 메일을 발송했습니다.", committedOriginalRequest.getUser().getName()),
+                    e -> log.warn("그룹 추가 승인 안내 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e)
+            );
         } else {
             sendNotificationSafely(
                     () -> alarmService.sendModificationApprovedEmail(committedChangeRequest, dto.adminComment()),

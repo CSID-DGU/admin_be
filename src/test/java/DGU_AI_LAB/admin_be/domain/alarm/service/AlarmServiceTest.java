@@ -402,6 +402,29 @@ class AlarmServiceTest {
     }
 
     @Nested
+    @DisplayName("sendGroupAddedEmail")
+    class SendGroupAddedEmail {
+
+        @Test
+        @DisplayName("그룹마다 팀 디렉터리 경로(~/shared 링크와 실제 위치)를 본문에 담아 사용자에게 보낸다")
+        void sendGroupAddedEmail_listsTeamDirectoryPerGroup() {
+            ChangeRequest changeRequest = mockChangeRequest("이순신", "lee@dgu.ac.kr", ChangeType.GROUP);
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(eq("email.modification.approved.group.body"), any(), any(), any(), any()))
+                    .thenReturn("본문");
+
+            alarmService.sendGroupAddedEmail(changeRequest, "승인", List.of("teama", "teamb"));
+
+            verify(messageUtils).get("email.modification.approved.group.body", "이순신", "GROUP", "승인",
+                    "- teama: ~/shared/teama (/home/_g_teama)\n- teamb: ~/shared/teamb (/home/_g_teamb)");
+            ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+            verify(mailSender).send(captor.capture());
+            assertThat(captor.getValue().getTo()).containsExactly("lee@dgu.ac.kr");
+            assertThat(captor.getValue().getText()).isEqualTo("본문");
+        }
+    }
+
+    @Nested
     @DisplayName("sendModificationRejectedEmail")
     class SendModificationRejectedEmail {
 
