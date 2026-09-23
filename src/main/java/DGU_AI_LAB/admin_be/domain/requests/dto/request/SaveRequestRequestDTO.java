@@ -62,7 +62,10 @@ public record SaveRequestRequestDTO(
         // 목록 요소에 @Valid가 없으면 PortRequestDTO 안의 포트 범위 검사가 실행되지 않는다.
         @Schema(description = "포트 요청 목록")
         @Size(max = 10, message = "포트 요청은 10개 이하여야 합니다.")
-        List<@NotNull(message = "포트 요청 항목은 비어 있을 수 없습니다.") @Valid PortRequestDTO> portRequests
+        List<@NotNull(message = "포트 요청 항목은 비어 있을 수 없습니다.") @Valid PortRequestDTO> portRequests,
+
+        @Schema(description = "noVNC GUI 활성화 여부", example = "false")
+        Boolean enableVnc
 ) {
     /**
      * @param ubuntuUsername 신청자가 입력하는 값이 아니라 가입 시 정해진 User.ubuntuUsername을
@@ -90,6 +93,7 @@ public record SaveRequestRequestDTO(
                 .usagePurpose(usagePurpose)
                 .formAnswers(formAnswersJson)
                 .expiresAt(expiresAt)
+                .enableVnc(enableVnc != null && enableVnc)
                 .build();
 
         return req;
