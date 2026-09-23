@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.monitoring.controller;
 
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import lombok.Builder;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,6 +14,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.time.Duration;
 import java.util.*;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/monitoring")
 public class MonitoringController {
@@ -59,6 +61,8 @@ public class MonitoringController {
                     .sorted(Comparator.comparing(GpuServer::hostname))
                     .toList();
         } catch (Exception e) {
+            // 빈 목록은 화면에서 "데이터 없음"과 구분되지 않는다 — 원인을 로그에 남긴다(admin_fe#169).
+            log.warn("[MONITORING] GPU 지표 조회 실패: {}", e.toString());
             return List.of();
         }
     }
@@ -71,6 +75,7 @@ public class MonitoringController {
             raw.forEach((k, v) -> result.put(k, v.intValue()));
             return result;
         } catch (Exception e) {
+            log.warn("[MONITORING] 활성 컨테이너 지표 조회 실패: {}", e.toString());
             return Map.of();
         }
     }
