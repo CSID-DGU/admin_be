@@ -181,6 +181,9 @@ public class User extends BaseTimeEntity {
     public void releaseUbuntuAccount() {
         this.ubuntuUid = null;
         this.ubuntuGid = null;
+        // 계정 삭제는 AD 사용자째 지우므로 그룹 소속도 함께 사라진다. 남겨 두면 화면엔 여전히
+        // 멤버로 보이고, 다시 승인될 때 AD에 없는 소속이 새 Pod 에 실린다.
+        this.userGroups.clear();
     }
 
     /**

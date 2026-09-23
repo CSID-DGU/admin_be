@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.entity;
 
+import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
@@ -91,6 +92,18 @@ class UserTest {
             assertThat(user.getUbuntuUid()).isNull();
             assertThat(user.getUbuntuGid()).isNull();
             assertThat(user.getUbuntuUsername()).isEqualTo("honggildong");
+        }
+
+        @Test
+        @DisplayName("계정을 회수하면 그룹 소속도 비운다 — AD 사용자째 지워져 소속도 함께 사라진다")
+        void releaseUbuntuAccount_clearsGroups() {
+            user.assignUbuntuAccount(20001L, 20001L);
+            user.addGroupIfAbsent(Group.builder().groupName("team").ubuntuGid(70001L).build());
+
+            user.releaseUbuntuAccount();
+
+            assertThat(user.getUserGroups()).isEmpty();
+            assertThat(user.getUbuntuGidsOfGroups()).isEmpty();
         }
     }
 
