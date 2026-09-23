@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.global.auth;
 
+import DGU_AI_LAB.admin_be.global.auth.jwt.JwtAccessDeniedHandler;
 import DGU_AI_LAB.admin_be.global.auth.jwt.JwtAuthenticationEntryPoint;
 import DGU_AI_LAB.admin_be.global.auth.jwt.JwtAuthenticationFilter;
 import DGU_AI_LAB.admin_be.global.auth.jwt.JwtProvider;
@@ -26,6 +27,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
+    private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
     private final CorsConfig corsConfig;
     private final JwtProvider jwtProvider;
     private final CustomUserDetailsService customUserDetailsService;
@@ -45,7 +47,9 @@ public class SecurityConfig {
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(config -> config.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .exceptionHandling(config -> config.authenticationEntryPoint(jwtAuthenticationEntryPoint))
+                .exceptionHandling(config -> config
+                        .authenticationEntryPoint(jwtAuthenticationEntryPoint)
+                        .accessDeniedHandler(jwtAccessDeniedHandler))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(SecurityWhitelist.UNPROTECTED_PATHS.toArray(new String[0])).permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
