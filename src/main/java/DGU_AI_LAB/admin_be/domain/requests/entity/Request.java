@@ -292,6 +292,14 @@ public class Request extends BaseTimeEntity {
     }
 
     /**
+     * 이 신청이 요구한 그룹에서 하나를 뺀다. 컨테이너를 다시 만들 때 신청 그룹도 함께 보내므로
+     * (AcceptInfoResponseDTO), 계정에서 뺀 그룹을 여기 남겨 두면 재생성 때 되살아난다.
+     */
+    public void removeGroup(Long groupId) {
+        this.requestGroups.removeIf(rg -> rg.getGroup().getGroupId().equals(groupId));
+    }
+
+    /**
      * Request의 상태를 DELETED로 변경합니다. (soft delete)
      * PENDING, DENIED 상태에서만 호출 가능합니다.
      * FULFILLED 상태의 요청은 인프라 정리 후 deleteAfterCleanup()을 사용하세요.

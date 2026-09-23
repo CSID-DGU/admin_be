@@ -124,6 +124,9 @@ public enum ErrorCode {
     // AD 반영 실패는 DC 접속 장애 같은 일시적 원인이 대부분이라 다시 승인하면 되는 경우가 많다.
     // 이걸 형식 오류와 같은 코드로 묶으면 관리자가 신청이 잘못됐다고 판단하고 되돌린다.
     AD_GROUP_SYNC_FAILED(HttpStatus.BAD_GATEWAY, "그룹을 AD에 반영하지 못했습니다. 잠시 후 다시 승인해 주세요."),
+    AD_GROUP_REMOVE_FAILED(HttpStatus.BAD_GATEWAY, "그룹 제거를 AD에 반영하지 못했습니다. 잠시 후 다시 시도해 주세요."),
+    PRIMARY_GROUP_REMOVAL(HttpStatus.CONFLICT, "계정의 기본 그룹에서는 뺄 수 없습니다."),
+    GROUP_MEMBER_REMOVE_FAILED(HttpStatus.BAD_GATEWAY, "외부 API: 그룹 멤버 제거 실패"),
 
     /**
      * Approval Error
