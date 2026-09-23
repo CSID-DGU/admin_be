@@ -40,6 +40,9 @@ class AdminUserControllerTest extends WebMvcTestSupport {
     @MockitoBean
     private UserService userService;
 
+    @MockitoBean
+    private DGU_AI_LAB.admin_be.domain.users.service.UserGroupService userGroupService;
+
     @Nested
     @DisplayName("GET /api/admin/users")
     class GetAllUsers {
@@ -176,5 +179,33 @@ class AdminUserControllerTest extends WebMvcTestSupport {
         mockMvc.perform(delete("/api/admin/users/5/ubuntu-account").contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk());
         org.mockito.Mockito.verify(adminUserService).deleteUbuntuAccountOfUser(5L);
+    }
+
+    @Test
+    @DisplayName("GET /api/admin/users/{id}/groups는 계정의 공용 그룹을 돌려준다")
+    void getUserGroups() throws Exception {
+        when(userGroupService.getGroupsOfUser(5L)).thenReturn(List.of(
+                new DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupResponseDTO(3L, 70000L, "teamx")));
+        mockMvc.perform(get("/api/admin/users/5/groups").contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].groupId").value(3))
+                .andExpect(jsonPath("$.data[0].groupName").value("teamx"));
+    }
+
+    @Test
+    @DisplayName("DELETE /api/admin/users/{id}/groups/{groupId}는 계정을 그룹에서 뺀다")
+    void removeUserFromGroup() throws Exception {
+        mockMvc.perform(delete("/api/admin/users/5/groups/3").contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk());
+        org.mockito.Mockito.verify(userGroupService).removeUserFromGroup(5L, 3L);
+    }
+
+    @Test
+    @DisplayName("DELETE /api/admin/users/{id}/groups/{groupId}가 기본 그룹이면 409다")
+    void removePrimaryGroupIsConflict() throws Exception {
+        org.mockito.Mockito.doThrow(new DGU_AI_LAB.admin_be.error.exception.BusinessException(ErrorCode.PRIMARY_GROUP_REMOVAL))
+                .when(userGroupService).removeUserFromGroup(5L, 3L);
+        mockMvc.perform(delete("/api/admin/users/5/groups/3").contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isConflict());
     }
 }

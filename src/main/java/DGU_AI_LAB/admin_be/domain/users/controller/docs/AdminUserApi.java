@@ -54,6 +54,25 @@ public interface AdminUserApi {
             @RequestBody @Valid UserActivationRequestDTO dto
     );
 
+    @Operation(summary = "사용자의 공용 그룹 조회", description = "계정에 실제로 반영된(AD 기준) 공용 그룹 목록을 이름순으로 반환합니다.")
+    @ApiResponse(responseCode = "200", description = "성공")
+    @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음")
+    @GetMapping("/{id}/groups")
+    ResponseEntity<SuccessResponse<?>> getUserGroups(@PathVariable @Parameter(description = "사용자 ID") Long id);
+
+    @Operation(summary = "사용자를 공용 그룹에서 제거",
+            description = "AD에서 멤버십을 빼고, 떠 있는 컨테이너에 반영한 뒤 DB를 맞춥니다. 이미 빠져 있어도 성공입니다. "
+                    + "팀 디렉터리와 그 안의 파일은 그대로 둡니다.")
+    @ApiResponse(responseCode = "200", description = "성공")
+    @ApiResponse(responseCode = "404", description = "사용자 또는 그룹이 없음")
+    @ApiResponse(responseCode = "409", description = "계정의 기본 그룹")
+    @ApiResponse(responseCode = "502", description = "AD 반영 실패")
+    @DeleteMapping("/{id}/groups/{groupId}")
+    ResponseEntity<SuccessResponse<?>> removeUserFromGroup(
+            @PathVariable @Parameter(description = "사용자 ID") Long id,
+            @PathVariable @Parameter(description = "그룹 ID") Long groupId
+    );
+
     @Operation(
             summary = "사용자 권한 변경",
             description = "사용자의 권한(ADMIN/USER)을 변경한다."

@@ -5,6 +5,7 @@ import DGU_AI_LAB.admin_be.domain.users.dto.request.UserActivationRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.controller.docs.AdminUserApi;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.ChangeRoleRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.service.AdminUserService;
+import DGU_AI_LAB.admin_be.domain.users.service.UserGroupService;
 import DGU_AI_LAB.admin_be.domain.users.service.UserService;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import jakarta.validation.Valid;
@@ -19,6 +20,7 @@ public class AdminUserController implements AdminUserApi {
 
     private final AdminUserService adminUserService;
     private final UserService userService;
+    private final UserGroupService userGroupService;
 
     @GetMapping("/{id}")
     public ResponseEntity<SuccessResponse<?>> getUser(@PathVariable Long id) {
@@ -49,6 +51,17 @@ public class AdminUserController implements AdminUserApi {
         return SuccessResponse.ok(Boolean.TRUE.equals(dto.active())
                 ? adminUserService.reactivateUser(id)
                 : adminUserService.deactivateUser(id));
+    }
+
+    @GetMapping("/{id}/groups")
+    public ResponseEntity<SuccessResponse<?>> getUserGroups(@PathVariable Long id) {
+        return SuccessResponse.ok(userGroupService.getGroupsOfUser(id));
+    }
+
+    @DeleteMapping("/{id}/groups/{groupId}")
+    public ResponseEntity<SuccessResponse<?>> removeUserFromGroup(@PathVariable Long id, @PathVariable Long groupId) {
+        userGroupService.removeUserFromGroup(id, groupId);
+        return SuccessResponse.ok(null);
     }
 
     @PatchMapping("/{id}/role")

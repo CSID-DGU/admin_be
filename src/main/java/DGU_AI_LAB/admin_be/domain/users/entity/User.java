@@ -184,8 +184,8 @@ public class User extends BaseTimeEntity {
     }
 
     /**
-     * 이 계정에 그룹을 추가한다. config-server의 add_user_groups가 추가 전용(멤버 제거
-     * API 없음)이라 DB도 같은 의미로만 맞춘다 — 이미 속한 그룹이면 조용히 무시한다(멱등).
+     * 이 계정에 그룹을 추가한다. config-server의 add_user_groups가 집합-추가라 DB도 같은
+     * 의미로 맞춘다 — 이미 속한 그룹이면 조용히 무시한다(멱등). 제거는 removeGroup.
      * AD에 실제로 반영된 뒤에만(completeApprovalJob/approveModification의 그룹 반영
      * 3단계) 호출해야 DB가 AD보다 앞서가는 거짓 상태가 생기지 않는다.
      */
@@ -196,6 +196,14 @@ public class User extends BaseTimeEntity {
             return;
         }
         this.userGroups.add(UserGroup.builder().user(this).group(group).build());
+    }
+
+    /**
+     * 이 계정에서 그룹을 뺀다. AD에서 실제로 뺀 뒤에만 호출해야 한다(addGroupIfAbsent와 같은 이유).
+     * 속하지 않은 그룹이면 아무 일도 하지 않는다.
+     */
+    public void removeGroup(Long groupId) {
+        this.userGroups.removeIf(ug -> ug.getGroup().getGroupId().equals(groupId));
     }
 
     public Set<Long> getUbuntuGidsOfGroups() {

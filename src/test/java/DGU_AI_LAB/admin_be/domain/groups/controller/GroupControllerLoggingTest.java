@@ -48,7 +48,7 @@ class GroupControllerLoggingTest {
         CustomUserDetails principal = new CustomUserDetails(user, null);
 
         when(groupService.createGroup(any(CreateGroupRequestDTO.class), nullable(Long.class)))
-                .thenReturn(new GroupResponseDTO(5000L, "ai-lab-team"));
+                .thenReturn(new GroupResponseDTO(1L, 5000L, "ai-lab-team"));
 
         try (LogCaptor logCaptor = LogCaptor.forClass(GroupController.class)) {
             groupController.createGroup(dto, principal);

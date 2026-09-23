@@ -221,6 +221,53 @@ public class GroupService {
     }
 
     /**
+     * 사용자를 공용 그룹에서 뺀다(DELETE /accounts/users/{username}/groups/{groupname}).
+     * config-server가 AD → group 파일 → 떠 있는 Pod 순으로 반영하고, 이미 빠져 있어도 성공으로
+     * 답한다 — 그래서 DB 반영이 실패했을 때 같은 요청을 다시 보내 이어서 끝낼 수 있다.
+     * 떠 있는 세션까지 막으려면 이어서 triggerNasGssFlush를 불러야 한다.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void removeUserFromGroup(String username, String groupName) {
+        log.info("[removeUserFromGroup] 사용자 그룹 제거 API 호출 시작: username={}, group={}", username, groupName);
+        WebClientErrorHandler.onError(
+                        groupCreationWebClient
+                                .delete()
+                                .uri("/users/{username}/groups/{groupName}", username, groupName)
+                                .retrieve(),
+                        (status, body) -> {
+                            log.error("[removeUserFromGroup] 외부 API 오류: username={}, group={}, 상태 코드={}, 응답={}",
+                                    username, groupName, status, body);
+                            return mapRemoveUserFromGroupError(status, body);
+                        }
+                )
+                .toBodilessEntity()
+                .block();
+        log.info("[removeUserFromGroup] 사용자 그룹 제거 완료: username={}, group={}", username, groupName);
+    }
+
+    /**
+     * config-server remove_user_group 의 error 필드로 가른다(mapAddUserToGroupsError와 같은 이유).
+     * 시험이 닿도록 패키지 범위로 둔다.
+     */
+    static BusinessException mapRemoveUserFromGroupError(HttpStatusCode status, String body) {
+        String safeBody = body == null ? "" : body;
+        if (safeBody.contains("\"AD_GROUP_MEMBER_FAILED\"")) {
+            return new BusinessException("사용자 그룹 제거 실패(AD 반영): " + safeBody,
+                    ErrorCode.AD_GROUP_REMOVE_FAILED);
+        }
+        if (safeBody.contains("\"PRIMARY_GROUP\"")) {
+            return new BusinessException("사용자 그룹 제거 실패(기본 그룹): " + safeBody,
+                    ErrorCode.PRIMARY_GROUP_REMOVAL);
+        }
+        if (safeBody.contains("\"GROUP_NOT_FOUND\"")) {
+            return new BusinessException("사용자 그룹 제거 실패(그룹 없음): " + safeBody,
+                    ErrorCode.GROUP_NOT_FOUND);
+        }
+        return WebClientErrorHandler.rejectedOr(status, safeBody,
+                "사용자 그룹 제거 실패", ErrorCode.GROUP_MEMBER_REMOVE_FAILED);
+    }
+
+    /**
      * NAS GSS 캐시 온디맨드 flush를 트리거한다(admin_infra-proposed#161). addUserToGroups로 AD
      * 반영이 끝난 뒤 호출한다 — config-server가 백그라운드에서 재시도하다 최대 10분 안에 못
      * 끝내면 포기하는 fire-and-forget이라, 여기서도 실패를 승인 흐름에 전파하지 않는다. 이게

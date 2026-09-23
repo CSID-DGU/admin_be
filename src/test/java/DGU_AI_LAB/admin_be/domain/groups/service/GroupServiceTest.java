@@ -383,6 +383,35 @@ class GroupServiceTest {
     }
 
     @Nested
+    @DisplayName("mapRemoveUserFromGroupError")
+    class MapRemoveUserFromGroupError {
+
+        private ErrorCode codeOf(HttpStatus status, String body) {
+            return GroupService.mapRemoveUserFromGroupError(status, body).getErrorCode();
+        }
+
+        @Test
+        @DisplayName("config-server remove_user_group 의 error 코드를 각각의 ErrorCode 로 바꾼다")
+        void mapsMachineCodes() {
+            assertThat(codeOf(HttpStatus.INTERNAL_SERVER_ERROR, "{\"error\":\"AD_GROUP_MEMBER_FAILED\"}"))
+                    .isEqualTo(ErrorCode.AD_GROUP_REMOVE_FAILED);
+            assertThat(codeOf(HttpStatus.CONFLICT, "{\"error\":\"PRIMARY_GROUP\"}"))
+                    .isEqualTo(ErrorCode.PRIMARY_GROUP_REMOVAL);
+            assertThat(codeOf(HttpStatus.NOT_FOUND, "{\"error\":\"GROUP_NOT_FOUND\"}"))
+                    .isEqualTo(ErrorCode.GROUP_NOT_FOUND);
+        }
+
+        @Test
+        @DisplayName("모르는 4xx 는 거절, 5xx 와 빈 본문은 제거 실패로 가른다")
+        void unknownErrors_fallBackToRejectedOr() {
+            assertThat(codeOf(HttpStatus.BAD_REQUEST, "{\"error\":\"INVALID_NAME\"}"))
+                    .isEqualTo(ErrorCode.INFRA_REQUEST_REJECTED);
+            assertThat(codeOf(HttpStatus.BAD_GATEWAY, null))
+                    .isEqualTo(ErrorCode.GROUP_MEMBER_REMOVE_FAILED);
+        }
+    }
+
+    @Nested
     @DisplayName("triggerNasGssFlush(admin_infra-proposed#161)")
     class TriggerNasGssFlush {
 

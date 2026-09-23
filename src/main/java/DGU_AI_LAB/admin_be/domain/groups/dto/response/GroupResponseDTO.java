@@ -7,6 +7,8 @@ import lombok.Builder;
 @Schema(description = "리눅스 그룹 응답 DTO")
 @Builder
 public record GroupResponseDTO(
+        @Schema(description = "그룹 ID", example = "3")
+        Long groupId,
         @Schema(description = "Ubuntu GID", example = "1005")
         Long ubuntuGid,
         @Schema(description = "그룹명", example = "admin-team")
@@ -14,6 +16,7 @@ public record GroupResponseDTO(
 ) {
     public static GroupResponseDTO fromEntity(Group group) {
         return GroupResponseDTO.builder()
+                .groupId(group.getGroupId())
                 .ubuntuGid(group.getUbuntuGid())
                 .groupName(group.getGroupName())
                 .build();
