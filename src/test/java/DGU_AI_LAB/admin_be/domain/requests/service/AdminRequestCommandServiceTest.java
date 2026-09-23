@@ -55,6 +55,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -553,7 +554,9 @@ class AdminRequestCommandServiceTest {
             verify(originalRequest, never()).addGroup(any());
             verify(mockUser).addGroupIfAbsent(newGroup);
             verify(changeRequest).approve(mockUser, "그룹 변경 승인");
-            verify(alarmService).sendModificationApprovedEmail(changeRequest, "그룹 변경 승인");
+            // 그룹 승인은 팀 디렉터리 경로를 담은 전용 안내로 보낸다.
+            verify(alarmService).sendGroupAddedEmail(eq(changeRequest), eq("그룹 변경 승인"), anyList());
+            verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
             // AD 반영 직후 NAS GSS 온디맨드 flush를 트리거한다(admin_infra-proposed#161).
             verify(groupService).triggerNasGssFlush("testuser");
         }
