@@ -3,10 +3,15 @@ package DGU_AI_LAB.admin_be.domain.requests.dto.response;
 import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
 import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup;
+import DGU_AI_LAB.admin_be.domain.users.entity.UserGroup;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 
 @Schema(description = "인프라 요청 승인 정보 응답 DTO")
 @Builder
@@ -61,15 +66,19 @@ public record AcceptInfoResponseDTO(
     public static AcceptInfoResponseDTO fromEntity(Request request, List<PortRequests> portRequests, List<Node> nodes) {
         var image = request.getContainerImage();
 
-        // 계정(User) 단위 그룹 전체를 보낸다 — 이 신청 하나만의 그룹이 아니라, 같은 계정의
-        // 다른 컨테이너에서 이후 추가된 그룹까지 포함해야 마이그레이션/재프로비저닝 시에도
-        // 새 Pod가 계정이 가진 전체 그룹을 받는다.
-        List<GroupDTO> groupDTOList = request.getUser().getUserGroups().stream()
-                .map(ug -> GroupDTO.builder()
-                        .gid(ug.getGroup().getUbuntuGid())
-                        .name(ug.getGroup().getGroupName())
-                        .build())
-                .toList();
+        // 계정(User) 단위 그룹 전체에 이 신청의 그룹을 더해 보낸다. 계정 그룹만 보내면 마이그레이션·
+        // 재프로비저닝 때 다른 컨테이너에서 얻은 그룹이 빠지지 않는다. 이 신청의 그룹은 Pod 생성이
+        // 끝난 뒤(completeApprovalJob)에야 계정으로 옮겨지므로, 여기서 더하지 않으면 그룹을 받으려고
+        // 낸 신청의 첫 컨테이너에 그 그룹이 없다.
+        Map<Long, GroupDTO> groupsByGid = new LinkedHashMap<>();
+        Stream.concat(
+                request.getUser().getUserGroups().stream().map(UserGroup::getGroup),
+                request.getRequestGroups().stream().map(RequestGroup::getGroup)
+        ).forEach(g -> groupsByGid.putIfAbsent(g.getUbuntuGid(), GroupDTO.builder()
+                .gid(g.getUbuntuGid())
+                .name(g.getGroupName())
+                .build()));
+        List<GroupDTO> groupDTOList = List.copyOf(groupsByGid.values());
 
         List<GpuNodeDTO> gpuNodeDTOList = nodes.stream()
                 .map(node -> GpuNodeDTO.builder()

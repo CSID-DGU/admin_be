@@ -8,6 +8,7 @@ import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
 import DGU_AI_LAB.admin_be.domain.portRequests.repository.PortRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.AcceptInfoResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
@@ -88,6 +89,46 @@ class ConfigRequestServiceTest {
         assertThat(service.isUbuntuUsernameAvailable("free")).isTrue();
         // 종료된 신청 이력에 같은 유저네임이 남아 있어도 가용성 판단에 끼어들면 안 된다.
         verifyNoInteractions(requestRepository);
+    }
+
+    @Test
+    @DisplayName("이 신청의 그룹도 보낸다 — 계정으로 옮겨지기 전(첫 컨테이너 생성 중)에도 Pod가 그룹을 받아야 한다")
+    void getAcceptInfo_includesThisRequestsGroupsWithoutDuplicates() {
+        // Given: 계정은 이미 ailab(2001)을 갖고, 이번 신청은 ailab과 새 팀(70002)을 요구한다
+        String username = "testuser";
+        ResourceGroup resourceGroup = mock(ResourceGroup.class);
+        Group ailab = mock(Group.class);
+        when(ailab.getUbuntuGid()).thenReturn(2001L);
+        when(ailab.getGroupName()).thenReturn("ailab");
+        Group team = mock(Group.class);
+        when(team.getUbuntuGid()).thenReturn(70002L);
+        when(team.getGroupName()).thenReturn("teamshare_e2e");
+        UserGroup owned = mock(UserGroup.class);
+        when(owned.getGroup()).thenReturn(ailab);
+        RequestGroup askedAilab = mock(RequestGroup.class);
+        when(askedAilab.getGroup()).thenReturn(ailab);
+        RequestGroup askedTeam = mock(RequestGroup.class);
+        when(askedTeam.getGroup()).thenReturn(team);
+
+        ContainerImage image = mock(ContainerImage.class);
+        Request request = mock(Request.class);
+        when(request.getRequestId()).thenReturn(1L);
+        when(request.getContainerImage()).thenReturn(image);
+        User user = mockUserWithGroups(owned);
+        when(request.getUser()).thenReturn(user);
+        when(request.getResourceGroup()).thenReturn(resourceGroup);
+        when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>(List.of(askedAilab, askedTeam)));
+        when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
+                .thenReturn(List.of(request));
+        when(portRequestRepository.findByRequestRequestId(1L)).thenReturn(List.of());
+        when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of());
+
+        // When
+        AcceptInfoResponseDTO result = service.getAcceptInfo(username);
+
+        // Then
+        assertThat(result.groups()).extracting(AcceptInfoResponseDTO.GroupDTO::gid)
+                .containsExactly(2001L, 70002L);
     }
 
     @Test

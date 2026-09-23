@@ -840,6 +840,25 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
+        @DisplayName("응답은 트랜잭션 안에서 만든다 — 커밋 뒤 lazy 연관(user.userGroups)을 읽으면 승인은 됐는데 500이 난다")
+        void buildsResponseBeforeCommit() {
+            // Given
+            Long requestId = 205L;
+            buildMockedRequest(requestId);
+            java.util.concurrent.atomic.AtomicBoolean committed = new java.util.concurrent.atomic.AtomicBoolean(false);
+            doAnswer(inv -> { committed.set(true); return null; }).when(transactionManager).commit(any());
+            when(mockUser.getUserGroups()).thenAnswer(inv -> {
+                if (committed.get()) {
+                    throw new org.hibernate.LazyInitializationException("could not initialize proxy - no Session");
+                }
+                return new java.util.HashSet<>();
+            });
+
+            // When & Then
+            assertThat(service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null))).isNotNull();
+        }
+
+        @Test
         @DisplayName("작업 등록이 실패하면 신청을 PENDING으로 되돌린다")
         void revertsWhenRegistrationFails() {
             // Given
