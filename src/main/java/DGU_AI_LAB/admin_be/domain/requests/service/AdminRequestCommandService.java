@@ -473,8 +473,10 @@ public class AdminRequestCommandService {
                         .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
                 if (changeRequest.getStatus() != Status.PENDING || originalRequest.getStatus() != Status.FULFILLED) {
-                    // AD 반영은 이미 끝났다 — candidate 2(보상 삭제) API가 config-server에 없어 여기서
-                    // 되돌릴 방법이 없다. 방치하면 아무도 모르는 채로 남으므로 반드시 알린다.
+                    // AD 반영은 이미 끝났다. 자동 보상 삭제는 하지 않는다 — newGroups에는 신청 전부터
+                    // 소속돼 있던 그룹도 섞일 수 있어 일괄 제거하면 기존 소속까지 끊긴다. 방치하면
+                    // 아무도 모르는 채로 남으므로 반드시 알리고, 필요하면 관리자가 그룹 제거 API
+                    // (DELETE /api/admin/users/{id}/groups/{groupId})로 개별 정리한다.
                     log.error("[approveModification] AD 그룹 반영 완료 후 상태 불일치로 DB 커밋 실패 - 수동 확인 필요: " +
                                     "changeRequestId={}, requestId={}, groups={}",
                             dto.changeRequestId(), originalRequestIdRef.get(), newGroupNamesRef.get());
