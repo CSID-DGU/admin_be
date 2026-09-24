@@ -116,6 +116,7 @@ public enum ErrorCode {
     NO_AVAILABLE_GROUPS(HttpStatus.NOT_FOUND, "존재하는 그룹 정보가 없습니다."),
     DUPLICATE_GROUP_ID(HttpStatus.CONFLICT, "외부 API: 그룹명 또는 GID 충돌"),
     DUPLICATE_GROUP_NAME(HttpStatus.CONFLICT, "중복된 그룹 이름입니다."),
+    DUPLICATE_CONTAINER_IMAGE(HttpStatus.CONFLICT, "같은 이름과 버전의 이미지가 이미 등록되어 있습니다."),
     GROUP_CREATION_FAILED(HttpStatus.BAD_GATEWAY, "외부 API: 필수 필드 누락 또는 형식 오류 "),
     GID_ALLOCATION_FAILED(HttpStatus.BAD_GATEWAY, "외부 API 응답에서 GID를 확인할 수 없습니다."),
     FORBIDDEN_REQUEST(HttpStatus.FORBIDDEN, "요청된 우분투 사용자 이름은 로그인한 사용자의 계정이 아닙니다."),
