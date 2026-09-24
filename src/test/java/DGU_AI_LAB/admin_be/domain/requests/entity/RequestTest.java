@@ -27,7 +27,6 @@ class RequestTest {
 
         request = Request.builder()
                 .ubuntuUsername("testuser")
-                .ubuntuPasswordHash("hashedPassword")
                 .expiresAt(LocalDateTime.now().plusDays(30))
                 .usagePurpose("딥러닝 연구")
                 .formAnswers("{}")

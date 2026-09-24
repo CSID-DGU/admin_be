@@ -72,6 +72,13 @@ public class User extends BaseTimeEntity {
     @Column(name = "ubuntu_gid")
     private Long ubuntuGid;
 
+    /**
+     * 우분투 로그인 비밀번호의 SHA-512 crypt 해시($6$...). 유저네임처럼 웹 계정에 하나다 — 첫 신청에서
+     * 받고, 이후 모든 컨테이너가 이 값으로 만들어진다. 평문은 받자마자 해시로 바꾸고 저장하지 않는다.
+     */
+    @Column(name = "ubuntu_password_hash")
+    private String ubuntuPasswordHash;
+
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
 
@@ -144,6 +151,14 @@ public class User extends BaseTimeEntity {
 
     public void changeRole(Role newRole) {
         this.role = newRole;
+    }
+
+    public boolean hasUbuntuPassword() {
+        return this.ubuntuPasswordHash != null && !this.ubuntuPasswordHash.isBlank();
+    }
+
+    public void changeUbuntuPasswordHash(String ubuntuPasswordHash) {
+        this.ubuntuPasswordHash = ubuntuPasswordHash;
     }
 
     /** 실제 리눅스 계정(UID/GID)이 이미 배정되어 있는지. false면 승인 시 계정 생성 API를 호출해야 한다. */

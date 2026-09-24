@@ -107,8 +107,13 @@ public enum ErrorCode {
     SLACK_USER_NOT_FOUND(HttpStatus.NOT_FOUND, "Slack 사용자를 찾을 수 없습니다."),
     SLACK_USER_EMAIL_NOT_MATCH(HttpStatus.NOT_FOUND, "이메일이 일치하는 Slack 사용자를 찾을 수 없습니다."),
 
-    INVALID_PASSWORD(HttpStatus.UNAUTHORIZED, "현재 비밀번호가 일치하지 않습니다."),
+    // 로그인한 사용자가 변경 폼에 적은 현재 비밀번호가 틀린 것이라 인증 실패(401)가 아니다. 401이면 화면이
+    // 세션 만료로 보고 로그아웃시킨다.
+    INVALID_PASSWORD(HttpStatus.BAD_REQUEST, "현재 비밀번호가 일치하지 않습니다."),
     PASSWORD_CHANGE_SAME_AS_OLD(HttpStatus.BAD_REQUEST, "새 비밀번호가 현재 비밀번호와 동일합니다."),
+    TOO_MANY_PASSWORD_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "현재 비밀번호를 여러 번 틀렸습니다. 15분 후 다시 시도해주세요."),
+    UBUNTU_PASSWORD_REQUIRED(HttpStatus.BAD_REQUEST, "첫 신청에는 우분투 비밀번호가 필요합니다."),
+    UBUNTU_PASSWORD_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "우분투 비밀번호를 컨테이너에 반영하지 못했습니다. 잠시 후 다시 시도해주세요."),
 
     /**
      * Group Error

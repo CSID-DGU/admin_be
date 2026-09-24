@@ -34,9 +34,9 @@ public record SaveRequestRequestDTO(
         @Positive(message = "이미지 ID는 양수여야 합니다.")
         Long imageId,
 
-        // 화면(신청 마법사)도 8자 이상을 요구한다.
-        @Schema(description = "Ubuntu 비밀번호", example = "strongPassword123!")
-        @NotBlank(message = "우분투 비밀번호는 필수입니다.")
+        // 계정 비밀번호가 아직 없을 때(첫 신청)만 필요하다 — 서비스가 확인한다. 화면도 8자 이상을 요구한다.
+        @Schema(description = "Ubuntu 비밀번호. 계정 비밀번호가 없을 때(첫 신청)만 필요하고, 있으면 무시한다.",
+                example = "strongPassword123!")
         @Size(min = 8, max = 128, message = "우분투 비밀번호는 8~128자여야 합니다.")
         String ubuntuPassword,
 
@@ -70,14 +70,12 @@ public record SaveRequestRequestDTO(
     /**
      * @param ubuntuUsername 신청자가 입력하는 값이 아니라 가입 시 정해진 User.ubuntuUsername을
      *                       그대로 복사해 넣는다 — 서비스에서 꺼내 넘긴다.
-     * @param ubuntuPasswordHash ubuntuPassword를 서비스에서 해시한 값. 평문은 엔티티에 넣지 않는다.
      */
     public Request toEntity(
             User user,
             ResourceGroup resourceGroup,
             ContainerImage image,
-            String ubuntuUsername,
-            String ubuntuPasswordHash
+            String ubuntuUsername
     ) {
         String formAnswersJson;
         try {
@@ -91,7 +89,6 @@ public record SaveRequestRequestDTO(
                 .resourceGroup(resourceGroup)
                 .containerImage(image)
                 .ubuntuUsername(ubuntuUsername)
-                .ubuntuPasswordHash(ubuntuPasswordHash)
                 .usagePurpose(usagePurpose)
                 .formAnswers(formAnswersJson)
                 .expiresAt(expiresAt)

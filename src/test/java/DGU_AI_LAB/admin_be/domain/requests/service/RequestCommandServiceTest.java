@@ -93,7 +93,6 @@ class RequestCommandServiceTest {
 
             Request savedReq = Request.builder()
                     .ubuntuUsername("honggildong")
-                    .ubuntuPasswordHash("pw")
                     .expiresAt(LocalDateTime.now().plusDays(30))
                     .usagePurpose("연구")
                     .formAnswers("{}")
@@ -110,7 +109,7 @@ class RequestCommandServiceTest {
             when(dto.resourceGroupId()).thenReturn(1);
             when(dto.imageId()).thenReturn(1L);
             when(dto.ubuntuPassword()).thenReturn("strongPassword1!");
-            when(dto.toEntity(any(), any(), any(), anyString(), anyString())).thenReturn(savedReq);
+            when(dto.toEntity(any(), any(), any(), anyString())).thenReturn(savedReq);
             when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
 
             assertThat(requestCommandService.createRequest(1L, dto).ubuntuUsername())
@@ -275,7 +274,7 @@ class RequestCommandServiceTest {
             when(dto.resourceGroupId()).thenReturn(1);
             when(dto.imageId()).thenReturn(1L);
             when(dto.ubuntuPassword()).thenReturn("strongPassword1!");
-            when(dto.toEntity(any(), any(), any(), anyString(), anyString())).thenReturn(savedReq);
+            when(dto.toEntity(any(), any(), any(), anyString())).thenReturn(savedReq);
             when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
             // GID 2개 요청했지만 0개만 발견 → 예외 발생 (portRequests 도달 전)
             when(dto.ubuntuGids()).thenReturn(java.util.Set.of(1001L, 1002L));
@@ -300,7 +299,6 @@ class RequestCommandServiceTest {
             // 응답 DTO 조립까지 통과해야 하므로 mock 대신 실제 엔티티를 저장 결과로 돌려준다.
             Request savedReq = Request.builder()
                     .ubuntuUsername("honggildong")
-                    .ubuntuPasswordHash("pw")
                     .expiresAt(LocalDateTime.now().plusDays(30))
                     .usagePurpose("연구")
                     .formAnswers("{}")
@@ -312,13 +310,70 @@ class RequestCommandServiceTest {
             when(dto.resourceGroupId()).thenReturn(1);
             when(dto.imageId()).thenReturn(1L);
             when(dto.ubuntuPassword()).thenReturn("strongPassword1!");
-            when(dto.toEntity(any(), any(), any(), anyString(), anyString())).thenReturn(savedReq);
+            when(dto.toEntity(any(), any(), any(), anyString())).thenReturn(savedReq);
             when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
 
             SaveRequestResponseDTO response = requestCommandService.createRequest(1L, dto);
 
-            verify(dto).toEntity(eq(user), eq(rg), eq(img), eq("honggildong"), argThat(hash -> hash.startsWith("$6$") && !hash.contains("strongPassword1!")));
+            verify(dto).toEntity(eq(user), eq(rg), eq(img), eq("honggildong"));
             assertThat(response.ubuntuUsername()).isEqualTo("honggildong");
+        }
+
+        private SaveRequestRequestDTO stubbedCreate(User user, String ubuntuPassword) {
+            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
+            ContainerImage img = ContainerImage.builder()
+                    .imageName("cuda").imageVersion("11.8").cudaVersion("11.8").description("test").build();
+            lenient().when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
+            lenient().when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
+            lenient().when(containerImageRepository.findById(any())).thenReturn(Optional.of(img));
+            Request savedReq = Request.builder()
+                    .ubuntuUsername(user.getUbuntuUsername())
+                    .expiresAt(LocalDateTime.now().plusDays(30))
+                    .usagePurpose("연구").formAnswers("{}")
+                    .user(user).resourceGroup(rg).containerImage(img)
+                    .build();
+            SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
+            lenient().when(dto.resourceGroupId()).thenReturn(1);
+            lenient().when(dto.imageId()).thenReturn(1L);
+            lenient().when(dto.ubuntuPassword()).thenReturn(ubuntuPassword);
+            lenient().when(dto.toEntity(any(), any(), any(), anyString())).thenReturn(savedReq);
+            lenient().when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
+            return dto;
+        }
+
+        @Test
+        @DisplayName("첫 신청의 비밀번호는 해시로 바꿔 웹 계정에 저장한다")
+        void createRequest_storesFirstPasswordHashOnUser() {
+            User user = userWithUbuntuUsername("honggildong");
+
+            requestCommandService.createRequest(1L, stubbedCreate(user, "strongPassword1!"));
+
+            assertThat(user.getUbuntuPasswordHash()).startsWith("$6$").doesNotContain("strongPassword1!");
+        }
+
+        @Test
+        @DisplayName("계정 비밀번호가 이미 있으면 신청에 담긴 비밀번호는 무시한다")
+        void createRequest_keepsExistingAccountPassword() {
+            User user = userWithUbuntuUsername("honggildong");
+            user.changeUbuntuPasswordHash("$6$existing$hash");
+
+            requestCommandService.createRequest(1L, stubbedCreate(user, "anotherPassword1!"));
+
+            assertThat(user.getUbuntuPasswordHash()).isEqualTo("$6$existing$hash");
+        }
+
+        @Test
+        @DisplayName("계정 비밀번호가 없는데 비밀번호를 보내지 않으면 UBUNTU_PASSWORD_REQUIRED")
+        void createRequest_requiresPasswordOnFirstRequest() {
+            User user = userWithUbuntuUsername("honggildong");
+            SaveRequestRequestDTO dto = stubbedCreate(user, "   ");
+
+            assertThatThrownBy(() -> requestCommandService.createRequest(1L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.UBUNTU_PASSWORD_REQUIRED);
+            verify(requestRepository, never()).saveAndFlush(any());
+            assertThat(user.hasUbuntuPassword()).isFalse();
         }
     }
 
@@ -332,7 +387,6 @@ class RequestCommandServiceTest {
 
             return Request.builder()
                     .ubuntuUsername("cancelUser")
-                    .ubuntuPasswordHash("hashedPassword")
                     .expiresAt(LocalDateTime.now().plusDays(30))
                     .usagePurpose("딥러닝 연구")
                     .formAnswers("{}")

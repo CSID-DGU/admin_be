@@ -128,7 +128,7 @@ public class AdminRequestCommandService {
             creationDtoRef[0] = new UserCreationRequestDTO(
                     dto.requestId(),
                     req.getUbuntuUsername(),
-                    req.getUbuntuPasswordHash(),
+                    req.getUser().getUbuntuPasswordHash(),
                     req.getUser().getName(),
                     req.getUbuntuUsername(),
                     false,
@@ -255,11 +255,6 @@ public class AdminRequestCommandService {
                 e -> log.warn("사용자 '{}'에게 배정 안내 메일 발송 실패. (RequestId: {})",
                         savedRequest.getUser().getName(), savedRequest.getRequestId(), e)
         );
-        // 초기 비밀번호 해시는 계정·Pod를 만들 때만 필요하다. 만든 뒤에는 신청에 남기지 않는다.
-        new TransactionTemplate(transactionManager).execute(status -> {
-            requestRepository.findByIdForUpdate(requestId).ifPresent(Request::clearUbuntuPasswordHash);
-            return null;
-        });
     }
 
     /**
@@ -332,8 +327,6 @@ public class AdminRequestCommandService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
         request.reject(dto.adminComment());
-        // 거절된 신청의 비밀번호 해시는 더 쓸 곳이 없다.
-        request.clearUbuntuPasswordHash();
         sendNotificationSafely(
                 () -> alarmService.sendRequestRejectedEmail(request, dto.adminComment()),
                 () -> {},

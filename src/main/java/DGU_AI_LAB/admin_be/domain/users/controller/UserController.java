@@ -3,8 +3,10 @@ package DGU_AI_LAB.admin_be.domain.users.controller;
 import DGU_AI_LAB.admin_be.domain.users.controller.docs.UserApi;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PasswordUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PhoneUpdateRequestDTO;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuPasswordUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuUsernameRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
+import DGU_AI_LAB.admin_be.domain.users.service.UbuntuPasswordService;
 import DGU_AI_LAB.admin_be.domain.users.service.UserService;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 public class UserController implements UserApi {
 
     private final UserService userService;
+    private final UbuntuPasswordService ubuntuPasswordService;
 
     /**
      * 사용자 정보 확인 API
@@ -68,5 +71,17 @@ public class UserController implements UserApi {
     ) {
         UserResponseDTO updatedUser = userService.registerUbuntuUsername(principal.getUserId(), request);
         return SuccessResponse.ok(updatedUser);
+    }
+
+    /**
+     * Ubuntu 비밀번호 변경 API — 떠 있는 컨테이너까지 함께 바뀐다
+     * PATCH /api/users/me/ubuntu-password
+     */
+    @PatchMapping("/me/ubuntu-password")
+    public ResponseEntity<SuccessResponse<?>> updateUbuntuPassword(
+            @AuthenticationPrincipal CustomUserDetails principal,
+            @RequestBody @Valid UbuntuPasswordUpdateRequestDTO request
+    ) {
+        return SuccessResponse.ok(ubuntuPasswordService.changeUbuntuPassword(principal.getUserId(), request));
     }
 }

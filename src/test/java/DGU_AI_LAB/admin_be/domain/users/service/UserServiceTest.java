@@ -42,6 +42,9 @@ class UserServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private CurrentPasswordVerifier currentPasswordVerifier;
+
     private User mockUser;
 
     @BeforeEach
@@ -115,7 +118,6 @@ class UserServiceTest {
         @DisplayName("현재 비밀번호가 일치하고 새 비밀번호가 다르면 비밀번호 변경에 성공한다")
         void updatePassword_success() {
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
-            when(passwordEncoder.matches("currentPw", "encodedPassword")).thenReturn(true);
             when(passwordEncoder.matches("newPw", "encodedPassword")).thenReturn(false);
             when(passwordEncoder.encode("newPw")).thenReturn("newEncodedPw");
 
@@ -129,7 +131,8 @@ class UserServiceTest {
         @DisplayName("현재 비밀번호가 틀리면 BusinessException을 던진다")
         void updatePassword_throwsException_whenCurrentPasswordWrong() {
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
-            when(passwordEncoder.matches("wrongPw", "encodedPassword")).thenReturn(false);
+            doThrow(new BusinessException(DGU_AI_LAB.admin_be.error.ErrorCode.INVALID_PASSWORD))
+                    .when(currentPasswordVerifier).verify(mockUser, "wrongPw");
 
             PasswordUpdateRequestDTO request = new PasswordUpdateRequestDTO("wrongPw", "newPw");
 

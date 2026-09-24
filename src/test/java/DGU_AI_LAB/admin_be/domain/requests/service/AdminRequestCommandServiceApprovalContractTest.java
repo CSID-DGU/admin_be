@@ -111,7 +111,7 @@ class AdminRequestCommandServiceApprovalContractTest {
         when(request.getRequestId()).thenReturn(requestId);
         when(request.getStatus()).thenReturn(Status.PENDING, Status.PROCESSING);
         when(request.getUbuntuUsername()).thenReturn("testuser");
-        when(request.getUbuntuPasswordHash()).thenReturn("$6$salt$hash");
+        when(mockUser.getUbuntuPasswordHash()).thenReturn("$6$salt$hash");
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
         when(request.getUser()).thenReturn(mockUser);
         when(request.getResourceGroup()).thenReturn(mockRg);

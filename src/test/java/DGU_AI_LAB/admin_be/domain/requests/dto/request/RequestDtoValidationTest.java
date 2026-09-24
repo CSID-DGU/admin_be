@@ -96,6 +96,12 @@ class RequestDtoValidationTest {
         }
 
         @Test
+        @DisplayName("우분투 비밀번호는 생략할 수 있다 — 첫 신청인지는 서비스가 계정으로 판단한다")
+        void ubuntuPassword_optional() {
+            assertThat(violatedPaths(valid().ubuntuPassword(null).build())).doesNotContain("ubuntuPassword");
+        }
+
+        @Test
         @DisplayName("그룹 GID는 양수여야 하고 20개를 넘을 수 없다")
         void ubuntuGids_bounds() {
             assertThat(violatedPaths(valid().ubuntuGids(Set.of(-1L)).build())).anyMatch(p -> p.startsWith("ubuntuGids"));
