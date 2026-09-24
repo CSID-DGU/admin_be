@@ -95,30 +95,20 @@ java -jar build/libs/admin-be-0.0.1-SNAPSHOT.jar
 `src/main/resources/application.yml` 파일에 노션에 정리된 설정값을 필수로 입력해야 정상 동작합니다.
 
 ### 1. 브랜치 전략 (Branch Strategy)
-우리는 Git Flow 전략을 기반으로 운영하며, main 브랜치에 코드가 통합될 때만 실제 서버 배포가 이루어집니다.
-| 브랜치 이름 | 역할 | 배포 여부 | 비고 |
-| :--- | :--- | :---: | :--- |
-| **`main`** | **운영(Production) 환경** | **O (자동)** | 배포 시점: PR Merge 직후 |
-| **`develop`** | **개발(Development) 통합** | X | 기능 개발 후 통합 테스트 용도 |
-| `feature/*` | 개별 기능 개발 | X | `develop`에서 분기하여 작업 |
-| `hotfix/*` | 운영 이슈 긴급 수정 | O | `main`에서 분기, Merge 후 즉시 배포 (사용 권장 X)|
+Git Flow 전략을 기반으로 운영합니다. 이 레포에는 배포 워크플로가 없어 어느 브랜치에 push해도 서버에 배포되지 않습니다.
+| 브랜치 이름 | 역할 | 비고 |
+| :--- | :--- | :--- |
+| **`main`** | 릴리스 기준 | `develop`에서 검증된 코드만 승격 |
+| **`develop`** | 개발 통합 | 배포 워크플로의 기본 대상 |
+| `feature/*` | 개별 기능 개발 | `develop`에서 분기하여 작업 |
 
 ---
 
-### 2. CI/CD 파이프라인 (Deployment Pipeline)
+### 2. 배포 (Deployment)
 
-배포 자동화는 **GitHub Actions**를 사용하며, 오직 `main` 브랜치에 `push` 이벤트가 발생할 때 실행됩니다.
-
-### 🔄 배포 흐름 (Workflow)
-1.  **Trigger**: `develop` → `main`으로 PR이 Merge 되면 워크플로우가 시작됩니다.
-2.  **Build & Push**:
-    * 소스 코드를 기반으로 Docker 이미지를 빌드합니다.
-    * 이미지 태그는 `latest`와 `Git Commit Hash` 두 가지로 생성됩니다.
-    * Docker Hub의 팀/조직 레포지토리로 Push 됩니다.
-3.  **Deploy (Helm Upgrade)**:
-    * GitHub Actions가 운영 서버(`farm8`)에 SSH로 접속합니다.
-    * `helm upgrade` 명령어를 통해 Kubernetes 배포를 수행합니다.
-    * **Key Config**: `--set image.pullPolicy=Always` 옵션을 통해 항상 최신 이미지를 다운로드 받도록 강제합니다.
+배포는 `CSID-DGU/admin_infra`의 **Deploy Proposed Stack** 워크플로(`deploy-proposed-stack.yaml`)가 맡습니다.
+워크플로가 지정한 `be_ref`(브랜치·태그·커밋)로 이 레포를 체크아웃해 빌드·이미지 생성·배포까지 한 번에 수행합니다.
+예전의 main push 자동 배포(`deploy.yml`)와 Helm 차트(`helm/admin-prod`)는 배포 대상이 은퇴해 제거했습니다.
 
 ---
 
@@ -134,8 +124,7 @@ java -jar build/libs/admin-be-0.0.1-SNAPSHOT.jar
 
 ### 🚀 정기 배포 (Release)
 1.  `develop` 브랜치에 충분한 기능이 모이고 테스트가 완료되면 배포를 준비합니다.
-2.  PR 제목: `[deploy] develop -> main (또는 부가 설명)`  **`develop` → `main`** 으로 PR을 생성합니다. 
-3.  코드 리뷰(Approve) 후 Merge 버튼을 누르면, **즉시 운영 서버에 배포됩니다.** 최소 한 명 이상의 Approve를 받아야 합니다.
+2.  admin_infra의 Deploy Proposed Stack 워크플로를 `be_ref=develop`(또는 릴리스 태그)로 실행합니다.
 
 ---
 
@@ -145,8 +134,6 @@ java -jar build/libs/admin-be-0.0.1-SNAPSHOT.jar
 
 * **Swagger UI**: `http://{farm_server_ip}:{port}/apidocs/`
 * **Health Check**: `http://{farm_server_ip}:{port}/health`
-
-> **참고**: NodePort는 `values.yaml` 설정에 따릅니다.
 
 ---
 
