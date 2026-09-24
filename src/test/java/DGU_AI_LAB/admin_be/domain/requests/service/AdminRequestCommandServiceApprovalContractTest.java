@@ -139,6 +139,23 @@ class AdminRequestCommandServiceApprovalContractTest {
     }
 
     @Test
+    @DisplayName("계정 기록이 없으면 예전 신청의 UID를 expected_uid로 보내 원장에 남은 본인 계정만 이어받게 한다")
+    void sendsPreviousUidWhenAccountRecordMissing() {
+        Long requestId = 304L;
+        approvableRequest(requestId);
+        Request previous = mock(Request.class);
+        when(previous.getUbuntuUid()).thenReturn(55000L);
+        when(requestRepository.findFirstByUser_UserIdAndUbuntuUidIsNotNullOrderByRequestIdDesc(100L))
+                .thenReturn(Optional.of(previous));
+
+        service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
+
+        ArgumentCaptor<ProvisionRegisterRequestDTO> captor = ArgumentCaptor.forClass(ProvisionRegisterRequestDTO.class);
+        verify(operationJobService).registerProvision(captor.capture());
+        assertThat(captor.getValue().account().expectedUid()).isEqualTo(55000L);
+    }
+
+    @Test
     @DisplayName("등록한 작업 번호를 신청에 남겨, 결과 폴러가 이전 작업의 결과를 반영하지 않게 한다")
     void recordsRegisteredJobId() {
         Long requestId = 303L;

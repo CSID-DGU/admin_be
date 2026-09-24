@@ -56,10 +56,14 @@ public class PodMigrationService {
     public void settleFinishedMigration(Long requestId) {
         try {
             Request req = requestRepository.findById(requestId).orElse(null);
-            if (req == null || req.getStatus() != Status.MIGRATING) {
+            if (req == null || req.getStatus() != Status.MIGRATING
+                    || OperationJobService.awaitingRegistration(req.getMigrationJobId(), req.getUpdatedAt())) {
                 return;
             }
             JobResultResponseDTO result = operationJobService.getResult(OperationJobService.KIND_MIGRATE, requestId);
+            if (OperationJobService.isFromOtherJob(req.getMigrationJobId(), result)) {
+                return;
+            }
             switch (result.phase()) {
                 case OperationJobService.PHASE_SUCCESS -> completeMigrationJob(requestId, result.result());
                 case OperationJobService.PHASE_FAIL -> {
@@ -86,13 +90,21 @@ public class PodMigrationService {
             podNameRef[0] = req.getPodName();
             return null;
         });
+        Long jobId;
         try {
-            operationJobService.registerMigrate(new MigrateRegisterRequestDTO(
+            jobId = operationJobService.registerMigrate(new MigrateRegisterRequestDTO(
                     requestId, podNameRef[0], usernameRef[0], dto.nodes(), dto.minImprovementRatio(), dto.force()));
         } catch (RuntimeException e) {
             revertToFulfilled(requestId);
             throw e;
         }
+        // 결과 폴러가 이 번호의 결과만 반영하게 남긴다. 그 사이 끝났거나 되돌려졌으면 건드리지 않는다.
+        new TransactionTemplate(transactionManager).execute(status -> {
+            requestRepository.findByIdForUpdate(requestId)
+                    .filter(r -> r.getStatus() == Status.MIGRATING)
+                    .ifPresent(r -> r.recordMigrationJob(jobId));
+            return null;
+        });
         log.info("마이그레이션 작업 등록: requestId={}, username={}, pod={}", requestId, usernameRef[0], podNameRef[0]);
     }
 

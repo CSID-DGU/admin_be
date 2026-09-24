@@ -20,6 +20,9 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     List<Request> findAllByUser(User user);
     List<Request> findAllByUser_UserId(Long userId);
     List<Request> findAllByStatus(Status status);
+
+    /** 이 사용자의 신청 중 UID가 기록된 가장 최근 것 — 사용자가 예전에 쓰던 리눅스 계정 UID를 찾을 때 쓴다. */
+    Optional<Request> findFirstByUser_UserIdAndUbuntuUidIsNotNullOrderByRequestIdDesc(Long userId);
     List<Request> findByUserUserIdAndStatus(Long userId, Status status);
     List<Request> findAllByUser_UserIdAndStatus(Long userId, Status status);
     boolean existsByUbuntuUsernameAndUser_UserId(String ubuntuUsername, Long userId);

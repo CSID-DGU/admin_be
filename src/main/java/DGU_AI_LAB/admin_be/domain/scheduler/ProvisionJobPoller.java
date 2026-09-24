@@ -11,8 +11,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.time.Duration;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,23 +35,17 @@ public class ProvisionJobPoller {
     // 같은 알림이 반복해서 가지 않도록 한 번 알린 신청을 기억한다.
     private final Set<Long> reportedUnknown = ConcurrentHashMap.newKeySet();
 
-    /**
-     * 작업 번호가 아직 없는 신청(승인이 등록 중)을 기다리는 시간. 등록은 몇 초면 끝나므로, 이보다 오래 번호가
-     * 없으면 등록 뒤 기록 전에 admin_be가 멈췄거나 번호 기록 전에 승인된 신청이다 — 그때는 최신 결과를 그대로 쓴다.
-     */
-    static final Duration REGISTRATION_GRACE = Duration.ofMinutes(1);
-
     @Scheduled(fixedDelayString = "${operations.provision.poll-ms:3000}")
     public void pollProvisionJobs() {
         List<Request> processing = requestRepository.findAllByStatus(Status.PROCESSING);
         for (Request request : processing) {
             Long requestId = request.getRequestId();
-            if (registrationInFlight(request)) {
+            if (OperationJobService.awaitingRegistration(request.getProvisionJobId(), request.getUpdatedAt())) {
                 continue;
             }
             try {
                 JobResultResponseDTO result = operationJobService.getResult(OperationJobService.KIND_PROVISION, requestId);
-                if (isStale(request, result)) {
+                if (OperationJobService.isFromOtherJob(request.getProvisionJobId(), result)) {
                     // 재승인 직후 보이는 이전 작업의 결과다. 반영하면 방금 등록한 작업이 도는데 신청이 되돌아간다.
                     continue;
                 }
@@ -63,19 +55,6 @@ public class ProvisionJobPoller {
                 log.warn("생성 작업 결과 조회 실패 - requestId={}", requestId, e);
             }
         }
-    }
-
-    private static boolean registrationInFlight(Request request) {
-        if (request.getProvisionJobId() != null) {
-            return false;
-        }
-        LocalDateTime updatedAt = request.getUpdatedAt();
-        return updatedAt != null && updatedAt.isAfter(LocalDateTime.now().minus(REGISTRATION_GRACE));
-    }
-
-    private static boolean isStale(Request request, JobResultResponseDTO result) {
-        Long expected = request.getProvisionJobId();
-        return expected != null && result.jobId() != null && !expected.equals(result.jobId());
     }
 
     private void handle(Long requestId, JobResultResponseDTO result) {

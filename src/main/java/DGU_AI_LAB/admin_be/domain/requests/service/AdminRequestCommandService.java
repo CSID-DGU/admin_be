@@ -132,7 +132,8 @@ public class AdminRequestCommandService {
                     req.getUser().getName(),
                     req.getUbuntuUsername(),
                     false,
-                    supplementaryGroups
+                    supplementaryGroups,
+                    previousUbuntuUid(req.getUser())
             );
             userIdRef[0] = req.getUser().getUserId();
             usernameRef[0] = req.getUbuntuUsername();
@@ -193,6 +194,20 @@ public class AdminRequestCommandService {
     }
 
     /**
+     * 이 사용자가 예전 신청에서 쓰던 UID. 계정 기록(User.ubuntuUid)이 있으면 계정 생성 자체를 건너뛰므로 필요 없다.
+     * 계정 기록이 빠졌는데 원장에는 계정이 남은 경우(실패 작업이 계정을 남겼거나 수동 정리), config-server가
+     * 이 값과 원장 UID가 같을 때만 계정을 이어받는다 — 다른 사람이 쓰던 같은 이름의 계정은 이어받지 않는다.
+     */
+    private Long previousUbuntuUid(User user) {
+        if (user.hasUbuntuAccount()) {
+            return null;
+        }
+        return requestRepository.findFirstByUser_UserIdAndUbuntuUidIsNotNullOrderByRequestIdDesc(user.getUserId())
+                .map(Request::getUbuntuUid)
+                .orElse(null);
+    }
+
+    /**
      * 등록해 둔 생성 작업이 성공했을 때 신청에 반영하고 안내 메일을 보낸다. 작업 결과 폴러가 호출한다.
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -219,8 +234,9 @@ public class AdminRequestCommandService {
             }
             User owner = userRepository.findByIdForUpdate(req.getUser().getUserId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-            if (made.uid() != null && made.gid() != null) {
-                // 작업이 계정을 새로 만든 경우다. 재사용한 경우엔 결과에 uid가 없고 User에 이미 있다.
+            if (!owner.hasUbuntuAccount() && made.uid() != null && made.gid() != null) {
+                // 작업이 계정을 새로 만들었거나 원장에 남은 계정을 이어받은 경우다. 이미 기록이 있으면
+                // 재사용 경로라 결과의 UID는 같은 값이다.
                 owner.assignUbuntuAccount(made.uid(), made.gid());
             }
             req.assignUbuntuIds(owner.getUbuntuUid(), owner.getUbuntuGid());
