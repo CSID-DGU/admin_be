@@ -27,7 +27,9 @@ public interface RequestApi {
     @Operation(
             summary = "서버 사용 신청 생성",
             description = "로그인된 사용자의 서버 사용 신청을 생성합니다. " +
-                    "ubuntuPassword는 평문으로 받아 즉시 SHA-512 crypt 해시로 바꿔 저장하고, 평문은 저장하지 않습니다. " +
+                    "ubuntuPassword는 계정 비밀번호가 아직 없을 때(첫 신청)만 받습니다. 평문은 즉시 SHA-512 crypt " +
+                    "해시로 바꿔 웹 계정에 저장하고, 평문은 저장하지 않습니다. 이미 있으면 보내도 무시합니다(변경은 " +
+                    "PATCH /api/users/me/ubuntu-password). " +
                     "배정 안내 메일에도 비밀번호는 들어가지 않습니다."
     )
     @ApiResponse(responseCode = "201", description = "신청 생성 성공",

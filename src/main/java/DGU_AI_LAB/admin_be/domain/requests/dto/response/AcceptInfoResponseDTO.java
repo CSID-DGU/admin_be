@@ -102,7 +102,7 @@ public record AcceptInfoResponseDTO(
                 .groups(groupDTOList)
                 .gpu_nodes(gpuNodeDTOList)
                 .additional_ports(additionalPortDTOList)
-                .passwd_hash(request.getUbuntuPasswordHash())
+                .passwd_hash(request.getUser().getUbuntuPasswordHash())
                 .enable_vnc(request.isEnableVnc())
                 .build();
     }

@@ -22,6 +22,8 @@ public record MyInfoResponseDTO(
         String department,
         @Schema(description = "가입 시 정한 Ubuntu 계정명 — 이 계정의 모든 컨테이너가 이 이름을 쓴다", example = "hongildong")
         String ubuntuUsername,
+        @Schema(description = "Ubuntu 비밀번호가 정해져 있는지 — false면 다음 신청에서 비밀번호를 받는다", example = "true")
+        boolean hasUbuntuPassword,
         @Schema(description = "계정 활성화 여부", example = "true")
         Boolean isActive,
         @Schema(description = "사용자 권한", example = "USER", allowableValues = {"USER", "ADMIN"})
@@ -40,6 +42,7 @@ public record MyInfoResponseDTO(
                 u.getPhone(),
                 u.getDepartment(),
                 u.getUbuntuUsername(),
+                u.hasUbuntuPassword(),
                 u.getIsActive(),
                 u.getRole(),
                 u.getCreatedAt(),

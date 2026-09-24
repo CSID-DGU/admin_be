@@ -172,7 +172,6 @@ class UserSchedulerServiceTest {
         Request req = Request.builder()
                 .user(user)
                 .ubuntuUsername("user_" + user.getUserId())
-                .ubuntuPasswordHash("pw")
                 .expiresAt(expiresAt)
                 .usagePurpose("test")
                 .formAnswers("{}")

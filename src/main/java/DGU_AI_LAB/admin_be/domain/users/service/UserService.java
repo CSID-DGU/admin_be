@@ -27,6 +27,7 @@ public class UserService {
     private final UserRepository userRepository;
     private final GroupRepository groupRepository;
     private final PasswordEncoder passwordEncoder;
+    private final CurrentPasswordVerifier currentPasswordVerifier;
 
     private static final long UID_BASE = 10000; // TODO: 이부분 시스템에 맞추어서 수정하기
 
@@ -59,11 +60,7 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND)); // ⭐ USER_NOT_FOUND 사용
 
-        // 현재 비밀번호 확인
-        if (!passwordEncoder.matches(request.currentPassword(), user.getPassword())) {
-            log.warn("[updatePassword] userId={} 현재 비밀번호 불일치", userId);
-            throw new BusinessException(ErrorCode.INVALID_PASSWORD);
-        }
+        currentPasswordVerifier.verify(user, request.currentPassword());
 
         // 새 비밀번호가 현재 비밀번호와 동일한지 확인
         if (passwordEncoder.matches(request.newPassword(), user.getPassword())) {

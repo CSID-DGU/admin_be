@@ -122,7 +122,7 @@ class AdminRequestCommandServiceTest {
         // 바뀌진 않으므로, 호출 순서에 맞춰 반환값을 순차 지정한다.
         when(request.getStatus()).thenReturn(Status.PENDING, Status.PROCESSING);
         when(request.getUbuntuUsername()).thenReturn("testuser");
-        when(request.getUbuntuPasswordHash()).thenReturn("$6$salt$hash");
+        when(mockUser.getUbuntuPasswordHash()).thenReturn("$6$salt$hash");
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
         when(request.getUser()).thenReturn(mockUser);
         when(request.getResourceGroup()).thenReturn(mockRg);
@@ -251,17 +251,6 @@ class AdminRequestCommandServiceTest {
             service.rejectRequest(dto);
 
             verify(alarmService).sendRequestRejectedEmail(request, "신청서 양식 미흡");
-        }
-
-        @Test
-        @DisplayName("거절하면 신청의 초기 비밀번호를 지운다")
-        void rejectRequest_clearsPassword() {
-            Request request = buildMockedRequestWithStatus(37L, Status.PENDING);
-
-            service.rejectRequest(new RejectRequestDTO(37L, "사유"));
-
-            verify(request).reject("사유");
-            verify(request).clearUbuntuPasswordHash();
         }
 
         @Test
@@ -758,7 +747,7 @@ class AdminRequestCommandServiceTest {
         when(request.getRequestId()).thenReturn(requestId);
         when(request.getStatus()).thenReturn(status);
         when(request.getUbuntuUsername()).thenReturn("testuser");
-        when(request.getUbuntuPasswordHash()).thenReturn("$6$salt$hash");
+        when(mockUser.getUbuntuPasswordHash()).thenReturn("$6$salt$hash");
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
         when(request.getUser()).thenReturn(mockUser);
         when(request.getResourceGroup()).thenReturn(mockRg);
@@ -923,59 +912,6 @@ class AdminRequestCommandServiceTest {
             // Then - request_groups(신청 시점 그룹)는 그대로 두고, 계정에도 누적한다(교체 아님).
             verify(mockUser).addGroupIfAbsent(groupA);
             verify(mockUser).addGroupIfAbsent(groupB);
-        }
-
-        @Test
-        @DisplayName("배정 안내 메일을 보낸 뒤 신청의 초기 비밀번호를 지운다")
-        void clearsPasswordAfterCreatedEmail() {
-            // Given
-            Long requestId = 208L;
-            Request request = processingRequest(requestId);
-            when(podExternalPortRepository.save(any(PodExternalPort.class))).thenAnswer(inv -> inv.getArgument(0));
-
-            // When
-            service.completeApprovalJob(requestId, new JobResultResponseDTO.Result(
-                    50001L, 50001L, "ailab-testuser-abcd", "farm2",
-                    List.of(new CreatePodResponseDTO.PortInfo("ssh", 22, 32001))));
-
-            // Then - 메일이 비밀번호를 읽은 다음에 지운다
-            var order = inOrder(alarmService, request);
-            order.verify(alarmService).sendContainerCreatedEmail(eq(request), any(), any());
-            order.verify(request).clearUbuntuPasswordHash();
-        }
-
-        @Test
-        @DisplayName("배정 안내 메일 발송이 실패해도 신청의 초기 비밀번호는 지운다")
-        void clearsPasswordEvenWhenEmailFails() {
-            // Given
-            Long requestId = 209L;
-            Request request = processingRequest(requestId);
-            when(podExternalPortRepository.save(any(PodExternalPort.class))).thenAnswer(inv -> inv.getArgument(0));
-            doThrow(new RuntimeException("smtp down")).when(alarmService).sendContainerCreatedEmail(any(), any(), any());
-
-            // When
-            service.completeApprovalJob(requestId, new JobResultResponseDTO.Result(
-                    50001L, 50001L, "ailab-testuser-abcd", "farm2", List.of()));
-
-            // Then
-            verify(request).clearUbuntuPasswordHash();
-        }
-
-        @Test
-        @DisplayName("작업이 도는 사이 상태가 바뀌어 승인을 확정하지 않으면 비밀번호도 건드리지 않는다")
-        void keepsPasswordWhenNotCompleted() {
-            // Given
-            Long requestId = 210L;
-            Request request = mock(Request.class);
-            when(request.getStatus()).thenReturn(Status.DENIED);
-            when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
-
-            // When
-            service.completeApprovalJob(requestId, new JobResultResponseDTO.Result(
-                    null, null, "ailab-testuser-abcd", "farm2", List.of()));
-
-            // Then
-            verify(request, never()).clearUbuntuPasswordHash();
         }
 
         @Test
