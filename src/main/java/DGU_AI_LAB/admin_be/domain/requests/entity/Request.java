@@ -75,6 +75,13 @@ public class Request extends BaseTimeEntity {
     @Column(name = "node_name", length = 100)
     private String nodeName;
 
+    /**
+     * 이번 승인으로 등록한 생성 작업 번호(config-server operation_log의 START 행 id). 작업 결과는 신청 번호로만
+     * 조회되므로, 재승인 직후에는 이전 작업의 결과가 보일 수 있다 — 결과 폴러는 이 번호의 결과만 반영한다.
+     */
+    @Column(name = "provision_job_id")
+    private Long provisionJobId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "rsgroup_id", nullable = false)
     private ResourceGroup resourceGroup;
@@ -128,6 +135,11 @@ public class Request extends BaseTimeEntity {
 
     public void markAsProcessing() {
         this.status = Status.PROCESSING;
+        this.provisionJobId = null;
+    }
+
+    public void recordProvisionJob(Long jobId) {
+        this.provisionJobId = jobId;
     }
 
     public void revertToPending() {
@@ -138,6 +150,7 @@ public class Request extends BaseTimeEntity {
         // 계정까지 실제로 삭제된 경우의 UID 회수는 User.releaseUbuntuAccount()가 담당한다.
         this.podName = null;
         this.nodeName = null;
+        this.provisionJobId = null;
     }
 
     public void approve(ContainerImage image, ResourceGroup resourceGroup, String adminComment) {

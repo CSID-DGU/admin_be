@@ -169,8 +169,9 @@ public class AdminRequestCommandService {
         ProvisionRegisterRequestDTO body = reuseAccount
                ? ProvisionRegisterRequestDTO.podOnly(requestId, username, requestGroupsToAdd)
                : ProvisionRegisterRequestDTO.withAccount(creationDtoRef[0]);
+        Long jobId;
         try {
-           operationJobService.registerProvision(body);
+           jobId = operationJobService.registerProvision(body);
         } catch (Exception e) {
            // 등록 자체가 실패했으면 아직 아무것도 만들어지지 않았다 — 정리할 자원 없이 되돌린다.
            log.warn("[보상 트랜잭션] 생성 작업 등록 실패 → 상태 복구 시작: {}", username, e);
@@ -180,6 +181,13 @@ public class AdminRequestCommandService {
            revertToPendingIfStillProcessing(requestId, serverName);
            throw e;
         }
+        // 결과 폴러가 이 번호의 결과만 반영하게 남긴다. 그 사이 상태가 바뀌었으면(거절 등) 건드리지 않는다.
+        new TransactionTemplate(transactionManager).execute(status -> {
+            requestRepository.findByIdForUpdate(requestId)
+                    .filter(r -> r.getStatus() == Status.PROCESSING)
+                    .ifPresent(r -> r.recordProvisionJob(jobId));
+            return null;
+        });
 
         return responseRef[0];
     }

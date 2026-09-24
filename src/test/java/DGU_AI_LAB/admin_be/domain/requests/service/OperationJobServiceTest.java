@@ -74,7 +74,9 @@ class OperationJobServiceTest {
     void registersProvision() {
         ProvisionRegisterRequestDTO body = ProvisionRegisterRequestDTO.podOnly(41L, "exp-np-001");
 
-        service.registerProvision(body);
+        when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "accepted", "job_id", 3616)));
+
+        assertThat(service.registerProvision(body)).isEqualTo(3616L);
 
         verify(postUriSpec).uri("/operations/provision");
         verify(postBodySpec).bodyValue(body);
