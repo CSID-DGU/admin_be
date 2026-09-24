@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.global.util;
 
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.BeforeEach;
@@ -125,6 +126,41 @@ class EmailServiceTest {
 
             assertThatThrownBy(() -> emailService.confirmAuthCode("test@example.com", "000000"))
                     .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("코드가 없거나 만료됐으면 시도 횟수를 세지 않고 거절한다")
+        void confirmAuthCode_noCode_doesNotCountAttempt() {
+            when(valueOperations.get("email:verify:test@example.com")).thenReturn(null);
+
+            assertThatThrownBy(() -> emailService.confirmAuthCode("test@example.com", "000000"))
+                    .isInstanceOf(BusinessException.class);
+            verify(valueOperations, never()).increment(anyString());
+        }
+
+        @Test
+        @DisplayName("틀린 입력이 한도에 닿으면 코드를 폐기하고 429 오류를 던진다")
+        void confirmAuthCode_tooManyAttempts_discardsCode() {
+            when(valueOperations.get("email:verify:test@example.com")).thenReturn("123456");
+            when(valueOperations.increment("email:verify-attempts:test@example.com")).thenReturn(5L);
+
+            assertThatThrownBy(() -> emailService.confirmAuthCode("test@example.com", "000000"))
+                    .isInstanceOfSatisfying(BusinessException.class, e ->
+                            assertThat(e.getErrorCode()).isEqualTo(ErrorCode.TOO_MANY_AUTH_CODE_ATTEMPTS));
+            verify(redisTemplate).delete("email:verify:test@example.com");
+        }
+
+        @Test
+        @DisplayName("첫 실패에서 시도 횟수 키에 만료 시간을 건다")
+        void confirmAuthCode_firstFailure_setsExpiry() {
+            when(valueOperations.get("email:verify:test@example.com")).thenReturn("123456");
+            when(valueOperations.increment("email:verify-attempts:test@example.com")).thenReturn(1L);
+
+            assertThatThrownBy(() -> emailService.confirmAuthCode("test@example.com", "000000"))
+                    .isInstanceOfSatisfying(BusinessException.class, e ->
+                            assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_AUTH_CODE));
+            verify(redisTemplate).expire(eq("email:verify-attempts:test@example.com"), anyLong(), any());
+            verify(redisTemplate, never()).delete("email:verify:test@example.com");
         }
     }
 }

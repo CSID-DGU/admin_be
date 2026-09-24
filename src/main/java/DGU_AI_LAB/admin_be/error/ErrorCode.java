@@ -92,6 +92,7 @@ public enum ErrorCode {
     INVALID_LOGIN_INFO(HttpStatus.UNAUTHORIZED, "잘못된 로그인 입력값입니다."),
     TOO_MANY_LOGIN_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "로그인 시도 횟수를 초과했습니다. 15분 후 다시 시도해주세요."),
     INVALID_AUTH_CODE(HttpStatus.BAD_REQUEST, "올바르지 않은 인증 코드입니다."),
+    TOO_MANY_AUTH_CODE_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "인증 코드 입력 횟수를 초과했습니다. 인증 코드를 다시 받아주세요."),
     GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "지정된 그룹을 찾을 수 없습니다."),
     UID_ALLOCATION_FAILED(HttpStatus.BAD_GATEWAY, "외부 API 응답에서 UID/GID를 확인할 수 없습니다."),
     DUPLICATE_USERNAME(HttpStatus.CONFLICT, "이미 사용 중인 username입니다. 다른 username을 입력해주세요."),
