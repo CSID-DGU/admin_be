@@ -139,6 +139,20 @@ class AdminRequestCommandServiceApprovalContractTest {
     }
 
     @Test
+    @DisplayName("등록한 작업 번호를 신청에 남겨, 결과 폴러가 이전 작업의 결과를 반영하지 않게 한다")
+    void recordsRegisteredJobId() {
+        Long requestId = 303L;
+        Request request = approvableRequest(requestId);
+        when(operationJobService.registerProvision(any(ProvisionRegisterRequestDTO.class))).thenReturn(3616L);
+
+        service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
+
+        InOrder order = inOrder(operationJobService, request);
+        order.verify(operationJobService).registerProvision(any(ProvisionRegisterRequestDTO.class));
+        order.verify(request).recordProvisionJob(3616L);
+    }
+
+    @Test
     @DisplayName("계정을 재사용하는 승인은 그룹 정보를 작업 등록 DTO에 실어 보내고 로컬로는 그룹을 넣지 않는다")
     void reusedAccountApprovalSendsGroupsWithRegistration() {
         Long requestId = 302L;

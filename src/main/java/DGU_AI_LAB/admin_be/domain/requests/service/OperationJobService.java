@@ -78,10 +78,11 @@ public class OperationJobService {
     /**
      * 생성 작업을 등록한다. 등록만 하고 돌아오므로 계정·컨테이너가 아직 만들어지지 않은 상태에서 반환된다.
      *
+     * @return 등록된 작업 번호. 응답에 없으면 null
      * @throws BusinessException 같은 신청의 생성 작업이 아직 끝나지 않았거나(409) 등록 자체가 실패한 경우
      */
-    public void registerProvision(ProvisionRegisterRequestDTO body) {
-        register("/operations/provision", body, body.requestId(), ErrorCode.POD_CREATION_FAILED);
+    public Long registerProvision(ProvisionRegisterRequestDTO body) {
+        return register("/operations/provision", body, body.requestId(), ErrorCode.POD_CREATION_FAILED);
     }
 
     /**
@@ -176,10 +177,11 @@ public class OperationJobService {
         }
     }
 
-    private void register(String uri, Object body, Long requestId, ErrorCode failureCode) {
+    private Long register(String uri, Object body, Long requestId, ErrorCode failureCode) {
+        Map<?, ?> response;
         try {
             log.info("작업 등록 요청: {}, requestId: {}", uri, requestId);
-            WebClientErrorHandler.onError(
+            response = WebClientErrorHandler.onError(
                             webClient.post()
                                     .uri(uri)
                                     .bodyValue(body)
@@ -196,13 +198,15 @@ public class OperationJobService {
                             })
                     .bodyToMono(Map.class)
                     .block();
-            log.info("작업 등록 완료: {}, requestId: {}", uri, requestId);
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
             log.error("작업 등록 중 예기치 않은 오류: {}, requestId: {}", uri, requestId, e);
             throw new BusinessException(failureCode);
         }
+        Long jobId = response != null && response.get("job_id") instanceof Number n ? n.longValue() : null;
+        log.info("작업 등록 완료: {}, requestId: {}, jobId: {}", uri, requestId, jobId);
+        return jobId;
     }
 
     /**

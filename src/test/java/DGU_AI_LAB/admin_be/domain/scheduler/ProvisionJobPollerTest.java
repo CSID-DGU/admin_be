@@ -21,6 +21,7 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -44,9 +45,68 @@ class ProvisionJobPollerTest {
         List<Request> requests = java.util.Arrays.stream(requestIds).map(id -> {
             Request request = mock(Request.class);
             when(request.getRequestId()).thenReturn(id);
+            when(request.getProvisionJobId()).thenReturn(1L); // result()의 작업 번호와 같다
             return request;
         }).toList();
         when(requestRepository.findAllByStatus(Status.PROCESSING)).thenReturn(requests);
+    }
+
+    private Request processingWithJob(Long requestId, Long jobId, java.time.LocalDateTime updatedAt) {
+        Request request = mock(Request.class);
+        when(request.getRequestId()).thenReturn(requestId);
+        when(request.getProvisionJobId()).thenReturn(jobId);
+        when(request.getUpdatedAt()).thenReturn(updatedAt);
+        when(requestRepository.findAllByStatus(Status.PROCESSING)).thenReturn(List.of(request));
+        return request;
+    }
+
+    private static JobResultResponseDTO jobResult(Long requestId, Long jobId, String phase) {
+        return new JobResultResponseDTO(String.valueOf(requestId), "provision", jobId, phase, null, null, null);
+    }
+
+    @Test
+    @DisplayName("재승인 직후 보이는 이전 작업의 실패는 반영하지 않는다")
+    void ignoresResultOfPreviousJob() {
+        processingWithJob(39L, 3616L, java.time.LocalDateTime.now());
+        when(operationJobService.getResult("provision", 39L)).thenReturn(jobResult(39L, 3612L, "FAIL"));
+
+        poller.pollProvisionJobs();
+
+        verify(adminRequestCommandService, never()).failApprovalJob(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("등록한 작업의 결과면 반영한다")
+    void handlesResultOfRegisteredJob() {
+        processingWithJob(39L, 3616L, java.time.LocalDateTime.now());
+        JobResultResponseDTO failed = jobResult(39L, 3616L, "FAIL");
+        when(operationJobService.getResult("provision", 39L)).thenReturn(failed);
+
+        poller.pollProvisionJobs();
+
+        verify(adminRequestCommandService).failApprovalJob(39L, failed);
+    }
+
+    @Test
+    @DisplayName("작업 번호가 아직 없고 방금 승인된 신청은 등록 중이라 조회하지 않는다")
+    void waitsWhileRegistrationInFlight() {
+        processingWithJob(39L, null, java.time.LocalDateTime.now());
+
+        poller.pollProvisionJobs();
+
+        verify(operationJobService, never()).getResult(anyString(), anyLong());
+    }
+
+    @Test
+    @DisplayName("작업 번호 없이 오래된 신청(기록 전 중단·배포 전 승인)은 최신 결과를 그대로 쓴다")
+    void fallsBackToLatestResultAfterGrace() {
+        processingWithJob(39L, null, java.time.LocalDateTime.now().minusMinutes(5));
+        JobResultResponseDTO failed = jobResult(39L, 3612L, "FAIL");
+        when(operationJobService.getResult("provision", 39L)).thenReturn(failed);
+
+        poller.pollProvisionJobs();
+
+        verify(adminRequestCommandService).failApprovalJob(39L, failed);
     }
 
     private JobResultResponseDTO result(Long requestId, String phase, JobResultResponseDTO.Result made) {
