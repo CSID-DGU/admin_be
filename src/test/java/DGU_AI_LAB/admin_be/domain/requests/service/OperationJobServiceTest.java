@@ -320,7 +320,7 @@ class OperationJobServiceTest {
         @DisplayName("계정 생성이 필요한 등록 본문")
         void provisionWithAccount() throws Exception {
             UserCreationRequestDTO creation = new UserCreationRequestDTO(
-                    41L, "exp-np-001", "cHc=", "홍길동", "exp-np-001", false,
+                    41L, "exp-np-001", "$6$salt$hash", "홍길동", "exp-np-001", false,
                     List.of(new UserCreationRequestDTO.SupplementaryGroup("ASCP", 20004L)));
 
             JsonNode json = objectMapper.readTree(
@@ -329,7 +329,8 @@ class OperationJobServiceTest {
             assertThat(json.get("request_id").asLong()).isEqualTo(41L);
             assertThat(json.get("username").asText()).isEqualTo("exp-np-001");
             JsonNode account = json.get("account");
-            assertThat(account.get("passwd_base64").asText()).isEqualTo("cHc=");
+            assertThat(account.get("passwd_hash").asText()).isEqualTo("$6$salt$hash");
+            assertThat(account.has("passwd_base64")).isFalse();
             assertThat(account.get("gecos").asText()).isEqualTo("홍길동");
             assertThat(account.get("primary_group_name").asText()).isEqualTo("exp-np-001");
             assertThat(account.get("supplementary_groups").get(0).get("name").asText()).isEqualTo("ASCP");

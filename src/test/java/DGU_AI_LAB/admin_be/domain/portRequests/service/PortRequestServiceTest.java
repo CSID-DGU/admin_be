@@ -38,7 +38,7 @@ class PortRequestServiceTest {
                 .build();
         Request request = Request.builder()
                 .ubuntuUsername("testuser")
-                .ubuntuPassword("password")
+                .ubuntuPasswordHash("password")
                 .usagePurpose("학습")
                 .formAnswers("{}")
                 .resourceGroup(resourceGroup)

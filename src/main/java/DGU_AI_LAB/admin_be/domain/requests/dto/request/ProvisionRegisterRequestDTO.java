@@ -25,7 +25,7 @@ public record ProvisionRegisterRequestDTO(
 ) {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Account(
-            @JsonProperty("passwd_base64") String passwordBase64,
+            @JsonProperty("passwd_hash") String passwordHash,
             String gecos,
             @JsonProperty("primary_group_name") String primaryGroupName,
             @JsonProperty("supplementary_groups") List<UserCreationRequestDTO.SupplementaryGroup> supplementaryGroups
@@ -36,7 +36,7 @@ public record ProvisionRegisterRequestDTO(
         return new ProvisionRegisterRequestDTO(
                 creation.requestId(),
                 creation.username(),
-                new Account(creation.passwordBase64(), creation.gecos(),
+                new Account(creation.passwordHash(), creation.gecos(),
                         creation.primaryGroupName(), creation.supplementaryGroups()),
                 null);
     }

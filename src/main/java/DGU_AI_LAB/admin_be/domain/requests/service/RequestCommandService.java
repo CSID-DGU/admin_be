@@ -22,6 +22,7 @@ import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.util.LinuxPasswordHasher;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -200,7 +201,8 @@ public class RequestCommandService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
         // addGroup()/포트 신청이 requestId를 요구하므로 여기서 즉시 flush해 ID를 확보한다.
-        Request req = requestRepository.saveAndFlush(dto.toEntity(user, rg, img, ubuntuUsername));
+        Request req = requestRepository.saveAndFlush(
+                dto.toEntity(user, rg, img, ubuntuUsername, LinuxPasswordHasher.sha512Crypt(dto.ubuntuPassword())));
 
         if (dto.ubuntuGids() != null && !dto.ubuntuGids().isEmpty()) {
             Set<Group> found = new java.util.HashSet<>(groupRepository.findAllByUbuntuGidIn(dto.ubuntuGids()));

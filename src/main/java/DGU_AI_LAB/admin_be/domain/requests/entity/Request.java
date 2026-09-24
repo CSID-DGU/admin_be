@@ -40,8 +40,12 @@ public class Request extends BaseTimeEntity {
     @Column(name = "ubuntu_gid")
     private Long ubuntuGid;
 
-    @Column(name = "ubuntu_password", nullable = false)
-    private String ubuntuPassword;
+    /**
+     * 우분투 로그인 비밀번호의 SHA-512 crypt 해시($6$...). 평문은 신청을 받을 때 해시로 바꾸고 저장하지 않는다.
+     * 계정을 만든 뒤에는 쓸 곳이 없어 지운다(null) — 마이그레이션은 옛 Pod의 Secret을 이어받는다.
+     */
+    @Column(name = "ubuntu_password_hash")
+    private String ubuntuPasswordHash;
 
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
@@ -94,9 +98,9 @@ public class Request extends BaseTimeEntity {
     private boolean enableVnc = false;
 
     @Builder
-    public Request(String ubuntuUsername, String ubuntuPassword, LocalDateTime expiresAt, String usagePurpose, String formAnswers, User user, ResourceGroup resourceGroup, ContainerImage containerImage, boolean enableVnc) {
+    public Request(String ubuntuUsername, String ubuntuPasswordHash, LocalDateTime expiresAt, String usagePurpose, String formAnswers, User user, ResourceGroup resourceGroup, ContainerImage containerImage, boolean enableVnc) {
         this.ubuntuUsername = ubuntuUsername;
-        this.ubuntuPassword = ubuntuPassword;
+        this.ubuntuPasswordHash = ubuntuPasswordHash;
         this.enableVnc = enableVnc;
         this.expiresAt = expiresAt;
         this.usagePurpose = usagePurpose;
@@ -182,12 +186,11 @@ public class Request extends BaseTimeEntity {
     }
 
     /**
-     * 초기 로그인 비밀번호를 신청에서 지운다. 비밀번호는 생성 작업 등록과 배정 안내 메일에만 필요하고,
+     * 초기 로그인 비밀번호 해시를 신청에서 지운다. 해시는 생성 작업 등록과 Pod 생성에만 필요하고,
      * 그 뒤 컨테이너를 다시 만들 때(마이그레이션)는 config-server가 옛 Pod의 비밀번호 Secret을 이어받는다.
-     * 컬럼이 NOT NULL이라 빈 문자열로 둔다.
      */
-    public void clearUbuntuPassword() {
-        this.ubuntuPassword = "";
+    public void clearUbuntuPasswordHash() {
+        this.ubuntuPasswordHash = null;
     }
 
     /**
@@ -210,14 +213,6 @@ public class Request extends BaseTimeEntity {
     public void assignPodInfo(String podName, String nodeName) {
         this.podName = podName;
         this.nodeName = nodeName;
-    }
-
-    /**
-     * infra(config-server) 계정 생성/조회 API가 요구하는 Base64 포맷으로 변환한다.
-     * DB에는 평문 한 벌만 보관하고, 전송 시점에만 인코딩해서 이중 저장을 피한다.
-     */
-    public String getUbuntuPasswordBase64() {
-        return java.util.Base64.getEncoder().encodeToString(this.ubuntuPassword.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     /**

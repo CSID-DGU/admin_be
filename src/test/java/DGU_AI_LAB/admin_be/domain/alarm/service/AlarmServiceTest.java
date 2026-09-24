@@ -684,7 +684,6 @@ class AlarmServiceTest {
         when(request.getResourceGroup()).thenReturn(rg);
         when(request.getContainerImage()).thenReturn(image);
         when(request.getUbuntuUsername()).thenReturn("testuser");
-        when(request.getUbuntuPassword()).thenReturn("InitPass1!");
         when(request.getRequestId()).thenReturn(requestId);
         return request;
     }

@@ -66,6 +66,9 @@ dependencies {
 	// kubernetes
 	implementation 'io.fabric8:kubernetes-client:6.10.0'
 
+	// 우분투 로그인 비밀번호 SHA-512 crypt 해시(/etc/shadow 형식). 버전은 Spring Boot BOM이 정한다.
+	implementation 'commons-codec:commons-codec'
+
 }
 
 tasks.named('test') {

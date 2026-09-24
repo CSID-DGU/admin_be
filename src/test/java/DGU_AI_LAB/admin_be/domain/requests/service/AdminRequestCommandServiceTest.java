@@ -122,8 +122,7 @@ class AdminRequestCommandServiceTest {
         // 바뀌진 않으므로, 호출 순서에 맞춰 반환값을 순차 지정한다.
         when(request.getStatus()).thenReturn(Status.PENDING, Status.PROCESSING);
         when(request.getUbuntuUsername()).thenReturn("testuser");
-        when(request.getUbuntuPassword()).thenReturn("encoded_pw");
-        when(request.getUbuntuPasswordBase64()).thenReturn("cGxhaW5fdGV4dF9wdw==");
+        when(request.getUbuntuPasswordHash()).thenReturn("$6$salt$hash");
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
         when(request.getUser()).thenReturn(mockUser);
         when(request.getResourceGroup()).thenReturn(mockRg);
@@ -262,7 +261,7 @@ class AdminRequestCommandServiceTest {
             service.rejectRequest(new RejectRequestDTO(37L, "사유"));
 
             verify(request).reject("사유");
-            verify(request).clearUbuntuPassword();
+            verify(request).clearUbuntuPasswordHash();
         }
 
         @Test
@@ -759,8 +758,7 @@ class AdminRequestCommandServiceTest {
         when(request.getRequestId()).thenReturn(requestId);
         when(request.getStatus()).thenReturn(status);
         when(request.getUbuntuUsername()).thenReturn("testuser");
-        when(request.getUbuntuPassword()).thenReturn("encoded_pw");
-        when(request.getUbuntuPasswordBase64()).thenReturn("cGxhaW5fdGV4dF9wdw==");
+        when(request.getUbuntuPasswordHash()).thenReturn("$6$salt$hash");
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
         when(request.getUser()).thenReturn(mockUser);
         when(request.getResourceGroup()).thenReturn(mockRg);
@@ -810,7 +808,7 @@ class AdminRequestCommandServiceTest {
             assertThat(body.requestId()).isEqualTo(requestId);
             assertThat(body.username()).isEqualTo("testuser");
             assertThat(body.account()).isNotNull();
-            assertThat(body.account().passwordBase64()).isEqualTo("cGxhaW5fdGV4dF9wdw==");
+            assertThat(body.account().passwordHash()).isEqualTo("$6$salt$hash");
             assertThat(body.account().primaryGroupName()).isEqualTo("testuser");
             assertThat(body.account().gecos()).isEqualTo("테스트유저");
 
@@ -943,7 +941,7 @@ class AdminRequestCommandServiceTest {
             // Then - 메일이 비밀번호를 읽은 다음에 지운다
             var order = inOrder(alarmService, request);
             order.verify(alarmService).sendContainerCreatedEmail(eq(request), any(), any());
-            order.verify(request).clearUbuntuPassword();
+            order.verify(request).clearUbuntuPasswordHash();
         }
 
         @Test
@@ -960,7 +958,7 @@ class AdminRequestCommandServiceTest {
                     50001L, 50001L, "ailab-testuser-abcd", "farm2", List.of()));
 
             // Then
-            verify(request).clearUbuntuPassword();
+            verify(request).clearUbuntuPasswordHash();
         }
 
         @Test
@@ -977,7 +975,7 @@ class AdminRequestCommandServiceTest {
                     null, null, "ailab-testuser-abcd", "farm2", List.of()));
 
             // Then
-            verify(request, never()).clearUbuntuPassword();
+            verify(request, never()).clearUbuntuPasswordHash();
         }
 
         @Test
