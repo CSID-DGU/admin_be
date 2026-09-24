@@ -70,7 +70,7 @@ class RequestRepositoryTest {
 
         pendingRequest = requestRepository.save(Request.builder()
                 .ubuntuUsername("pendinguser")
-                .ubuntuPassword("hashedPw1")
+                .ubuntuPasswordHash("hashedPw1")
                 .expiresAt(LocalDateTime.now().plusDays(30))
                 .usagePurpose("연구 목적")
                 .formAnswers("{}")
@@ -81,7 +81,7 @@ class RequestRepositoryTest {
 
         Request req2 = Request.builder()
                 .ubuntuUsername("fulfilleduser")
-                .ubuntuPassword("hashedPw2")
+                .ubuntuPasswordHash("hashedPw2")
                 .expiresAt(LocalDateTime.now().plusDays(60))
                 .usagePurpose("머신러닝")
                 .formAnswers("{}")
@@ -96,7 +96,7 @@ class RequestRepositoryTest {
         // Request.ubuntuUsername의 unique 제약이 사라졌음을 함께 검증한다.
         Request denied = Request.builder()
                 .ubuntuUsername("pendinguser")
-                .ubuntuPassword("hashedPw3")
+                .ubuntuPasswordHash("hashedPw3")
                 .expiresAt(LocalDateTime.now().plusDays(10))
                 .usagePurpose("지난 신청")
                 .formAnswers("{}")

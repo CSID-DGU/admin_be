@@ -159,8 +159,9 @@ public class AlarmService {
 
     /**
      * [컨테이너 배정 안내 메일] 신청 승인 시 접속 정보를 담아 사용자에게 발송.
-     * 본문에 초기 비밀번호가 들어가므로 Slack DM은 보내지 않고(이메일 전용),
-     * 관리자 noti 채널엔 본문 없는 수신 로그만 남긴다.
+     * 비밀번호는 저장하지 않으므로(해시만 보관) 본문에는 "신청 때 입력한 비밀번호"라는 안내만 넣는다.
+     * {6} 자리를 유지하는 건 관리자가 DB(message_templates)에 고쳐 둔 본문도 그대로 쓰이게 하기 위해서다.
+     * Slack DM은 보내지 않고(이메일 전용), 관리자 noti 채널엔 본문 없는 수신 로그만 남긴다.
      * 포트는 문자열로 받는다 — MessageFormat에 숫자형을 주면 30,888처럼 콤마가 붙는다.
      */
     public void sendContainerCreatedEmail(Request request, String sshPort, String jupyterPort) {
@@ -186,7 +187,7 @@ public class AlarmService {
                 sshPort,                                               // {3}
                 jupyterPort,                                           // {4}
                 resolveHostIp(serverName),                             // {5}
-                request.getUbuntuPassword(),                           // {6}
+                messageUtils.get("email.container.created.password-notice"), // {6}
                 extraPorts);                                           // {7}
 
         sendMailAlert(user.getEmail(), subject, body);

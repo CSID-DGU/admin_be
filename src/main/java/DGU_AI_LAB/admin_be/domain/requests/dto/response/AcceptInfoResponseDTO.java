@@ -27,8 +27,8 @@ public record AcceptInfoResponseDTO(
         List<GpuNodeDTO> gpu_nodes,
         @Schema(description = "추가 포트 목록")
         List<AdditionalPortDTO> additional_ports,
-        @Schema(description = "Base64 인코딩된 초기 비밀번호")
-        String passwd_base64,
+        @Schema(description = "초기 로그인 비밀번호의 SHA-512 crypt 해시($6$...). 계정 생성 뒤에는 비어 있다")
+        String passwd_hash,
         @Schema(description = "noVNC 활성화 여부")
         Boolean enable_vnc
 ) {
@@ -102,7 +102,7 @@ public record AcceptInfoResponseDTO(
                 .groups(groupDTOList)
                 .gpu_nodes(gpuNodeDTOList)
                 .additional_ports(additionalPortDTOList)
-                .passwd_base64(request.getUbuntuPasswordBase64())
+                .passwd_hash(request.getUbuntuPasswordHash())
                 .enable_vnc(request.isEnableVnc())
                 .build();
     }

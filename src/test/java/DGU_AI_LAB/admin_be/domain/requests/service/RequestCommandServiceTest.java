@@ -93,7 +93,7 @@ class RequestCommandServiceTest {
 
             Request savedReq = Request.builder()
                     .ubuntuUsername("honggildong")
-                    .ubuntuPassword("pw")
+                    .ubuntuPasswordHash("pw")
                     .expiresAt(LocalDateTime.now().plusDays(30))
                     .usagePurpose("연구")
                     .formAnswers("{}")
@@ -109,7 +109,8 @@ class RequestCommandServiceTest {
             SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
             when(dto.resourceGroupId()).thenReturn(1);
             when(dto.imageId()).thenReturn(1L);
-            when(dto.toEntity(any(), any(), any(), anyString())).thenReturn(savedReq);
+            when(dto.ubuntuPassword()).thenReturn("strongPassword1!");
+            when(dto.toEntity(any(), any(), any(), anyString(), anyString())).thenReturn(savedReq);
             when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
 
             assertThat(requestCommandService.createRequest(1L, dto).ubuntuUsername())
@@ -273,7 +274,8 @@ class RequestCommandServiceTest {
             SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
             when(dto.resourceGroupId()).thenReturn(1);
             when(dto.imageId()).thenReturn(1L);
-            when(dto.toEntity(any(), any(), any(), anyString())).thenReturn(savedReq);
+            when(dto.ubuntuPassword()).thenReturn("strongPassword1!");
+            when(dto.toEntity(any(), any(), any(), anyString(), anyString())).thenReturn(savedReq);
             when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
             // GID 2개 요청했지만 0개만 발견 → 예외 발생 (portRequests 도달 전)
             when(dto.ubuntuGids()).thenReturn(java.util.Set.of(1001L, 1002L));
@@ -298,7 +300,7 @@ class RequestCommandServiceTest {
             // 응답 DTO 조립까지 통과해야 하므로 mock 대신 실제 엔티티를 저장 결과로 돌려준다.
             Request savedReq = Request.builder()
                     .ubuntuUsername("honggildong")
-                    .ubuntuPassword("pw")
+                    .ubuntuPasswordHash("pw")
                     .expiresAt(LocalDateTime.now().plusDays(30))
                     .usagePurpose("연구")
                     .formAnswers("{}")
@@ -309,12 +311,13 @@ class RequestCommandServiceTest {
             SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
             when(dto.resourceGroupId()).thenReturn(1);
             when(dto.imageId()).thenReturn(1L);
-            when(dto.toEntity(any(), any(), any(), anyString())).thenReturn(savedReq);
+            when(dto.ubuntuPassword()).thenReturn("strongPassword1!");
+            when(dto.toEntity(any(), any(), any(), anyString(), anyString())).thenReturn(savedReq);
             when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
 
             SaveRequestResponseDTO response = requestCommandService.createRequest(1L, dto);
 
-            verify(dto).toEntity(eq(user), eq(rg), eq(img), eq("honggildong"));
+            verify(dto).toEntity(eq(user), eq(rg), eq(img), eq("honggildong"), argThat(hash -> hash.startsWith("$6$") && !hash.contains("strongPassword1!")));
             assertThat(response.ubuntuUsername()).isEqualTo("honggildong");
         }
     }
@@ -329,7 +332,7 @@ class RequestCommandServiceTest {
 
             return Request.builder()
                     .ubuntuUsername("cancelUser")
-                    .ubuntuPassword("hashedPassword")
+                    .ubuntuPasswordHash("hashedPassword")
                     .expiresAt(LocalDateTime.now().plusDays(30))
                     .usagePurpose("딥러닝 연구")
                     .formAnswers("{}")

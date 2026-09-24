@@ -27,7 +27,8 @@ public interface RequestApi {
     @Operation(
             summary = "서버 사용 신청 생성",
             description = "로그인된 사용자의 서버 사용 신청을 생성합니다. " +
-                    "ubuntuPassword는 클라이언트에서 평문을 Base64로 인코딩한 값으로 전송합니다."
+                    "ubuntuPassword는 평문으로 받아 즉시 SHA-512 crypt 해시로 바꿔 저장하고, 평문은 저장하지 않습니다. " +
+                    "배정 안내 메일에도 비밀번호는 들어가지 않습니다."
     )
     @ApiResponse(responseCode = "201", description = "신청 생성 성공",
             content = @Content(schema = @Schema(implementation = SaveRequestResponseDoc.class)))

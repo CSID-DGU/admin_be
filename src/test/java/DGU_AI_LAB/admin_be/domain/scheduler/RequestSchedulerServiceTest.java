@@ -296,7 +296,7 @@ public class RequestSchedulerServiceTest {
                                       User testUser, ResourceGroup testRg, ContainerImage testImage) {
         Request req = Request.builder()
                 .ubuntuUsername(ubuntuUsername)
-                .ubuntuPassword("password")
+                .ubuntuPasswordHash("password")
                 .expiresAt(expiresAt)
                 .usagePurpose("test")
                 .formAnswers("{}")

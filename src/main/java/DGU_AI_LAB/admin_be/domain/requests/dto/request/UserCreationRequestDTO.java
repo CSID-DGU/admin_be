@@ -14,8 +14,8 @@ public record UserCreationRequestDTO(
 
         @JsonProperty("name")
         String username,
-        @JsonProperty("passwd_base64")
-        String passwordBase64,
+        @JsonProperty("passwd_hash")
+        String passwordHash,
         String gecos,
         @JsonProperty("primary_group_name")
         String primaryGroupName,
