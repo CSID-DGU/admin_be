@@ -323,7 +323,7 @@ class OperationJobServiceTest {
         void provisionWithAccount() throws Exception {
             UserCreationRequestDTO creation = new UserCreationRequestDTO(
                     41L, "exp-np-001", "$6$salt$hash", "홍길동", "exp-np-001", false,
-                    List.of(new UserCreationRequestDTO.SupplementaryGroup("ASCP", 20004L)));
+                    List.of(new UserCreationRequestDTO.SupplementaryGroup("ASCP", 20004L)), null);
 
             JsonNode json = objectMapper.readTree(
                     objectMapper.writeValueAsString(ProvisionRegisterRequestDTO.withAccount(creation)));
@@ -337,6 +337,21 @@ class OperationJobServiceTest {
             assertThat(account.get("primary_group_name").asText()).isEqualTo("exp-np-001");
             assertThat(account.get("supplementary_groups").get(0).get("name").asText()).isEqualTo("ASCP");
             assertThat(account.get("supplementary_groups").get(0).get("gid").asLong()).isEqualTo(20004L);
+        }
+
+        @Test
+        @DisplayName("예전 UID가 있으면 expected_uid로 보내고, 없으면 필드를 빼서 새 계정만 허용한다")
+        void provisionExpectedUid() throws Exception {
+            UserCreationRequestDTO withUid = new UserCreationRequestDTO(
+                    41L, "exp-np-001", "$6$salt$hash", "홍길동", "exp-np-001", false, List.of(), 55000L);
+            UserCreationRequestDTO withoutUid = new UserCreationRequestDTO(
+                    41L, "exp-np-001", "$6$salt$hash", "홍길동", "exp-np-001", false, List.of(), null);
+
+            JsonNode a = objectMapper.readTree(objectMapper.writeValueAsString(ProvisionRegisterRequestDTO.withAccount(withUid)));
+            JsonNode b = objectMapper.readTree(objectMapper.writeValueAsString(ProvisionRegisterRequestDTO.withAccount(withoutUid)));
+
+            assertThat(a.get("account").get("expected_uid").asLong()).isEqualTo(55000L);
+            assertThat(b.get("account").has("expected_uid")).isFalse();
         }
 
         @Test

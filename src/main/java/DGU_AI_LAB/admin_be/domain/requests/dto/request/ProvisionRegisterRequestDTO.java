@@ -28,7 +28,8 @@ public record ProvisionRegisterRequestDTO(
             @JsonProperty("passwd_hash") String passwordHash,
             String gecos,
             @JsonProperty("primary_group_name") String primaryGroupName,
-            @JsonProperty("supplementary_groups") List<UserCreationRequestDTO.SupplementaryGroup> supplementaryGroups
+            @JsonProperty("supplementary_groups") List<UserCreationRequestDTO.SupplementaryGroup> supplementaryGroups,
+            @JsonProperty("expected_uid") Long expectedUid
     ) {}
 
     /** 계정 생성이 필요한 승인 — 동기 경로가 계정 생성 API에 보내던 것과 같은 값을 작업으로 넘긴다. */
@@ -37,7 +38,7 @@ public record ProvisionRegisterRequestDTO(
                 creation.requestId(),
                 creation.username(),
                 new Account(creation.passwordHash(), creation.gecos(),
-                        creation.primaryGroupName(), creation.supplementaryGroups()),
+                        creation.primaryGroupName(), creation.supplementaryGroups(), creation.expectedUid()),
                 null);
     }
 

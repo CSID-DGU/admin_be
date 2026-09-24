@@ -52,6 +52,7 @@ class PodMigrationServiceTest {
 
     @BeforeEach
     void setUp() {
+        when(request.getMigrationJobId()).thenReturn(10L); // result()의 작업 번호와 같다
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         service = new PodMigrationService(requestRepository, podExternalPortRepository, operationJobService, transactionManager, alarmService);
         when(request.getUbuntuUsername()).thenReturn("testuser");
@@ -67,6 +68,21 @@ class PodMigrationServiceTest {
 
     private static JobResultResponseDTO result(String phase, JobResultResponseDTO.Result made) {
         return new JobResultResponseDTO("1", "migrate", 10L, phase, null, null, made);
+    }
+
+    @Test
+    @DisplayName("재마이그레이션 직후 보이는 이전 작업의 성공은 앞당겨 반영하지 않는다")
+    void settleIgnoresPreviousJobResult() {
+        when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        when(request.getMigrationJobId()).thenReturn(11L);
+        when(operationJobService.getResult(OperationJobService.KIND_MIGRATE, 1L))
+                .thenReturn(result(OperationJobService.PHASE_SUCCESS, migrated(null)));
+
+        service.settleFinishedMigration(1L);
+
+        verify(request, never()).assignPodInfo(any(), any());
+        verify(request, never()).endMigration();
     }
 
     @Test
@@ -117,6 +133,17 @@ class PodMigrationServiceTest {
         verify(operationJobService).registerMigrate(captor.capture());
         assertThat(captor.getValue()).isEqualTo(new MigrateRegisterRequestDTO(1L, "ailab-testuser-old", "testuser",
                 List.of("farm2", "farm7"), null, true));
+    }
+
+    @Test
+    @DisplayName("등록한 작업 번호를 신청에 남긴다")
+    void startRecordsJobId() {
+        when(operationJobService.registerMigrate(any())).thenReturn(3700L);
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+
+        service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null));
+
+        verify(request).recordMigrationJob(3700L);
     }
 
     @Test

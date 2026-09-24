@@ -88,10 +88,11 @@ public class OperationJobService {
     /**
      * 마이그레이션 작업을 등록한다. 결과는 {@code MigrationJobPoller}가 조회해 신청에 반영한다.
      *
+     * @return 등록된 작업 번호. 응답에 없으면 null
      * @throws BusinessException 같은 신청의 마이그레이션 작업이 아직 끝나지 않았거나(409) 등록이 거절·실패한 경우
      */
-    public void registerMigrate(MigrateRegisterRequestDTO body) {
-        register("/operations/migrate", body, body.requestId(), ErrorCode.POD_MIGRATION_FAILED);
+    public Long registerMigrate(MigrateRegisterRequestDTO body) {
+        return register("/operations/migrate", body, body.requestId(), ErrorCode.POD_MIGRATION_FAILED);
     }
 
     /** 회수 작업을 등록한다. 결과를 기다리지 않는다. */
@@ -153,6 +154,30 @@ public class OperationJobService {
             }
             sleep(revokePollMillis, failureCode);
         }
+    }
+
+    /**
+     * 작업 번호가 아직 없는 신청을 기다리는 시간. 등록은 몇 초면 끝나므로, 이보다 오래 번호가 없으면 등록 뒤 기록
+     * 전에 admin_be가 멈췄거나 번호 기록 전에 시작된 신청이다 — 그때는 최신 결과를 그대로 쓴다.
+     */
+    public static final Duration REGISTRATION_GRACE = Duration.ofMinutes(1);
+
+    /**
+     * 결과를 아직 보지 말아야 하는가. 작업 결과는 신청 번호로만 조회되므로, 상태를 바꾼 뒤 작업을 등록하기 전에
+     * 조회하면 같은 신청의 이전 작업 결과가 보인다.
+     *
+     * @param registeredJobId 이번에 등록한 작업 번호(없으면 null)
+     * @param stateChangedAt  PROCESSING/MIGRATING으로 바꾼 시각(신청의 updatedAt)
+     */
+    public static boolean awaitingRegistration(Long registeredJobId, LocalDateTime stateChangedAt) {
+        return registeredJobId == null && stateChangedAt != null
+                && stateChangedAt.isAfter(LocalDateTime.now().minus(REGISTRATION_GRACE));
+    }
+
+    /** 이번에 등록한 작업이 아닌 작업(재시도 직후 보이는 이전 작업)의 결과인가. */
+    public static boolean isFromOtherJob(Long registeredJobId, JobResultResponseDTO result) {
+        return registeredJobId != null && result != null && result.jobId() != null
+                && !registeredJobId.equals(result.jobId());
     }
 
     /** 자원을 남긴 채 관리자에게 넘겨진 실패인가. 되돌리면 남은 자원과 신청 상태가 어긋난다. */

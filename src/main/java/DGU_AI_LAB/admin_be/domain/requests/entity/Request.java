@@ -82,6 +82,10 @@ public class Request extends BaseTimeEntity {
     @Column(name = "provision_job_id")
     private Long provisionJobId;
 
+    /** 이번 마이그레이션으로 등록한 작업 번호. provisionJobId와 같은 이유로 결과 폴러가 이 번호의 결과만 반영한다. */
+    @Column(name = "migration_job_id")
+    private Long migrationJobId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "rsgroup_id", nullable = false)
     private ResourceGroup resourceGroup;
@@ -222,6 +226,11 @@ public class Request extends BaseTimeEntity {
             throw new BusinessException("이미 마이그레이션이 진행 중이거나 처리 가능한 상태가 아닙니다.", ErrorCode.INVALID_REQUEST_STATUS);
         }
         this.status = Status.MIGRATING;
+        this.migrationJobId = null;
+    }
+
+    public void recordMigrationJob(Long jobId) {
+        this.migrationJobId = jobId;
     }
 
     /**

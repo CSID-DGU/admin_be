@@ -22,7 +22,11 @@ public record UserCreationRequestDTO(
         @JsonProperty("enable_sudo")
         boolean enableSudo,
         @JsonProperty("supplementary_groups")
-        List<SupplementaryGroup> supplementaryGroups
+        List<SupplementaryGroup> supplementaryGroups,
+        // 이 사용자가 예전 신청에서 쓰던 UID. DB에서 계정 기록이 빠졌어도 원장에 같은 이름·UID의 계정이
+        // 남아 있으면 config-server가 새로 만들지 않고 이어받는다. 이력이 없으면 null(새 계정만 허용).
+        @JsonProperty("expected_uid")
+        Long expectedUid
 ) {
     public record SupplementaryGroup(
             String name,
