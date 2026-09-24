@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.global.auth.jwt.JwtAuthenticationFilter;
 import DGU_AI_LAB.admin_be.global.auth.jwt.JwtProvider;
 import DGU_AI_LAB.admin_be.global.config.CorsConfig;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -32,6 +33,9 @@ public class SecurityConfig {
     private final JwtProvider jwtProvider;
     private final CustomUserDetailsService customUserDetailsService;
     private final RedisTemplate<String, String> redisTemplate;
+
+    @Value("${config.api-token:}")
+    private String internalApiToken;
 
     @Bean
     public WebSecurityCustomizer webSecurityCustomizer() {
@@ -61,6 +65,7 @@ public class SecurityConfig {
                         UsernamePasswordAuthenticationFilter.class
                 )
                 .addFilterBefore(new ExceptionHandlerFilter(), JwtAuthenticationFilter.class)
+                .addFilterBefore(new InternalTokenFilter(internalApiToken), ExceptionHandlerFilter.class)
                 .build();
     }
 

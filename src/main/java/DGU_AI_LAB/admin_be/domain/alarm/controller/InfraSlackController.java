@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "0. 내부 전용 API", description = "인프라·Config 서버 전용 내부 API (인증 불필요, 내부망 전용)")
+@Tag(name = "0. 내부 전용 API", description = "인프라·Config 서버 전용 내부 API (X-Internal-Token 필요)")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/internal")
@@ -26,7 +26,7 @@ public class InfraSlackController {
             summary = "인프라 Slack 알림 큐잉",
             description = "인프라 서버에서 호출. 지정한 Webhook URL로 메시지를 Redis 큐에 적재하며, " +
                     "채널당 초당 1회 제한을 준수하여 순차 전송합니다. " +
-                    "이 엔드포인트는 인증이 필요 없으며 내부망에서만 접근 가능해야 합니다."
+                    "X-Internal-Token 헤더에 내부 API 토큰이 있어야 합니다."
     )
     @ApiResponse(responseCode = "200", description = "큐 적재 성공")
     @ApiResponse(responseCode = "400", description = "webhookUrl 또는 message가 누락된 경우")
