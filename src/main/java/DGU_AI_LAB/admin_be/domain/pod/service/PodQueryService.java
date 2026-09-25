@@ -29,12 +29,12 @@ public class PodQueryService {
     private static final int EVENT_LIMIT = 50;
 
     private final KubernetesClient client;
-    // 사용자 Pod가 만들어지는 네임스페이스. 운영은 ailab-infra이고, 실험 스택은 스택 네임스페이스에
-    // Pod를 만들므로 설정으로 바꾼다. 고정해 두면 스택 관리자 화면에서 모든 컨테이너가 "확인 불가"로 보인다.
+    // 사용자 Pod가 만들어지는 네임스페이스. 설치 환경·스택마다 다르므로 기본값 없이 설정으로만 받는다 —
+    // 틀린 값으로 조용히 뜨면 관리자 화면에서 모든 컨테이너가 "확인 불가"로 보인다.
     private final String namespace;
 
     public PodQueryService(KubernetesClient client,
-                           @Value("${kubernetes.pod-namespace:ailab-infra}") String namespace) {
+                           @Value("${kubernetes.pod-namespace}") String namespace) {
         this.client = client;
         this.namespace = namespace;
     }
