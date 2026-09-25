@@ -7,6 +7,7 @@ import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.global.validation.ReservedLinuxNames;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
@@ -39,6 +40,9 @@ class UserLoginServiceTest {
 
     @InjectMocks
     private UserLoginService userLoginService;
+
+    @Mock
+    private ReservedLinuxNames reservedLinuxNames;
 
     @Mock
     private UserRepository userRepository;
@@ -114,6 +118,24 @@ class UserLoginServiceTest {
             assertThatThrownBy(() -> userLoginService.register(dto))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DUPLICATE_USERNAME);
+
+            verify(userRepository, never()).saveAndFlush(any(User.class));
+        }
+
+        @Test
+        @DisplayName("시스템 예약 이름으로 가입하면 UBUNTU_USERNAME_RESERVED를 던지고 저장하지 않는다")
+        void register_throwsException_whenUbuntuUsernameReserved() {
+            when(redisTemplate.hasKey("VERIFIED:test@dgu.ac.kr")).thenReturn(true);
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.empty());
+            when(reservedLinuxNames.contains("www-data")).thenReturn(true);
+
+            UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "www-data"
+            );
+
+            assertThatThrownBy(() -> userLoginService.register(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_USERNAME_RESERVED);
 
             verify(userRepository, never()).saveAndFlush(any(User.class));
         }

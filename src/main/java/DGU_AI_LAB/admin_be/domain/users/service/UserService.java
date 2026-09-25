@@ -11,6 +11,7 @@ import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
+import DGU_AI_LAB.admin_be.global.validation.ReservedLinuxNames;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -26,6 +27,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final GroupRepository groupRepository;
+    private final ReservedLinuxNames reservedLinuxNames;
     private final PasswordEncoder passwordEncoder;
     private final CurrentPasswordVerifier currentPasswordVerifier;
 
@@ -112,6 +114,9 @@ public class UserService {
 
         if (userRepository.existsByUbuntuUsername(request.ubuntuUsername())) {
             throw new BusinessException(ErrorCode.DUPLICATE_USERNAME);
+        }
+        if (reservedLinuxNames.contains(request.ubuntuUsername())) {
+            throw new BusinessException(ErrorCode.UBUNTU_USERNAME_RESERVED);
         }
         // AD에서 사용자와 그룹은 이름 공간을 공유하고, 개인 그룹도 계정명으로 만든다 — 같은 이름의
         // 그룹이 있으면 승인 뒤 계정 생성이 실패하므로 여기서 막는다.

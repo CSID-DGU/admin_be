@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.global.validation.ReservedLinuxNames;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
@@ -31,6 +32,9 @@ class UserLoginServiceLoggingTest {
 
     @InjectMocks
     private UserLoginService userLoginService;
+
+    @Mock
+    private ReservedLinuxNames reservedLinuxNames;
 
     @Mock
     private UserRepository userRepository;

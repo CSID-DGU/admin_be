@@ -10,6 +10,7 @@ import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import DGU_AI_LAB.admin_be.global.auth.jwt.JwtProvider;
+import DGU_AI_LAB.admin_be.global.validation.ReservedLinuxNames;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,6 +29,7 @@ public class UserLoginService {
 
     private final UserRepository userRepository;
     private final GroupRepository groupRepository;
+    private final ReservedLinuxNames reservedLinuxNames;
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
     private final RedisTemplate<String, String> redisTemplate;
@@ -53,6 +55,9 @@ public class UserLoginService {
         // 유저네임으로만 결정되므로, 유일성 검사도 신청이 아니라 여기서 해야 한다.
         if (userRepository.existsByUbuntuUsername(request.ubuntuUsername())) {
             throw new BusinessException(ErrorCode.DUPLICATE_USERNAME);
+        }
+        if (reservedLinuxNames.contains(request.ubuntuUsername())) {
+            throw new BusinessException(ErrorCode.UBUNTU_USERNAME_RESERVED);
         }
         // 개인 그룹도 계정명으로 만들고 AD는 사용자·그룹 이름 공간을 공유한다 — 같은 이름의 그룹이
         // 있으면 승인 뒤 계정 생성이 실패한다.
