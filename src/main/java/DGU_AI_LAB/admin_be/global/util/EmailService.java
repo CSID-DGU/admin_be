@@ -23,6 +23,7 @@ public class EmailService {
     private final JavaMailSender mailSender;
     private final RedisTemplate<String, String> redisTemplate;
     private final UserRepository userRepository;
+    private final MessageUtils messageUtils;
 
     private static final long AUTH_CODE_EXPIRE_SECONDS = 60 * 5; // 5분
     private static final String EMAIL_VERIFY_PREFIX = "email:verify:";
@@ -47,8 +48,8 @@ public class EmailService {
         redisTemplate.delete(EMAIL_VERIFY_ATTEMPTS_PREFIX + email);
         log.info("이메일 인증번호 저장 완료");
 
-        sendEmail(email, "[DGU AI LAB 서버관리팀] 이메일 인증 코드입니다.",
-                "인증번호는 다음과 같습니다: " + authCode + "\n5분 안에 입력해주세요.");
+        sendEmail(email, messageUtils.get("email.verify.subject"),
+                messageUtils.get("email.verify.body", authCode));
     }
 
     public void confirmAuthCode(String email, String code) {

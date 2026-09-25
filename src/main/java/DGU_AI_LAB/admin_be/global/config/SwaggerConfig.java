@@ -20,7 +20,7 @@ public class SwaggerConfig {
     @Bean
     public OpenAPI openAPI() {
         Info info = new Info()
-                .title("DGU-AI-LAB Admin Backend API Document")
+                .title("Admin Backend API Document")
                 .description("관리자 페이지 Backend API 명세서입니다.")
                 .version("v1.0.0");
 

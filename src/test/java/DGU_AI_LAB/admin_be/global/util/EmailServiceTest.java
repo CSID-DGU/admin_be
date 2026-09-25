@@ -44,8 +44,13 @@ class EmailServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private MessageUtils messageUtils;
+
     @BeforeEach
     void setUp() {
+        lenient().when(messageUtils.get("email.verify.subject")).thenReturn("인증 코드");
+        lenient().when(messageUtils.get(eq("email.verify.body"), any())).thenReturn("본문");
         // 이미 가입된 이메일을 거부하는 테스트는 이 스텁까지 도달하기 전에 끝나므로 lenient로 둔다.
         lenient().when(redisTemplate.opsForValue()).thenReturn(valueOperations);
     }
@@ -68,6 +73,19 @@ class EmailServiceTest {
             String capturedKey = keyCaptor.getValue();
             assertThat(capturedKey).startsWith("email:verify:");
             assertThat(capturedKey).isEqualTo("email:verify:test@example.com");
+        }
+
+        @Test
+        @DisplayName("메일 본문 양식에는 Redis에 저장한 것과 같은 인증번호를 넘긴다")
+        void sendEmailVerificationCode_passesStoredCodeToBodyTemplate() throws Exception {
+            when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+
+            emailService.sendEmailVerificationCode("test@example.com");
+
+            ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
+            verify(valueOperations).set(anyString(), codeCaptor.capture(), anyLong(), any());
+            verify(messageUtils).get("email.verify.body", codeCaptor.getValue());
+            verify(mimeMessage).setSubject("인증 코드", "UTF-8");
         }
 
         @Test
