@@ -11,7 +11,7 @@ public class HealthCheckApiController {
 
     // 서버 상태 확인 API
     @RequestMapping("/")
-    public String DGU_AI_LAB_Server() {
-        return "Hello! DGU_AI_LAB Server!";
+    public String healthCheck() {
+        return "OK";
     }
 }

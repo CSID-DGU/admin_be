@@ -29,8 +29,6 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final CurrentPasswordVerifier currentPasswordVerifier;
 
-    private static final long UID_BASE = 10000; // TODO: 이부분 시스템에 맞추어서 수정하기
-
     /**
      * 유저 단일 조회
      */
