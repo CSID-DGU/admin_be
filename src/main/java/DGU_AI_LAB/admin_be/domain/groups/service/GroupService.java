@@ -15,7 +15,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -100,31 +99,7 @@ public class GroupService {
                                     .uri("/groups")
                                     .bodyValue(apiDto)
                                     .retrieve(),
-                            (status, body) -> {
-                                if (status.is5xxServerError()) {
-                                    log.error("[createGroup] 외부 API 5xx 오류: 상태 코드={}, 응답={}", status, body);
-                                    return new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
-                                }
-                                log.error("[createGroup] 외부 API 4xx 오류: 상태 코드={}, 응답={}", status, body);
-                                if (status == HttpStatus.BAD_REQUEST) {
-                                    if (body.contains("invalid members")) {
-                                        return new BusinessException(ErrorCode.INVALID_GROUP_MEMBER);
-                                    }
-                                    if (body.contains("collides with an existing user")) {
-                                        return new BusinessException(ErrorCode.GROUP_NAME_CONFLICTS_USER);
-                                    }
-                                    return new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
-                                } else if (status == HttpStatus.CONFLICT) {
-                                    if (body.contains("group already exists")) {
-                                        return new BusinessException(ErrorCode.DUPLICATE_GROUP_NAME);
-                                    }
-                                    if (body.contains("reserved by the container image")) {
-                                        return new BusinessException(ErrorCode.RESERVED_GROUP_NAME);
-                                    }
-                                    return new BusinessException(ErrorCode.DUPLICATE_GROUP_ID);
-                                }
-                                return new BusinessException(ErrorCode.GROUP_CREATION_FAILED);
-                            }
+                            GroupService::mapCreateGroupError
                     )
                     .bodyToMono(ConfigServerGroupResponse.class)
                     .block();
@@ -246,6 +221,34 @@ public class GroupService {
     }
 
     /**
+     * config-server add_group 의 error 필드로 가른다(mapAddUserToGroupsError와 같은 이유). 예전에는
+     * 문장 조각으로 갈라 "group already exists (gid: …)"까지 이름 중복으로 읽었다.
+     * 시험이 닿도록 패키지 범위로 둔다.
+     */
+    static BusinessException mapCreateGroupError(HttpStatusCode status, String body) {
+        String safeBody = body == null ? "" : body;
+        if (status.is5xxServerError()) {
+            return new BusinessException("그룹 생성 실패(인프라 서버 오류): " + safeBody, ErrorCode.EXTERNAL_API_ERROR);
+        }
+        if (safeBody.contains("\"INVALID_GROUP_MEMBER\"")) {
+            return new BusinessException(ErrorCode.INVALID_GROUP_MEMBER);
+        }
+        if (safeBody.contains("\"GROUP_NAME_CONFLICTS_USER\"")) {
+            return new BusinessException(ErrorCode.GROUP_NAME_CONFLICTS_USER);
+        }
+        if (safeBody.contains("\"GROUP_NAME_EXISTS\"")) {
+            return new BusinessException(ErrorCode.DUPLICATE_GROUP_NAME);
+        }
+        if (safeBody.contains("\"GROUP_GID_EXISTS\"")) {
+            return new BusinessException(ErrorCode.DUPLICATE_GROUP_ID);
+        }
+        if (safeBody.contains("\"GROUP_NAME_RESERVED\"")) {
+            return new BusinessException(ErrorCode.RESERVED_GROUP_NAME);
+        }
+        return WebClientErrorHandler.rejectedOr(status, safeBody, "그룹 생성 실패", ErrorCode.GROUP_CREATION_FAILED);
+    }
+
+    /**
      * config-server remove_user_group 의 error 필드로 가른다(mapAddUserToGroupsError와 같은 이유).
      * 시험이 닿도록 패키지 범위로 둔다.
      */
@@ -291,8 +294,7 @@ public class GroupService {
      * 하나로 묶으면 "다시 승인하면 되는 것"과 "신청을 고쳐야 하는 것"을 관리자가 구분할 수 없다.
      *
      * 본문의 error 필드 값으로 가른다 — 사람이 읽는 문장이 아니라 기계 코드라 문구가 바뀌어도
-     * 깨지지 않는다. createGroup 쪽은 아직 문장 조각으로 분기하는데(#553), 그건 기존 분기까지
-     * 같이 바꿔야 해서 여기서는 손대지 않았다.
+     * 깨지지 않는다.
      *
      * 시험이 닿도록 람다에서 떼어 패키지 범위로 둔다.
      */
