@@ -9,4 +9,6 @@ import java.util.Optional;
 @Repository
 public interface ContainerImageRepository extends JpaRepository<ContainerImage, Long> {
     Optional<ContainerImage> findByImageNameAndImageVersion(String imageName, String imageVersion);
+
+    boolean existsByImageNameAndImageVersion(String imageName, String imageVersion);
 }

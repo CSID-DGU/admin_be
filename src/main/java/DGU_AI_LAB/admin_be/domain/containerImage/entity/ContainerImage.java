@@ -5,7 +5,9 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "container_image")
+// 운영 DB에는 ddl-auto가 아니라 직접 DDL로 같은 이름의 제약을 걸었다(2026-09-25).
+@Table(name = "container_image", uniqueConstraints = @UniqueConstraint(
+        name = "uk_container_image_name_version", columnNames = {"image_name", "image_version"}))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ContainerImage extends BaseTimeEntity  {

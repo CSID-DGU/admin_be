@@ -75,7 +75,7 @@ class RequestRepositoryLockingTest {
                 .build());
 
         ContainerImage containerImage = containerImageRepository.save(ContainerImage.builder()
-                .imageName("pytorch")
+                .imageName("locking-test-image")
                 .imageVersion("2.1.0")
                 .cudaVersion("11.8")
                 .description("잠금 테스트용 이미지")
