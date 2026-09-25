@@ -11,6 +11,7 @@ import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.global.server.ServerProfileRegistry;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,12 +41,6 @@ public class AlarmService {
     @Value("${slack-webhook-url.error-log}")
     private String errorLogWebhookUrl; // 중요한 에러 로그용
 
-    // 관리자 승인 채널 (farm & lab)
-    @Value("${slack-webhook-url.farm-admin}")
-    private String farmAdminWebhookUrl;
-    @Value("${slack-webhook-url.lab-admin}")
-    private String labAdminWebhookUrl;
-
     @Value("${spring.mail.username}")
     private String from;
 
@@ -54,6 +49,7 @@ public class AlarmService {
     private final RedisTemplate<String, Object> redisTemplate;
     private final MessageUtils messageUtils;
     private final PodExternalPortRepository podExternalPortRepository;
+    private final ServerProfileRegistry serverProfileRegistry;
 
     private static final String SLACK_QUEUE_KEY = "slack:notification:queue";
 
@@ -133,15 +129,13 @@ public class AlarmService {
         }
     }
 
+    // 알 수 없는 서버라면 에러 채널로 보내서 관리자가 확인하게 한다.
     private String getAdminWebhookUrl(String serverName) {
-        if ("FARM".equalsIgnoreCase(serverName)) return farmAdminWebhookUrl;
-        else if ("LAB".equalsIgnoreCase(serverName)) return labAdminWebhookUrl;
-            // 알 수 없는 서버라면 에러 채널로 보내서 관리자가 확인하게 합니다.
-        else return errorLogWebhookUrl;
+        return serverProfileRegistry.adminWebhookUrl(serverName).orElse(errorLogWebhookUrl);
     }
 
     /**
-     * 신청이 들어오면 FARM/LAB 관리 교수님 채널에 승인 판단에 필요한 정보를 전부 담아 보낸다.
+     * 신청이 들어오면 서버별 관리 교수님 채널에 승인 판단에 필요한 정보를 전부 담아 보낸다.
      * 이 채널에서 교수님이 직접 보고 승인 여부를 판단하므로(관리자 페이지를 거치지 않을 수 있다),
      * 신청자 신원·연락처·사용 목적·희망 기간까지 한 메시지 안에 다 있어야 한다.
      */
@@ -169,12 +163,9 @@ public class AlarmService {
         var image = request.getContainerImage();
         String serverName = request.getResourceGroup().getServerName();
 
-        // FARM은 pfSense가 210.94.179.19:9300-9397 → farm6:30000-30097로 오프셋 포워딩하므로
-        // 사용자에겐 NodePort가 아니라 공인 포트를 안내해야 한다 (26-07-15 외부 실측 검증).
-        if ("FARM".equalsIgnoreCase(serverName)) {
-            sshPort = toFarmPublicPort(sshPort);
-            jupyterPort = toFarmPublicPort(jupyterPort);
-        }
+        // 공인 주소가 NodePort를 다른 포트 대역으로 포워딩하는 서버면 사용자에겐 공인 포트를 안내해야 한다.
+        sshPort = serverProfileRegistry.publicPort(serverName, sshPort);
+        jupyterPort = serverProfileRegistry.publicPort(serverName, jupyterPort);
 
         List<PodExternalPort> allPorts = podExternalPortRepository.findByRequestRequestId(request.getRequestId());
         String extraPorts = PodPortUtils.formatExtraPortSummary(allPorts);
@@ -194,31 +185,11 @@ public class AlarmService {
         sendMonitoringLog(user.getName(), user.getEmail(), subject);
     }
 
-    // ponytail: pfSense FARM 오프셋 매핑 하드코딩(admin_fe publicEndpoint.js와 동일 공식). 대역이 늘면 설정으로.
-    private static final int NODEPORT_BASE = 30000;
-    private static final int FARM_PUBLIC_PORT_BASE = 9300;
-    private static final int FARM_PUBLIC_BAND_SIZE = 98; // 외부 9300-9397
-
-    private String toFarmPublicPort(String nodePort) {
-        try {
-            int offset = Integer.parseInt(nodePort) - NODEPORT_BASE;
-            if (offset >= 0 && offset < FARM_PUBLIC_BAND_SIZE) {
-                return String.valueOf(FARM_PUBLIC_PORT_BASE + offset);
-            }
-        } catch (NumberFormatException ignored) {
-            // 빈 문자열 등 — 원본 그대로 반환
-        }
-        return nodePort; // 매핑 대역 밖이면 원본 유지(외부 미개방 포트임이 그대로 드러나는 편이 낫다)
-    }
-
-    // ponytail: LAB/FARM 2-호스트 하드코딩. 호스트가 늘면 노드/설정 레지스트리로.
     private String resolveHostIp(String serverName) {
-        if (serverName == null) return "";
-        return switch (serverName.toUpperCase()) {
-            case "LAB"  -> "210.94.179.18";
-            case "FARM" -> "210.94.179.19";
-            default -> { log.warn("호스트 IP 미상 serverName={}", serverName); yield ""; }
-        };
+        return serverProfileRegistry.publicHost(serverName).orElseGet(() -> {
+            log.warn("호스트 주소 미상 serverName={}", serverName);
+            return "";
+        });
     }
 
     /**
@@ -319,13 +290,13 @@ public class AlarmService {
 
     /**
      * 그룹 추가 승인 안내. 승인 메일만 받은 사용자도 팀과 파일을 나눌 자리를 바로 찾도록 그룹마다 팀 디렉터리
-     * 경로를 적는다. ~/shared 링크는 새 이미지에서만 생기므로 실제 경로(/home/_g_<그룹>)를 같이 적는다.
+     * 경로를 적는다. 경로 형식은 이미지·스토리지 구성에 달려 있어 messages.properties의 한 줄 양식으로 둔다.
      */
     public void sendGroupAddedEmail(ChangeRequest changeRequest, String adminComment, List<String> groupNames) {
         User user = changeRequest.getRequestedBy();
         String changeType = changeRequest.getChangeType().name();
         String teamDirs = groupNames.stream()
-                .map(name -> "- " + name + ": ~/shared/" + name + " (/home/_g_" + name + ")")
+                .map(name -> messageUtils.get("email.modification.approved.group.dir", name))
                 .collect(Collectors.joining("\n"));
 
         String subject = messageUtils.get("email.modification.approved.subject", changeType);
