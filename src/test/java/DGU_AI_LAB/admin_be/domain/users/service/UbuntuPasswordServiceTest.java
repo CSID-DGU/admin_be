@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuPasswordUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
@@ -36,6 +38,9 @@ class UbuntuPasswordServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private RequestRepository requestRepository;
 
     @Mock
     private CurrentPasswordVerifier currentPasswordVerifier;
@@ -94,6 +99,19 @@ class UbuntuPasswordServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_PASSWORD);
+        verify(syncClient, never()).apply(anyString(), anyString());
+        assertThat(user.getUbuntuPasswordHash()).isEqualTo(OLD_HASH);
+    }
+
+    @Test
+    @DisplayName("생성 중인 신청이 있으면 409, 계정 해시와 컨테이너를 건드리지 않는다")
+    void rejectsWhileProvisioning() {
+        when(requestRepository.existsByUser_UserIdAndStatus(1L, Status.PROCESSING)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.changeUbuntuPassword(1L, request()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.UBUNTU_PASSWORD_CHANGE_WHILE_PROVISIONING);
         verify(syncClient, never()).apply(anyString(), anyString());
         assertThat(user.getUbuntuPasswordHash()).isEqualTo(OLD_HASH);
     }
