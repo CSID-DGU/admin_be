@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupResponseDTO;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.webclient.WebClientErrorHandler;
@@ -37,6 +38,7 @@ public class GroupService {
 
     private final GroupRepository groupRepository;
     private final RequestRepository requestRepository;
+    private final UserRepository userRepository;
     private final @Qualifier("configWebClient") WebClient groupCreationWebClient;
     private final PlatformTransactionManager transactionManager;
     private final AlarmService alarmService;
@@ -78,6 +80,12 @@ public class GroupService {
             if (groupRepository.existsByGroupName(dto.groupName())) {
                 log.warn("[createGroup] DB에 이미 존재하는 그룹명입니다: {}", dto.groupName());
                 throw new BusinessException(ErrorCode.DUPLICATE_GROUP_NAME);
+            }
+            // config-server는 원장에 계정이 생긴 이름만 막는다 — 계정명만 등록하고 아직 승인 전인
+            // 사용자와 같은 이름의 그룹을 만들면 그 사용자의 계정 생성이 나중에 실패한다.
+            if (userRepository.existsByUbuntuUsername(dto.groupName())) {
+                log.warn("[createGroup] 우분투 계정명과 같은 그룹명입니다: {}", dto.groupName());
+                throw new BusinessException(ErrorCode.GROUP_NAME_CONFLICTS_USER);
             }
         });
 

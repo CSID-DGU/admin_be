@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -185,6 +186,14 @@ class UserRegisterRequestDTOTest {
     void ubuntuUsername_reserved_isRejected() {
         assertThat(violatedFields(registerWithUbuntuUsername("root"))).contains("ubuntuUsername");
         assertThat(violatedFields(registerWithUbuntuUsername("svmanager"))).contains("ubuntuUsername");
+    }
+
+    @Test
+    @DisplayName("원장 시드의 시스템 계정과 이미지 그룹 이름은 거절한다 — 승인 뒤 계정 생성 실패를 가입 단계에서 막는다")
+    void ubuntuUsername_imageAccountOrGroupName_isRejected() {
+        for (String name : List.of("www-data", "backup", "messagebus", "docker", "sudo", "video", "users", "staff")) {
+            assertThat(violatedFields(registerWithUbuntuUsername(name))).as(name).contains("ubuntuUsername");
+        }
     }
 
     @Test

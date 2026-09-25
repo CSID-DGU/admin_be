@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.global.auth.jwt.JwtProvider;
 import DGU_AI_LAB.admin_be.support.LogCaptor;
@@ -33,6 +34,9 @@ class UserLoginServiceLoggingTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private GroupRepository groupRepository;
 
     @Mock
     private PasswordEncoder passwordEncoder;

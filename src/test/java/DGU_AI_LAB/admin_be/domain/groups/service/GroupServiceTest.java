@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupResponseDTO;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,6 +47,9 @@ class GroupServiceTest {
 
     @Mock
     private RequestRepository requestRepository;
+
+    @Mock
+    private UserRepository userRepository;
 
     @Mock
     private WebClient groupCreationWebClient;
@@ -141,6 +145,20 @@ class GroupServiceTest {
 
             assertThatThrownBy(() -> groupService.createGroup(dto, 1L))
                     .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("이미 등록된 우분투 계정명과 같은 그룹명이면 외부 API를 부르기 전에 GROUP_NAME_CONFLICTS_USER를 던진다")
+        void createGroup_throwsException_whenGroupNameEqualsRegisteredUsername() {
+            when(groupRepository.existsByGroupName("honggildong")).thenReturn(false);
+            when(userRepository.existsByUbuntuUsername("honggildong")).thenReturn(true);
+
+            CreateGroupRequestDTO dto = new CreateGroupRequestDTO("honggildong", null);
+
+            assertThatThrownBy(() -> groupService.createGroup(dto, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.GROUP_NAME_CONFLICTS_USER);
+            verifyNoInteractions(groupCreationWebClient);
         }
 
         @Test

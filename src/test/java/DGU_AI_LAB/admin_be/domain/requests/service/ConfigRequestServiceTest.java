@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
+import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
 import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
@@ -43,12 +44,13 @@ class ConfigRequestServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private PortRequestRepository portRequestRepository;
     @Mock private NodeRepository nodeRepository;
+    @Mock private GroupRepository groupRepository;
 
     private ConfigRequestService service;
 
     @BeforeEach
     void setUp() {
-        service = new ConfigRequestService(requestRepository, userRepository, portRequestRepository, nodeRepository);
+        service = new ConfigRequestService(requestRepository, userRepository, portRequestRepository, nodeRepository, groupRepository);
     }
 
     /** AcceptInfoResponseDTO.groups는 이제 request.getUser().getUserGroups()를 읽으므로 기본은 그룹 없는 계정. */
@@ -89,6 +91,16 @@ class ConfigRequestServiceTest {
         assertThat(service.isUbuntuUsernameAvailable("free")).isTrue();
         // 종료된 신청 이력에 같은 유저네임이 남아 있어도 가용성 판단에 끼어들면 안 된다.
         verifyNoInteractions(requestRepository);
+    }
+
+    @Test
+    @DisplayName("시스템 예약 이름과 같은 이름의 그룹이 있는 username은 쓸 수 없다고 답한다")
+    void isUbuntuUsernameAvailable_rejectsReservedAndGroupNames() {
+        when(groupRepository.existsByGroupName("developers")).thenReturn(true);
+
+        assertThat(service.isUbuntuUsernameAvailable("docker")).isFalse();
+        assertThat(service.isUbuntuUsernameAvailable("www-data")).isFalse();
+        assertThat(service.isUbuntuUsernameAvailable("developers")).isFalse();
     }
 
     @Test
