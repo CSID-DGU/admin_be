@@ -464,4 +464,44 @@ class GroupServiceTest {
                     .doesNotThrowAnyException();
         }
     }
+
+    @Nested
+    @DisplayName("mapCreateGroupError")
+    class MapCreateGroupError {
+
+        private ErrorCode codeOf(HttpStatus status, String body) {
+            return GroupService.mapCreateGroupError(status, body).getErrorCode();
+        }
+
+        @Test
+        @DisplayName("config-server error 코드로 가르고, 설명 문구가 바뀌어도 결과가 같다")
+        void mapsByErrorCodeNotMessage() {
+            assertThat(codeOf(HttpStatus.CONFLICT, "{\"detail\":\"아무 문구\",\"error\":\"GROUP_NAME_EXISTS\"}"))
+                    .isEqualTo(ErrorCode.DUPLICATE_GROUP_NAME);
+            assertThat(codeOf(HttpStatus.CONFLICT, "{\"error\":\"GROUP_NAME_RESERVED\"}"))
+                    .isEqualTo(ErrorCode.RESERVED_GROUP_NAME);
+            assertThat(codeOf(HttpStatus.BAD_REQUEST, "{\"error\":\"GROUP_NAME_CONFLICTS_USER\"}"))
+                    .isEqualTo(ErrorCode.GROUP_NAME_CONFLICTS_USER);
+            assertThat(codeOf(HttpStatus.BAD_REQUEST, "{\"error\":\"INVALID_GROUP_MEMBER\"}"))
+                    .isEqualTo(ErrorCode.INVALID_GROUP_MEMBER);
+        }
+
+        @Test
+        @DisplayName("gid 충돌은 이름 중복이 아니라 DUPLICATE_GROUP_ID다 — 설명 문구가 같은 'group already exists'로 시작해도")
+        void gidConflict_isNotNameDuplicate() {
+            assertThat(codeOf(HttpStatus.CONFLICT,
+                    "{\"detail\":\"group already exists (gid: 70001)\",\"error\":\"GROUP_GID_EXISTS\"}"))
+                    .isEqualTo(ErrorCode.DUPLICATE_GROUP_ID);
+        }
+
+        @Test
+        @DisplayName("모르는 4xx는 요청 거절, 5xx는 인프라 서버 오류로 바꾼다")
+        void unknownErrors_fallBackByStatus() {
+            assertThat(codeOf(HttpStatus.BAD_REQUEST, "{\"error\":\"SOMETHING_NEW\"}"))
+                    .isEqualTo(ErrorCode.INFRA_REQUEST_REJECTED);
+            assertThat(codeOf(HttpStatus.INTERNAL_SERVER_ERROR, "{\"error\":\"GROUP_NAME_EXISTS\"}"))
+                    .isEqualTo(ErrorCode.EXTERNAL_API_ERROR);
+            assertThat(codeOf(HttpStatus.CONFLICT, null)).isEqualTo(ErrorCode.INFRA_REQUEST_REJECTED);
+        }
+    }
 }
