@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuPasswordUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.MyInfoResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
@@ -22,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class UbuntuPasswordService {
 
     private final UserRepository userRepository;
+    private final RequestRepository requestRepository;
     private final CurrentPasswordVerifier currentPasswordVerifier;
     private final UbuntuPasswordSyncClient ubuntuPasswordSyncClient;
 
@@ -36,6 +39,12 @@ public class UbuntuPasswordService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         currentPasswordVerifier.verify(user, request.currentPassword());
+
+        // 생성 작업은 승인 때 읽은 해시로 계정을 만든다. 그 사이 바꾸면 DB만 새 해시가 되고 실제 계정은
+        // 옛 비밀번호로 남는다. 승인도 이 사용자 행을 잠그고 해시를 읽으므로 이 확인과 겹치지 않는다.
+        if (requestRepository.existsByUser_UserIdAndStatus(userId, Status.PROCESSING)) {
+            throw new BusinessException(ErrorCode.UBUNTU_PASSWORD_CHANGE_WHILE_PROVISIONING);
+        }
 
         String passwordHash = LinuxPasswordHasher.sha512Crypt(request.newPassword());
         // 리눅스 계정이 아직 없으면(첫 승인 전, 또는 회수 뒤) 바꿀 컨테이너도 없다. 해시만 두면

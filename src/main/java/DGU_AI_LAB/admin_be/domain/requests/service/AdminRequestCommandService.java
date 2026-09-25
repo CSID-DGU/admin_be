@@ -125,10 +125,14 @@ public class AdminRequestCommandService {
             List<UserCreationRequestDTO.SupplementaryGroup> supplementaryGroups = req.getRequestGroups().stream()
                     .map(rg -> new UserCreationRequestDTO.SupplementaryGroup(rg.getGroup().getGroupName(), rg.getGroup().getUbuntuGid()))
                     .toList();
+            // 비밀번호 변경과 같은 사용자 행 잠금으로 직렬화한다 — 잠금 없이 읽으면 변경 직전의 옛 해시로
+            // 계정이 만들어질 수 있다(비밀번호 변경은 PROCESSING 신청이 있으면 거절한다).
+            User owner = userRepository.findByIdForUpdate(req.getUser().getUserId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
             creationDtoRef[0] = new UserCreationRequestDTO(
                     dto.requestId(),
                     req.getUbuntuUsername(),
-                    req.getUser().getUbuntuPasswordHash(),
+                    owner.getUbuntuPasswordHash(),
                     req.getUser().getName(),
                     req.getUbuntuUsername(),
                     false,
