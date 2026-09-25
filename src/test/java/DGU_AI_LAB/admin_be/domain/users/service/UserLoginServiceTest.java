@@ -4,6 +4,7 @@ import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -41,6 +42,9 @@ class UserLoginServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private GroupRepository groupRepository;
 
     @Mock
     private PasswordEncoder passwordEncoder;
@@ -110,6 +114,25 @@ class UserLoginServiceTest {
             assertThatThrownBy(() -> userLoginService.register(dto))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DUPLICATE_USERNAME);
+
+            verify(userRepository, never()).saveAndFlush(any(User.class));
+        }
+
+        @Test
+        @DisplayName("같은 이름의 그룹이 있는 우분투 유저네임으로 가입하면 UBUNTU_USERNAME_CONFLICTS_GROUP을 던진다")
+        void register_throwsException_whenUbuntuUsernameEqualsGroupName() {
+            when(redisTemplate.hasKey("VERIFIED:test@dgu.ac.kr")).thenReturn(true);
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.empty());
+            when(userRepository.existsByUbuntuUsername("developers")).thenReturn(false);
+            when(groupRepository.existsByGroupName("developers")).thenReturn(true);
+
+            UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "developers"
+            );
+
+            assertThatThrownBy(() -> userLoginService.register(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_USERNAME_CONFLICTS_GROUP);
 
             verify(userRepository, never()).saveAndFlush(any(User.class));
         }

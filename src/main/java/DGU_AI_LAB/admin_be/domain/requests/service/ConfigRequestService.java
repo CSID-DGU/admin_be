@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
 import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
@@ -11,6 +12,7 @@ import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.validation.ReservedLinuxNames;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -27,14 +29,18 @@ public class ConfigRequestService {
     private final UserRepository userRepository;
     private final PortRequestRepository portRequestRepository;
     private final NodeRepository nodeRepository;
+    private final GroupRepository groupRepository;
 
     /**
      * ubuntu username 중복 검사 — 웹 계정 기준이다.
      * 유저네임은 신청이 아니라 웹 계정에 귀속되므로 "새 계정이 이 이름을 쓸 수 있는가"를 답한다.
+     * 시스템 예약 이름과 같은 이름의 그룹도 가입·등록 때 거절되므로 "쓸 수 없음"으로 답한다.
      */
     @Transactional(readOnly = true)
     public boolean isUbuntuUsernameAvailable(String username) {
-        return !userRepository.existsByUbuntuUsername(username);
+        return !ReservedLinuxNames.contains(username)
+                && !userRepository.existsByUbuntuUsername(username)
+                && !groupRepository.existsByGroupName(username);
     }
 
     /**

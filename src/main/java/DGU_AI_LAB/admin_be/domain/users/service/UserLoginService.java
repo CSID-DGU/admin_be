@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
@@ -26,6 +27,7 @@ import java.util.concurrent.TimeUnit;
 public class UserLoginService {
 
     private final UserRepository userRepository;
+    private final GroupRepository groupRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
     private final RedisTemplate<String, String> redisTemplate;
@@ -51,6 +53,11 @@ public class UserLoginService {
         // 유저네임으로만 결정되므로, 유일성 검사도 신청이 아니라 여기서 해야 한다.
         if (userRepository.existsByUbuntuUsername(request.ubuntuUsername())) {
             throw new BusinessException(ErrorCode.DUPLICATE_USERNAME);
+        }
+        // 개인 그룹도 계정명으로 만들고 AD는 사용자·그룹 이름 공간을 공유한다 — 같은 이름의 그룹이
+        // 있으면 승인 뒤 계정 생성이 실패한다.
+        if (groupRepository.existsByGroupName(request.ubuntuUsername())) {
+            throw new BusinessException(ErrorCode.UBUNTU_USERNAME_CONFLICTS_GROUP);
         }
 
         String encoded = passwordEncoder.encode(request.password());
