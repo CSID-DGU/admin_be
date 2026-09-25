@@ -24,7 +24,7 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * 관리자가 계정의 공용 그룹 멤버십을 보고 빼는 경로. 추가는 신청 승인(AdminRequestCommandService)이 맡는다.
+ * 관리자가 계정의 공용 그룹 멤버십을 보고 빼는 경로. 추가는 신청 승인(AdminRequestCommandService)과 변경 요청 승인(AdminModificationCommandService)이 맡는다.
  */
 @Slf4j
 @Service

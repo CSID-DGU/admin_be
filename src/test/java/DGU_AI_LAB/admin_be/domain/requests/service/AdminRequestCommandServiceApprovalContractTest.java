@@ -88,9 +88,8 @@ class AdminRequestCommandServiceApprovalContractTest {
 
         service = new AdminRequestCommandService(
                 alarmService, requestRepository, userRepository, containerImageRepository,
-                resourceGroupRepository, changeRequestRepository,
-                groupRepository, groupService, podExternalPortRepository, operationJobService,
-                portRequestService, new ObjectMapper(), transactionManager
+                resourceGroupRepository, podExternalPortRepository, operationJobService,
+                transactionManager
         );
 
         when(mockUser.getUserId()).thenReturn(100L);

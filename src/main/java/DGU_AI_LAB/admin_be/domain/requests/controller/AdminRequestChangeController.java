@@ -10,7 +10,7 @@ import DGU_AI_LAB.admin_be.domain.requests.controller.docs.AdminRequestChangeApi
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
-import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
+import DGU_AI_LAB.admin_be.domain.requests.service.AdminModificationCommandService;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestQueryService;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import jakarta.validation.Valid;
@@ -26,7 +26,7 @@ import java.util.List;
 @RequestMapping("/api/admin/change-requests")
 public class AdminRequestChangeController implements AdminRequestChangeApi {
 
-    private final AdminRequestCommandService adminRequestCommandService;
+    private final AdminModificationCommandService adminModificationCommandService;
     private final AdminRequestQueryService adminRequestQueryService;
 
     /**
@@ -45,7 +45,7 @@ public class AdminRequestChangeController implements AdminRequestChangeApi {
             @PathVariable Long changeRequestId,
             @RequestBody @Valid ChangeDecisionRequestDTO dto
     ) {
-        adminRequestCommandService.approveModification(adminId, new ApproveModificationDTO(changeRequestId, dto.adminComment()));
+        adminModificationCommandService.approveModification(adminId, new ApproveModificationDTO(changeRequestId, dto.adminComment()));
         return SuccessResponse.ok(null);
     }
 
@@ -55,7 +55,7 @@ public class AdminRequestChangeController implements AdminRequestChangeApi {
             @PathVariable Long changeRequestId,
             @RequestBody @Valid ChangeDecisionRequestDTO dto
     ) {
-        adminRequestCommandService.rejectModification(adminId, new RejectModificationDTO(changeRequestId, dto.adminComment()));
+        adminModificationCommandService.rejectModification(adminId, new RejectModificationDTO(changeRequestId, dto.adminComment()));
         return SuccessResponse.ok(null);
     }
 }
