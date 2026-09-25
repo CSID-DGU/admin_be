@@ -96,6 +96,7 @@ public enum ErrorCode {
     GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "지정된 그룹을 찾을 수 없습니다."),
     UID_ALLOCATION_FAILED(HttpStatus.BAD_GATEWAY, "외부 API 응답에서 UID/GID를 확인할 수 없습니다."),
     DUPLICATE_USERNAME(HttpStatus.CONFLICT, "이미 사용 중인 username입니다. 다른 username을 입력해주세요."),
+    UBUNTU_USERNAME_CONFLICTS_GROUP(HttpStatus.CONFLICT, "같은 이름의 그룹이 있어 쓸 수 없는 우분투 계정명입니다. 다른 이름을 입력해주세요."),
     UBUNTU_USERNAME_NOT_ASSIGNED(HttpStatus.CONFLICT, "회원 정보에 우분투 계정명이 없습니다. 마이페이지에서 먼저 등록해주세요."),
     UBUNTU_USERNAME_ALREADY_ASSIGNED(HttpStatus.CONFLICT, "이미 우분투 계정명이 등록되어 있어 변경할 수 없습니다."),
     UBUNTU_ACCOUNT_ALREADY_ASSIGNED(HttpStatus.CONFLICT, "이미 다른 우분투 계정이 배정된 사용자입니다."),

@@ -115,6 +115,11 @@ public class UserService {
         if (userRepository.existsByUbuntuUsername(request.ubuntuUsername())) {
             throw new BusinessException(ErrorCode.DUPLICATE_USERNAME);
         }
+        // AD에서 사용자와 그룹은 이름 공간을 공유하고, 개인 그룹도 계정명으로 만든다 — 같은 이름의
+        // 그룹이 있으면 승인 뒤 계정 생성이 실패하므로 여기서 막는다.
+        if (groupRepository.existsByGroupName(request.ubuntuUsername())) {
+            throw new BusinessException(ErrorCode.UBUNTU_USERNAME_CONFLICTS_GROUP);
+        }
 
         user.registerUbuntuUsername(request.ubuntuUsername());
         try {

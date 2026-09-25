@@ -4,10 +4,12 @@ import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PasswordUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PhoneUpdateRequestDTO;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuUsernameRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.MyInfoResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
@@ -180,4 +182,22 @@ class UserServiceTest {
         }
     }
 
+
+    @Nested
+    @DisplayName("registerUbuntuUsername")
+    class RegisterUbuntuUsername {
+
+        @Test
+        @DisplayName("같은 이름의 그룹이 있으면 UBUNTU_USERNAME_CONFLICTS_GROUP을 던지고 저장하지 않는다")
+        void registerUbuntuUsername_throwsException_whenGroupNameExists() {
+            when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(mockUser));
+            when(userRepository.existsByUbuntuUsername("developers")).thenReturn(false);
+            when(groupRepository.existsByGroupName("developers")).thenReturn(true);
+
+            assertThatThrownBy(() -> userService.registerUbuntuUsername(1L, new UbuntuUsernameRegisterRequestDTO("developers")))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_USERNAME_CONFLICTS_GROUP);
+            verify(userRepository, never()).saveAndFlush(any());
+        }
+    }
 }
