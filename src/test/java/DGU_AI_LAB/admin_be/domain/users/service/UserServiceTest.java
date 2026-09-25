@@ -10,6 +10,7 @@ import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.global.validation.ReservedLinuxNames;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,6 +41,9 @@ class UserServiceTest {
 
     @Mock
     private GroupRepository groupRepository;
+
+    @Mock
+    private ReservedLinuxNames reservedLinuxNames;
 
     @Mock
     private PasswordEncoder passwordEncoder;
@@ -186,6 +190,18 @@ class UserServiceTest {
     @Nested
     @DisplayName("registerUbuntuUsername")
     class RegisterUbuntuUsername {
+
+        @Test
+        @DisplayName("시스템 예약 이름이면 UBUNTU_USERNAME_RESERVED를 던지고 저장하지 않는다")
+        void registerUbuntuUsername_throwsException_whenReserved() {
+            when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(mockUser));
+            when(reservedLinuxNames.contains("docker")).thenReturn(true);
+
+            assertThatThrownBy(() -> userService.registerUbuntuUsername(1L, new UbuntuUsernameRegisterRequestDTO("docker")))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_USERNAME_RESERVED);
+            assertThat(mockUser.getUbuntuUsername()).isNull();
+        }
 
         @Test
         @DisplayName("같은 이름의 그룹이 있으면 UBUNTU_USERNAME_CONFLICTS_GROUP을 던지고 저장하지 않는다")
