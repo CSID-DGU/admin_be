@@ -164,9 +164,8 @@ public class RequestSchedulerService {
      */
     private void sendFailureAlertToAdmin(String serverName, String username, String errorMsg) {
         try {
-            String type = getServerType(serverName);
             String msg = messageUtils.get("notification.admin.delete.fail",
-                    type, serverName, username, errorMsg);
+                    serverName, serverName, username, errorMsg);
             alarmService.sendAdminSlackNotification(serverName, msg);
             // AlarmService.sendSlackAlert에서 url이 null이면 기본값(error-log)으로 전송합니다.
             alarmService.sendSlackAlert(msg, null);
@@ -174,11 +173,4 @@ public class RequestSchedulerService {
         } catch (Exception ignored) {}
     }
 
-    private String getServerType(String serverName) {
-        if (serverName == null) return "UNKNOWN";
-        String lower = serverName.toLowerCase();
-        if (lower.contains("farm")) return "FARM";
-        if (lower.contains("lab") || lower.contains("dgx")) return "LAB";
-        return "SERVER";
-    }
 }

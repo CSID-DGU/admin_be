@@ -9,6 +9,8 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.global.server.ServerProfileProperties;
+import DGU_AI_LAB.admin_be.global.server.ServerProfileRegistry;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import org.springframework.mail.SimpleMailMessage;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,6 +21,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -26,9 +29,11 @@ import org.springframework.data.redis.core.ListOperations;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -66,12 +71,20 @@ class AlarmServiceTest {
     private static final String FARM_WEBHOOK = "https://hooks.slack.com/farm";
     private static final String LAB_WEBHOOK = "https://hooks.slack.com/lab";
 
+    @Spy
+    private ServerProfileRegistry serverProfileRegistry = new ServerProfileRegistry(
+            new ServerProfileProperties(Map.of(
+                    "FARM", new ServerProfileProperties.Server("farm.example.org", "farm-admin",
+                            new ServerProfileProperties.PortForwarding(30000, 9300, 98)),
+                    "LAB", new ServerProfileProperties.Server("lab.example.org", "lab-admin", null))),
+            new MockEnvironment()
+                    .withProperty("slack-webhook-url.farm-admin", FARM_WEBHOOK)
+                    .withProperty("slack-webhook-url.lab-admin", LAB_WEBHOOK));
+
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(alarmService, "notiLogWebhookUrl", NOTI_WEBHOOK);
         ReflectionTestUtils.setField(alarmService, "errorLogWebhookUrl", ERROR_WEBHOOK);
-        ReflectionTestUtils.setField(alarmService, "farmAdminWebhookUrl", FARM_WEBHOOK);
-        ReflectionTestUtils.setField(alarmService, "labAdminWebhookUrl", LAB_WEBHOOK);
         ReflectionTestUtils.setField(alarmService, "from", "noreply@dgu.ac.kr");
         when(redisTemplate.opsForList()).thenReturn(listOperations);
     }
@@ -314,6 +327,38 @@ class AlarmServiceTest {
         }
 
         @Test
+        @DisplayName("포트 포워딩이 설정된 서버는 공인 주소와 포워딩된 공인 포트를 안내한다")
+        void sendContainerCreatedEmail_usesForwardedPublicPort() {
+            Request request = mockRequestForCreated("이순신", "lee@dgu.ac.kr", "farm", 6L);
+            when(podExternalPortRepository.findByRequestRequestId(6L)).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn("본문");
+
+            alarmService.sendContainerCreatedEmail(request, "30022", "30888");
+
+            verify(messageUtils).get(eq("email.container.created.body"),
+                    any(), any(), any(), eq("9322"), eq("30888"), eq("farm.example.org"), any(), any());
+        }
+
+        @Test
+        @DisplayName("포트 포워딩이 없는 서버는 NodePort를 그대로, 모르는 서버는 빈 주소로 안내한다")
+        void sendContainerCreatedEmail_keepsNodePortWithoutForwarding() {
+            Request lab = mockRequestForCreated("홍길동", "hong@dgu.ac.kr", "LAB", 7L);
+            Request unknown = mockRequestForCreated("김철수", "kim@dgu.ac.kr", "DGX", 8L);
+            when(podExternalPortRepository.findByRequestRequestId(any())).thenReturn(List.of());
+            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn("본문");
+
+            alarmService.sendContainerCreatedEmail(lab, "30022", "30888");
+            alarmService.sendContainerCreatedEmail(unknown, "30022", "30888");
+
+            verify(messageUtils).get(eq("email.container.created.body"),
+                    any(), any(), any(), eq("30022"), eq("30888"), eq("lab.example.org"), any(), any());
+            verify(messageUtils).get(eq("email.container.created.body"),
+                    any(), any(), any(), eq("30022"), eq("30888"), eq(""), any(), any());
+        }
+
+        @Test
         @DisplayName("메일 발송 후 noti 채널에 모니터링 로그가 적재된다")
         void sendContainerCreatedEmail_pushesMonitoringLogToNotiChannel() {
             Request request = mockRequestForCreated("홍길동", "hong@dgu.ac.kr", "LAB", 4L);
@@ -410,13 +455,15 @@ class AlarmServiceTest {
         void sendGroupAddedEmail_listsTeamDirectoryPerGroup() {
             ChangeRequest changeRequest = mockChangeRequest("이순신", "lee@dgu.ac.kr", ChangeType.GROUP);
             when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get("email.modification.approved.group.dir", "teama")).thenReturn("- teama 경로");
+            when(messageUtils.get("email.modification.approved.group.dir", "teamb")).thenReturn("- teamb 경로");
             when(messageUtils.get(eq("email.modification.approved.group.body"), any(), any(), any(), any()))
                     .thenReturn("본문");
 
             alarmService.sendGroupAddedEmail(changeRequest, "승인", List.of("teama", "teamb"));
 
             verify(messageUtils).get("email.modification.approved.group.body", "이순신", "GROUP", "승인",
-                    "- teama: ~/shared/teama (/home/_g_teama)\n- teamb: ~/shared/teamb (/home/_g_teamb)");
+                    "- teama 경로\n- teamb 경로");
             ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
             verify(mailSender).send(captor.capture());
             assertThat(captor.getValue().getTo()).containsExactly("lee@dgu.ac.kr");

@@ -44,11 +44,9 @@ public class RequestEventListener {
 
         // 2. 관리자 알림
         try {
-            String type = getServerType(serverName);
-
-            // properties: notification.admin.delete.success ({0}타입, {1}계정, {2}서버)
+            // properties: notification.admin.delete.success ({0}서버 표시, {1}계정, {2}서버) — {0}은 DB에 고쳐 둔 템플릿이 그대로 쓰이도록 자리를 유지한다
             String adminMsg = messageUtils.get("notification.admin.delete.success",
-                    type, username, serverName);
+                    serverName, username, serverName);
 
             alarmService.sendAdminSlackNotification(serverName, adminMsg);
         } catch (Exception e) {
@@ -78,7 +76,7 @@ public class RequestEventListener {
 
         try {
             String adminMsg = messageUtils.get("notification.admin.delete.success",
-                    getServerType(serverName), username, serverName);
+                    serverName, username, serverName);
 
             alarmService.sendAdminSlackNotification(serverName, adminMsg);
         } catch (Exception e) {
@@ -86,11 +84,4 @@ public class RequestEventListener {
         }
     }
 
-    private String getServerType(String serverName) {
-        if (serverName == null) return "ETC";
-        String lower = serverName.toLowerCase();
-        if (lower.contains("farm")) return "FARM";
-        if (lower.contains("lab") || lower.contains("dgx")) return "LAB";
-        return "SERVER";
-    }
 }
