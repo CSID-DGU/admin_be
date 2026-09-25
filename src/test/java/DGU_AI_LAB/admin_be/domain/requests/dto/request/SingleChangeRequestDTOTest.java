@@ -69,7 +69,7 @@ class SingleChangeRequestDTOTest {
 
         // MySQL json 컬럼 제약 — 저장 값은 따옴표 포함 유효 JSON이어야 한다
         assertThat(changeRequest.getNewValue()).isEqualTo("\"" + newExpiresAt + "\"");
-        // 승인 로직(AdminRequestCommandService.EXPIRES_AT)과 동일한 파싱으로 round-trip
+        // 승인 로직(AdminModificationCommandService.EXPIRES_AT)과 동일한 파싱으로 round-trip
         LocalDateTime parsed = LocalDateTime.parse(objectMapper.readValue(changeRequest.getNewValue(), String.class));
         assertThat(parsed).isEqualTo(newExpiresAt);
     }

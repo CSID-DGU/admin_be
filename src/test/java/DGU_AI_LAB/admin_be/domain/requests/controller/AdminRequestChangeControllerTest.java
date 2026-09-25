@@ -1,6 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller;
 
-import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
+import DGU_AI_LAB.admin_be.domain.requests.service.AdminModificationCommandService;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestQueryService;
 import DGU_AI_LAB.admin_be.support.WebMvcTestSupport;
 import org.junit.jupiter.api.DisplayName;
@@ -32,7 +32,7 @@ class AdminRequestChangeControllerTest extends WebMvcTestSupport {
     private MockMvc mockMvc;
 
     @MockitoBean
-    private AdminRequestCommandService adminRequestCommandService;
+    private AdminModificationCommandService adminModificationCommandService;
 
     @MockitoBean
     private AdminRequestQueryService adminRequestQueryService;
@@ -51,7 +51,7 @@ class AdminRequestChangeControllerTest extends WebMvcTestSupport {
                     .andExpect(jsonPath("$.status").value(200))
                     .andExpect(jsonPath("$.data").isEmpty());
 
-            verify(adminRequestCommandService).approveModification(isNull(),
+            verify(adminModificationCommandService).approveModification(isNull(),
                     argThat(dto -> dto.changeRequestId() == 7L && "승인합니다.".equals(dto.adminComment())));
         }
 
@@ -77,7 +77,7 @@ class AdminRequestChangeControllerTest extends WebMvcTestSupport {
                             .content("{\"adminComment\": \"거절합니다.\"}"))
                     .andExpect(status().isOk());
 
-            verify(adminRequestCommandService).rejectModification(isNull(),
+            verify(adminModificationCommandService).rejectModification(isNull(),
                     argThat(dto -> dto.changeRequestId() == 8L && "거절합니다.".equals(dto.adminComment())));
         }
 
