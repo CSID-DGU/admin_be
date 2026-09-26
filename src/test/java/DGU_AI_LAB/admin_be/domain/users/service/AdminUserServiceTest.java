@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -67,6 +68,9 @@ class AdminUserServiceTest {
 
     @Mock
     private PodMigrationService podMigrationService;
+
+    @Mock
+    private PodExternalPortRepository podExternalPortRepository;
 
     @Mock
     private AlarmService alarmService;
@@ -337,7 +341,7 @@ class AdminUserServiceTest {
             order.verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
             verify(ubuntuAccountService, times(1)).deleteUbuntuAccount(anyString(), anyString(), any());
             verify(fulfilledRequest).deleteAfterCleanup();
-            verify(alarmService).sendContainerDeletedEmail(fulfilledRequest);
+            verify(alarmService).sendContainerDeletedEmail(eq(fulfilledRequest), anyList());
             assertThat(mockUser.getIsActive()).isFalse();
         }
 
@@ -390,7 +394,7 @@ class AdminUserServiceTest {
             // 계정 삭제 대상은 요청이 아니라 웹 계정의 유저네임이고, 요청이 몇 개든 한 번만 부른다.
             verify(ubuntuAccountService, times(1)).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
             verify(fulfilled).deleteAfterCleanup();
-            verify(alarmService).sendContainerDeletedEmail(fulfilled);
+            verify(alarmService).sendContainerDeletedEmail(eq(fulfilled), anyList());
             verify(pending).delete();
             verify(deleted, never()).delete();
             verify(deleted, never()).deleteAfterCleanup();
@@ -557,7 +561,7 @@ class AdminUserServiceTest {
                 verify(requestRepository, atLeastOnce()).findByIdForUpdate(req.getRequestId());
             }
             verify(requestRepository, never()).findById(anyLong());
-            verify(alarmService, times(3)).sendContainerDeletedEmail(any(Request.class));
+            verify(alarmService, times(3)).sendContainerDeletedEmail(any(Request.class), anyList());
             verify(podService, times(3)).deletePod(anyString(), any());
         }
 
@@ -571,7 +575,7 @@ class AdminUserServiceTest {
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(req1, req2));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
             doThrow(new RuntimeException("메일 서버 오류"))
-                    .when(alarmService).sendContainerDeletedEmail(req1);
+                    .when(alarmService).sendContainerDeletedEmail(eq(req1), anyList());
 
             adminUserService.deleteUser(1L);
 
@@ -696,7 +700,7 @@ class AdminUserServiceTest {
             verify(podService).deletePod(eq("pod-testuser"), any());
             verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
             verify(fulfilledRequest).deleteAfterCleanup();
-            verify(alarmService).sendContainerDeletedEmail(fulfilledRequest);
+            verify(alarmService).sendContainerDeletedEmail(eq(fulfilledRequest), anyList());
             assertThat(mockUser.getIsActive()).isFalse();
             assertThat(mockUser.getDeletedAt()).isNull();
         }
@@ -784,7 +788,7 @@ class AdminUserServiceTest {
             // 계정 삭제 대상은 요청이 아니라 웹 계정의 유저네임이고, 요청이 몇 개든 한 번만 부른다.
             verify(ubuntuAccountService, times(1)).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
             verify(fulfilled).deleteAfterCleanup();
-            verify(alarmService).sendContainerDeletedEmail(fulfilled);
+            verify(alarmService).sendContainerDeletedEmail(eq(fulfilled), anyList());
             verify(pending).delete();
             verify(deleted, never()).delete();
             verify(deleted, never()).deleteAfterCleanup();
@@ -813,7 +817,7 @@ class AdminUserServiceTest {
                 verify(requestRepository, atLeastOnce()).findByIdForUpdate(req.getRequestId());
             }
             verify(requestRepository, never()).findById(anyLong());
-            verify(alarmService, times(3)).sendContainerDeletedEmail(any(Request.class));
+            verify(alarmService, times(3)).sendContainerDeletedEmail(any(Request.class), anyList());
             verify(podService, times(3)).deletePod(anyString(), any());
         }
 
@@ -827,7 +831,7 @@ class AdminUserServiceTest {
             when(requestRepository.findAllByUser(mockUser)).thenReturn(List.of(req1, req2));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
             doThrow(new RuntimeException("메일 서버 오류"))
-                    .when(alarmService).sendContainerDeletedEmail(req1);
+                    .when(alarmService).sendContainerDeletedEmail(eq(req1), anyList());
 
             adminUserService.deactivateUser(1L);
 
@@ -837,7 +841,7 @@ class AdminUserServiceTest {
             verify(ubuntuAccountService, times(1)).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
             verify(req1).deleteAfterCleanup();
             verify(req2).deleteAfterCleanup();
-            verify(alarmService).sendContainerDeletedEmail(req2);
+            verify(alarmService).sendContainerDeletedEmail(eq(req2), anyList());
             assertThat(mockUser.getIsActive()).isFalse();
         }
 
@@ -912,7 +916,8 @@ class AdminUserServiceTest {
             verify(podService).deletePod(eq("pod-testuser"), any());
             verify(ubuntuAccountService).deleteUbuntuAccount(eq("testuser"), eq("farm1"), any());
             verify(request).deleteAfterCleanup();
-            verify(alarmService).sendContainerDeletedEmail(request);
+            verify(podExternalPortRepository).deleteByRequestRequestId(request.getRequestId());
+            verify(alarmService).sendContainerDeletedEmail(eq(request), anyList());
             assertThat(mockUser.hasUbuntuAccount()).isFalse();
         }
 
