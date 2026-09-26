@@ -19,6 +19,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -52,7 +53,9 @@ class UserSchedulerServiceTest {
     @DisplayName("유저 수명주기 통합 테스트: 알림(D-7, D-1), Soft Delete, 활동 유저 보호")
     void userLifecycleScheduler_IntegrationTest() {
         // --- Given ---
-        LocalDateTime now = LocalDateTime.now();
+        // 서비스와 같은 시간대로 잡는다. JVM 기본 시간대(CI는 UTC)로 잡으면 UTC 15시~24시에 서울 날짜와 하루 어긋나
+        // 남은 일수가 달라진다.
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
 
         // 1. [정상 유저]
         User activeUser = createUser("active@test.com", "ActiveUser");

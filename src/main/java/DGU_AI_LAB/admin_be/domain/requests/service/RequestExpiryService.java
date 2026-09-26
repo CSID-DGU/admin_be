@@ -112,6 +112,11 @@ public class RequestExpiryService {
             return operationJobService.registerRevoke(
                     new RevokeRegisterRequestDTO(requestId, podName, null, null, false), ErrorCode.POD_DELETION_FAILED);
         } catch (Exception e) {
+            if (OperationJobService.neverReachedServer(e)) {
+                log.error("config-server에 닿지 못해 회수 작업이 등록되지 않음 — FULFILLED로 되돌림: requestId={}", requestId, e);
+                revertToFulfilled(requestId);
+                throw asBusiness(e);
+            }
             JobResultResponseDTO job = null;
             try {
                 job = operationJobService.getResult(OperationJobService.KIND_REVOKE, requestId);
