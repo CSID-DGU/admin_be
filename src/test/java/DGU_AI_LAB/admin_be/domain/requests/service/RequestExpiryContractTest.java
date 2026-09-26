@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -8,7 +9,6 @@ import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
-import DGU_AI_LAB.admin_be.global.event.RequestContainerDeletedEvent;
 import DGU_AI_LAB.admin_be.global.event.RequestExpiredEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -34,25 +34,21 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 만료 회수 경로(cleanupContainer)가 밖에서 관찰되는 호출과 상태 전이를 어떤 순서로 하는지 고정한다.
+ * 만료 회수 경로가 밖에서 관찰되는 호출과 상태 전이를 어떤 순서로 하는지 고정한다.
  * VASC 실험의 잔여 접근률은 회수가 실제로 시작된 신청을 분모로 쓰고, 그 시작 시점은 FULFILLED 에서
- * EXPIRING 으로 바뀌는 순간이다. 상태 전이와 외부 삭제 호출의 앞뒤가 뒤집히면 분모의 뜻이 달라지므로
+ * EXPIRING 으로 바뀌는 순간이다. 상태 전이와 회수 작업 등록의 앞뒤가 뒤집히면 분모의 뜻이 달라지므로
  * 순서 자체를 계약으로 박아 둔다.
  *
- * <p>특히 이벤트 발행은 반드시 상태 전이 뒤에 와야 한다. RequestEventListener 가 AFTER_COMMIT 으로
+ * <p>결과 반영에서는 이벤트 발행이 반드시 상태 전이 뒤에 와야 한다. RequestEventListener 가 AFTER_COMMIT 으로
  * 붙어 있어서, 발행 위치가 앞으로 가면 통보는 나가는데 상태는 아직 바뀌지 않은 창이 열린다.
  *
- * <p>동작(인자·반환값) 검증은 {@code RequestExpiryServiceTest} 가 맡는다. "만료는 우분투 계정을
- * 지우지 않는다" 는 주장은 그 파일의 {@code AccountSurvivesExpiry} 가 이미 고정하고 있으므로
- * 여기에 다시 쓰지 않는다. 여기서는 순서만 본다.
+ * <p>동작(인자·반환값) 검증은 {@code RequestExpiryServiceTest} 가 맡는다. 여기서는 순서만 본다.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -60,7 +56,7 @@ import static org.mockito.Mockito.when;
 class RequestExpiryContractTest {
 
     @Mock private RequestRepository requestRepository;
-    @Mock private PodService podService;
+    @Mock private OperationJobService operationJobService;
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private PlatformTransactionManager transactionManager;
@@ -77,16 +73,14 @@ class RequestExpiryContractTest {
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         service = new RequestExpiryService(
-                requestRepository, podService,
-                podExternalPortRepository, eventPublisher, transactionManager
-        );
+                requestRepository, operationJobService, podExternalPortRepository, eventPublisher, transactionManager);
         when(mockRg.getServerName()).thenReturn("FARM-01");
         when(mockUser.getName()).thenReturn("테스트유저");
         when(mockUser.getEmail()).thenReturn("test@dgu.ac.kr");
+        when(operationJobService.registerRevoke(any(), any())).thenReturn(900L);
     }
 
-    /** 상태가 고정된 mock 으로는 FULFILLED -> EXPIRING 선점 후 EXPIRING 을 재확인하는 흐름이 재현되지 않는다. */
-    private Request buildMockedRequest(Status status) {
+    private Request given(Long requestId, Status status) {
         Request request = mock(Request.class);
         AtomicReference<Status> current = new AtomicReference<>(status);
         when(request.getStatus()).thenAnswer(inv -> current.get());
@@ -98,34 +92,23 @@ class RequestExpiryContractTest {
         when(request.getResourceGroup()).thenReturn(mockRg);
         when(request.getPodName()).thenReturn(POD_NAME);
         when(request.getExpiresAt()).thenReturn(LocalDateTime.of(2026, 1, 1, 0, 0));
-        return request;
-    }
-
-    private Request givenFulfilled(Long requestId) {
-        Request request = buildMockedRequest(Status.FULFILLED);
         when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
         when(podExternalPortRepository.findByRequestRequestId(requestId)).thenReturn(List.of());
         return request;
     }
 
     @Test
-    @DisplayName("만료 정리 1회는 잠금 조회 → EXPIRING 선점 → Pod 삭제 → DELETED 전이 → 만료 통보 발행 순서로 진행한다")
-    void expiryCleanup_followsLockClaimDeleteFinalizePublishOrder() {
-        Long requestId = 100L;
-        Request request = givenFulfilled(requestId);
+    @DisplayName("회수 시작은 잠금 조회 → EXPIRING 선점 → 회수 작업 등록 → 작업 번호 기록 순서로 진행한다")
+    void start_followsLockClaimRegisterRecordOrder() {
+        Request request = given(100L, Status.FULFILLED);
 
-        service.deleteExpiredRequest(requestId);
+        service.deleteExpiredRequest(100L);
 
-        InOrder order = inOrder(requestRepository, request, podService, eventPublisher);
-        order.verify(requestRepository).findByIdForUpdate(requestId);
+        InOrder order = inOrder(requestRepository, request, operationJobService);
+        order.verify(requestRepository).findByIdForUpdate(100L);
         order.verify(request).beginExpiry();
-        order.verify(podService).deletePod(POD_NAME, requestId);
-        order.verify(request).deleteAfterCleanup();
-        order.verify(eventPublisher).publishEvent(any(Object.class));
-
-        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
-        verify(eventPublisher).publishEvent(captor.capture());
-        assertThat(captor.getValue()).isInstanceOf(RequestExpiredEvent.class);
+        order.verify(operationJobService).registerRevoke(any(), eq(ErrorCode.POD_DELETION_FAILED));
+        order.verify(request).recordJob(900L);
     }
 
     /**
@@ -133,91 +116,41 @@ class RequestExpiryContractTest {
      * 스케줄의 FULFILLED 조회에 잡히지 않고, 그러면 재시도 자체가 사라진다.
      */
     @Test
-    @DisplayName("Pod 삭제가 실패하면 DELETED 전이도 통보도 하지 않고 FULFILLED 로 되돌린 뒤 예외를 전파한다")
-    void podDeleteFails_revertsToFulfilledAndPropagates_soNextScheduleRetries() {
-        Long requestId = 101L;
-        Request request = givenFulfilled(requestId);
-        doThrow(new BusinessException(ErrorCode.POD_DELETION_FAILED))
-                .when(podService).deletePod(eq(POD_NAME), any());
+    @DisplayName("등록이 실패하면 선점 → 등록 시도 → FULFILLED 되돌림 순서로 끝나고 예외를 전파한다")
+    void registrationFails_revertsAfterAttempt() {
+        Request request = given(101L, Status.FULFILLED);
+        when(operationJobService.registerRevoke(any(), any()))
+                .thenThrow(new BusinessException(ErrorCode.POD_DELETION_FAILED));
+        when(operationJobService.getResult(OperationJobService.KIND_REVOKE, 101L)).thenReturn(
+                new JobResultResponseDTO("101", OperationJobService.KIND_REVOKE, null, OperationJobService.PHASE_NONE, null, null, null));
 
-        assertThatThrownBy(() -> service.deleteExpiredRequest(requestId))
+        assertThatThrownBy(() -> service.deleteExpiredRequest(101L))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.POD_DELETION_FAILED);
 
-        verify(request, never()).deleteAfterCleanup();
-        verify(eventPublisher, never()).publishEvent(any());
-
-        InOrder order = inOrder(podService, request);
-        order.verify(podService).deletePod(eq(POD_NAME), any());
+        InOrder order = inOrder(request, operationJobService);
+        order.verify(request).beginExpiry();
+        order.verify(operationJobService).registerRevoke(any(), any());
         order.verify(request).endExpiry();
         assertThat(request.getStatus()).isEqualTo(Status.FULFILLED);
     }
 
     @Test
-    @DisplayName("외부 삭제가 도는 동안 다른 경로가 상태를 바꿨으면 DELETED 전이를 거부하고 예외를 낸다")
-    void statusChangedDuringInfraDelete_refusesToOverwriteThatDecision() {
-        Long requestId = 102L;
-        Request request = givenFulfilled(requestId);
-        // 외부 삭제가 도는 사이 다른 트랜잭션이 상태를 DENIED 로 바꾼 상황을 재현한다.
-        doAnswer(inv -> {
-            when(request.getStatus()).thenReturn(Status.DENIED);
-            return null;
-        }).when(podService).deletePod(eq(POD_NAME), any());
+    @DisplayName("결과 반영은 잠금 조회 → DELETED 전이 → 포트 회수 → 통보 발행 순서로 진행한다")
+    void complete_followsLockFinalizeReleasePublishOrder() {
+        Request request = given(102L, Status.EXPIRING);
 
-        assertThatThrownBy(() -> service.deleteExpiredRequest(requestId))
-                .isInstanceOf(BusinessException.class)
-                .extracting(e -> ((BusinessException) e).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+        service.completeContainerRevoke(102L);
 
-        verify(request, never()).deleteAfterCleanup();
-        verify(eventPublisher, never()).publishEvent(any());
-    }
-
-    @Test
-    @DisplayName("관리자 회수도 같은 순서로 진행하고 통보 이벤트만 회수 안내로 달라진다")
-    void adminDelete_sameOrder_onlyTheNotificationEventDiffers() {
-        Long requestId = 103L;
-        Request request = givenFulfilled(requestId);
-
-        service.deleteContainerByAdmin(requestId);
-
-        InOrder order = inOrder(requestRepository, request, podService, eventPublisher);
-        order.verify(requestRepository).findByIdForUpdate(requestId);
-        order.verify(request).beginExpiry();
-        order.verify(podService).deletePod(POD_NAME, requestId);
+        InOrder order = inOrder(requestRepository, request, podExternalPortRepository, eventPublisher);
+        order.verify(requestRepository).findByIdForUpdate(102L);
         order.verify(request).deleteAfterCleanup();
+        order.verify(podExternalPortRepository).deleteByRequestRequestId(102L);
         order.verify(eventPublisher).publishEvent(any(Object.class));
 
         ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
         verify(eventPublisher).publishEvent(captor.capture());
-        assertThat(captor.getValue()).isInstanceOf(RequestContainerDeletedEvent.class);
-    }
-
-    @Test
-    @DisplayName("대상이 FULFILLED 가 아니면 만료 경로는 조용히 넘어가고 관리자 경로는 예외를 낸다")
-    void notFulfilled_expiryPathSkipsQuietly_adminPathThrows() {
-        Long expiryTarget = 104L;
-        Request pendingForExpiry = buildMockedRequest(Status.PENDING);
-        when(requestRepository.findByIdForUpdate(expiryTarget)).thenReturn(Optional.of(pendingForExpiry));
-
-        service.deleteExpiredRequest(expiryTarget);
-
-        verify(pendingForExpiry, never()).beginExpiry();
-        verify(podService, never()).deletePod(any(), any());
-        verify(eventPublisher, never()).publishEvent(any());
-
-        Long adminTarget = 105L;
-        Request pendingForAdmin = buildMockedRequest(Status.PENDING);
-        when(requestRepository.findByIdForUpdate(adminTarget)).thenReturn(Optional.of(pendingForAdmin));
-
-        assertThatThrownBy(() -> service.deleteContainerByAdmin(adminTarget))
-                .isInstanceOf(BusinessException.class)
-                .extracting(e -> ((BusinessException) e).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
-
-        verify(pendingForAdmin, never()).beginExpiry();
-        verify(podService, never()).deletePod(any(), any());
-        verify(eventPublisher, never()).publishEvent(any());
+        assertThat(captor.getValue()).isInstanceOf(RequestExpiredEvent.class);
     }
 }

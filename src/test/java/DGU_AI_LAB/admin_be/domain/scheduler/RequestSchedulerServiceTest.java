@@ -49,6 +49,9 @@ public class RequestSchedulerServiceTest {
     private RequestSchedulerService requestSchedulerService;
 
     @Autowired
+    private RevokeJobPoller revokeJobPoller;
+
+    @Autowired
     private MessageUtils messageUtils;
 
     // --- Mocks ---
@@ -136,7 +139,15 @@ public class RequestSchedulerServiceTest {
             mockedTime.when(LocalDateTime::now).thenReturn(MOCK_NOW);
             mockedTime.when(() -> LocalDateTime.now(any(ZoneId.class))).thenReturn(MOCK_NOW);
 
+            when(operationJobService.registerRevoke(any(), any())).thenReturn(555L);
             requestSchedulerService.runScheduler();
+
+            // 만료 스케줄러는 회수 작업만 등록하고 돌아온다 — 결과는 회수 결과 폴러가 반영한다.
+            assertThat(requestRepository.findById(reqExpired.getRequestId()).orElseThrow().getStatus())
+                    .isEqualTo(Status.EXPIRING);
+            when(operationJobService.getResult(OperationJobService.KIND_REVOKE, reqExpired.getRequestId())).thenReturn(
+                    new JobResultResponseDTO(null, OperationJobService.KIND_REVOKE, 555L, OperationJobService.PHASE_SUCCESS, null, null, null));
+            revokeJobPoller.pollRevokeJobs();
         }
 
         // --- Then: 검증 ---
@@ -145,7 +156,7 @@ public class RequestSchedulerServiceTest {
         Request deletedResult = requestRepository.findById(reqExpired.getRequestId()).orElseThrow();
         assertThat(deletedResult.getStatus()).isEqualTo(Status.DELETED);
         // 만료는 Pod만 지운다 — 우분투 계정은 웹 계정 소유라 사용자 삭제/비활성화에서만 회수된다.
-        verify(ubuntuAccountService, never()).deleteUbuntuAccount(anyString(), any(), any());
+        verify(ubuntuAccountService, never()).registerAccountRevoke(anyString(), any(), any());
 
         // [이벤트 리스너 검증] -> 삭제 완료 알림 (MessageUtils 사용 검증)
         // subject: notification.expired.detail.subject

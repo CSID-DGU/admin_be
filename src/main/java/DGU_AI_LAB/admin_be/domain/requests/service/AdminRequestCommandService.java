@@ -110,6 +110,10 @@ public class AdminRequestCommandService {
             // 계정이 만들어질 수 있다(비밀번호 변경은 PROCESSING 신청이 있으면 거절한다).
             User owner = userRepository.findByIdForUpdate(req.getUser().getUserId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+            // 계정 회수가 도는 중이면 새 컨테이너가 곧 지워질 계정을 쓰게 된다. 회수가 끝난 뒤 승인하면 되살린다.
+            if (owner.isReleasingUbuntuAccount()) {
+                throw new BusinessException(ErrorCode.UBUNTU_ACCOUNT_RELEASING);
+            }
             creationDtoRef[0] = new UserCreationRequestDTO(
                     dto.requestId(),
                     req.getUbuntuUsername(),

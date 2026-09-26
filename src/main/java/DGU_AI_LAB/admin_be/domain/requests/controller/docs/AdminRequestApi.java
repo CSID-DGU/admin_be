@@ -76,10 +76,11 @@ public interface AdminRequestApi {
     ResponseEntity<SuccessResponse<?>> getLatestMigration(Long requestId);
 
     @Operation(summary = "컨테이너 회수", description = "신청 하나의 컨테이너만 회수합니다. 우분투 계정과 홈 디렉터리는 남고, "
-            + "같은 사용자의 다른 컨테이너는 영향받지 않습니다. 계정까지 회수하려면 사용자 관리의 계정 회수를 사용하세요.")
-    @ApiResponse(responseCode = "200", description = "회수 완료")
+            + "같은 사용자의 다른 컨테이너는 영향받지 않습니다. 계정까지 회수하려면 사용자 관리의 계정 회수를 사용하세요. "
+            + "작업만 등록하고 돌아오며(신청은 EXPIRING), 끝나면 DELETED(실패하면 FULFILLED로 되돌림)가 됩니다.")
+    @ApiResponse(responseCode = "202", description = "회수 작업 등록됨")
     @ApiResponse(responseCode = "404", description = "신청을 찾을 수 없음", content = @Content)
     @ApiResponse(responseCode = "409", description = "FULFILLED 상태가 아님", content = @Content)
-    @ApiResponse(responseCode = "502", description = "config-server 회수 실패", content = @Content)
+    @ApiResponse(responseCode = "502", description = "config-server 회수 작업 등록 실패", content = @Content)
     ResponseEntity<SuccessResponse<?>> deleteContainer(Long requestId);
 }

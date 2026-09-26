@@ -273,6 +273,59 @@ class RequestTest {
     }
 
     @Nested
+    @DisplayName("작업 번호(jobId)")
+    class JobId {
+
+        @Test
+        @DisplayName("회수 시작은 이전 작업 번호를 비운다 — 폴러가 생성 작업의 결과를 회수 결과로 착각하지 않게")
+        void beginExpiryClearsJob() {
+            fulfill();
+            request.recordJob(10L);
+
+            request.beginExpiry();
+
+            assertThat(request.getJobId()).isNull();
+        }
+
+        @Test
+        @DisplayName("DELETED로 넘어가면 비운다 — DELETED 신청의 작업 번호는 계정 회수 작업 번호 전용이다")
+        void deletedClearsJob() {
+            fulfill();
+            request.beginExpiry();
+            request.recordJob(20L);
+
+            request.deleteAfterCleanup();
+
+            assertThat(request.getJobId()).isNull();
+        }
+
+        @Test
+        @DisplayName("취소(delete)도 비운다")
+        void cancelClearsJob() {
+            request.recordJob(30L);
+
+            request.delete();
+
+            assertThat(request.getJobId()).isNull();
+        }
+
+        @Test
+        @DisplayName("계정 회수 작업 번호는 DELETED 신청에서만 비울 수 있다")
+        void forgetAccountRevokeJobOnlyWhenDeleted() {
+            fulfill();
+            request.recordJob(40L);
+            assertThatThrownBy(request::forgetAccountRevokeJob).isInstanceOf(BusinessException.class);
+
+            request.beginExpiry();
+            request.deleteAfterCleanup();
+            request.recordJob(50L);
+            request.forgetAccountRevokeJob();
+
+            assertThat(request.getJobId()).isNull();
+        }
+    }
+
+    @Nested
     @DisplayName("beginExpiry / endExpiry")
     class Expiry {
 
