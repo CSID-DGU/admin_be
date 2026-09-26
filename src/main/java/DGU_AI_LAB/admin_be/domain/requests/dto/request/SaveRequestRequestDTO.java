@@ -67,15 +67,10 @@ public record SaveRequestRequestDTO(
         @Schema(description = "noVNC GUI 활성화 여부", example = "false")
         Boolean enableVnc
 ) {
-    /**
-     * @param ubuntuUsername 신청자가 입력하는 값이 아니라 가입 시 정해진 User.ubuntuUsername을
-     *                       그대로 복사해 넣는다 — 서비스에서 꺼내 넘긴다.
-     */
     public Request toEntity(
             User user,
             ResourceGroup resourceGroup,
-            ContainerImage image,
-            String ubuntuUsername
+            ContainerImage image
     ) {
         String formAnswersJson;
         try {
@@ -88,7 +83,6 @@ public record SaveRequestRequestDTO(
                 .user(user)
                 .resourceGroup(resourceGroup)
                 .containerImage(image)
-                .ubuntuUsername(ubuntuUsername)
                 .usagePurpose(usagePurpose)
                 .formAnswers(formAnswersJson)
                 .expiresAt(expiresAt)

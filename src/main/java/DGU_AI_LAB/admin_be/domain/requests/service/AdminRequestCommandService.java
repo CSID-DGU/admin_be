@@ -160,7 +160,7 @@ public class AdminRequestCommandService {
         new TransactionTemplate(transactionManager).execute(status -> {
             requestRepository.findByIdForUpdate(requestId)
                     .filter(r -> r.getStatus() == Status.PROCESSING)
-                    .ifPresent(r -> r.recordProvisionJob(jobId));
+                    .ifPresent(r -> r.recordJob(jobId));
             return null;
         });
 
@@ -213,19 +213,13 @@ public class AdminRequestCommandService {
     }
 
     /**
-     * 이 사용자가 예전 신청에서 쓰던 UID. 계정 기록(User.ubuntuUid)이 있으면 계정 생성 자체를 건너뛰므로 필요 없다.
-     * 계정 기록이 빠졌는데 원장에는 계정이 남은 경우(실패 작업이 계정을 남겼거나 수동 정리), config-server가
-     * 이 값과 원장 UID가 같을 때만 계정을 이어받는다 — 다른 사람이 쓰던 같은 이름의 계정은 이어받지 않는다.
-     * 계정이 회수돼 원장에 없으면(비활성화 후 재활성화 등) config-server가 NAS 홈 소유자가 이 값일 때
-     * 같은 UID로 계정을 다시 만든다 — 새 UID를 받으면 보존된 홈의 소유자와 어긋나 생성이 막힌다.
+     * 계정을 새로 만들 때 config-server에 보낼 expected_uid. 계정이 살아 있으면 계정 생성 자체를 건너뛰므로 필요 없다.
+     * 이 사람이 예전에 받은 UID가 있으면(회수 후 재승인) 그 번호를 보낸다 — 원장에 계정이 남았으면 이 값과
+     * 원장 UID가 같을 때만 이어받고, 없으면 NAS 홈 소유자가 이 값일 때 같은 UID로 다시 만든다.
+     * 첫 승인이면 null이라 새 번호를 받는다.
      */
     private Long previousUbuntuUid(User user) {
-        if (user.hasUbuntuAccount()) {
-            return null;
-        }
-        return requestRepository.findFirstByUser_UserIdAndUbuntuUidIsNotNullOrderByRequestIdDesc(user.getUserId())
-                .map(Request::getUbuntuUid)
-                .orElse(null);
+        return user.hasUbuntuAccount() ? null : user.getUbuntuUid();
     }
 
     /**
@@ -264,7 +258,6 @@ public class AdminRequestCommandService {
                 // 재사용 경로라 결과의 UID는 같은 값이다.
                 owner.assignUbuntuAccount(made.uid(), made.gid());
             }
-            req.assignUbuntuIds(owner.getUbuntuUid(), owner.getUbuntuGid());
             req.assignPodInfo(made.podName(), made.node());
             req.completeApproval();
             // 작업이 성공했다는 건 이 신청이 요청한 그룹이 실제로 AD(계정 단위)에 반영됐다는 뜻이다.
@@ -414,11 +407,11 @@ public class AdminRequestCommandService {
         Request request = new TransactionTemplate(transactionManager).execute(status ->
                 requestRepository.findById(requestId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)));
-        if (OperationJobService.awaitingRegistration(request.getProvisionJobId(), request.getUpdatedAt())) {
+        if (OperationJobService.awaitingRegistration(request.getJobId(), request.getUpdatedAt())) {
             throw new BusinessException(ErrorCode.PROVISION_JOB_IN_PROGRESS);
         }
         JobResultResponseDTO job = operationJobService.getResult(OperationJobService.KIND_PROVISION, requestId);
-        if (OperationJobService.isFromOtherJob(request.getProvisionJobId(), job)) {
+        if (OperationJobService.isFromOtherJob(request.getJobId(), job)) {
             // 이번 승인의 작업이 아직 보이지 않는다(이전 작업 결과가 보임).
             throw new BusinessException(ErrorCode.PROVISION_JOB_IN_PROGRESS);
         }

@@ -35,12 +35,12 @@ public class MigrationJobPoller {
         List<Request> migrating = requestRepository.findAllByStatus(Status.MIGRATING);
         for (Request request : migrating) {
             Long requestId = request.getRequestId();
-            if (OperationJobService.awaitingRegistration(request.getMigrationJobId(), request.getUpdatedAt())) {
+            if (OperationJobService.awaitingRegistration(request.getJobId(), request.getUpdatedAt())) {
                 continue;
             }
             try {
                 JobResultResponseDTO result = operationJobService.getResult(OperationJobService.KIND_MIGRATE, requestId);
-                if (OperationJobService.isFromOtherJob(request.getMigrationJobId(), result)) {
+                if (OperationJobService.isFromOtherJob(request.getJobId(), result)) {
                     // 재마이그레이션 직후 보이는 이전 작업의 결과다. 반영하면 신청이 옛 Pod를 가리키거나 되돌아간다.
                     continue;
                 }

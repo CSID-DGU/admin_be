@@ -211,7 +211,7 @@ public class RequestCommandService {
         }
 
         // addGroup()/포트 신청이 requestId를 요구하므로 여기서 즉시 flush해 ID를 확보한다.
-        Request req = requestRepository.saveAndFlush(dto.toEntity(user, rg, img, ubuntuUsername));
+        Request req = requestRepository.saveAndFlush(dto.toEntity(user, rg, img));
 
         if (dto.ubuntuGids() != null && !dto.ubuntuGids().isEmpty()) {
             Set<Group> found = new java.util.HashSet<>(groupRepository.findAllByUbuntuGidIn(dto.ubuntuGids()));

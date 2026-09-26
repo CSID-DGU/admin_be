@@ -138,14 +138,12 @@ class AdminRequestCommandServiceApprovalContractTest {
     }
 
     @Test
-    @DisplayName("계정 기록이 없으면 예전 신청의 UID를 expected_uid로 보내 원장에 남은 본인 계정만 이어받게 한다")
-    void sendsPreviousUidWhenAccountRecordMissing() {
+    @DisplayName("계정이 회수된 사람은 영구히 귀속된 자기 UID를 expected_uid로 보내 같은 번호·같은 홈으로 되살린다")
+    void sendsOwnUidWhenAccountReleased() {
         Long requestId = 304L;
         approvableRequest(requestId);
-        Request previous = mock(Request.class);
-        when(previous.getUbuntuUid()).thenReturn(55000L);
-        when(requestRepository.findFirstByUser_UserIdAndUbuntuUidIsNotNullOrderByRequestIdDesc(100L))
-                .thenReturn(Optional.of(previous));
+        when(mockUser.hasUbuntuAccount()).thenReturn(false);
+        when(mockUser.getUbuntuUid()).thenReturn(55000L);
 
         service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
 
@@ -165,7 +163,7 @@ class AdminRequestCommandServiceApprovalContractTest {
 
         InOrder order = inOrder(operationJobService, request);
         order.verify(operationJobService).registerProvision(any(ProvisionRegisterRequestDTO.class));
-        order.verify(request).recordProvisionJob(3616L);
+        order.verify(request).recordJob(3616L);
     }
 
     @Test

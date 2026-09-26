@@ -1,0 +1,10 @@
+# 신청(Request) 생명주기 전이 표의 사본. 원본은 Status.java의 TRANSITIONS다.
+# E2E 도구(admin_infra-proposed/harness/e2e)가 이 파일로 모든 전이를 시험했는지 확인한다.
+# 둘이 어긋나면 LifecycleTransitionTableTest가 실패하므로 Status.java와 함께 고친다.
+PENDING: [PROCESSING, DENIED, DELETED]
+PROCESSING: [FULFILLED, PENDING, DENIED]
+DENIED: [DELETED]
+FULFILLED: [MIGRATING, EXPIRING]
+MIGRATING: [FULFILLED]
+EXPIRING: [FULFILLED, DELETED]
+DELETED: []

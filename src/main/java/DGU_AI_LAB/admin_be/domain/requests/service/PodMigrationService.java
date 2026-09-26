@@ -63,11 +63,11 @@ public class PodMigrationService {
         try {
             Request req = requestRepository.findById(requestId).orElse(null);
             if (req == null || req.getStatus() != Status.MIGRATING
-                    || OperationJobService.awaitingRegistration(req.getMigrationJobId(), req.getUpdatedAt())) {
+                    || OperationJobService.awaitingRegistration(req.getJobId(), req.getUpdatedAt())) {
                 return;
             }
             JobResultResponseDTO result = operationJobService.getResult(OperationJobService.KIND_MIGRATE, requestId);
-            if (OperationJobService.isFromOtherJob(req.getMigrationJobId(), result)) {
+            if (OperationJobService.isFromOtherJob(req.getJobId(), result)) {
                 return;
             }
             switch (result.phase()) {
@@ -108,7 +108,7 @@ public class PodMigrationService {
         new TransactionTemplate(transactionManager).execute(status -> {
             requestRepository.findByIdForUpdate(requestId)
                     .filter(r -> r.getStatus() == Status.MIGRATING)
-                    .ifPresent(r -> r.recordMigrationJob(jobId));
+                    .ifPresent(r -> r.recordJob(jobId));
             return null;
         });
         log.info("마이그레이션 작업 등록: requestId={}, username={}, pod={}", requestId, usernameRef[0], podNameRef[0]);

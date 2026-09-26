@@ -171,7 +171,6 @@ class UserSchedulerServiceTest {
 
         Request req = Request.builder()
                 .user(user)
-                .ubuntuUsername("user_" + user.getUserId())
                 .expiresAt(expiresAt)
                 .usagePurpose("test")
                 .formAnswers("{}")
@@ -179,7 +178,11 @@ class UserSchedulerServiceTest {
                 .containerImage(img)
                 .build();
 
-        req.approve(img, rg, "approved");
+        req.markAsProcessing();
+
+        req.prepareAsyncApproval(img, rg, "approved");
+
+        req.completeApproval();
         requestRepository.saveAndFlush(req);
     }
 }

@@ -254,7 +254,7 @@ class AdminRequestCommandServiceTest {
         @DisplayName("방금 승인돼 작업 번호가 아직 기록되지 않은 PROCESSING 요청은 거절할 수 없다")
         void rejectRequest_throws_whenAwaitingRegistration() {
             Request request = buildMockedRequestWithStatus(38L, Status.PROCESSING);
-            when(request.getProvisionJobId()).thenReturn(null);
+            when(request.getJobId()).thenReturn(null);
             when(request.getUpdatedAt()).thenReturn(LocalDateTime.now());
 
             assertThatThrownBy(() -> service.rejectRequest(new RejectRequestDTO(38L, "취소")))
@@ -373,7 +373,7 @@ class AdminRequestCommandServiceTest {
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(requestId);
         when(request.getStatus()).thenReturn(status);
-        when(request.getProvisionJobId()).thenReturn(1L);   // job()이 돌려주는 작업 번호와 같은 작업
+        when(request.getJobId()).thenReturn(1L);   // job()이 돌려주는 작업 번호와 같은 작업
         when(request.getUbuntuUsername()).thenReturn("testuser");
         when(mockUser.getUbuntuPasswordHash()).thenReturn("$6$salt$hash");
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
@@ -504,7 +504,7 @@ class AdminRequestCommandServiceTest {
             service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
 
             verify(request, never()).revertToPending();
-            verify(request).recordProvisionJob(77L);
+            verify(request).recordJob(77L);
         }
 
         @Test
@@ -557,7 +557,6 @@ class AdminRequestCommandServiceTest {
 
             // Then
             verify(mockUser).assignUbuntuAccount(50001L, 50001L);
-            verify(request).assignUbuntuIds(50001L, 50001L);
             verify(request).assignPodInfo("ailab-testuser-abcd", "farm2");
             verify(request).completeApproval();
             verify(podExternalPortRepository, times(2)).save(any(PodExternalPort.class));
