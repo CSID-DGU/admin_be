@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.global.alert.AlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -19,9 +20,9 @@ public class ProvisionJobPoller extends JobResultPoller {
 
     private final AdminRequestCommandService adminRequestCommandService;
 
-    public ProvisionJobPoller(RequestRepository requestRepository, JobClient jobClient,
+    public ProvisionJobPoller(RequestRepository requestRepository, JobClient jobClient, AlertDeduplicator alertDeduplicator,
                               AdminRequestCommandService adminRequestCommandService) {
-        super(requestRepository, jobClient, Status.PROCESSING, JobResults.KIND_PROVISION);
+        super(requestRepository, jobClient, alertDeduplicator, Status.PROCESSING, JobResults.KIND_PROVISION);
         this.adminRequestCommandService = adminRequestCommandService;
     }
 
@@ -56,7 +57,7 @@ public class ProvisionJobPoller extends JobResultPoller {
     /**
      * 대표 사례: 회수됐다 돌아온 사용자가 다른 uid로 성공해 {@code completeApprovalJob}이
      * UBUNTU_ACCOUNT_ALREADY_ASSIGNED로 실패하는 경우 — 원인이 해소될 때까지 매 바퀴 반복될 수 있어
-     * 신청마다 한 번은 관리자에게 알린다. 상태는 건드리지 않는다(공통 뼈대의 기본 정책과 동일).
+     * 작업마다 한 번은 관리자에게 알린다. 상태는 건드리지 않는다(공통 뼈대의 기본 정책과 동일).
      */
     @Override
     protected void onApplyFailed(Request request, Exception e) {

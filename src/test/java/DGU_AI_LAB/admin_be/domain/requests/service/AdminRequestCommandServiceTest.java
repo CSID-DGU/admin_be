@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
@@ -101,7 +102,7 @@ class AdminRequestCommandServiceTest {
         service = new AdminRequestCommandService(
                 alarmService, requestRepository, userRepository, containerImageRepository,
                 resourceGroupRepository, podExternalPortRepository, jobClient,
-                transactionManager
+                transactionManager, new InMemoryAlertDeduplicator()
         );
         // 공유 엔티티 기본 설정
         when(mockUser.getName()).thenReturn("테스트유저");
