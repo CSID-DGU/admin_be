@@ -1,6 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
+import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -43,6 +45,7 @@ public class AdminUserService {
     private final UbuntuAccountService ubuntuAccountService;
     private final PodService podService;
     private final PodMigrationService podMigrationService;
+    private final PodExternalPortRepository podExternalPortRepository;
     private final AlarmService alarmService;
     private final MessageUtils messageUtils;
     private final TokenService tokenService;
@@ -165,10 +168,14 @@ public class AdminUserService {
                     cleanedNodes.put(nodeNameRef[0], requestId);
                 }
                 final Request[] deletedRef = {null};
+                final List<PodExternalPort> releasedPorts = new ArrayList<>();
                 newTx.execute(status -> {
                     Request managed = requestRepository.findByIdForUpdate(requestId)
                             .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
                     managed.deleteAfterCleanup();
+                    // 외부 포트는 Pod에 딸린 자원이라 Pod와 함께 회수한다. 안내 메일에 쓸 목록은 지우기 전에 떠 둔다.
+                    releasedPorts.addAll(podExternalPortRepository.findByRequestRequestId(requestId));
+                    podExternalPortRepository.deleteByRequestRequestId(requestId);
                     // 트랜잭션 종료 후 메일 발송에서 사용되는 lazy 연관 초기화
                     managed.getUser().getEmail();
                     managed.getResourceGroup().getServerName();
@@ -176,7 +183,7 @@ public class AdminUserService {
                     return null;
                 });
                 try {
-                    alarmService.sendContainerDeletedEmail(deletedRef[0]);
+                    alarmService.sendContainerDeletedEmail(deletedRef[0], releasedPorts);
                 } catch (Exception e) {
                     log.warn("[{}] 삭제 안내 메일 발송 실패: ubuntuUsername={}", logPrefix, usernameRef[0], e);
                 }

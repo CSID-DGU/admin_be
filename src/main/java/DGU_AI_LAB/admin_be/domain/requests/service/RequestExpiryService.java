@@ -124,6 +124,9 @@ public class RequestExpiryService {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
             }
             request.deleteAfterCleanup();
+            // 외부 포트는 Pod에 딸린 자원이라 Pod와 함께 회수한다. 남겨 두면 DELETED 신청이
+            // 포트 번호를 계속 쥔 것처럼 보인다. 안내 문구용 포트 요약은 1단계에서 이미 떠 두었다.
+            podExternalPortRepository.deleteByRequestRequestId(requestId);
             eventPublisher.publishEvent(expired
                     ? new RequestExpiredEvent(ctx.userName(), ctx.userEmail(), ctx.ubuntuUsername(),
                             ctx.serverName(), ctx.podName(), ctx.portSummary(), ctx.expiresAt())

@@ -106,6 +106,7 @@ class RequestExpiryServiceTest {
             // 만료 회수도 이 신청의 번호로 기록돼야 생성 이력과 같은 request_id로 묶인다.
             verify(podService).deletePod("pod-testuser-xxxx", requestId);
             verify(request).deleteAfterCleanup();
+            verify(podExternalPortRepository).deleteByRequestRequestId(requestId);
 
             ArgumentCaptor<RequestExpiredEvent> captor = ArgumentCaptor.forClass(RequestExpiredEvent.class);
             verify(eventPublisher).publishEvent(captor.capture());
