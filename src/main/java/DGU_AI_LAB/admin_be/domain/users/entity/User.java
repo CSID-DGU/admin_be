@@ -190,8 +190,9 @@ public class User extends BaseTimeEntity {
     /**
      * 리눅스 계정이 실제로 삭제됐을 때 UID/GID만 비운다. 유저네임은 남긴다 —
      * 유저네임은 컨테이너가 아니라 웹 계정에 평생 귀속되고(재가입/재활성화 후 같은 홈으로
-     * 돌아와야 한다), UID는 계정 삭제와 동시에 config-server가 다른 사용자에게 재할당할 수
-     * 있어 그대로 들고 있으면 다음 승인이 남의 UID로 Pod를 만든다.
+     * 돌아와야 한다). 이 값은 "지금 원장에 계정이 살아 있는가"를 뜻하므로 비워야 다음 승인이
+     * 계정 생성을 요청한다. 예전 UID는 신청 이력(Request.ubuntuUid)에 남아 expected_uid로 전달되고,
+     * config-server는 NAS 홈 소유자가 그 번호일 때 같은 번호를 되돌려 준다(번호는 다른 사람에게 재발급되지 않는다).
      */
     public void releaseUbuntuAccount() {
         this.ubuntuUid = null;

@@ -216,6 +216,8 @@ public class AdminRequestCommandService {
      * 이 사용자가 예전 신청에서 쓰던 UID. 계정 기록(User.ubuntuUid)이 있으면 계정 생성 자체를 건너뛰므로 필요 없다.
      * 계정 기록이 빠졌는데 원장에는 계정이 남은 경우(실패 작업이 계정을 남겼거나 수동 정리), config-server가
      * 이 값과 원장 UID가 같을 때만 계정을 이어받는다 — 다른 사람이 쓰던 같은 이름의 계정은 이어받지 않는다.
+     * 계정이 회수돼 원장에 없으면(비활성화 후 재활성화 등) config-server가 NAS 홈 소유자가 이 값일 때
+     * 같은 UID로 계정을 다시 만든다 — 새 UID를 받으면 보존된 홈의 소유자와 어긋나 생성이 막힌다.
      */
     private Long previousUbuntuUid(User user) {
         if (user.hasUbuntuAccount()) {
