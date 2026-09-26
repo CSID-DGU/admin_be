@@ -1,0 +1,26 @@
+name: CI
+
+# PR과 main에 들어온 변경의 단위·통합 테스트를 돌린다. 테스트는 H2 메모리 DB와 가짜 설정값
+# (src/test/resources/application.yml)만 쓰고 외부 서비스에 닿지 않는다.
+# 공개 저장소라 로그에 인프라 주소·계정·설정값을 출력하는 단계를 두지 않는다.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Test
+        run: ./gradlew test --no-daemon

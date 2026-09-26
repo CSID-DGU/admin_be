@@ -1,0 +1,114 @@
+# 테스트에서 필요없는 각종 필드를 빈 값으로 채우고,
+# H2 database를 설정하는 파일입니다.
+# /src/test/resources/application.yml
+server:
+  port: 8081 # main과 다른 포트를 사용하여 충돌을 방지합니다.
+
+spring:
+  profiles:
+    active: test # 테스트용 프로필 명시
+
+  # main application.yml과 다른 주요 변경점
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
+    username: test
+    password: test
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop # 테스트용 옵션
+      dialect: org.hibernate.dialect.H2Dialect
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  cache:
+    type: none
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 0 # 포트를 0으로 설정, 연결 시도 자체를 방지
+
+  mail:
+    host:
+    port: 587
+    username:
+    password:
+    properties:
+      mail.smtp.auth: false
+      mail.smtp.starttls.enable: false
+
+app:
+  default-password: "test-default-password-1234"
+  servers:
+    FARM:
+      public-host: farm.example.test
+      admin-channel: farm-admin
+      port-forwarding:
+        node-port-base: 30000
+        public-port-base: 9300
+        size: 98
+    LAB:
+      public-host: lab.example.test
+      admin-channel: lab-admin
+
+config:
+  base-url: http://localhost:9999
+  timeout-seconds: 1
+
+deployment:
+  frontend:
+    local: http://localhost:1111
+    production: http://localhost:2222
+  backend:
+    production: http://localhost:3333
+
+api:
+  base-url: http://localhost:8081
+
+jwt:
+  secret: test-jwt-secret-for-unit-tests-only-0123456789abcdefghij
+  access-token-expire-time: 3600000
+  refresh-token-expire-time: 604800000
+
+k8s:
+  discovery:
+    namespace: ""
+    mysql-label: ""
+    redis-label: ""
+
+slack-webhook-url:
+  monitoring: ""
+  error-log: ""
+  noti: ""
+  farm-admin: ""
+  lab-admin: ""
+
+slack:
+  bot-token: xoxb-test-token
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include:
+  endpoint:
+    health:
+      show-details: never
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+logging:
+  level:
+    org.hibernate.SQL: debug
+    # org.hibernate.type.descriptor.sql.BasicBinder: trace
+prometheus:
+  base-url: http://localhost:9090
+
+kubernetes:
+  pod-namespace: default
