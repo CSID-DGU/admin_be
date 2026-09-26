@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
@@ -56,7 +57,8 @@ class PodMigrationServiceTest {
     void setUp() {
         when(request.getJobId()).thenReturn(10L); // result()의 작업 번호와 같다
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
-        service = new PodMigrationService(requestRepository, podExternalPortRepository, jobClient, transactionManager, alarmService);
+        service = new PodMigrationService(requestRepository, podExternalPortRepository, jobClient, transactionManager, alarmService,
+                new InMemoryAlertDeduplicator());
         when(request.getUbuntuUsername()).thenReturn("testuser");
         when(request.getPodName()).thenReturn("ailab-testuser-old");
         when(requestRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(request));

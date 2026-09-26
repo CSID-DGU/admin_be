@@ -7,6 +7,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.global.alert.AlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -28,9 +29,9 @@ public class RevokeJobPoller extends JobResultPoller {
     private final RequestExpiryService requestExpiryService;
     private final AlarmService alarmService;
 
-    public RevokeJobPoller(RequestRepository requestRepository, JobClient jobClient,
+    public RevokeJobPoller(RequestRepository requestRepository, JobClient jobClient, AlertDeduplicator alertDeduplicator,
                            RequestExpiryService requestExpiryService, AlarmService alarmService) {
-        super(requestRepository, jobClient, Status.EXPIRING, JobResults.KIND_REVOKE);
+        super(requestRepository, jobClient, alertDeduplicator, Status.EXPIRING, JobResults.KIND_REVOKE);
         this.requestExpiryService = requestExpiryService;
         this.alarmService = alarmService;
     }

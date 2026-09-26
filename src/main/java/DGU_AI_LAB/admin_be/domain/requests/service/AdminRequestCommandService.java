@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.global.alert.AlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
@@ -33,7 +34,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
@@ -63,8 +63,8 @@ public class AdminRequestCommandService {
     // in-process 락으로 충분하다.
     private final ConcurrentHashMap<Long, Object> userApprovalLocks = new ConcurrentHashMap<>();
 
-    // 성공 결과를 받지 못해 반영을 멈춘 신청. 같은 알림이 폴러 주기마다 반복되지 않게 한 번 알린 신청을 기억한다.
-    private final Set<Long> reportedMissingResult = ConcurrentHashMap.newKeySet();
+    // 성공 결과를 받지 못해 반영을 멈춘 신청은 폴러가 매 바퀴 다시 부른다. 같은 알림이 반복되지 않게 한다.
+    private final AlertDeduplicator alertDeduplicator;
 
     private Object approvalLockFor(Long userId) {
         return userApprovalLocks.computeIfAbsent(userId, id -> new Object());
@@ -246,7 +246,7 @@ public class AdminRequestCommandService {
             // 작업은 성공했는데 만든 자원을 받지 못했다(결과 보관 기간이 지난 경우 등). 그대로 확정하면
             // 컨테이너 이름도 포트도 없는 신청이 승인 완료로 남으므로, 사람이 확인하도록 알리고 멈춘다.
             // 신청이 PROCESSING에 남아 폴러가 매 바퀴 다시 부르므로 알림은 신청마다 한 번만 보낸다.
-            if (!reportedMissingResult.add(requestId)) {
+            if (!alertDeduplicator.firstOccurrence("provision-missing-result:" + requestId)) {
                 return;
             }
             log.error("생성 작업 성공 결과에 자원 정보가 없어 신청에 반영하지 못함: requestId={}", requestId);

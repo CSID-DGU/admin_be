@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.global.alert.AlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodMigrationService;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -19,9 +20,9 @@ public class MigrationJobPoller extends JobResultPoller {
 
     private final PodMigrationService podMigrationService;
 
-    public MigrationJobPoller(RequestRepository requestRepository, JobClient jobClient,
+    public MigrationJobPoller(RequestRepository requestRepository, JobClient jobClient, AlertDeduplicator alertDeduplicator,
                               PodMigrationService podMigrationService) {
-        super(requestRepository, jobClient, Status.MIGRATING, JobResults.KIND_MIGRATE);
+        super(requestRepository, jobClient, alertDeduplicator, Status.MIGRATING, JobResults.KIND_MIGRATE);
         this.podMigrationService = podMigrationService;
     }
 
