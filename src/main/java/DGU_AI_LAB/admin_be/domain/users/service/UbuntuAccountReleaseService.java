@@ -1,11 +1,12 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
-import DGU_AI_LAB.admin_be.domain.requests.service.OperationJobService;
 import DGU_AI_LAB.admin_be.domain.requests.service.UbuntuAccountService;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
@@ -44,7 +45,7 @@ public class UbuntuAccountReleaseService {
     private final UserRepository userRepository;
     private final RequestRepository requestRepository;
     private final UbuntuAccountService ubuntuAccountService;
-    private final OperationJobService operationJobService;
+    private final JobClient jobClient;
     private final AlarmService alarmService;
     private final PlatformTransactionManager transactionManager;
 
@@ -127,25 +128,25 @@ public class UbuntuAccountReleaseService {
         }
         JobResultResponseDTO result;
         try {
-            result = operationJobService.getResult(OperationJobService.KIND_REVOKE, node.requestId());
+            result = jobClient.getResult(JobResults.KIND_REVOKE, node.requestId());
         } catch (Exception e) {
             log.warn("[계정 회수] 작업 결과 조회 실패 - 다음 바퀴에 다시 조회: userId={}, requestId={}", userId, node.requestId(), e);
             return false;
         }
-        if (OperationJobService.isFromOtherJob(node.jobId(), result)) {
+        if (JobResults.isFromOtherJob(node.jobId(), result)) {
             return false;
         }
         return switch (result.phase()) {
-            case OperationJobService.PHASE_SUCCESS -> true;
-            case OperationJobService.PHASE_FAIL -> {
-                if (OperationJobService.isAccountAlreadyAbsent(result)) {
+            case JobResults.PHASE_SUCCESS -> true;
+            case JobResults.PHASE_FAIL -> {
+                if (JobResults.isAccountAlreadyAbsent(result)) {
                     log.info("[계정 회수] 회수할 계정이 이미 없어 삭제된 것으로 처리: userId={}, node={}", userId, node.nodeName());
                     yield true;
                 }
                 reportOnce(userId, node, result, "실패");
                 yield false;
             }
-            case OperationJobService.PHASE_UNKNOWN -> {
+            case JobResults.PHASE_UNKNOWN -> {
                 reportOnce(userId, node, result, "결과 불명");
                 yield false;
             }

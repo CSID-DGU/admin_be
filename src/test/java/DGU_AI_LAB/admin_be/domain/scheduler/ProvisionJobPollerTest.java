@@ -1,11 +1,11 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
-import DGU_AI_LAB.admin_be.domain.requests.service.OperationJobService;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,14 +31,14 @@ import static org.mockito.Mockito.*;
 class ProvisionJobPollerTest {
 
     @Mock private RequestRepository requestRepository;
-    @Mock private OperationJobService operationJobService;
+    @Mock private JobClient jobClient;
     @Mock private AdminRequestCommandService adminRequestCommandService;
 
     private ProvisionJobPoller poller;
 
     @BeforeEach
     void setUp() {
-        poller = new ProvisionJobPoller(requestRepository, operationJobService, adminRequestCommandService);
+        poller = new ProvisionJobPoller(requestRepository, jobClient, adminRequestCommandService);
     }
 
     private void givenProcessing(Long... requestIds) {
@@ -68,7 +68,7 @@ class ProvisionJobPollerTest {
     @DisplayName("재승인 직후 보이는 이전 작업의 실패는 반영하지 않는다")
     void ignoresResultOfPreviousJob() {
         processingWithJob(39L, 3616L, java.time.LocalDateTime.now());
-        when(operationJobService.getResult("provision", 39L)).thenReturn(jobResult(39L, 3612L, "FAIL"));
+        when(jobClient.getResult("provision", 39L)).thenReturn(jobResult(39L, 3612L, "FAIL"));
 
         poller.pollProvisionJobs();
 
@@ -80,7 +80,7 @@ class ProvisionJobPollerTest {
     void handlesResultOfRegisteredJob() {
         processingWithJob(39L, 3616L, java.time.LocalDateTime.now());
         JobResultResponseDTO failed = jobResult(39L, 3616L, "FAIL");
-        when(operationJobService.getResult("provision", 39L)).thenReturn(failed);
+        when(jobClient.getResult("provision", 39L)).thenReturn(failed);
 
         poller.pollProvisionJobs();
 
@@ -94,7 +94,7 @@ class ProvisionJobPollerTest {
 
         poller.pollProvisionJobs();
 
-        verify(operationJobService, never()).getResult(anyString(), anyLong());
+        verify(jobClient, never()).getResult(anyString(), anyLong());
     }
 
     @Test
@@ -102,7 +102,7 @@ class ProvisionJobPollerTest {
     void fallsBackToLatestResultAfterGrace() {
         processingWithJob(39L, null, java.time.LocalDateTime.now().minusMinutes(5));
         JobResultResponseDTO failed = jobResult(39L, 3612L, "FAIL");
-        when(operationJobService.getResult("provision", 39L)).thenReturn(failed);
+        when(jobClient.getResult("provision", 39L)).thenReturn(failed);
 
         poller.pollProvisionJobs();
 
@@ -119,7 +119,7 @@ class ProvisionJobPollerTest {
         givenProcessing(1L);
         JobResultResponseDTO.Result made = new JobResultResponseDTO.Result(
                 50001L, 50001L, "ailab-testuser-abcd", "farm2", List.of());
-        when(operationJobService.getResult("provision", 1L)).thenReturn(result(1L, "SUCCESS", made));
+        when(jobClient.getResult("provision", 1L)).thenReturn(result(1L, "SUCCESS", made));
 
         poller.pollProvisionJobs();
 
@@ -130,8 +130,8 @@ class ProvisionJobPollerTest {
     @DisplayName("아직 실행 중이거나 등록 이력이 없으면 아무것도 하지 않는다")
     void ignoresStartAndNone() {
         givenProcessing(1L, 2L);
-        when(operationJobService.getResult("provision", 1L)).thenReturn(result(1L, "START", null));
-        when(operationJobService.getResult("provision", 2L)).thenReturn(result(2L, "none", null));
+        when(jobClient.getResult("provision", 1L)).thenReturn(result(1L, "START", null));
+        when(jobClient.getResult("provision", 2L)).thenReturn(result(2L, "none", null));
 
         poller.pollProvisionJobs();
 
@@ -145,7 +145,7 @@ class ProvisionJobPollerTest {
     void failsOnFail() {
         givenProcessing(3L);
         JobResultResponseDTO failed = result(3L, "FAIL", null);
-        when(operationJobService.getResult("provision", 3L)).thenReturn(failed);
+        when(jobClient.getResult("provision", 3L)).thenReturn(failed);
 
         poller.pollProvisionJobs();
 
@@ -157,7 +157,7 @@ class ProvisionJobPollerTest {
     void degradedIsReportedOnceWithoutRevert() {
         givenProcessing(7L);
         JobResultResponseDTO degraded = new JobResultResponseDTO("7", "provision", 1L, "FAIL", "DEGRADED", null, null);
-        when(operationJobService.getResult("provision", 7L)).thenReturn(degraded);
+        when(jobClient.getResult("provision", 7L)).thenReturn(degraded);
 
         poller.pollProvisionJobs();
         poller.pollProvisionJobs();
@@ -171,7 +171,7 @@ class ProvisionJobPollerTest {
     void reportsUnknownOnce() {
         givenProcessing(4L);
         JobResultResponseDTO unknown = result(4L, "UNKNOWN", null);
-        when(operationJobService.getResult("provision", 4L)).thenReturn(unknown);
+        when(jobClient.getResult("provision", 4L)).thenReturn(unknown);
 
         // 결과 불명은 신청 상태를 그대로 두므로 다음 바퀴에도 같은 신청이 다시 잡힌다.
         poller.pollProvisionJobs();
@@ -184,11 +184,11 @@ class ProvisionJobPollerTest {
     @DisplayName("한 신청의 조회가 실패해도 나머지 신청은 계속 처리한다")
     void keepsGoingWhenOneLookupFails() {
         givenProcessing(5L, 6L);
-        when(operationJobService.getResult("provision", 5L))
+        when(jobClient.getResult("provision", 5L))
                 .thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
         JobResultResponseDTO.Result made = new JobResultResponseDTO.Result(
                 null, null, "ailab-testuser-efgh", "farm2", List.of());
-        when(operationJobService.getResult("provision", 6L)).thenReturn(result(6L, "SUCCESS", made));
+        when(jobClient.getResult("provision", 6L)).thenReturn(result(6L, "SUCCESS", made));
 
         poller.pollProvisionJobs();
 

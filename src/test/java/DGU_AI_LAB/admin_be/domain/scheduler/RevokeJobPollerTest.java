@@ -1,11 +1,12 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
-import DGU_AI_LAB.admin_be.domain.requests.service.OperationJobService;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -36,7 +37,7 @@ class RevokeJobPollerTest {
     private static final long JOB_ID = 900L;
 
     @Mock private RequestRepository requestRepository;
-    @Mock private OperationJobService operationJobService;
+    @Mock private JobClient jobClient;
     @Mock private RequestExpiryService requestExpiryService;
     @Mock private AlarmService alarmService;
 
@@ -56,14 +57,14 @@ class RevokeJobPollerTest {
     }
 
     private void givenResult(String phase, Long jobId, String errorCode) {
-        when(operationJobService.getResult(OperationJobService.KIND_REVOKE, REQUEST_ID)).thenReturn(
-                new JobResultResponseDTO(String.valueOf(REQUEST_ID), OperationJobService.KIND_REVOKE, jobId, phase, errorCode, null, null));
+        when(jobClient.getResult(JobResults.KIND_REVOKE, REQUEST_ID)).thenReturn(
+                new JobResultResponseDTO(String.valueOf(REQUEST_ID), JobResults.KIND_REVOKE, jobId, phase, errorCode, null, null));
     }
 
     @Test
     @DisplayName("성공하면 신청을 DELETED로 마무리한다")
     void successCompletes() {
-        givenResult(OperationJobService.PHASE_SUCCESS, JOB_ID, null);
+        givenResult(JobResults.PHASE_SUCCESS, JOB_ID, null);
 
         poller.pollRevokeJobs();
 
@@ -74,7 +75,7 @@ class RevokeJobPollerTest {
     @Test
     @DisplayName("실패하면 FULFILLED로 되돌리고 관리자에게 알린다")
     void failureRevertsAndAlerts() {
-        givenResult(OperationJobService.PHASE_FAIL, JOB_ID, "POD_DELETE_FAILED");
+        givenResult(JobResults.PHASE_FAIL, JOB_ID, "POD_DELETE_FAILED");
 
         poller.pollRevokeJobs();
 
@@ -85,11 +86,11 @@ class RevokeJobPollerTest {
     @Test
     @DisplayName("자원을 남긴 실패(DEGRADED)와 결과 불명은 되돌리지 않고 한 번만 알린다")
     void degradedAndUnknownAlertOnce() {
-        givenResult(OperationJobService.PHASE_FAIL, JOB_ID, OperationJobService.ERROR_DEGRADED);
+        givenResult(JobResults.PHASE_FAIL, JOB_ID, JobResults.ERROR_DEGRADED);
         poller.pollRevokeJobs();
         poller.pollRevokeJobs();
 
-        givenResult(OperationJobService.PHASE_UNKNOWN, JOB_ID, "TIMEOUT");
+        givenResult(JobResults.PHASE_UNKNOWN, JOB_ID, "TIMEOUT");
         poller.pollRevokeJobs();
 
         verify(requestExpiryService, never()).failContainerRevoke(anyLong());
@@ -100,7 +101,7 @@ class RevokeJobPollerTest {
     @Test
     @DisplayName("실행 중이면 아무것도 하지 않는다")
     void startWaits() {
-        givenResult(OperationJobService.PHASE_START, JOB_ID, null);
+        givenResult(JobResults.PHASE_START, JOB_ID, null);
 
         poller.pollRevokeJobs();
 
@@ -110,7 +111,7 @@ class RevokeJobPollerTest {
     @Test
     @DisplayName("다른 작업(이전 회수 시도)의 결과는 반영하지 않는다")
     void ignoresOtherJob() {
-        givenResult(OperationJobService.PHASE_FAIL, 111L, "OLD_FAILURE");
+        givenResult(JobResults.PHASE_FAIL, 111L, "OLD_FAILURE");
 
         poller.pollRevokeJobs();
 
@@ -125,7 +126,7 @@ class RevokeJobPollerTest {
 
         poller.pollRevokeJobs();
 
-        verify(operationJobService, never()).getResult(any(), any());
+        verify(jobClient, never()).getResult(any(), any());
     }
 
     @Test
@@ -135,9 +136,9 @@ class RevokeJobPollerTest {
         when(other.getRequestId()).thenReturn(42L);
         when(other.getJobId()).thenReturn(901L);
         when(requestRepository.findAllByStatus(Status.EXPIRING)).thenReturn(List.of(expiring, other));
-        when(operationJobService.getResult(OperationJobService.KIND_REVOKE, REQUEST_ID)).thenThrow(new RuntimeException("reset"));
-        when(operationJobService.getResult(OperationJobService.KIND_REVOKE, 42L)).thenReturn(
-                new JobResultResponseDTO("42", OperationJobService.KIND_REVOKE, 901L, OperationJobService.PHASE_SUCCESS, null, null, null));
+        when(jobClient.getResult(JobResults.KIND_REVOKE, REQUEST_ID)).thenThrow(new RuntimeException("reset"));
+        when(jobClient.getResult(JobResults.KIND_REVOKE, 42L)).thenReturn(
+                new JobResultResponseDTO("42", JobResults.KIND_REVOKE, 901L, JobResults.PHASE_SUCCESS, null, null, null));
 
         poller.pollRevokeJobs();
 

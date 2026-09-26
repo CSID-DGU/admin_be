@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.pod.PodPortUtils;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
@@ -41,7 +43,7 @@ public class RequestExpiryService {
     private static final ZoneId REQUEST_ZONE = ZoneId.of("Asia/Seoul");
 
     private final RequestRepository requestRepository;
-    private final OperationJobService operationJobService;
+    private final JobClient jobClient;
     private final PodExternalPortRepository podExternalPortRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final PlatformTransactionManager transactionManager;
@@ -109,22 +111,22 @@ public class RequestExpiryService {
      */
     private Long registerContainerRevoke(Long requestId, String podName) {
         try {
-            return operationJobService.registerRevoke(
+            return jobClient.registerRevoke(
                     new RevokeRegisterRequestDTO(requestId, podName, null, null, false), ErrorCode.POD_DELETION_FAILED);
         } catch (Exception e) {
-            if (OperationJobService.neverReachedServer(e)) {
+            if (JobResults.neverReachedServer(e)) {
                 log.error("config-server에 닿지 못해 회수 작업이 등록되지 않음 — FULFILLED로 되돌림: requestId={}", requestId, e);
                 revertToFulfilled(requestId);
                 throw asBusiness(e);
             }
             JobResultResponseDTO job = null;
             try {
-                job = operationJobService.getResult(OperationJobService.KIND_REVOKE, requestId);
+                job = jobClient.getResult(JobResults.KIND_REVOKE, requestId);
             } catch (Exception lookupFailure) {
                 log.warn("회수 작업 등록 실패 후 작업 상태 조회도 실패 — EXPIRING 유지, 재조정에 맡김: requestId={}", requestId, lookupFailure);
                 throw asBusiness(e);
             }
-            if (job != null && OperationJobService.PHASE_START.equals(job.phase())) {
+            if (job != null && JobResults.PHASE_START.equals(job.phase())) {
                 log.warn("회수 작업 등록 응답은 실패했지만 작업이 도는 중 — 이어받음: requestId={}, jobId={}", requestId, job.jobId(), e);
                 return job.jobId();
             }

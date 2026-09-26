@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
@@ -56,7 +58,7 @@ import static org.mockito.Mockito.when;
 class RequestExpiryContractTest {
 
     @Mock private RequestRepository requestRepository;
-    @Mock private OperationJobService operationJobService;
+    @Mock private JobClient jobClient;
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private PlatformTransactionManager transactionManager;
@@ -73,11 +75,11 @@ class RequestExpiryContractTest {
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         service = new RequestExpiryService(
-                requestRepository, operationJobService, podExternalPortRepository, eventPublisher, transactionManager);
+                requestRepository, jobClient, podExternalPortRepository, eventPublisher, transactionManager);
         when(mockRg.getServerName()).thenReturn("FARM-01");
         when(mockUser.getName()).thenReturn("테스트유저");
         when(mockUser.getEmail()).thenReturn("test@dgu.ac.kr");
-        when(operationJobService.registerRevoke(any(), any())).thenReturn(900L);
+        when(jobClient.registerRevoke(any(), any())).thenReturn(900L);
     }
 
     private Request given(Long requestId, Status status) {
@@ -104,10 +106,10 @@ class RequestExpiryContractTest {
 
         service.deleteExpiredRequest(100L);
 
-        InOrder order = inOrder(requestRepository, request, operationJobService);
+        InOrder order = inOrder(requestRepository, request, jobClient);
         order.verify(requestRepository).findByIdForUpdate(100L);
         order.verify(request).beginExpiry();
-        order.verify(operationJobService).registerRevoke(any(), eq(ErrorCode.POD_DELETION_FAILED));
+        order.verify(jobClient).registerRevoke(any(), eq(ErrorCode.POD_DELETION_FAILED));
         order.verify(request).recordJob(900L);
     }
 
@@ -119,19 +121,19 @@ class RequestExpiryContractTest {
     @DisplayName("등록이 실패하면 선점 → 등록 시도 → FULFILLED 되돌림 순서로 끝나고 예외를 전파한다")
     void registrationFails_revertsAfterAttempt() {
         Request request = given(101L, Status.FULFILLED);
-        when(operationJobService.registerRevoke(any(), any()))
+        when(jobClient.registerRevoke(any(), any()))
                 .thenThrow(new BusinessException(ErrorCode.POD_DELETION_FAILED));
-        when(operationJobService.getResult(OperationJobService.KIND_REVOKE, 101L)).thenReturn(
-                new JobResultResponseDTO("101", OperationJobService.KIND_REVOKE, null, OperationJobService.PHASE_NONE, null, null, null));
+        when(jobClient.getResult(JobResults.KIND_REVOKE, 101L)).thenReturn(
+                new JobResultResponseDTO("101", JobResults.KIND_REVOKE, null, JobResults.PHASE_NONE, null, null, null));
 
         assertThatThrownBy(() -> service.deleteExpiredRequest(101L))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.POD_DELETION_FAILED);
 
-        InOrder order = inOrder(request, operationJobService);
+        InOrder order = inOrder(request, jobClient);
         order.verify(request).beginExpiry();
-        order.verify(operationJobService).registerRevoke(any(), any());
+        order.verify(jobClient).registerRevoke(any(), any());
         order.verify(request).endExpiry();
         assertThat(request.getStatus()).isEqualTo(Status.FULFILLED);
     }

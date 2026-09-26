@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
@@ -42,7 +44,7 @@ class PodMigrationServiceTest {
 
     @Mock private RequestRepository requestRepository;
     @Mock private PodExternalPortRepository podExternalPortRepository;
-    @Mock private OperationJobService operationJobService;
+    @Mock private JobClient jobClient;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
     @Mock private AlarmService alarmService;
@@ -54,7 +56,7 @@ class PodMigrationServiceTest {
     void setUp() {
         when(request.getJobId()).thenReturn(10L); // result()의 작업 번호와 같다
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
-        service = new PodMigrationService(requestRepository, podExternalPortRepository, operationJobService, transactionManager, alarmService);
+        service = new PodMigrationService(requestRepository, podExternalPortRepository, jobClient, transactionManager, alarmService);
         when(request.getUbuntuUsername()).thenReturn("testuser");
         when(request.getPodName()).thenReturn("ailab-testuser-old");
         when(requestRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(request));
@@ -76,8 +78,8 @@ class PodMigrationServiceTest {
         when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
         when(request.getStatus()).thenReturn(Status.MIGRATING);
         when(request.getJobId()).thenReturn(11L);
-        when(operationJobService.getResult(OperationJobService.KIND_MIGRATE, 1L))
-                .thenReturn(result(OperationJobService.PHASE_SUCCESS, migrated(null)));
+        when(jobClient.getResult(JobResults.KIND_MIGRATE, 1L))
+                .thenReturn(result(JobResults.PHASE_SUCCESS, migrated(null)));
 
         service.settleFinishedMigration(1L);
 
@@ -90,8 +92,8 @@ class PodMigrationServiceTest {
     void settleAppliesFinishedResult() {
         when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
         when(request.getStatus()).thenReturn(Status.MIGRATING);
-        when(operationJobService.getResult(OperationJobService.KIND_MIGRATE, 1L))
-                .thenReturn(result(OperationJobService.PHASE_SUCCESS, migrated(null)));
+        when(jobClient.getResult(JobResults.KIND_MIGRATE, 1L))
+                .thenReturn(result(JobResults.PHASE_SUCCESS, migrated(null)));
 
         service.settleFinishedMigration(1L);
 
@@ -104,8 +106,8 @@ class PodMigrationServiceTest {
     void settleIgnoresRunningJob() {
         when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
         when(request.getStatus()).thenReturn(Status.MIGRATING);
-        when(operationJobService.getResult(OperationJobService.KIND_MIGRATE, 1L))
-                .thenReturn(result(OperationJobService.PHASE_START, null));
+        when(jobClient.getResult(JobResults.KIND_MIGRATE, 1L))
+                .thenReturn(result(JobResults.PHASE_START, null));
 
         service.settleFinishedMigration(1L);
 
@@ -120,7 +122,7 @@ class PodMigrationServiceTest {
 
         service.settleFinishedMigration(1L);
 
-        verify(operationJobService, never()).getResult(anyString(), any());
+        verify(jobClient, never()).getResult(anyString(), any());
     }
 
     @Test
@@ -130,7 +132,7 @@ class PodMigrationServiceTest {
 
         verify(request).beginMigration();
         ArgumentCaptor<MigrateRegisterRequestDTO> captor = ArgumentCaptor.forClass(MigrateRegisterRequestDTO.class);
-        verify(operationJobService).registerMigrate(captor.capture());
+        verify(jobClient).registerMigrate(captor.capture());
         assertThat(captor.getValue()).isEqualTo(new MigrateRegisterRequestDTO(1L, "ailab-testuser-old", "testuser",
                 List.of("farm2", "farm7"), null, true));
     }
@@ -138,7 +140,7 @@ class PodMigrationServiceTest {
     @Test
     @DisplayName("등록한 작업 번호를 신청에 남긴다")
     void startRecordsJobId() {
-        when(operationJobService.registerMigrate(any())).thenReturn(3700L);
+        when(jobClient.registerMigrate(any())).thenReturn(3700L);
         when(request.getStatus()).thenReturn(Status.MIGRATING);
 
         service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null));
@@ -153,14 +155,14 @@ class PodMigrationServiceTest {
 
         assertThatThrownBy(() -> service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null)))
                 .isInstanceOf(BusinessException.class);
-        verifyNoInteractions(operationJobService);
+        verifyNoInteractions(jobClient);
     }
 
     @Test
     @DisplayName("등록이 실패하면 FULFILLED로 되돌리고 오류를 전파한다")
     void startRevertsWhenRegistrationFails() {
         when(request.getStatus()).thenReturn(Status.MIGRATING);
-        doThrow(new BusinessException(ErrorCode.INFRA_REQUEST_REJECTED)).when(operationJobService).registerMigrate(any());
+        doThrow(new BusinessException(ErrorCode.INFRA_REQUEST_REJECTED)).when(jobClient).registerMigrate(any());
 
         assertThatThrownBy(() -> service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null)))
                 .isInstanceOf(BusinessException.class);
@@ -254,7 +256,7 @@ class PodMigrationServiceTest {
     @DisplayName("마지막 마이그레이션 결과를 화면용으로 바꿔 준다")
     void latestMigration() {
         when(requestRepository.existsById(1L)).thenReturn(true);
-        when(operationJobService.getResult("migrate", 1L)).thenReturn(
+        when(jobClient.getResult("migrate", 1L)).thenReturn(
                 new JobResultResponseDTO("1", "migrate", 9L, "SUCCESS", null, "2026-09-15 12:00:00", migrated(null)));
 
         MigrationResultResponseDTO result = service.getLatestMigration(1L);

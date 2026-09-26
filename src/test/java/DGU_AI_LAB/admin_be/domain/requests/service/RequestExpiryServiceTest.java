@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
@@ -51,7 +53,7 @@ class RequestExpiryServiceTest {
     private static final String POD_NAME = "pod-testuser-xxxx";
 
     @Mock private RequestRepository requestRepository;
-    @Mock private OperationJobService operationJobService;
+    @Mock private JobClient jobClient;
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private PlatformTransactionManager transactionManager;
@@ -66,11 +68,11 @@ class RequestExpiryServiceTest {
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         service = new RequestExpiryService(
-                requestRepository, operationJobService, podExternalPortRepository, eventPublisher, transactionManager);
+                requestRepository, jobClient, podExternalPortRepository, eventPublisher, transactionManager);
         when(mockRg.getServerName()).thenReturn("FARM-01");
         when(mockUser.getName()).thenReturn("테스트유저");
         when(mockUser.getEmail()).thenReturn("test@dgu.ac.kr");
-        when(operationJobService.registerRevoke(any(), any())).thenReturn(900L);
+        when(jobClient.registerRevoke(any(), any())).thenReturn(900L);
     }
 
     /** 상태가 고정된 mock으로는 선점 후 재확인하는 흐름이 재현되지 않아 상태 전이를 흉내낸다. */
@@ -97,7 +99,7 @@ class RequestExpiryServiceTest {
     }
 
     private static JobResultResponseDTO revokeJob(String phase, Long jobId) {
-        return new JobResultResponseDTO("1", OperationJobService.KIND_REVOKE, jobId, phase, null, null, null);
+        return new JobResultResponseDTO("1", JobResults.KIND_REVOKE, jobId, phase, null, null, null);
     }
 
     @Nested
@@ -112,7 +114,7 @@ class RequestExpiryServiceTest {
             service.deleteExpiredRequest(1L);
 
             ArgumentCaptor<RevokeRegisterRequestDTO> body = ArgumentCaptor.forClass(RevokeRegisterRequestDTO.class);
-            verify(operationJobService).registerRevoke(body.capture(), eq(ErrorCode.POD_DELETION_FAILED));
+            verify(jobClient).registerRevoke(body.capture(), eq(ErrorCode.POD_DELETION_FAILED));
             assertThat(body.getValue().requestId()).isEqualTo(1L);
             assertThat(body.getValue().podName()).isEqualTo(POD_NAME);
             assertThat(body.getValue().deleteAccount()).isFalse();
@@ -134,7 +136,7 @@ class RequestExpiryServiceTest {
 
                 verify(request, never()).beginExpiry();
             }
-            verify(operationJobService, never()).registerRevoke(any(), any());
+            verify(jobClient, never()).registerRevoke(any(), any());
         }
 
         @Test
@@ -145,7 +147,7 @@ class RequestExpiryServiceTest {
             assertThatThrownBy(() -> service.deleteContainerByAdmin(3L))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REQUEST_STATUS);
-            verify(operationJobService, never()).registerRevoke(any(), any());
+            verify(jobClient, never()).registerRevoke(any(), any());
         }
 
         @Test
@@ -160,10 +162,10 @@ class RequestExpiryServiceTest {
         @DisplayName("등록이 실패했고 도는 작업도 없으면 FULFILLED로 되돌리고 예외를 올린다 — 다음 만료 회차가 다시 잡는다")
         void registrationFailureReverts() {
             Request request = mockRequest(4L, Status.FULFILLED);
-            when(operationJobService.registerRevoke(any(), any()))
+            when(jobClient.registerRevoke(any(), any()))
                     .thenThrow(new BusinessException("작업 등록 실패", ErrorCode.POD_DELETION_FAILED));
-            when(operationJobService.getResult(OperationJobService.KIND_REVOKE, 4L))
-                    .thenReturn(revokeJob(OperationJobService.PHASE_NONE, null));
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 4L))
+                    .thenReturn(revokeJob(JobResults.PHASE_NONE, null));
 
             assertThatThrownBy(() -> service.deleteExpiredRequest(4L))
                     .isInstanceOf(BusinessException.class)
@@ -177,10 +179,10 @@ class RequestExpiryServiceTest {
         @DisplayName("등록 응답은 실패했지만 같은 신청의 회수 작업이 도는 중이면 그 작업을 이어받는다")
         void registrationFailureWithRunningJobAdoptsIt() {
             Request request = mockRequest(5L, Status.FULFILLED);
-            when(operationJobService.registerRevoke(any(), any()))
+            when(jobClient.registerRevoke(any(), any()))
                     .thenThrow(new BusinessException("이미 처리 중", ErrorCode.INVALID_REQUEST_STATUS));
-            when(operationJobService.getResult(OperationJobService.KIND_REVOKE, 5L))
-                    .thenReturn(revokeJob(OperationJobService.PHASE_START, 812L));
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 5L))
+                    .thenReturn(revokeJob(JobResults.PHASE_START, 812L));
 
             service.deleteContainerByAdmin(5L);
 
@@ -192,7 +194,7 @@ class RequestExpiryServiceTest {
         @DisplayName("config-server에 연결조차 못 했으면 조회 없이 바로 FULFILLED로 되돌린다 — 작업이 없는 것이 확실하다")
         void unreachableServerRevertsImmediately() {
             Request request = mockRequest(7L, Status.FULFILLED);
-            when(operationJobService.registerRevoke(any(), any())).thenThrow(new BusinessException(
+            when(jobClient.registerRevoke(any(), any())).thenThrow(new BusinessException(
                     "작업 등록 중 오류", ErrorCode.POD_DELETION_FAILED,
                     new RuntimeException(new java.net.ConnectException("Connection refused"))));
 
@@ -200,15 +202,15 @@ class RequestExpiryServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.POD_DELETION_FAILED);
             assertThat(request.getStatus()).isEqualTo(Status.FULFILLED);
-            verify(operationJobService, never()).getResult(any(), anyLong());
+            verify(jobClient, never()).getResult(any(), anyLong());
         }
 
         @Test
         @DisplayName("등록 실패 후 작업 상태도 모르면 EXPIRING으로 두고 예외를 올린다 — 재조정이 작업 상태를 보고 판단한다")
         void registrationAndLookupFailureKeepsExpiring() {
             Request request = mockRequest(6L, Status.FULFILLED);
-            when(operationJobService.registerRevoke(any(), any())).thenThrow(new RuntimeException("timeout"));
-            when(operationJobService.getResult(any(), anyLong())).thenThrow(new RuntimeException("timeout"));
+            when(jobClient.registerRevoke(any(), any())).thenThrow(new RuntimeException("timeout"));
+            when(jobClient.getResult(any(), anyLong())).thenThrow(new RuntimeException("timeout"));
 
             assertThatThrownBy(() -> service.deleteExpiredRequest(6L))
                     .isInstanceOf(BusinessException.class)
