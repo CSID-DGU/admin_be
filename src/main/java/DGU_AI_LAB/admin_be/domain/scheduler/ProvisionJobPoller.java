@@ -40,12 +40,12 @@ public class ProvisionJobPoller {
         List<Request> processing = requestRepository.findAllByStatus(Status.PROCESSING);
         for (Request request : processing) {
             Long requestId = request.getRequestId();
-            if (OperationJobService.awaitingRegistration(request.getProvisionJobId(), request.getUpdatedAt())) {
+            if (OperationJobService.awaitingRegistration(request.getJobId(), request.getUpdatedAt())) {
                 continue;
             }
             try {
                 JobResultResponseDTO result = operationJobService.getResult(OperationJobService.KIND_PROVISION, requestId);
-                if (OperationJobService.isFromOtherJob(request.getProvisionJobId(), result)) {
+                if (OperationJobService.isFromOtherJob(request.getJobId(), result)) {
                     // 재승인 직후 보이는 이전 작업의 결과다. 반영하면 방금 등록한 작업이 도는데 신청이 되돌아간다.
                     continue;
                 }

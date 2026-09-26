@@ -164,7 +164,7 @@ class GroupServiceTest {
         @Test
         @DisplayName("ubuntuUsername이 제공됐지만 해당 유저의 요청이 아니면 BusinessException을 던진다")
         void createGroup_throwsException_whenUsernameNotOwnedByUser() {
-            when(requestRepository.existsByUbuntuUsernameAndUser_UserId("otheruser", 1L)).thenReturn(false);
+            when(requestRepository.existsByUser_UbuntuUsernameAndUser_UserId("otheruser", 1L)).thenReturn(false);
 
             CreateGroupRequestDTO dto = new CreateGroupRequestDTO("newgroup", "otheruser");
 

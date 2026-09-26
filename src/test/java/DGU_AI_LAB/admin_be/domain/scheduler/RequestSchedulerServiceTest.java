@@ -98,6 +98,7 @@ public class RequestSchedulerServiceTest {
         // 1. 기초 데이터 세팅
         User testUser = userRepository.save(User.builder()
                 .email("test@dgu.ac.kr")
+                .ubuntuUsername("testuser")
                 .name("테스트유저")
                 .password("encoded_pw")
                 .studentId("2020111111")
@@ -119,15 +120,15 @@ public class RequestSchedulerServiceTest {
 
         // 2. Request 생성
         // (1) 만료 (어제)
-        Request reqExpired = createTestRequest(MOCK_NOW.minusDays(1), Status.FULFILLED, "user-expired", testUser, testRg, testImage);
+        Request reqExpired = createTestRequest(MOCK_NOW.minusDays(1), Status.FULFILLED, testUser, testRg, testImage);
         // (2) 1일 전 (내일)
-        Request req1Day = createTestRequest(MOCK_NOW.plusDays(1).withHour(12), Status.FULFILLED, "user-1day", testUser, testRg, testImage);
+        Request req1Day = createTestRequest(MOCK_NOW.plusDays(1).withHour(12), Status.FULFILLED, testUser, testRg, testImage);
         // (3) 3일 전
-        Request req3Day = createTestRequest(MOCK_NOW.plusDays(3).withHour(14), Status.FULFILLED, "user-3day", testUser, testRg, testImage);
+        Request req3Day = createTestRequest(MOCK_NOW.plusDays(3).withHour(14), Status.FULFILLED, testUser, testRg, testImage);
         // (4) 7일 전
-        Request req7Day = createTestRequest(MOCK_NOW.plusDays(7).withHour(15), Status.FULFILLED, "user-7day", testUser, testRg, testImage);
+        Request req7Day = createTestRequest(MOCK_NOW.plusDays(7).withHour(15), Status.FULFILLED, testUser, testRg, testImage);
         // (5) 넉넉함
-        createTestRequest(MOCK_NOW.plusDays(30), Status.FULFILLED, "user-ok", testUser, testRg, testImage);
+        createTestRequest(MOCK_NOW.plusDays(30), Status.FULFILLED, testUser, testRg, testImage);
 
 
         // --- Given: 시간 고정 & 스케줄러 실행 ---
@@ -152,7 +153,7 @@ public class RequestSchedulerServiceTest {
         // 테스트 요청은 podName 미설정(null), 포트 없음("없음")
         String expectedDelSubject = messageUtils.get("notification.expired.detail.subject");
         String expectedDelBody = messageUtils.get("notification.expired.detail.body",
-                testUser.getName(), "FARM-01", "user-expired",
+                testUser.getName(), "FARM-01", "testuser",
                 reqExpired.getPodName(),
                 "없음",
                 reqExpired.getExpiresAt().toLocalDate().toString());
@@ -167,7 +168,7 @@ public class RequestSchedulerServiceTest {
         // 관리자 알림 검증
         // notification.admin.delete.success ({0}타입, {1}계정, {2}서버)
         String expectedAdminMsg = messageUtils.get("notification.admin.delete.success",
-                "FARM", "user-expired", "FARM-01");
+                "FARM", "testuser", "FARM-01");
 
         verify(alarmService).sendAdminSlackNotification(
                 eq("FARM-01"),
@@ -197,6 +198,7 @@ public class RequestSchedulerServiceTest {
     void reconcileStaleInFlightRequests_recoversProcessingAndAlertsMigratingOnly() {
         User testUser = userRepository.save(User.builder()
                 .email("test@dgu.ac.kr")
+                .ubuntuUsername("testuser")
                 .name("테스트유저")
                 .password("encoded_pw")
                 .studentId("2020111111")
@@ -217,17 +219,17 @@ public class RequestSchedulerServiceTest {
                 .build());
 
         // (1) 10분 넘게 방치된 PROCESSING — PENDING으로 복구돼야 한다
-        Request staleProcessing = createTestRequest(MOCK_NOW.plusDays(30), Status.FULFILLED, "user-stale-processing", testUser, testRg, testImage);
+        Request staleProcessing = createTestRequest(MOCK_NOW.plusDays(30), Status.PENDING, testUser, testRg, testImage);
         staleProcessing.markAsProcessing();
         requestRepository.saveAndFlush(staleProcessing);
 
         // (2) 10분 넘게 방치된 MIGRATING — 인프라 충돌 위험 때문에 자동 복구 없이 알림만
-        Request staleMigrating = createTestRequest(MOCK_NOW.plusDays(30), Status.FULFILLED, "user-stale-migrating", testUser, testRg, testImage);
+        Request staleMigrating = createTestRequest(MOCK_NOW.plusDays(30), Status.FULFILLED, testUser, testRg, testImage);
         staleMigrating.beginMigration();
         requestRepository.saveAndFlush(staleMigrating);
 
         // (3) 방금 PROCESSING이 된 요청(임계치 이내) — 정상 처리 중이므로 건드리면 안 된다
-        Request freshProcessing = createTestRequest(MOCK_NOW.plusDays(30), Status.FULFILLED, "user-fresh-processing", testUser, testRg, testImage);
+        Request freshProcessing = createTestRequest(MOCK_NOW.plusDays(30), Status.PENDING, testUser, testRg, testImage);
         freshProcessing.markAsProcessing();
         requestRepository.saveAndFlush(freshProcessing);
 
@@ -262,11 +264,11 @@ public class RequestSchedulerServiceTest {
                 .isEqualTo(Status.PROCESSING);
 
         String expectedProcessingMsg = messageUtils.get("notification.admin.request.stale-processing",
-                staleProcessing.getRequestId(), "user-stale-processing", 20L);
+                staleProcessing.getRequestId(), "testuser", 20L);
         verify(alarmService).sendSlackAlert(eq(expectedProcessingMsg), isNull());
 
         String expectedMigratingMsg = messageUtils.get("notification.admin.request.stale-migrating",
-                staleMigrating.getRequestId(), "user-stale-migrating", 20L);
+                staleMigrating.getRequestId(), "testuser", 20L);
         verify(alarmService).sendSlackAlert(eq(expectedMigratingMsg), isNull());
     }
 
@@ -292,10 +294,9 @@ public class RequestSchedulerServiceTest {
         );
     }
 
-    private Request createTestRequest(LocalDateTime expiresAt, Status status, String ubuntuUsername,
+    private Request createTestRequest(LocalDateTime expiresAt, Status status,
                                       User testUser, ResourceGroup testRg, ContainerImage testImage) {
         Request req = Request.builder()
-                .ubuntuUsername(ubuntuUsername)
                 .expiresAt(expiresAt)
                 .usagePurpose("test")
                 .formAnswers("{}")
@@ -305,10 +306,13 @@ public class RequestSchedulerServiceTest {
                 .build();
 
         if (status == Status.FULFILLED || status == Status.DELETED) {
-            req.approve(testImage, testRg, "approved");
+            req.markAsProcessing();
+            req.prepareAsyncApproval(testImage, testRg, "approved");
+            req.completeApproval();
         }
 
         if (status == Status.DELETED) {
+            req.beginExpiry();
             req.deleteAfterCleanup();
         }
 

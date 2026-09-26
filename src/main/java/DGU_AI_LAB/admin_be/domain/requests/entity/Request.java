@@ -25,21 +25,6 @@ public class Request extends BaseTimeEntity {
     @Column(name = "request_id")
     private Long requestId;
 
-    /**
-     * 신청 시점에 User.ubuntuUsername에서 복사해 오는 비정규화 사본 — 신청마다 따로 고르는
-     * 값이 아니다. 같은 사용자의 신청들은 모두 같은 값을 갖고, 지난 신청 이력에도 남으므로
-     * 더 이상 unique가 아니다. 유일성은 User.ubuntuUsername이 책임진다.
-     */
-    @Column(name = "ubuntu_username", nullable = false, length = 100)
-    private String ubuntuUsername;
-
-    /** User에 귀속된 UID/GID의 사본(이력 조회용). 실제 소유자는 User다. */
-    @Column(name = "ubuntu_uid")
-    private Long ubuntuUid;
-
-    @Column(name = "ubuntu_gid")
-    private Long ubuntuGid;
-
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 
@@ -76,15 +61,13 @@ public class Request extends BaseTimeEntity {
     private String nodeName;
 
     /**
-     * 이번 승인으로 등록한 생성 작업 번호(config-server operation_log의 START 행 id). 작업 결과는 신청 번호로만
-     * 조회되므로, 재승인 직후에는 이전 작업의 결과가 보일 수 있다 — 결과 폴러는 이 번호의 결과만 반영한다.
+     * 지금 진행 중인 작업(생성 또는 마이그레이션)의 번호 — config-server operation_log의 START 행 id.
+     * 작업 결과는 신청 번호로만 조회되므로, 재승인 직후에는 이전 작업의 결과가 보일 수 있다 — 결과 폴러는
+     * 이 번호의 결과만 반영한다. 한 신청에 동시에 도는 작업은 하나뿐이라(PROCESSING과 MIGRATING은
+     * 겹치지 않는다) 칸 하나로 충분하다.
      */
-    @Column(name = "provision_job_id")
-    private Long provisionJobId;
-
-    /** 이번 마이그레이션으로 등록한 작업 번호. provisionJobId와 같은 이유로 결과 폴러가 이 번호의 결과만 반영한다. */
-    @Column(name = "migration_job_id")
-    private Long migrationJobId;
+    @Column(name = "job_id")
+    private Long jobId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "rsgroup_id", nullable = false)
@@ -102,8 +85,7 @@ public class Request extends BaseTimeEntity {
     private boolean enableVnc = false;
 
     @Builder
-    public Request(String ubuntuUsername, LocalDateTime expiresAt, String usagePurpose, String formAnswers, User user, ResourceGroup resourceGroup, ContainerImage containerImage, boolean enableVnc) {
-        this.ubuntuUsername = ubuntuUsername;
+    public Request(LocalDateTime expiresAt, String usagePurpose, String formAnswers, User user, ResourceGroup resourceGroup, ContainerImage containerImage, boolean enableVnc) {
         this.enableVnc = enableVnc;
         this.expiresAt = expiresAt;
         this.usagePurpose = usagePurpose;
@@ -138,34 +120,21 @@ public class Request extends BaseTimeEntity {
     }
 
     public void markAsProcessing() {
-        this.status = Status.PROCESSING;
-        this.provisionJobId = null;
+        transitionTo(Status.PROCESSING, "대기 중인 신청만 승인할 수 있습니다.");
+        this.jobId = null;
     }
 
-    public void recordProvisionJob(Long jobId) {
-        this.provisionJobId = jobId;
+    public void recordJob(Long jobId) {
+        this.jobId = jobId;
     }
 
     public void revertToPending() {
-        this.status = Status.PENDING;
+        transitionTo(Status.PENDING, "처리 중인 신청만 대기 상태로 되돌릴 수 있습니다.");
         // podName/nodeName은 보상 트랜잭션이 이미 지운 리소스를 가리키므로 함께 지운다.
-        // ubuntuUid/ubuntuGid는 건드리지 않는다 — 이제 UID는 신청이 아니라 User에 귀속되고,
-        // 이 신청 하나가 실패했다고 사용자의 리눅스 계정이 사라지는 것은 아니다.
-        // 계정까지 실제로 삭제된 경우의 UID 회수는 User.releaseUbuntuAccount()가 담당한다.
+        // UID는 신청이 아니라 User에 영구히 귀속되므로 여기서 다룰 것이 없다.
         this.podName = null;
         this.nodeName = null;
-        this.provisionJobId = null;
-    }
-
-    public void approve(ContainerImage image, ResourceGroup resourceGroup, String adminComment) {
-        this.containerImage = image;
-        this.resourceGroup = resourceGroup;
-        this.status = Status.FULFILLED;
-        this.approvedAt = LocalDateTime.now();
-
-        if (adminComment != null && !adminComment.isBlank()) {
-            this.adminComment = adminComment;
-        }
+        this.jobId = null;
     }
 
     /**
@@ -185,12 +154,12 @@ public class Request extends BaseTimeEntity {
 
     /** 등록해 둔 생성 작업이 성공했을 때 승인을 확정한다. 관리자가 고른 값은 이미 반영돼 있다. */
     public void completeApproval() {
-        this.status = Status.FULFILLED;
+        transitionTo(Status.FULFILLED, "처리 중인 신청만 승인을 확정할 수 있습니다.");
         this.approvedAt = LocalDateTime.now();
     }
 
     public void reject(String comment) {
-        this.status = Status.DENIED;
+        transitionTo(Status.DENIED, "대기 또는 처리 중인 신청만 거절할 수 있습니다.");
         this.adminComment = comment;
     }
 
@@ -222,25 +191,15 @@ public class Request extends BaseTimeEntity {
      * 동시에 들어온 두 번째 마이그레이션 요청이 이 상태 검증에서 실제로 막힌다.
      */
     public void beginMigration() {
-        if (this.status != Status.FULFILLED) {
-            throw new BusinessException("이미 마이그레이션이 진행 중이거나 처리 가능한 상태가 아닙니다.", ErrorCode.INVALID_REQUEST_STATUS);
-        }
-        this.status = Status.MIGRATING;
-        this.migrationJobId = null;
-    }
-
-    public void recordMigrationJob(Long jobId) {
-        this.migrationJobId = jobId;
+        transitionTo(Status.MIGRATING, "이미 마이그레이션이 진행 중이거나 처리 가능한 상태가 아닙니다.");
+        this.jobId = null;
     }
 
     /**
      * 마이그레이션 시도가 끝나면(성공/스킵/실패 모두) MIGRATING -> FULFILLED로 되돌린다.
      */
     public void endMigration() {
-        if (this.status != Status.MIGRATING) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
-        }
-        this.status = Status.FULFILLED;
+        transitionTo(Status.FULFILLED, "마이그레이션 중인 신청이 아닙니다.");
     }
 
     /**
@@ -253,10 +212,7 @@ public class Request extends BaseTimeEntity {
      * 요청이 재승인 가능한 상태로 되살아난다.
      */
     public void beginExpiry() {
-        if (this.status != Status.FULFILLED) {
-            throw new BusinessException("이미 정리가 진행 중이거나 정리 가능한 상태가 아닙니다.", ErrorCode.INVALID_REQUEST_STATUS);
-        }
-        this.status = Status.EXPIRING;
+        transitionTo(Status.EXPIRING, "이미 정리가 진행 중이거나 정리 가능한 상태가 아닙니다.");
     }
 
     /**
@@ -264,18 +220,7 @@ public class Request extends BaseTimeEntity {
      * 되돌려야 다음 만료 스케줄 실행에서 다시 정리 대상(FULFILLED)으로 잡혀 재시도된다.
      */
     public void endExpiry() {
-        if (this.status != Status.EXPIRING) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
-        }
-        this.status = Status.FULFILLED;
-    }
-
-    public void assignUbuntuIds(Long ubuntuUid, Long ubuntuGid) {
-        if (ubuntuUid == null || ubuntuGid == null || ubuntuUid <= 0 || ubuntuGid <= 0) {
-            throw new BusinessException(ErrorCode.UID_ALLOCATION_FAILED);
-        }
-        this.ubuntuUid = ubuntuUid;
-        this.ubuntuGid = ubuntuGid;
+        transitionTo(Status.FULFILLED, "정리 중인 신청이 아닙니다.");
     }
 
     public void addGroup(Group group) {
@@ -317,7 +262,7 @@ public class Request extends BaseTimeEntity {
             // 삭제하면, 처리가 끝난 뒤 DB에 전혀 추적되지 않는 고아 계정/Pod가 생긴다.
             throw new BusinessException("요청이 처리 중입니다. 처리가 완료된 후 다시 시도해주세요.", ErrorCode.INVALID_REQUEST_STATUS);
         }
-        this.status = Status.DELETED;
+        transitionTo(Status.DELETED, "삭제할 수 없는 상태입니다.");
     }
 
     /**
@@ -329,13 +274,37 @@ public class Request extends BaseTimeEntity {
      * 아무 잠금 없이 인프라를 지운 뒤 이 메서드를 부르는 경로가 검증을 통과해버린다.
      */
     public void deleteAfterCleanup() {
+        // DELETED로 가는 전이는 PENDING·DENIED(취소)에도 열려 있으므로 여기서 EXPIRING을 따로 요구한다.
         if (this.status != Status.EXPIRING) {
             throw new BusinessException("인프라 정리 후 삭제는 EXPIRING 상태에서만 가능합니다.", ErrorCode.INVALID_REQUEST_STATUS);
         }
-        // ubuntuUid/ubuntuGid/podName/nodeName은 어떤 계정으로 어느 노드에서 운영됐는지
-        // 이력 조회에 쓰이므로 남겨둔다. 신청 하나가 정리됐다고 사용자의 리눅스 계정이
-        // 삭제되는 것은 아니므로 여기서 지울 이유도 없다.
-        this.status = Status.DELETED;
+        // podName/nodeName은 어느 노드에서 운영됐는지 이력 조회에 쓰이므로 남겨둔다.
+        transitionTo(Status.DELETED, "인프라 정리 후 삭제는 EXPIRING 상태에서만 가능합니다.");
+    }
+
+    /** 신청 유저네임은 웹 계정에 한 번 정해지면 바뀌지 않는 값이라 따로 저장하지 않고 소유자에게서 읽는다. */
+    public String getUbuntuUsername() {
+        return user.getUbuntuUsername();
+    }
+
+    /** UID/GID는 사람에게 영구히 귀속된다(User). 신청은 소유자의 값을 그대로 보여 준다. */
+    public Long getUbuntuUid() {
+        return user.getUbuntuUid();
+    }
+
+    public Long getUbuntuGid() {
+        return user.getUbuntuGid();
+    }
+
+    /**
+     * 상태를 바꾸는 유일한 자리. 허용 여부는 {@link Status#canTransitionTo}의 표 하나가 정한다 —
+     * 공개 메서드마다 출발 상태를 따로 검사하면 빠뜨린 메서드가 표에 없는 전이를 만든다.
+     */
+    private void transitionTo(Status target, String deniedMessage) {
+        if (!this.status.canTransitionTo(target)) {
+            throw new BusinessException(deniedMessage, ErrorCode.INVALID_REQUEST_STATUS);
+        }
+        this.status = target;
     }
 
     /**

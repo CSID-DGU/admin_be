@@ -52,7 +52,7 @@ class PodMigrationServiceTest {
 
     @BeforeEach
     void setUp() {
-        when(request.getMigrationJobId()).thenReturn(10L); // result()의 작업 번호와 같다
+        when(request.getJobId()).thenReturn(10L); // result()의 작업 번호와 같다
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         service = new PodMigrationService(requestRepository, podExternalPortRepository, operationJobService, transactionManager, alarmService);
         when(request.getUbuntuUsername()).thenReturn("testuser");
@@ -75,7 +75,7 @@ class PodMigrationServiceTest {
     void settleIgnoresPreviousJobResult() {
         when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
         when(request.getStatus()).thenReturn(Status.MIGRATING);
-        when(request.getMigrationJobId()).thenReturn(11L);
+        when(request.getJobId()).thenReturn(11L);
         when(operationJobService.getResult(OperationJobService.KIND_MIGRATE, 1L))
                 .thenReturn(result(OperationJobService.PHASE_SUCCESS, migrated(null)));
 
@@ -143,7 +143,7 @@ class PodMigrationServiceTest {
 
         service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null));
 
-        verify(request).recordMigrationJob(3700L);
+        verify(request).recordJob(3700L);
     }
 
     @Test

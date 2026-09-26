@@ -82,16 +82,29 @@ class UserTest {
         }
 
         @Test
-        @DisplayName("계정을 회수하면 UID/GID만 비우고 유저네임은 남긴다 — 유저네임은 웹 계정에 평생 귀속된다")
-        void releaseUbuntuAccount_clearsIdsButKeepsUsername() {
+        @DisplayName("계정을 회수해도 유저네임·UID·GID는 남는다 — 사람을 가리키는 값이라 되살릴 때 같은 번호를 쓴다")
+        void releaseUbuntuAccount_keepsIdentity() {
             user.assignUbuntuAccount(20001L, 20001L);
 
             user.releaseUbuntuAccount();
 
             assertThat(user.hasUbuntuAccount()).isFalse();
-            assertThat(user.getUbuntuUid()).isNull();
-            assertThat(user.getUbuntuGid()).isNull();
+            assertThat(user.getUbuntuUid()).isEqualTo(20001L);
+            assertThat(user.getUbuntuGid()).isEqualTo(20001L);
             assertThat(user.getUbuntuUsername()).isEqualTo("honggildong");
+        }
+
+        @Test
+        @DisplayName("회수된 계정은 같은 UID/GID로만 되살릴 수 있다 — 다른 번호면 보존된 홈의 소유자와 어긋난다")
+        void reassignAfterRelease_requiresSameIds() {
+            user.assignUbuntuAccount(20001L, 20001L);
+            user.releaseUbuntuAccount();
+
+            assertThatThrownBy(() -> user.assignUbuntuAccount(20002L, 20002L))
+                    .isInstanceOf(BusinessException.class);
+
+            user.assignUbuntuAccount(20001L, 20001L);
+            assertThat(user.hasUbuntuAccount()).isTrue();
         }
 
         @Test

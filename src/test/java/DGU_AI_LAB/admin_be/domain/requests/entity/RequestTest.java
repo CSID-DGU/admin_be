@@ -26,7 +26,6 @@ class RequestTest {
         ContainerImage image = mock(ContainerImage.class);
 
         request = Request.builder()
-                .ubuntuUsername("testuser")
                 .expiresAt(LocalDateTime.now().plusDays(30))
                 .usagePurpose("딥러닝 연구")
                 .formAnswers("{}")
@@ -36,20 +35,32 @@ class RequestTest {
                 .build();
     }
 
+    /** 승인 경로(PENDING → PROCESSING → FULFILLED)를 그대로 밟아 FULFILLED로 만든다. */
+    private void fulfill() {
+        request.markAsProcessing();
+        request.prepareAsyncApproval(mock(ContainerImage.class), mock(ResourceGroup.class), null);
+        request.completeApproval();
+    }
+
     @Nested
-    @DisplayName("approve")
-    class Approve {
+    @DisplayName("completeApproval")
+    class CompleteApproval {
 
         @Test
-        @DisplayName("승인하면 상태가 FULFILLED로 변경된다")
-        void approve_changesStatusToFulfilled() {
-            ContainerImage newImage = mock(ContainerImage.class);
-            ResourceGroup newRg = mock(ResourceGroup.class);
-
-            request.approve(newImage, newRg, "승인합니다");
+        @DisplayName("처리 중인 신청의 생성 작업이 성공하면 FULFILLED가 되고 승인 시각이 남는다")
+        void completeApproval_changesStatusToFulfilled() {
+            fulfill();
 
             assertThat(request.getStatus()).isEqualTo(Status.FULFILLED);
             assertThat(request.getApprovedAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("PROCESSING을 거치지 않은 신청은 승인을 확정할 수 없다")
+        void completeApproval_throwsException_whenPending() {
+            assertThatThrownBy(request::completeApproval)
+                    .isInstanceOf(BusinessException.class);
+            assertThat(request.getStatus()).isEqualTo(Status.PENDING);
         }
     }
 
@@ -58,10 +69,10 @@ class RequestTest {
     class RevertToPending {
 
         @Test
-        @DisplayName("PENDING으로 되돌리면 podName/nodeName은 지우지만 uid/gid는 건드리지 않는다 — 계정은 웹 계정 소유다")
-        void revertToPending_clearsPodInfoButKeepsUidGid() {
+        @DisplayName("PENDING으로 되돌리면 이미 지운 자원을 가리키는 podName/nodeName과 작업 번호를 지운다")
+        void revertToPending_clearsPodInfoAndJob() {
             request.markAsProcessing();
-            request.assignUbuntuIds(20001L, 20001L);
+            request.recordJob(7L);
             request.assignPodInfo("ailab-testuser-abcd1234", "farm1");
 
             request.revertToPending();
@@ -69,8 +80,16 @@ class RequestTest {
             assertThat(request.getStatus()).isEqualTo(Status.PENDING);
             assertThat(request.getPodName()).isNull();
             assertThat(request.getNodeName()).isNull();
-            assertThat(request.getUbuntuUid()).isEqualTo(20001L);
-            assertThat(request.getUbuntuGid()).isEqualTo(20001L);
+            assertThat(request.getJobId()).isNull();
+        }
+
+        @Test
+        @DisplayName("처리 중이 아닌 신청은 되돌릴 수 없다 — FULFILLED를 PENDING으로 돌리면 컨테이너가 두 번 만들어진다")
+        void revertToPending_throwsException_whenFulfilled() {
+            fulfill();
+
+            assertThatThrownBy(request::revertToPending)
+                    .isInstanceOf(BusinessException.class);
         }
     }
 
@@ -88,18 +107,13 @@ class RequestTest {
         }
 
         @Test
-        @DisplayName("이미 uid가 배정된 FULFILLED 요청을 거절해도 uid/gid는 남는다 — 신청이 아니라 웹 계정이 그 계정의 주인이다")
-        void reject_keepsUidAndGid_whenAlreadyFulfilled() {
-            ContainerImage image = mock(ContainerImage.class);
-            ResourceGroup rg = mock(ResourceGroup.class);
-            request.approve(image, rg, null);
-            request.assignUbuntuIds(20001L, 20001L);
+        @DisplayName("컨테이너가 떠 있는 FULFILLED 신청은 거절할 수 없다 — 거절로는 자원이 회수되지 않는다")
+        void reject_throwsException_whenFulfilled() {
+            fulfill();
 
-            request.reject("승인 취소");
-
-            assertThat(request.getStatus()).isEqualTo(Status.DENIED);
-            assertThat(request.getUbuntuUid()).isEqualTo(20001L);
-            assertThat(request.getUbuntuGid()).isEqualTo(20001L);
+            assertThatThrownBy(() -> request.reject("승인 취소"))
+                    .isInstanceOf(BusinessException.class);
+            assertThat(request.getStatus()).isEqualTo(Status.FULFILLED);
         }
     }
 
@@ -137,31 +151,16 @@ class RequestTest {
         @Test
         @DisplayName("FULFILLED 상태의 Request를 delete()로 삭제하면 BusinessException을 던진다")
         void delete_throwsException_whenFulfilled() {
-            ContainerImage image = mock(ContainerImage.class);
-            ResourceGroup rg = mock(ResourceGroup.class);
-            request.approve(image, rg, null);
+            fulfill();
 
             assertThatThrownBy(request::delete)
                     .isInstanceOf(BusinessException.class);
         }
 
         @Test
-        @DisplayName("삭제해도 uid/gid는 이력으로 남는다 — 신청 하나가 끝났다고 사용자의 리눅스 계정이 사라지지 않는다")
-        void delete_keepsUidAndGid() {
-            request.assignUbuntuIds(20001L, 20001L);
-
-            request.delete();
-
-            assertThat(request.getUbuntuUid()).isEqualTo(20001L);
-            assertThat(request.getUbuntuGid()).isEqualTo(20001L);
-        }
-
-        @Test
         @DisplayName("MIGRATING 상태의 Request를 delete()로 삭제하면 BusinessException을 던진다")
         void delete_throwsException_whenMigrating() {
-            ContainerImage image = mock(ContainerImage.class);
-            ResourceGroup rg = mock(ResourceGroup.class);
-            request.approve(image, rg, null);
+            fulfill();
             request.beginMigration();
 
             assertThatThrownBy(request::delete)
@@ -188,9 +187,7 @@ class RequestTest {
         @Test
         @DisplayName("EXPIRING 상태에서 인프라 정리 후 삭제하면 상태가 DELETED로 변경된다")
         void deleteAfterCleanup_changesStatusToDeleted_whenExpiring() {
-            ContainerImage image = mock(ContainerImage.class);
-            ResourceGroup rg = mock(ResourceGroup.class);
-            request.approve(image, rg, null);
+            fulfill();
             request.beginExpiry();
 
             request.deleteAfterCleanup();
@@ -208,9 +205,7 @@ class RequestTest {
         @Test
         @DisplayName("정리를 선점(beginExpiry)하지 않은 FULFILLED 상태에서는 deleteAfterCleanup이 거부된다")
         void deleteAfterCleanup_throwsException_whenFulfilledWithoutClaim() {
-            ContainerImage image = mock(ContainerImage.class);
-            ResourceGroup rg = mock(ResourceGroup.class);
-            request.approve(image, rg, null);
+            fulfill();
 
             assertThatThrownBy(request::deleteAfterCleanup)
                     .isInstanceOf(BusinessException.class);
@@ -218,19 +213,14 @@ class RequestTest {
         }
 
         @Test
-        @DisplayName("인프라 정리 후 삭제해도 uid/gid/podName/nodeName은 이력 조회용으로 남는다")
-        void deleteAfterCleanup_keepsUidGidAndPodInfo() {
-            ContainerImage image = mock(ContainerImage.class);
-            ResourceGroup rg = mock(ResourceGroup.class);
-            request.approve(image, rg, null);
-            request.assignUbuntuIds(20001L, 20001L);
+        @DisplayName("인프라 정리 후 삭제해도 podName/nodeName은 이력 조회용으로 남는다")
+        void deleteAfterCleanup_keepsPodInfo() {
+            fulfill();
             request.assignPodInfo("ailab-testuser-abcd1234", "farm1");
             request.beginExpiry();
 
             request.deleteAfterCleanup();
 
-            assertThat(request.getUbuntuUid()).isEqualTo(20001L);
-            assertThat(request.getUbuntuGid()).isEqualTo(20001L);
             assertThat(request.getPodName()).isEqualTo("ailab-testuser-abcd1234");
             assertThat(request.getNodeName()).isEqualTo("farm1");
         }
@@ -273,9 +263,7 @@ class RequestTest {
         @Test
         @DisplayName("FULFILLED 상태의 요청을 수정하면 성공한다")
         void update_success_whenFulfilled() {
-            ContainerImage image = mock(ContainerImage.class);
-            ResourceGroup rg = mock(ResourceGroup.class);
-            request.approve(image, rg, null);
+            fulfill();
 
             LocalDateTime newDate = LocalDateTime.now().plusDays(90);
             request.update(newDate, "용량 증가 필요");
@@ -285,39 +273,8 @@ class RequestTest {
     }
 
     @Nested
-    @DisplayName("assignUbuntuIds")
-    class AssignUbuntuIds {
-
-        @Test
-        @DisplayName("양수 UID/GID를 저장한다")
-        void assignUbuntuIds_success() {
-            request.assignUbuntuIds(2001L, 2001L);
-
-            assertThat(request.getUbuntuUid()).isEqualTo(2001L);
-            assertThat(request.getUbuntuGid()).isEqualTo(2001L);
-        }
-
-        @Test
-        @DisplayName("UID/GID가 null 또는 양수가 아니면 BusinessException을 던진다")
-        void assignUbuntuIds_throwsException_whenInvalid() {
-            assertThatThrownBy(() -> request.assignUbuntuIds(null, 2001L))
-                    .isInstanceOf(BusinessException.class);
-            assertThatThrownBy(() -> request.assignUbuntuIds(2001L, null))
-                    .isInstanceOf(BusinessException.class);
-            assertThatThrownBy(() -> request.assignUbuntuIds(0L, 2001L))
-                    .isInstanceOf(BusinessException.class);
-            assertThatThrownBy(() -> request.assignUbuntuIds(2001L, -1L))
-                    .isInstanceOf(BusinessException.class);
-        }
-    }
-
-    @Nested
     @DisplayName("beginExpiry / endExpiry")
     class Expiry {
-
-        private void fulfill() {
-            request.approve(mock(ContainerImage.class), mock(ResourceGroup.class), null);
-        }
 
         @Test
         @DisplayName("FULFILLED 요청의 정리를 시작하면 EXPIRING으로 전환된다")

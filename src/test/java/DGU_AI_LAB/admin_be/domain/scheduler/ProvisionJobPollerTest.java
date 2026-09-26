@@ -45,7 +45,7 @@ class ProvisionJobPollerTest {
         List<Request> requests = java.util.Arrays.stream(requestIds).map(id -> {
             Request request = mock(Request.class);
             when(request.getRequestId()).thenReturn(id);
-            when(request.getProvisionJobId()).thenReturn(1L); // result()의 작업 번호와 같다
+            when(request.getJobId()).thenReturn(1L); // result()의 작업 번호와 같다
             return request;
         }).toList();
         when(requestRepository.findAllByStatus(Status.PROCESSING)).thenReturn(requests);
@@ -54,7 +54,7 @@ class ProvisionJobPollerTest {
     private Request processingWithJob(Long requestId, Long jobId, java.time.LocalDateTime updatedAt) {
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(requestId);
-        when(request.getProvisionJobId()).thenReturn(jobId);
+        when(request.getJobId()).thenReturn(jobId);
         when(request.getUpdatedAt()).thenReturn(updatedAt);
         when(requestRepository.findAllByStatus(Status.PROCESSING)).thenReturn(List.of(request));
         return request;

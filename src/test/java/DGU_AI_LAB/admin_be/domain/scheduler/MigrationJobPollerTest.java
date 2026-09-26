@@ -36,7 +36,7 @@ class MigrationJobPollerTest {
         poller = new MigrationJobPoller(requestRepository, operationJobService, podMigrationService);
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(1L);
-        when(request.getMigrationJobId()).thenReturn(5L); // given()의 작업 번호와 같다
+        when(request.getJobId()).thenReturn(5L); // given()의 작업 번호와 같다
         when(requestRepository.findAllByStatus(Status.MIGRATING)).thenReturn(List.of(request));
     }
 
@@ -85,7 +85,7 @@ class MigrationJobPollerTest {
     void ignoresPreviousJobResult() {
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(1L);
-        when(request.getMigrationJobId()).thenReturn(6L);
+        when(request.getJobId()).thenReturn(6L);
         when(requestRepository.findAllByStatus(Status.MIGRATING)).thenReturn(List.of(request));
         given("SUCCESS", null, null);
 

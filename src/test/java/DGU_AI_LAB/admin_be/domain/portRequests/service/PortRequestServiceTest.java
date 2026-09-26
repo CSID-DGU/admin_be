@@ -37,7 +37,6 @@ class PortRequestServiceTest {
                 .rsgroupId(1)
                 .build();
         Request request = Request.builder()
-                .ubuntuUsername("testuser")
                 .usagePurpose("학습")
                 .formAnswers("{}")
                 .resourceGroup(resourceGroup)

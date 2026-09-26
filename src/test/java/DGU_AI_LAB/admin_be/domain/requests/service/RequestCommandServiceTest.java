@@ -92,7 +92,6 @@ class RequestCommandServiceTest {
                     .imageName("cuda").imageVersion("11.8").cudaVersion("11.8").description("test").build();
 
             Request savedReq = Request.builder()
-                    .ubuntuUsername("honggildong")
                     .expiresAt(LocalDateTime.now().plusDays(30))
                     .usagePurpose("연구")
                     .formAnswers("{}")
@@ -109,7 +108,7 @@ class RequestCommandServiceTest {
             when(dto.resourceGroupId()).thenReturn(1);
             when(dto.imageId()).thenReturn(1L);
             when(dto.ubuntuPassword()).thenReturn("strongPassword1!");
-            when(dto.toEntity(any(), any(), any(), anyString())).thenReturn(savedReq);
+            when(dto.toEntity(any(), any(), any())).thenReturn(savedReq);
             when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
 
             assertThat(requestCommandService.createRequest(1L, dto).ubuntuUsername())
@@ -274,7 +273,7 @@ class RequestCommandServiceTest {
             when(dto.resourceGroupId()).thenReturn(1);
             when(dto.imageId()).thenReturn(1L);
             when(dto.ubuntuPassword()).thenReturn("strongPassword1!");
-            when(dto.toEntity(any(), any(), any(), anyString())).thenReturn(savedReq);
+            when(dto.toEntity(any(), any(), any())).thenReturn(savedReq);
             when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
             // GID 2개 요청했지만 0개만 발견 → 예외 발생 (portRequests 도달 전)
             when(dto.ubuntuGids()).thenReturn(java.util.Set.of(1001L, 1002L));
@@ -298,7 +297,6 @@ class RequestCommandServiceTest {
 
             // 응답 DTO 조립까지 통과해야 하므로 mock 대신 실제 엔티티를 저장 결과로 돌려준다.
             Request savedReq = Request.builder()
-                    .ubuntuUsername("honggildong")
                     .expiresAt(LocalDateTime.now().plusDays(30))
                     .usagePurpose("연구")
                     .formAnswers("{}")
@@ -310,12 +308,12 @@ class RequestCommandServiceTest {
             when(dto.resourceGroupId()).thenReturn(1);
             when(dto.imageId()).thenReturn(1L);
             when(dto.ubuntuPassword()).thenReturn("strongPassword1!");
-            when(dto.toEntity(any(), any(), any(), anyString())).thenReturn(savedReq);
+            when(dto.toEntity(any(), any(), any())).thenReturn(savedReq);
             when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
 
             SaveRequestResponseDTO response = requestCommandService.createRequest(1L, dto);
 
-            verify(dto).toEntity(eq(user), eq(rg), eq(img), eq("honggildong"));
+            verify(dto).toEntity(eq(user), eq(rg), eq(img));
             assertThat(response.ubuntuUsername()).isEqualTo("honggildong");
         }
 
@@ -327,7 +325,6 @@ class RequestCommandServiceTest {
             lenient().when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
             lenient().when(containerImageRepository.findById(any())).thenReturn(Optional.of(img));
             Request savedReq = Request.builder()
-                    .ubuntuUsername(user.getUbuntuUsername())
                     .expiresAt(LocalDateTime.now().plusDays(30))
                     .usagePurpose("연구").formAnswers("{}")
                     .user(user).resourceGroup(rg).containerImage(img)
@@ -336,7 +333,7 @@ class RequestCommandServiceTest {
             lenient().when(dto.resourceGroupId()).thenReturn(1);
             lenient().when(dto.imageId()).thenReturn(1L);
             lenient().when(dto.ubuntuPassword()).thenReturn(ubuntuPassword);
-            lenient().when(dto.toEntity(any(), any(), any(), anyString())).thenReturn(savedReq);
+            lenient().when(dto.toEntity(any(), any(), any())).thenReturn(savedReq);
             lenient().when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
             return dto;
         }
@@ -386,7 +383,6 @@ class RequestCommandServiceTest {
             when(owner.getUserId()).thenReturn(1L);
 
             return Request.builder()
-                    .ubuntuUsername("cancelUser")
                     .expiresAt(LocalDateTime.now().plusDays(30))
                     .usagePurpose("딥러닝 연구")
                     .formAnswers("{}")
@@ -444,7 +440,9 @@ class RequestCommandServiceTest {
         @DisplayName("FULFILLED 상태의 신청을 취소하려 하면 BusinessException을 던지고 상태를 바꾸지 않는다")
         void cancelRequest_throwsException_whenFulfilled() {
             Request request = buildRequest();
-            request.approve(mock(ContainerImage.class), mock(ResourceGroup.class), null);
+            request.markAsProcessing();
+            request.prepareAsyncApproval(mock(ContainerImage.class), mock(ResourceGroup.class), null);
+            request.completeApproval();
             when(requestRepository.findByIdForUpdate(13L)).thenReturn(Optional.of(request));
 
             assertThatThrownBy(() -> requestCommandService.cancelRequest(1L, 13L))
@@ -457,7 +455,9 @@ class RequestCommandServiceTest {
         @DisplayName("MIGRATING 상태의 신청을 취소하려 하면 BusinessException을 던지고 상태를 바꾸지 않는다")
         void cancelRequest_throwsException_whenMigrating() {
             Request request = buildRequest();
-            request.approve(mock(ContainerImage.class), mock(ResourceGroup.class), null);
+            request.markAsProcessing();
+            request.prepareAsyncApproval(mock(ContainerImage.class), mock(ResourceGroup.class), null);
+            request.completeApproval();
             request.beginMigration();
             when(requestRepository.findByIdForUpdate(14L)).thenReturn(Optional.of(request));
 
