@@ -187,25 +187,81 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
-        @DisplayName("FULFILLED 상태 요청도 거절 가능하다 (현재 정책)")
-        void rejectRequest_success_whenStatusIsFulfilled() {
+        @DisplayName("FULFILLED 요청은 거절할 수 없다 — 거절은 컨테이너를 회수하지 않는다")
+        void rejectRequest_throws_whenStatusIsFulfilled() {
             Request request = buildMockedRequestWithStatus(31L, Status.FULFILLED);
 
-            RejectRequestDTO dto = new RejectRequestDTO(31L, "계정 정책 위반");
-            service.rejectRequest(dto);
-
-            verify(request).reject("계정 정책 위반");
+            assertThatThrownBy(() -> service.rejectRequest(new RejectRequestDTO(31L, "계정 정책 위반")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+            verify(request, never()).reject(any());
         }
 
         @Test
-        @DisplayName("PROCESSING 상태 요청도 거절 가능하다 (승인 진행 중 취소)")
-        void rejectRequest_success_whenStatusIsProcessing() {
+        @DisplayName("PROCESSING 요청은 생성 작업이 실패로 끝났으면 거절할 수 있다")
+        void rejectRequest_success_whenProvisionJobFailed() {
             Request request = buildMockedRequestWithStatus(34L, Status.PROCESSING);
+            when(operationJobService.getResult(OperationJobService.KIND_PROVISION, 34L))
+                    .thenReturn(job("FAIL", null));
 
-            RejectRequestDTO dto = new RejectRequestDTO(34L, "승인 취소");
-            service.rejectRequest(dto);
+            service.rejectRequest(new RejectRequestDTO(34L, "승인 취소"));
 
             verify(request).reject("승인 취소");
+        }
+
+        @Test
+        @DisplayName("PROCESSING 요청은 생성 작업이 도는 중이면 거절할 수 없다")
+        void rejectRequest_throws_whenProvisionJobRunning() {
+            Request request = buildMockedRequestWithStatus(35L, Status.PROCESSING);
+            when(operationJobService.getResult(OperationJobService.KIND_PROVISION, 35L))
+                    .thenReturn(job("START", null));
+
+            assertThatThrownBy(() -> service.rejectRequest(new RejectRequestDTO(35L, "취소")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PROVISION_JOB_IN_PROGRESS);
+            verify(request, never()).reject(any());
+        }
+
+        @Test
+        @DisplayName("PROCESSING 요청은 작업이 성공했는데 아직 반영 전이면 거절할 수 없다")
+        void rejectRequest_throws_whenProvisionSucceededButNotApplied() {
+            Request request = buildMockedRequestWithStatus(36L, Status.PROCESSING);
+            when(operationJobService.getResult(OperationJobService.KIND_PROVISION, 36L))
+                    .thenReturn(job("SUCCESS", new JobResultResponseDTO.Result(1L, 1L, "ailab-testuser-x", "farm2", List.of())));
+
+            assertThatThrownBy(() -> service.rejectRequest(new RejectRequestDTO(36L, "취소")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PROVISION_JOB_IN_PROGRESS);
+            verify(request, never()).reject(any());
+        }
+
+        @Test
+        @DisplayName("성공 결과를 잃어 갇힌 PROCESSING 요청은 거절할 수 있다")
+        void rejectRequest_success_whenSuccessResultMissing() {
+            Request request = buildMockedRequestWithStatus(37L, Status.PROCESSING);
+            when(operationJobService.getResult(OperationJobService.KIND_PROVISION, 37L))
+                    .thenReturn(job("SUCCESS", null));
+
+            service.rejectRequest(new RejectRequestDTO(37L, "정리"));
+
+            verify(request).reject("정리");
+        }
+
+        @Test
+        @DisplayName("방금 승인돼 작업 번호가 아직 기록되지 않은 PROCESSING 요청은 거절할 수 없다")
+        void rejectRequest_throws_whenAwaitingRegistration() {
+            Request request = buildMockedRequestWithStatus(38L, Status.PROCESSING);
+            when(request.getProvisionJobId()).thenReturn(null);
+            when(request.getUpdatedAt()).thenReturn(LocalDateTime.now());
+
+            assertThatThrownBy(() -> service.rejectRequest(new RejectRequestDTO(38L, "취소")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PROVISION_JOB_IN_PROGRESS);
+            verify(operationJobService, never()).getResult(any(), any());
         }
 
         @Test
@@ -305,10 +361,19 @@ class AdminRequestCommandServiceTest {
         }
     }
 
+    private static JobResultResponseDTO job(String phase, JobResultResponseDTO.Result result) {
+        return job(phase, result, 1L);
+    }
+
+    private static JobResultResponseDTO job(String phase, JobResultResponseDTO.Result result, Long jobId) {
+        return new JobResultResponseDTO("0", "provision", jobId, phase, null, null, result);
+    }
+
     private Request buildMockedRequestWithStatus(Long requestId, Status status) {
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(requestId);
         when(request.getStatus()).thenReturn(status);
+        when(request.getProvisionJobId()).thenReturn(1L);   // job()이 돌려주는 작업 번호와 같은 작업
         when(request.getUbuntuUsername()).thenReturn("testuser");
         when(mockUser.getUbuntuPasswordHash()).thenReturn("$6$salt$hash");
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
@@ -424,6 +489,52 @@ class AdminRequestCommandServiceTest {
             assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
                     .isInstanceOf(BusinessException.class);
             verify(request).revertToPending();
+        }
+
+        @Test
+        @DisplayName("등록 응답은 실패했지만 작업이 도는 중이면 되돌리지 않고 그 작업을 이어받는다")
+        void adoptsRunningJobWhenRegistrationResponseFails() {
+            Long requestId = 205L;
+            Request request = buildMockedRequest(requestId);
+            doThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED))
+                    .when(operationJobService).registerProvision(any());
+            when(operationJobService.getResult(OperationJobService.KIND_PROVISION, requestId))
+                    .thenReturn(job("START", null, 77L));
+
+            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
+
+            verify(request, never()).revertToPending();
+            verify(request).recordProvisionJob(77L);
+        }
+
+        @Test
+        @DisplayName("등록 실패 후 작업 상태도 조회하지 못하면 되돌리지 않고 오류를 전파한다(재조정이 판단)")
+        void keepsProcessingWhenJobLookupAlsoFails() {
+            Long requestId = 206L;
+            Request request = buildMockedRequest(requestId);
+            doThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED))
+                    .when(operationJobService).registerProvision(any());
+            when(operationJobService.getResult(OperationJobService.KIND_PROVISION, requestId))
+                    .thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
+
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_CREATION_FAILED);
+            verify(request, never()).revertToPending();
+        }
+
+        @Test
+        @DisplayName("성공 결과가 없으면 반영하지 않고 알림은 신청마다 한 번만 보낸다")
+        void missingSuccessResultAlertsOnce() {
+            Long requestId = 207L;
+            Request request = processingRequest(requestId);
+
+            service.completeApprovalJob(requestId, null);
+            service.completeApprovalJob(requestId, null);
+
+            verify(alarmService, times(1)).sendAdminSlackNotification(any(), any());
+            verify(request, never()).completeApproval();
         }
 
         @Test

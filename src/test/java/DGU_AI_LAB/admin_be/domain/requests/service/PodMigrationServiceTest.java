@@ -196,6 +196,19 @@ class PodMigrationServiceTest {
     }
 
     @Test
+    @DisplayName("성공 결과가 없으면 건너뜀으로 확정하지 않고 MIGRATING에 둔 채 한 번만 알린다")
+    void completeWithoutResultKeepsMigratingAndAlertsOnce() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+
+        service.completeMigrationJob(1L, null);
+        service.completeMigrationJob(1L, null);
+
+        verify(request, never()).endMigration();
+        verify(request, never()).assignPodInfo(any(), any());
+        verify(alarmService, times(1)).sendSlackAlert(anyString(), any());
+    }
+
+    @Test
     @DisplayName("상태가 이미 바뀌었으면 결과를 반영하지 않는다")
     void completeIgnoresChangedStatus() {
         when(request.getStatus()).thenReturn(Status.FULFILLED);
