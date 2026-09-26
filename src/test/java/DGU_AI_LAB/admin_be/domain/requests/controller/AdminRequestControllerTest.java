@@ -90,7 +90,7 @@ class AdminRequestControllerTest extends WebMvcTestSupport {
     @DisplayName("DELETE /{id}/container: 그 신청의 컨테이너만 회수한다 — 사용자 단위 정리 경로를 타지 않는다")
     void containerDeleteIsScopedToOneRequest() throws Exception {
         mockMvc.perform(delete("/api/admin/requests/15/container"))
-                .andExpect(status().isOk());
+                .andExpect(status().isAccepted());
 
         // 경로의 신청 번호 하나로만 회수한다. 예전에는 화면의 이 버튼이 계정 회수 API를 불러
         // 그 사용자의 컨테이너가 전부 사라졌다 — 그 회귀를 여기서 막는다.

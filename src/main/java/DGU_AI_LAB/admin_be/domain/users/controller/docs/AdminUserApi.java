@@ -32,17 +32,20 @@ public interface AdminUserApi {
 
     @Operation(
             summary = "사용자 계정 비활성화",
-            description = "사용자 계정을 소프트 딜리트합니다. isActive를 false로 변경하며 해당 사용자의 모든 우분투 계정이 함께 삭제됩니다."
+            description = "사용자 계정을 소프트 딜리트합니다. isActive를 바로 false로 바꾸고, 소유한 컨테이너와 우분투 계정의 회수 작업을 등록합니다. "
+                    + "회수는 뒤에서 진행되며 신청은 EXPIRING → DELETED, 우분투 계정은 RELEASING → NONE이 됩니다."
     )
-    @ApiResponse(responseCode = "200", description = "성공")
+    @ApiResponse(responseCode = "202", description = "회수 작업 등록됨")
     @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음")
     @DeleteMapping("/{id}")
     ResponseEntity<SuccessResponse<?>> deleteUser(@PathVariable @Parameter(description = "사용자 ID") Long id);
 
-    @Operation(summary = "사용자의 우분투 계정 회수", description = "사용자의 살아 있는 신청 컨테이너를 모두 회수하고 우분투 계정을 지웁니다. 홈 디렉터리는 보존합니다.")
-    @ApiResponse(responseCode = "200", description = "성공")
+    @Operation(summary = "사용자의 우분투 계정 회수", description = "사용자의 살아 있는 신청 컨테이너를 모두 회수한 뒤 우분투 계정을 지웁니다. 홈 디렉터리는 보존합니다. "
+            + "작업만 등록하고 돌아오며, 우분투 계정 상태가 RELEASING → NONE이 되면 끝난 것입니다. 회수 중에 다시 부르면 실패한 단계를 다시 등록합니다.")
+    @ApiResponse(responseCode = "202", description = "회수 작업 등록됨")
     @ApiResponse(responseCode = "404", description = "사용자 또는 우분투 계정이 없음")
-    @ApiResponse(responseCode = "502", description = "config-server 회수 작업 실패")
+    @ApiResponse(responseCode = "409", description = "승인·마이그레이션 진행 중인 신청이 있음")
+    @ApiResponse(responseCode = "502", description = "일부 컨테이너의 회수 작업 등록 실패")
     ResponseEntity<SuccessResponse<?>> deleteUbuntuAccount(@PathVariable @Parameter(description = "사용자 ID") Long id);
 
     @Operation(summary = "사용자 활성 상태 변경", description = "active=false면 비활성화(컨테이너·계정 정리 포함), true면 재활성화합니다.")

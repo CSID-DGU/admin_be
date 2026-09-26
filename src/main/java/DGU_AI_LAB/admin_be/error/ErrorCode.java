@@ -101,6 +101,7 @@ public enum ErrorCode {
     UBUNTU_USERNAME_NOT_ASSIGNED(HttpStatus.CONFLICT, "회원 정보에 우분투 계정명이 없습니다. 마이페이지에서 먼저 등록해주세요."),
     UBUNTU_USERNAME_ALREADY_ASSIGNED(HttpStatus.CONFLICT, "이미 우분투 계정명이 등록되어 있어 변경할 수 없습니다."),
     UBUNTU_ACCOUNT_ALREADY_ASSIGNED(HttpStatus.CONFLICT, "이미 다른 우분투 계정이 배정된 사용자입니다."),
+    UBUNTU_ACCOUNT_RELEASING(HttpStatus.CONFLICT, "우분투 계정을 회수하는 중입니다. 회수가 끝난 뒤 다시 시도해주세요."),
     UBUNTU_PASSWORD_CHANGE_WHILE_PROVISIONING(HttpStatus.CONFLICT, "컨테이너를 만드는 중이라 지금은 Ubuntu 비밀번호를 바꿀 수 없습니다. 생성이 끝난 뒤 다시 시도해주세요."),
     // 인증 계층(로그인/토큰 갱신/JWT 필터) 전부에서 던져지는 예외라 401이어야 프론트가
     // 세션만료 처리 흐름(재로그인 모달)을 타운다. 404였을 때는 로그인 후 계정이 비활성화된

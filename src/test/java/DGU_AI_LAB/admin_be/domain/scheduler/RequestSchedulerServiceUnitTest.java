@@ -242,4 +242,47 @@ class RequestSchedulerServiceUnitTest {
 
         verify(adminRequestCommandService, never()).revertToPendingIfStillProcessing(any(), any());
     }
+
+    private static JobResultResponseDTO revokeJob(String phase) {
+        return new JobResultResponseDTO(null, OperationJobService.KIND_REVOKE, 900L, phase, null, null, null);
+    }
+
+    @Test
+    @DisplayName("회수 작업 없이 방치된 EXPIRING은 FULFILLED로 되돌린다 — 선점 뒤 등록 전에 admin_be가 멈춘 경우")
+    void reconcile_staleExpiring_withoutJob_reverts() {
+        Request request = buildMockedRequest(30L);
+        when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.EXPIRING), any())).thenReturn(List.of(request));
+        when(operationJobService.getResult(OperationJobService.KIND_REVOKE, 30L)).thenReturn(revokeJob(OperationJobService.PHASE_NONE));
+
+        service.reconcileStaleInFlightRequests();
+
+        verify(requestExpiryService).revertStaleExpiring(30L);
+    }
+
+    @Test
+    @DisplayName("회수 작업이 있으면(실행 중·끝남·불명) EXPIRING을 되돌리지 않고 결과 폴러에 맡긴다")
+    void reconcile_staleExpiring_withJob_leftToPoller() {
+        Request request = buildMockedRequest(31L);
+        when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.EXPIRING), any())).thenReturn(List.of(request));
+        for (String phase : List.of(OperationJobService.PHASE_START, OperationJobService.PHASE_SUCCESS,
+                OperationJobService.PHASE_FAIL, OperationJobService.PHASE_UNKNOWN)) {
+            when(operationJobService.getResult(OperationJobService.KIND_REVOKE, 31L)).thenReturn(revokeJob(phase));
+
+            service.reconcileStaleInFlightRequests();
+        }
+
+        verify(requestExpiryService, never()).revertStaleExpiring(any());
+    }
+
+    @Test
+    @DisplayName("회수 작업 상태를 조회하지 못하면 EXPIRING을 되돌리지 않는다")
+    void reconcile_staleExpiring_lookupFails_doesNotRevert() {
+        Request request = buildMockedRequest(32L);
+        when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.EXPIRING), any())).thenReturn(List.of(request));
+        when(operationJobService.getResult(OperationJobService.KIND_REVOKE, 32L)).thenThrow(new RuntimeException("down"));
+
+        service.reconcileStaleInFlightRequests();
+
+        verify(requestExpiryService, never()).revertStaleExpiring(any());
+    }
 }

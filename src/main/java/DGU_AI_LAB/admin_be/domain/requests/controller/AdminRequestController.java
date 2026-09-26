@@ -105,6 +105,6 @@ public class AdminRequestController implements AdminRequestApi {
     @DeleteMapping("/{requestId}/container")
     public ResponseEntity<SuccessResponse<?>> deleteContainer(@PathVariable Long requestId) {
         requestExpiryService.deleteContainerByAdmin(requestId);
-        return SuccessResponse.ok(null);
+        return SuccessResponse.accepted(null);
     }
 }

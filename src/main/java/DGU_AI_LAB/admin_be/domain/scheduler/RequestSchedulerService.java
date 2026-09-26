@@ -116,14 +116,26 @@ public class RequestSchedulerService {
     }
 
     /**
-     * MIGRATING과 달리 EXPIRING은 자동 복구한다 — 만료 정리는 Pod/계정 삭제 API가 모두 404를
-     * "이미 삭제됨"으로 처리해 멱등하므로, FULFILLED로 되돌려 다음 만료 스케줄에서 재시도시키는
-     * 것이 안전하다. 되돌리지 않으면 정리가 중단된 요청이 EXPIRING에 영구히 갇힌다.
+     * EXPIRING은 회수 작업이 도는 동안의 상태다. 결과는 RevokeJobPoller가 반영하므로, 여기서는 작업이 아예
+     * 등록되지 않은 경우(선점 뒤 등록 전에 admin_be가 멈춤)만 FULFILLED로 되돌려 다음 만료 회차에 재시도시킨다.
+     * 작업이 돌거나 끝났으면 폴러에 맡기고, 작업 상태를 조회하지 못하면 되돌리지 않는다.
      */
     private void reconcileStaleExpiring(Request request) {
-        log.warn("🔧 [재조정] {}분 넘게 EXPIRING 상태로 방치된 요청을 FULFILLED로 복구해 다음 만료 스케줄에서 재시도: requestId={}",
-                staleInFlightThresholdMinutes, request.getRequestId());
-        requestExpiryService.revertStaleExpiring(request.getRequestId());
+        Long requestId = request.getRequestId();
+        String phase;
+        try {
+            phase = operationJobService.getResult(OperationJobService.KIND_REVOKE, requestId).phase();
+        } catch (Exception e) {
+            log.warn("🔧 [재조정] 회수 작업 상태를 조회하지 못해 EXPIRING 요청을 그대로 둔다: requestId={}", requestId, e);
+            return;
+        }
+        if (!OperationJobService.PHASE_NONE.equals(phase)) {
+            log.info("🔧 [재조정] 회수 작업이 {} 상태라 EXPIRING 요청을 결과 폴러에 맡긴다: requestId={}", phase, requestId);
+            return;
+        }
+        log.warn("🔧 [재조정] {}분 넘게 회수 작업 없이 EXPIRING 상태로 방치된 요청을 FULFILLED로 복구해 다음 만료 스케줄에서 재시도: requestId={}",
+                staleInFlightThresholdMinutes, requestId);
+        requestExpiryService.revertStaleExpiring(requestId);
     }
 
     private void alertStaleMigrating(Request request) {

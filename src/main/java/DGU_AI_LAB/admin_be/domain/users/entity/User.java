@@ -74,9 +74,10 @@ public class User extends BaseTimeEntity {
     @Column(name = "ubuntu_gid")
     private Long ubuntuGid;
 
-    /** 리눅스 계정이 지금 원장(AD)에 살아 있는가. 회수하면 false가 되고 UID/GID는 그대로 남는다. */
-    @Column(name = "ubuntu_account_active", nullable = false)
-    private boolean ubuntuAccountActive = false;
+    /** 리눅스 계정이 지금 원장(AD)에 있는가. 회수가 끝나면 NONE이 되고 UID/GID는 그대로 남는다. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "ubuntu_account_status", nullable = false, length = 20)
+    private UbuntuAccountStatus ubuntuAccountStatus = UbuntuAccountStatus.NONE;
 
     /**
      * 우분투 로그인 비밀번호의 SHA-512 crypt 해시($6$...). 유저네임처럼 웹 계정에 하나다 — 첫 신청에서
@@ -169,7 +170,12 @@ public class User extends BaseTimeEntity {
 
     /** 리눅스 계정이 지금 살아 있는지. false면 승인 시 계정 생성(또는 같은 UID로 되살리기)을 요청해야 한다. */
     public boolean hasUbuntuAccount() {
-        return this.ubuntuAccountActive;
+        return this.ubuntuAccountStatus == UbuntuAccountStatus.ACTIVE;
+    }
+
+    /** 계정 회수 작업이 도는 중인지. 그 사이 승인·비밀번호 변경은 거절해야 한다 — 지워질 계정에 반영된다. */
+    public boolean isReleasingUbuntuAccount() {
+        return this.ubuntuAccountStatus == UbuntuAccountStatus.RELEASING;
     }
 
     /**
@@ -186,9 +192,31 @@ public class User extends BaseTimeEntity {
             throw new BusinessException(
                     "이미 다른 UID/GID가 배정된 계정입니다.", ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED);
         }
+        if (isReleasingUbuntuAccount()) {
+            throw new BusinessException(ErrorCode.UBUNTU_ACCOUNT_RELEASING);
+        }
         this.ubuntuUid = ubuntuUid;
         this.ubuntuGid = ubuntuGid;
-        this.ubuntuAccountActive = true;
+        this.ubuntuAccountStatus = UbuntuAccountStatus.ACTIVE;
+    }
+
+    /**
+     * 계정 회수를 시작한다. 이미 회수 중이면 그대로 둔다(관리자의 재시도). 계정이 없으면 회수할 것도 없다.
+     *
+     * @return 회수가 진행 중이면 true — 계정 회수 폴러가 컨테이너 회수가 끝나기를 기다렸다가 계정을 지운다
+     */
+    public boolean beginUbuntuAccountRelease() {
+        if (this.ubuntuAccountStatus == UbuntuAccountStatus.NONE) {
+            return false;
+        }
+        this.ubuntuAccountStatus = UbuntuAccountStatus.RELEASING;
+        return true;
+    }
+
+    /** 회수할 노드를 몰라 계정을 지우지 못했을 때 계정이 살아 있는 상태로 되돌린다. */
+    public void abortUbuntuAccountRelease() {
+        requireReleasing();
+        this.ubuntuAccountStatus = UbuntuAccountStatus.ACTIVE;
     }
 
     /**
@@ -197,10 +225,17 @@ public class User extends BaseTimeEntity {
      * config-server는 NAS 홈 소유자가 그 번호일 때 같은 번호로 계정을 되살린다.
      */
     public void releaseUbuntuAccount() {
-        this.ubuntuAccountActive = false;
+        requireReleasing();
+        this.ubuntuAccountStatus = UbuntuAccountStatus.NONE;
         // 계정 삭제는 AD 사용자째 지우므로 그룹 소속도 함께 사라진다. 남겨 두면 화면엔 여전히
         // 멤버로 보이고, 다시 승인될 때 AD에 없는 소속이 새 Pod 에 실린다.
         this.userGroups.clear();
+    }
+
+    private void requireReleasing() {
+        if (!isReleasingUbuntuAccount()) {
+            throw new BusinessException("회수 중인 계정이 아닙니다.", ErrorCode.INVALID_REQUEST_STATUS);
+        }
     }
 
     /**

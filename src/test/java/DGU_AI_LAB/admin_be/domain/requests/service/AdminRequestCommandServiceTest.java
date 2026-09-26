@@ -436,6 +436,19 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
+        @DisplayName("계정 회수가 도는 중인 사용자는 승인을 거절한다 — 새 컨테이너가 곧 지워질 계정을 쓰게 된다")
+        void rejectsWhileAccountReleasing() {
+            Long requestId = 206L;
+            buildMockedRequest(requestId);
+            when(mockUser.isReleasingUbuntuAccount()).thenReturn(true);
+
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_ACCOUNT_RELEASING);
+            verify(operationJobService, never()).registerProvision(any());
+        }
+
+        @Test
         @DisplayName("계정이 있는 사용자는 계정 정보를 빼고 등록하고, 이번 신청의 그룹은 작업 등록 DTO에 실어 보낸다")
         void registersPodOnlyWhenAccountExists() {
             // Given

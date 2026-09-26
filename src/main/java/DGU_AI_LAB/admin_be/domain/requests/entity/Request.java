@@ -61,10 +61,15 @@ public class Request extends BaseTimeEntity {
     private String nodeName;
 
     /**
-     * 지금 진행 중인 작업(생성 또는 마이그레이션)의 번호 — config-server operation_log의 START 행 id.
-     * 작업 결과는 신청 번호로만 조회되므로, 재승인 직후에는 이전 작업의 결과가 보일 수 있다 — 결과 폴러는
-     * 이 번호의 결과만 반영한다. 한 신청에 동시에 도는 작업은 하나뿐이라(PROCESSING과 MIGRATING은
-     * 겹치지 않는다) 칸 하나로 충분하다.
+     * 이 신청 번호로 마지막에 등록한 작업의 번호 — config-server operation_log의 START 행 id.
+     * 작업 결과는 신청 번호로만 조회되므로, 다시 등록한 직후에는 이전 작업의 결과가 보일 수 있다 — 결과 폴러는
+     * 이 번호의 결과만 반영한다. 한 신청에 동시에 도는 작업은 하나뿐이라 칸 하나로 충분하다.
+     *
+     * <ul>
+     *   <li>PROCESSING: 생성 작업, MIGRATING: 마이그레이션 작업, EXPIRING: 컨테이너 회수 작업</li>
+     *   <li>DELETED: 계정 회수 작업. DELETED로 넘어갈 때 비우므로, 값이 있으면 이 신청 번호로 계정 회수를
+     *       등록했다는 뜻이다(계정 회수는 그 노드에서 계정을 마지막으로 쓴 신청 번호로 등록한다).</li>
+     * </ul>
      */
     @Column(name = "job_id")
     private Long jobId;
@@ -126,6 +131,14 @@ public class Request extends BaseTimeEntity {
 
     public void recordJob(Long jobId) {
         this.jobId = jobId;
+    }
+
+    /** 계정 회수 작업을 다시 등록하게 한다(관리자가 계정 회수를 재시도할 때). DELETED 신청에만 쓴다. */
+    public void forgetAccountRevokeJob() {
+        if (this.status != Status.DELETED) {
+            throw new BusinessException("정리가 끝난 신청만 계정 회수 작업을 다시 등록할 수 있습니다.", ErrorCode.INVALID_REQUEST_STATUS);
+        }
+        this.jobId = null;
     }
 
     public void revertToPending() {
@@ -213,11 +226,13 @@ public class Request extends BaseTimeEntity {
      */
     public void beginExpiry() {
         transitionTo(Status.EXPIRING, "이미 정리가 진행 중이거나 정리 가능한 상태가 아닙니다.");
+        this.jobId = null;
     }
 
     /**
      * 인프라 정리에 실패하면 EXPIRING -> FULFILLED로 되돌린다.
      * 되돌려야 다음 만료 스케줄 실행에서 다시 정리 대상(FULFILLED)으로 잡혀 재시도된다.
+     * 작업 번호는 남겨 둔다 — 실패한 회수 작업의 기록이다. 다음 회수 시작(beginExpiry)이 비운다.
      */
     public void endExpiry() {
         transitionTo(Status.FULFILLED, "정리 중인 신청이 아닙니다.");
@@ -263,6 +278,7 @@ public class Request extends BaseTimeEntity {
             throw new BusinessException("요청이 처리 중입니다. 처리가 완료된 후 다시 시도해주세요.", ErrorCode.INVALID_REQUEST_STATUS);
         }
         transitionTo(Status.DELETED, "삭제할 수 없는 상태입니다.");
+        this.jobId = null;
     }
 
     /**
@@ -280,6 +296,7 @@ public class Request extends BaseTimeEntity {
         }
         // podName/nodeName은 어느 노드에서 운영됐는지 이력 조회에 쓰이므로 남겨둔다.
         transitionTo(Status.DELETED, "인프라 정리 후 삭제는 EXPIRING 상태에서만 가능합니다.");
+        this.jobId = null;
     }
 
     /** 신청 유저네임은 웹 계정에 한 번 정해지면 바뀌지 않는 값이라 따로 저장하지 않고 소유자에게서 읽는다. */

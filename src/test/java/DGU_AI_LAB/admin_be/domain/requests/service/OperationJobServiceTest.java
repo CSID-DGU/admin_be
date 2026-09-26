@@ -53,8 +53,7 @@ class OperationJobServiceTest {
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setUp() {
-        // 대기 없이, 제한 시간 60초로 폴링한다(시간 초과 시험은 따로 0초짜리를 만든다).
-        service = new OperationJobService(configWebClient, 0, 60);
+        service = new OperationJobService(configWebClient);
 
         when(configWebClient.post()).thenReturn(postUriSpec);
         when(postUriSpec.uri(anyString())).thenReturn(postBodySpec);
@@ -83,12 +82,13 @@ class OperationJobServiceTest {
     }
 
     @Test
-    @DisplayName("회수 작업은 /operations/revoke로 등록한다")
+    @DisplayName("회수 작업은 /operations/revoke로 등록하고 작업 번호를 돌려준다")
     void registersRevoke() {
         RevokeRegisterRequestDTO body =
                 new RevokeRegisterRequestDTO(41L, "ailab-exp-np-001-abcd", "exp-np-001", "farm2", true);
+        when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "accepted", "job_id", 3617)));
 
-        service.registerRevoke(body);
+        assertThat(service.registerRevoke(body, ErrorCode.POD_DELETION_FAILED)).isEqualTo(3617L);
 
         verify(postUriSpec).uri("/operations/revoke");
         verify(postBodySpec).bodyValue(body);
@@ -193,120 +193,56 @@ class OperationJobServiceTest {
     }
 
     @Nested
-    @DisplayName("revokeAndWait")
-    class RevokeAndWait {
+    @DisplayName("registerRevoke")
+    class RegisterRevoke {
 
         private final RevokeRegisterRequestDTO podRevoke =
                 new RevokeRegisterRequestDTO(41L, "ailab-exp-np-001-abcd", null, null, false);
-        private final RevokeRegisterRequestDTO accountRevoke =
-                new RevokeRegisterRequestDTO(41L, null, "exp-np-001", "farm2", true);
-
-        private JobResultResponseDTO revokeJob(String phase, String errorCode) {
-            return new JobResultResponseDTO("41", OperationJobService.KIND_REVOKE, 7L, phase, errorCode, null, null);
-        }
 
         @Test
-        @DisplayName("작업을 등록하고 성공할 때까지 결과를 조회한다")
-        void waitsUntilSuccess() {
-            when(responseSpec.bodyToMono(JobResultResponseDTO.class)).thenReturn(
-                    Mono.just(revokeJob(OperationJobService.PHASE_START, null)),
-                    Mono.just(revokeJob(OperationJobService.PHASE_SUCCESS, null)));
-
-            service.revokeAndWait(podRevoke, ErrorCode.POD_DELETION_FAILED);
-
-            verify(postUriSpec).uri("/operations/revoke");
-            verify(postBodySpec).bodyValue(podRevoke);
-            verify(getUriSpec, times(2)).uri("/operations/revoke/41");
-        }
-
-        @Test
-        @DisplayName("작업이 실패로 끝나면 호출자가 준 오류 코드로 실패한다")
-        void failsWithCallerErrorCode() {
-            when(responseSpec.bodyToMono(JobResultResponseDTO.class))
-                    .thenReturn(Mono.just(revokeJob(OperationJobService.PHASE_FAIL, "ACCOUNT_IN_USE")));
-
-            assertThatThrownBy(() -> service.revokeAndWait(accountRevoke, ErrorCode.UBUNTU_USER_DELETION_FAILED))
-                    .isInstanceOf(BusinessException.class)
-                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_USER_DELETION_FAILED)
-                    .hasMessageContaining("ACCOUNT_IN_USE");
-        }
-
-        @Test
-        @DisplayName("이미 없는 계정을 지우려다 실패한 것은 성공으로 본다 — 목표 상태에 이미 도달했다")
-        void accountAlreadyAbsentIsSuccess() {
-            when(responseSpec.bodyToMono(JobResultResponseDTO.class))
-                    .thenReturn(Mono.just(revokeJob(OperationJobService.PHASE_FAIL, "user not found")));
-
-            service.revokeAndWait(accountRevoke, ErrorCode.UBUNTU_USER_DELETION_FAILED);
-        }
-
-        @Test
-        @DisplayName("계정 회수가 아닌 작업의 user not found 실패는 성공으로 보지 않는다")
-        void userNotFoundOnPodRevokeIsFailure() {
-            when(responseSpec.bodyToMono(JobResultResponseDTO.class))
-                    .thenReturn(Mono.just(revokeJob(OperationJobService.PHASE_FAIL, "user not found")));
-
-            assertThatThrownBy(() -> service.revokeAndWait(podRevoke, ErrorCode.POD_DELETION_FAILED))
-                    .isInstanceOf(BusinessException.class);
-        }
-
-        @Test
-        @DisplayName("결과 불명이면 실패로 올린다 — 자원이 남았을 수 있어 호출자가 정리를 확정하면 안 된다")
-        void unknownIsFailure() {
-            when(responseSpec.bodyToMono(JobResultResponseDTO.class))
-                    .thenReturn(Mono.just(revokeJob(OperationJobService.PHASE_UNKNOWN, "DEGRADED")));
-
-            assertThatThrownBy(() -> service.revokeAndWait(podRevoke, ErrorCode.POD_DELETION_FAILED))
-                    .isInstanceOf(BusinessException.class)
-                    .hasMessageContaining("결과 불명");
-        }
-
-        @Test
-        @DisplayName("제한 시간 안에 끝나지 않으면 실패한다")
-        void timesOut() {
-            OperationJobService impatient = new OperationJobService(configWebClient, 0, 0);
-            when(responseSpec.bodyToMono(JobResultResponseDTO.class))
-                    .thenReturn(Mono.just(revokeJob(OperationJobService.PHASE_START, null)));
-
-            assertThatThrownBy(() -> impatient.revokeAndWait(podRevoke, ErrorCode.POD_DELETION_FAILED))
-                    .isInstanceOf(BusinessException.class)
-                    .hasMessageContaining("제한 시간");
-        }
-
-        @Test
-        @DisplayName("같은 신청의 회수 작업이 이미 진행 중이면(409) 새로 등록하지 않고 그 결과를 기다린다")
-        void alreadyRegisteredWaitsForExistingJob() {
+        @DisplayName("같은 신청의 회수 작업이 이미 진행 중이면(409) INVALID_REQUEST_STATUS로 알린다")
+        void conflictIsInvalidRequestStatus() {
             when(responseSpec.bodyToMono(Map.class))
                     .thenReturn(Mono.error(new BusinessException("이미 처리 중", ErrorCode.INVALID_REQUEST_STATUS)));
-            when(responseSpec.bodyToMono(JobResultResponseDTO.class))
-                    .thenReturn(Mono.just(revokeJob(OperationJobService.PHASE_SUCCESS, null)));
 
-            service.revokeAndWait(podRevoke, ErrorCode.POD_DELETION_FAILED);
-
-            verify(getUriSpec).uri("/operations/revoke/41");
+            assertThatThrownBy(() -> service.registerRevoke(podRevoke, ErrorCode.POD_DELETION_FAILED))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REQUEST_STATUS);
         }
 
         @Test
-        @DisplayName("등록 자체가 실패하면 결과를 조회하지 않고 실패한다")
-        void registrationFailureStops() {
-            when(responseSpec.bodyToMono(Map.class))
-                    .thenReturn(Mono.error(new BusinessException("작업 등록 실패", ErrorCode.POD_DELETION_FAILED)));
+        @DisplayName("예기치 않은 등록 오류는 호출자가 준 오류 코드로 올린다")
+        void unexpectedErrorUsesCallerCode() {
+            when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.error(new RuntimeException("connection reset")));
 
-            assertThatThrownBy(() -> service.revokeAndWait(podRevoke, ErrorCode.POD_DELETION_FAILED))
-                    .isInstanceOf(BusinessException.class);
-            verify(configWebClient, never()).get();
+            assertThatThrownBy(() -> service.registerRevoke(podRevoke, ErrorCode.UBUNTU_USER_DELETION_FAILED))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_USER_DELETION_FAILED);
+        }
+    }
+
+    @Nested
+    @DisplayName("isAccountAlreadyAbsent")
+    class AccountAlreadyAbsent {
+
+        private JobResultResponseDTO failed(String errorCode) {
+            return new JobResultResponseDTO("41", OperationJobService.KIND_REVOKE, 7L,
+                    OperationJobService.PHASE_FAIL, errorCode, null, null);
         }
 
         @Test
-        @DisplayName("결과 조회가 한 번 실패해도 다시 조회해 결과를 받는다")
-        void transientLookupFailureRetries() {
-            when(responseSpec.bodyToMono(JobResultResponseDTO.class)).thenReturn(
-                    Mono.error(new RuntimeException("connection reset")),
-                    Mono.just(revokeJob(OperationJobService.PHASE_SUCCESS, null)));
+        @DisplayName("이미 없는 계정을 지우려다 실패한 것은 목표 상태에 도달한 것이다")
+        void userNotFound() {
+            assertThat(OperationJobService.isAccountAlreadyAbsent(failed("user not found"))).isTrue();
+            assertThat(OperationJobService.isAccountAlreadyAbsent(failed("USER_NOT_FOUND"))).isTrue();
+        }
 
-            service.revokeAndWait(podRevoke, ErrorCode.POD_DELETION_FAILED);
-
-            verify(getUriSpec, times(2)).uri("/operations/revoke/41");
+        @Test
+        @DisplayName("다른 실패와 오류 코드가 없는 결과는 아니다")
+        void otherFailures() {
+            assertThat(OperationJobService.isAccountAlreadyAbsent(failed("ACCOUNT_IN_USE"))).isFalse();
+            assertThat(OperationJobService.isAccountAlreadyAbsent(failed(null))).isFalse();
+            assertThat(OperationJobService.isAccountAlreadyAbsent(null)).isFalse();
         }
     }
 

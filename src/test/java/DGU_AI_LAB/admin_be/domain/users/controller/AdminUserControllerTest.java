@@ -96,12 +96,12 @@ class AdminUserControllerTest extends WebMvcTestSupport {
     class DeleteUser {
 
         @Test
-        @DisplayName("유저를 삭제하면 200 OK를 반환한다")
-        void deleteUser_returns200() throws Exception {
+        @DisplayName("유저를 삭제하면 202 Accepted를 반환한다 — 컨테이너·계정 회수는 뒤에서 끝난다")
+        void deleteUser_returns202() throws Exception {
             doNothing().when(adminUserService).deleteUser(1L);
 
             mockMvc.perform(delete("/api/admin/users/1").contentType(MediaType.APPLICATION_JSON))
-                    .andExpect(status().isOk());
+                    .andExpect(status().isAccepted());
         }
 
         @Test
@@ -177,7 +177,7 @@ class AdminUserControllerTest extends WebMvcTestSupport {
     @DisplayName("DELETE /api/admin/users/{id}/ubuntu-account는 사용자 번호로 계정을 회수한다")
     void deleteUbuntuAccountByUserId() throws Exception {
         mockMvc.perform(delete("/api/admin/users/5/ubuntu-account").contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk());
+                .andExpect(status().isAccepted());
         org.mockito.Mockito.verify(adminUserService).deleteUbuntuAccountOfUser(5L);
     }
 

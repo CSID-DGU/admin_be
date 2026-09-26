@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.repository;
 
+import DGU_AI_LAB.admin_be.domain.users.entity.UbuntuAccountStatus;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -22,6 +23,8 @@ public interface UserRepository extends JpaRepository<User,Long> {
     boolean existsByUbuntuUsername(String ubuntuUsername);
 
     Optional<User> findByUbuntuUsername(String ubuntuUsername);
+
+    List<User> findAllByUbuntuAccountStatus(UbuntuAccountStatus ubuntuAccountStatus);
 
     /**
      * 우분투 계정(UID/GID) 배정 시점의 "확인 후 배정" 경합을 막기 위한 행 잠금 조회.
