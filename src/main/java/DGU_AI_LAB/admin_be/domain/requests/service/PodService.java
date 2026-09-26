@@ -15,7 +15,7 @@ import java.util.Map;
 
 /**
  * 신청에 딸리지 않은 고아 Pod를 지우는 Infra API 호출 서비스.
- * 신청에 딸린 컨테이너의 생성·회수는 config-server 작업(OperationJobService)이 한다.
+ * 신청에 딸린 컨테이너의 생성·회수는 config-server 작업(JobClient)이 한다.
  */
 @Slf4j
 @Service

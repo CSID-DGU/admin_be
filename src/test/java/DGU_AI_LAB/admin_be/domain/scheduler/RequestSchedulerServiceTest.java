@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.AdminBeApplication;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
@@ -8,7 +10,6 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
-import DGU_AI_LAB.admin_be.domain.requests.service.OperationJobService;
 import DGU_AI_LAB.admin_be.domain.requests.service.UbuntuAccountService;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
@@ -62,7 +63,7 @@ public class RequestSchedulerServiceTest {
     private UbuntuAccountService ubuntuAccountService;
 
     @MockitoBean
-    private OperationJobService operationJobService;
+    private JobClient jobClient;
 
     @Autowired private RequestRepository requestRepository;
     @Autowired private UserRepository userRepository;
@@ -139,14 +140,14 @@ public class RequestSchedulerServiceTest {
             mockedTime.when(LocalDateTime::now).thenReturn(MOCK_NOW);
             mockedTime.when(() -> LocalDateTime.now(any(ZoneId.class))).thenReturn(MOCK_NOW);
 
-            when(operationJobService.registerRevoke(any(), any())).thenReturn(555L);
+            when(jobClient.registerRevoke(any(), any())).thenReturn(555L);
             requestSchedulerService.runScheduler();
 
             // 만료 스케줄러는 회수 작업만 등록하고 돌아온다 — 결과는 회수 결과 폴러가 반영한다.
             assertThat(requestRepository.findById(reqExpired.getRequestId()).orElseThrow().getStatus())
                     .isEqualTo(Status.EXPIRING);
-            when(operationJobService.getResult(OperationJobService.KIND_REVOKE, reqExpired.getRequestId())).thenReturn(
-                    new JobResultResponseDTO(null, OperationJobService.KIND_REVOKE, 555L, OperationJobService.PHASE_SUCCESS, null, null, null));
+            when(jobClient.getResult(JobResults.KIND_REVOKE, reqExpired.getRequestId())).thenReturn(
+                    new JobResultResponseDTO(null, JobResults.KIND_REVOKE, 555L, JobResults.PHASE_SUCCESS, null, null, null));
             revokeJobPoller.pollRevokeJobs();
         }
 
@@ -257,8 +258,8 @@ public class RequestSchedulerServiceTest {
         em.clear();
 
         // 생성 작업이 등록되지 않은 채 멈춘 신청 — 되돌림 대상이다.
-        when(operationJobService.getResult(anyString(), anyLong())).thenReturn(
-                new JobResultResponseDTO(null, OperationJobService.KIND_PROVISION, null, OperationJobService.PHASE_NONE, null, null, null));
+        when(jobClient.getResult(anyString(), anyLong())).thenReturn(
+                new JobResultResponseDTO(null, JobResults.KIND_PROVISION, null, JobResults.PHASE_NONE, null, null, null));
 
         try (MockedStatic<LocalDateTime> mockedTime = Mockito.mockStatic(LocalDateTime.class, Mockito.CALLS_REAL_METHODS)) {
             mockedTime.when(LocalDateTime::now).thenReturn(MOCK_NOW);

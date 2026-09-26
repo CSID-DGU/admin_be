@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -15,7 +16,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class UbuntuAccountService {
 
-    private final OperationJobService operationJobService;
+    private final JobClient jobClient;
 
     /**
      * 우분투 계정과 Kerberos principal의 회수 작업을 등록한다. 홈 디렉터리는 보존한다.
@@ -33,7 +34,7 @@ public class UbuntuAccountService {
                     ErrorCode.UBUNTU_USER_DELETION_FAILED);
         }
         log.info("계정 회수 작업 등록: {}, node={}, requestId={}", username, nodeName, requestId);
-        return operationJobService.registerRevoke(
+        return jobClient.registerRevoke(
                 new RevokeRegisterRequestDTO(requestId, null, username, nodeName, true),
                 ErrorCode.UBUNTU_USER_DELETION_FAILED);
     }

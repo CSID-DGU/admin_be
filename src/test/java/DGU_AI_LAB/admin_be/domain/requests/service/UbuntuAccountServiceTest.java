@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -25,17 +26,17 @@ class UbuntuAccountServiceTest {
     private UbuntuAccountService ubuntuAccountService;
 
     @Mock
-    private OperationJobService operationJobService;
+    private JobClient jobClient;
 
     @Test
     @DisplayName("계정 회수 작업을 신청 번호·노드와 함께 등록하고 작업 번호를 돌려준다 — Pod는 대상이 아니다")
     void registersAccountRevoke() {
-        when(operationJobService.registerRevoke(any(), any())).thenReturn(77L);
+        when(jobClient.registerRevoke(any(), any())).thenReturn(77L);
 
         assertThat(ubuntuAccountService.registerAccountRevoke("testuser", "farm2", 4821L)).isEqualTo(77L);
 
         ArgumentCaptor<RevokeRegisterRequestDTO> captor = ArgumentCaptor.forClass(RevokeRegisterRequestDTO.class);
-        verify(operationJobService).registerRevoke(captor.capture(), eq(ErrorCode.UBUNTU_USER_DELETION_FAILED));
+        verify(jobClient).registerRevoke(captor.capture(), eq(ErrorCode.UBUNTU_USER_DELETION_FAILED));
         RevokeRegisterRequestDTO body = captor.getValue();
         assertThat(body.requestId()).isEqualTo(4821L);
         assertThat(body.username()).isEqualTo("testuser");
@@ -51,13 +52,13 @@ class UbuntuAccountServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_USER_DELETION_FAILED);
 
-        verifyNoInteractions(operationJobService);
+        verifyNoInteractions(jobClient);
     }
 
     @Test
     @DisplayName("등록이 실패하면 예외를 그대로 전파한다")
     void propagatesRegistrationFailure() {
-        when(operationJobService.registerRevoke(any(), any()))
+        when(jobClient.registerRevoke(any(), any()))
                 .thenThrow(new BusinessException("작업 등록 실패", ErrorCode.UBUNTU_USER_DELETION_FAILED));
 
         assertThatThrownBy(() -> ubuntuAccountService.registerAccountRevoke("testuser", "farm2", 1L))

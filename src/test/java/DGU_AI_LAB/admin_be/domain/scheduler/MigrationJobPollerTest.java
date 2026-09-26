@@ -1,10 +1,10 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
-import DGU_AI_LAB.admin_be.domain.requests.service.OperationJobService;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodMigrationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,14 +26,14 @@ import static org.mockito.Mockito.*;
 class MigrationJobPollerTest {
 
     @Mock private RequestRepository requestRepository;
-    @Mock private OperationJobService operationJobService;
+    @Mock private JobClient jobClient;
     @Mock private PodMigrationService podMigrationService;
 
     private MigrationJobPoller poller;
 
     @BeforeEach
     void setUp() {
-        poller = new MigrationJobPoller(requestRepository, operationJobService, podMigrationService);
+        poller = new MigrationJobPoller(requestRepository, jobClient, podMigrationService);
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(1L);
         when(request.getJobId()).thenReturn(5L); // given()의 작업 번호와 같다
@@ -41,7 +41,7 @@ class MigrationJobPollerTest {
     }
 
     private void given(String phase, String errorCode, JobResultResponseDTO.Result made) {
-        when(operationJobService.getResult("migrate", 1L))
+        when(jobClient.getResult("migrate", 1L))
                 .thenReturn(new JobResultResponseDTO("1", "migrate", 5L, phase, errorCode, null, made));
     }
 

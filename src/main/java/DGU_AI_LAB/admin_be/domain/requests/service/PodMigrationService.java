@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
@@ -37,7 +39,7 @@ public class PodMigrationService {
 
     private final RequestRepository requestRepository;
     private final PodExternalPortRepository podExternalPortRepository;
-    private final OperationJobService operationJobService;
+    private final JobClient jobClient;
     private final PlatformTransactionManager transactionManager;
     private final AlarmService alarmService;
 
@@ -63,17 +65,17 @@ public class PodMigrationService {
         try {
             Request req = requestRepository.findById(requestId).orElse(null);
             if (req == null || req.getStatus() != Status.MIGRATING
-                    || OperationJobService.awaitingRegistration(req.getJobId(), req.getUpdatedAt())) {
+                    || JobResults.awaitingRegistration(req.getJobId(), req.getUpdatedAt())) {
                 return;
             }
-            JobResultResponseDTO result = operationJobService.getResult(OperationJobService.KIND_MIGRATE, requestId);
-            if (OperationJobService.isFromOtherJob(req.getJobId(), result)) {
+            JobResultResponseDTO result = jobClient.getResult(JobResults.KIND_MIGRATE, requestId);
+            if (JobResults.isFromOtherJob(req.getJobId(), result)) {
                 return;
             }
             switch (result.phase()) {
-                case OperationJobService.PHASE_SUCCESS -> completeMigrationJob(requestId, result.result());
-                case OperationJobService.PHASE_FAIL -> {
-                    if (!OperationJobService.isDegraded(result)) {
+                case JobResults.PHASE_SUCCESS -> completeMigrationJob(requestId, result.result());
+                case JobResults.PHASE_FAIL -> {
+                    if (!JobResults.isDegraded(result)) {
                         failMigrationJob(requestId, result);
                     }
                 }
@@ -98,7 +100,7 @@ public class PodMigrationService {
         });
         Long jobId;
         try {
-            jobId = operationJobService.registerMigrate(new MigrateRegisterRequestDTO(
+            jobId = jobClient.registerMigrate(new MigrateRegisterRequestDTO(
                     requestId, podNameRef[0], usernameRef[0], dto.nodes(), dto.minImprovementRatio(), dto.force()));
         } catch (RuntimeException e) {
             revertToFulfilled(requestId);
@@ -193,7 +195,7 @@ public class PodMigrationService {
         if (!requestRepository.existsById(requestId)) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
-        return MigrationResultResponseDTO.from(operationJobService.getResult(OperationJobService.KIND_MIGRATE, requestId));
+        return MigrationResultResponseDTO.from(jobClient.getResult(JobResults.KIND_MIGRATE, requestId));
     }
 
     private void revertToFulfilled(Long requestId) {

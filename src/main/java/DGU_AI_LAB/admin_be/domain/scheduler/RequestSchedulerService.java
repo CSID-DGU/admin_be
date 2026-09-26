@@ -1,12 +1,13 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
-import DGU_AI_LAB.admin_be.domain.requests.service.OperationJobService;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
@@ -34,7 +35,7 @@ public class RequestSchedulerService {
     private final MessageUtils messageUtils;
     private final RequestNotificationService requestNotificationService;
     private final AdminRequestCommandService adminRequestCommandService;
-    private final OperationJobService operationJobService;
+    private final JobClient jobClient;
 
     // 이 시간 넘게 상태가 바뀌지 않은 요청을 재조정 대상으로 본다. PROCESSING은 여기에 더해 생성 작업의
     // 상태를 확인하고 되돌리므로(reconcileStaleProcessing), 재시도로 길어진 작업을 시간만 보고 되돌리지 않는다.
@@ -91,14 +92,14 @@ public class RequestSchedulerService {
         Long requestId = request.getRequestId();
         String phase;
         try {
-            JobResultResponseDTO job = operationJobService.getResult(OperationJobService.KIND_PROVISION, requestId);
+            JobResultResponseDTO job = jobClient.getResult(JobResults.KIND_PROVISION, requestId);
             // 자원을 남긴 실패(DEGRADED)는 되돌리면 안 되므로 결과 불명과 같이 취급한다.
-            phase = OperationJobService.isDegraded(job) ? OperationJobService.ERROR_DEGRADED : job.phase();
+            phase = JobResults.isDegraded(job) ? JobResults.ERROR_DEGRADED : job.phase();
         } catch (Exception e) {
             log.warn("🔧 [재조정] 생성 작업 상태를 조회하지 못해 PROCESSING 요청을 그대로 둔다: requestId={}", requestId, e);
             return;
         }
-        if (!OperationJobService.PHASE_NONE.equals(phase) && !OperationJobService.PHASE_FAIL.equals(phase)) {
+        if (!JobResults.PHASE_NONE.equals(phase) && !JobResults.PHASE_FAIL.equals(phase)) {
             log.info("🔧 [재조정] 생성 작업이 {} 상태라 PROCESSING 요청을 되돌리지 않는다: requestId={}", phase, requestId);
             return;
         }
@@ -124,12 +125,12 @@ public class RequestSchedulerService {
         Long requestId = request.getRequestId();
         String phase;
         try {
-            phase = operationJobService.getResult(OperationJobService.KIND_REVOKE, requestId).phase();
+            phase = jobClient.getResult(JobResults.KIND_REVOKE, requestId).phase();
         } catch (Exception e) {
             log.warn("🔧 [재조정] 회수 작업 상태를 조회하지 못해 EXPIRING 요청을 그대로 둔다: requestId={}", requestId, e);
             return;
         }
-        if (!OperationJobService.PHASE_NONE.equals(phase)) {
+        if (!JobResults.PHASE_NONE.equals(phase)) {
             log.info("🔧 [재조정] 회수 작업이 {} 상태라 EXPIRING 요청을 결과 폴러에 맡긴다: requestId={}", phase, requestId);
             return;
         }

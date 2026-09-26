@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
@@ -48,7 +50,7 @@ public class AdminRequestCommandService {
     private final ContainerImageRepository containerImageRepository;
     private final ResourceGroupRepository resourceGroupRepository;
     private final PodExternalPortRepository podExternalPortRepository;
-    private final OperationJobService operationJobService;
+    private final JobClient jobClient;
     private final PlatformTransactionManager transactionManager;
 
     // 계정 존재 확인~생성~UID 커밋 구간을 userId별로 직렬화한다. 이 구간은 짧은 DB
@@ -173,7 +175,7 @@ public class AdminRequestCommandService {
 
     private Long registerProvisionJob(ProvisionRegisterRequestDTO body, Long requestId, String username, String serverName) {
         try {
-            return operationJobService.registerProvision(body);
+            return jobClient.registerProvision(body);
         } catch (Exception e) {
             return registeredJobDespiteFailure(requestId, username, serverName, e);
         }
@@ -189,14 +191,14 @@ public class AdminRequestCommandService {
      *                          (재조정 스케줄러가 작업 상태를 보고 판단한다) 원래 오류를 던진다
      */
     private Long registeredJobDespiteFailure(Long requestId, String username, String serverName, Exception cause) {
-        if (OperationJobService.neverReachedServer(cause)) {
+        if (JobResults.neverReachedServer(cause)) {
             // 요청이 config-server에 닿지도 않았으므로 작업은 없다. 작업 상태 조회(대개 같은 이유로 실패한다)를
             // 기다리지 않고 바로 되돌린다 — 그러지 않으면 재조정이 돌 때까지 PROCESSING에 갇힌다.
             return revertUnregistered(requestId, username, serverName, cause);
         }
         JobResultResponseDTO job;
         try {
-            job = operationJobService.getResult(OperationJobService.KIND_PROVISION, requestId);
+            job = jobClient.getResult(JobResults.KIND_PROVISION, requestId);
         } catch (Exception lookupFailure) {
             log.warn("생성 작업 등록 실패 후 작업 상태 조회도 실패 — PROCESSING 유지, 재조정에 맡김: requestId={}", requestId, lookupFailure);
             notifyApprovalFailure(String.format(
@@ -204,7 +206,7 @@ public class AdminRequestCommandService {
                     username, requestId, cause.getMessage()), serverName);
             throw asRuntime(cause);
         }
-        if (job != null && OperationJobService.PHASE_START.equals(job.phase())) {
+        if (job != null && JobResults.PHASE_START.equals(job.phase())) {
             log.warn("생성 작업 등록 응답은 실패했지만 작업이 도는 중 — 이어받음: requestId={}, jobId={}", requestId, job.jobId(), cause);
             return job.jobId();
         }
@@ -420,16 +422,16 @@ public class AdminRequestCommandService {
         Request request = new TransactionTemplate(transactionManager).execute(status ->
                 requestRepository.findById(requestId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)));
-        if (OperationJobService.awaitingRegistration(request.getJobId(), request.getUpdatedAt())) {
+        if (JobResults.awaitingRegistration(request.getJobId(), request.getUpdatedAt())) {
             throw new BusinessException(ErrorCode.PROVISION_JOB_IN_PROGRESS);
         }
-        JobResultResponseDTO job = operationJobService.getResult(OperationJobService.KIND_PROVISION, requestId);
-        if (OperationJobService.isFromOtherJob(request.getJobId(), job)) {
+        JobResultResponseDTO job = jobClient.getResult(JobResults.KIND_PROVISION, requestId);
+        if (JobResults.isFromOtherJob(request.getJobId(), job)) {
             // 이번 승인의 작업이 아직 보이지 않는다(이전 작업 결과가 보임).
             throw new BusinessException(ErrorCode.PROVISION_JOB_IN_PROGRESS);
         }
-        boolean running = OperationJobService.PHASE_START.equals(job.phase());
-        boolean successPending = OperationJobService.PHASE_SUCCESS.equals(job.phase())
+        boolean running = JobResults.PHASE_START.equals(job.phase());
+        boolean successPending = JobResults.PHASE_SUCCESS.equals(job.phase())
                 && job.result() != null && job.result().podName() != null;
         if (running || successPending) {
             throw new BusinessException(ErrorCode.PROVISION_JOB_IN_PROGRESS);

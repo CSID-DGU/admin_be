@@ -1,11 +1,12 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
-import DGU_AI_LAB.admin_be.domain.requests.service.OperationJobService;
 import DGU_AI_LAB.admin_be.domain.requests.service.UbuntuAccountService;
 import DGU_AI_LAB.admin_be.domain.users.entity.UbuntuAccountStatus;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
@@ -47,7 +48,7 @@ class UbuntuAccountReleaseServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private RequestRepository requestRepository;
     @Mock private UbuntuAccountService ubuntuAccountService;
-    @Mock private OperationJobService operationJobService;
+    @Mock private JobClient jobClient;
     @Mock private AlarmService alarmService;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
@@ -86,8 +87,8 @@ class UbuntuAccountReleaseServiceTest {
     }
 
     private void givenResult(long requestId, Long jobId, String phase, String errorCode) {
-        when(operationJobService.getResult(OperationJobService.KIND_REVOKE, requestId)).thenReturn(
-                new JobResultResponseDTO(String.valueOf(requestId), OperationJobService.KIND_REVOKE, jobId, phase, errorCode, null, null));
+        when(jobClient.getResult(JobResults.KIND_REVOKE, requestId)).thenReturn(
+                new JobResultResponseDTO(String.valueOf(requestId), JobResults.KIND_REVOKE, jobId, phase, errorCode, null, null));
     }
 
     @Test
@@ -136,8 +137,8 @@ class UbuntuAccountReleaseServiceTest {
     void allSucceededReleases() {
         request(30L, Status.DELETED, "farm1", 501L);
         request(20L, Status.DELETED, "farm2", 502L);
-        givenResult(30L, 501L, OperationJobService.PHASE_SUCCESS, null);
-        givenResult(20L, 502L, OperationJobService.PHASE_FAIL, "user not found");
+        givenResult(30L, 501L, JobResults.PHASE_SUCCESS, null);
+        givenResult(20L, 502L, JobResults.PHASE_FAIL, "user not found");
 
         service.advance(USER_ID);
 
@@ -151,8 +152,8 @@ class UbuntuAccountReleaseServiceTest {
     void failureKeepsReleasingAndAlertsOnce() {
         request(30L, Status.DELETED, "farm1", 501L);
         request(20L, Status.DELETED, "farm2", 502L);
-        givenResult(30L, 501L, OperationJobService.PHASE_SUCCESS, null);
-        givenResult(20L, 502L, OperationJobService.PHASE_FAIL, "ACCOUNT_IN_USE");
+        givenResult(30L, 501L, JobResults.PHASE_SUCCESS, null);
+        givenResult(20L, 502L, JobResults.PHASE_FAIL, "ACCOUNT_IN_USE");
 
         service.advance(USER_ID);
         service.advance(USER_ID);
@@ -166,8 +167,8 @@ class UbuntuAccountReleaseServiceTest {
     void waitsForRunningOrOtherJob() {
         request(30L, Status.DELETED, "farm1", 501L);
         request(20L, Status.DELETED, "farm2", 502L);
-        givenResult(30L, 501L, OperationJobService.PHASE_START, null);
-        givenResult(20L, 400L, OperationJobService.PHASE_SUCCESS, null);
+        givenResult(30L, 501L, JobResults.PHASE_START, null);
+        givenResult(20L, 400L, JobResults.PHASE_SUCCESS, null);
 
         service.advance(USER_ID);
 
@@ -222,7 +223,7 @@ class UbuntuAccountReleaseServiceTest {
 
         service.advance(USER_ID);
 
-        verifyNoInteractions(ubuntuAccountService, operationJobService, alarmService);
+        verifyNoInteractions(ubuntuAccountService, jobClient, alarmService);
         verify(requestRepository, never()).findAllByUser(eq(user));
     }
 }

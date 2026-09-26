@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
@@ -71,7 +72,7 @@ class AdminRequestCommandServiceApprovalContractTest {
     @Mock private GroupRepository groupRepository;
     @Mock private GroupService groupService;
     @Mock private PodExternalPortRepository podExternalPortRepository;
-    @Mock private OperationJobService operationJobService;
+    @Mock private JobClient jobClient;
     @Mock private PortRequestService portRequestService;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
@@ -88,7 +89,7 @@ class AdminRequestCommandServiceApprovalContractTest {
 
         service = new AdminRequestCommandService(
                 alarmService, requestRepository, userRepository, containerImageRepository,
-                resourceGroupRepository, podExternalPortRepository, operationJobService,
+                resourceGroupRepository, podExternalPortRepository, jobClient,
                 transactionManager
         );
 
@@ -127,11 +128,11 @@ class AdminRequestCommandServiceApprovalContractTest {
 
         service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, "승인합니다"));
 
-        InOrder order = inOrder(requestRepository, request, operationJobService);
+        InOrder order = inOrder(requestRepository, request, jobClient);
         order.verify(requestRepository).findByIdForUpdate(requestId);
         order.verify(request).markAsProcessing();
         order.verify(request).prepareAsyncApproval(mockImage, mockRg, "승인합니다");
-        order.verify(operationJobService).registerProvision(any(ProvisionRegisterRequestDTO.class));
+        order.verify(jobClient).registerProvision(any(ProvisionRegisterRequestDTO.class));
 
         // 계정을 새로 만드는 경로에서는 생성 작업이 그룹까지 함께 넣으므로 여기서 더하지 않는다.
         verify(groupService, never()).addUserToGroups(anyString(), anyList());
@@ -148,7 +149,7 @@ class AdminRequestCommandServiceApprovalContractTest {
         service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
 
         ArgumentCaptor<ProvisionRegisterRequestDTO> captor = ArgumentCaptor.forClass(ProvisionRegisterRequestDTO.class);
-        verify(operationJobService).registerProvision(captor.capture());
+        verify(jobClient).registerProvision(captor.capture());
         assertThat(captor.getValue().account().expectedUid()).isEqualTo(55000L);
     }
 
@@ -157,12 +158,12 @@ class AdminRequestCommandServiceApprovalContractTest {
     void recordsRegisteredJobId() {
         Long requestId = 303L;
         Request request = approvableRequest(requestId);
-        when(operationJobService.registerProvision(any(ProvisionRegisterRequestDTO.class))).thenReturn(3616L);
+        when(jobClient.registerProvision(any(ProvisionRegisterRequestDTO.class))).thenReturn(3616L);
 
         service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
 
-        InOrder order = inOrder(operationJobService, request);
-        order.verify(operationJobService).registerProvision(any(ProvisionRegisterRequestDTO.class));
+        InOrder order = inOrder(jobClient, request);
+        order.verify(jobClient).registerProvision(any(ProvisionRegisterRequestDTO.class));
         order.verify(request).recordJob(3616L);
     }
 
@@ -176,9 +177,9 @@ class AdminRequestCommandServiceApprovalContractTest {
         service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
 
         ArgumentCaptor<ProvisionRegisterRequestDTO> captor = ArgumentCaptor.forClass(ProvisionRegisterRequestDTO.class);
-        InOrder order = inOrder(request, operationJobService);
+        InOrder order = inOrder(request, jobClient);
         order.verify(request).prepareAsyncApproval(mockImage, mockRg, null);
-        order.verify(operationJobService).registerProvision(captor.capture());
+        order.verify(jobClient).registerProvision(captor.capture());
         assertThat(captor.getValue().account()).isNull();
 
         // config-server의 provision 제어기가 Pod 생성 후 그룹을 추가하므로 로컬에서는 호출하지 않는다.
@@ -191,13 +192,13 @@ class AdminRequestCommandServiceApprovalContractTest {
         Long requestId = 303L;
         Request request = approvableRequest(requestId);
         doThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED))
-                .when(operationJobService).registerProvision(any());
+                .when(jobClient).registerProvision(any());
 
         assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
                 .isInstanceOf(BusinessException.class);
 
-        InOrder order = inOrder(operationJobService, alarmService, request);
-        order.verify(operationJobService).registerProvision(any(ProvisionRegisterRequestDTO.class));
+        InOrder order = inOrder(jobClient, alarmService, request);
+        order.verify(jobClient).registerProvision(any(ProvisionRegisterRequestDTO.class));
         order.verify(alarmService).sendAdminSlackNotification(eq("farm2"), anyString());
         order.verify(request).revertToPending();
     }

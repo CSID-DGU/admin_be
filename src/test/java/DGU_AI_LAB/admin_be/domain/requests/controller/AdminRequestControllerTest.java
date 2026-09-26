@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobHistoryService;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestQueryService;
 import DGU_AI_LAB.admin_be.support.WebMvcTestSupport;
@@ -17,7 +18,6 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doNothing;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-import DGU_AI_LAB.admin_be.domain.requests.service.OperationJobService;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodMigrationService;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -40,7 +40,7 @@ class AdminRequestControllerTest extends WebMvcTestSupport {
     @MockitoBean private AdminRequestCommandService adminRequestCommandService;
     @MockitoBean private AdminRequestQueryService adminRequestQueryService;
     @MockitoBean private PodMigrationService podMigrationService;
-    @MockitoBean private OperationJobService operationJobService;
+    @MockitoBean private JobHistoryService jobHistoryService;
     @MockitoBean private RequestExpiryService requestExpiryService;
 
     @Test
