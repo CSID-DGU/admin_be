@@ -21,6 +21,9 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
 /**
  * Pod 노드 마이그레이션. config-server에 마이그레이션 작업을 등록하고 바로 돌아오며, 결과는
  * {@code MigrationJobPoller}가 조회해 {@link #completeMigrationJob}·{@link #failMigrationJob}으로 반영한다.
@@ -37,6 +40,9 @@ public class PodMigrationService {
     private final OperationJobService operationJobService;
     private final PlatformTransactionManager transactionManager;
     private final AlarmService alarmService;
+
+    // 성공 결과를 받지 못해 반영을 멈춘 신청. 폴러 주기마다 같은 알림이 반복되지 않게 한 번 알린 신청을 기억한다.
+    private final Set<Long> reportedMissingResult = ConcurrentHashMap.newKeySet();
 
     /**
      * 신청을 MIGRATING으로 바꾸고 마이그레이션 작업을 등록한다. 행 잠금과 상태 전환을 같은 트랜잭션에서 커밋해야
@@ -113,6 +119,16 @@ public class PodMigrationService {
      * DB 반영이 실패하면 MIGRATING으로 남겨 재마이그레이션을 막고 관리자에게 알린다(실제 Pod는 이미 옮겨졌을 수 있다).
      */
     public void completeMigrationJob(Long requestId, JobResultResponseDTO.Result made) {
+        if (made == null) {
+            // 성공했는데 결과가 없다(결과 보관 기간이 지남). 옮겼는지 건너뛰었는지 알 수 없으므로 "건너뜀"으로
+            // 확정하면 안 된다 — 옮겼다면 신청은 지워진 옛 Pod를 가리키고 새 Pod는 추적되지 않는다.
+            // MIGRATING에 둔 채 한 번만 알린다. 새 Pod 이름은 작업 단계 기록에서 확인할 수 있다.
+            if (reportedMissingResult.add(requestId)) {
+                log.error("마이그레이션 성공 결과에 자원 정보가 없어 신청에 반영하지 못함: requestId={}", requestId);
+                alert(String.format("[마이그레이션 확인 필요] 작업은 성공했으나 결과 정보를 받지 못해 신청에 반영하지 못했습니다: requestId=%d", requestId), null);
+            }
+            return;
+        }
         final boolean[] applied = {false};
         try {
             new TransactionTemplate(transactionManager).execute(status -> {

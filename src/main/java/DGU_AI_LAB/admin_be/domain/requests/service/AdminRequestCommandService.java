@@ -31,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
@@ -59,6 +60,9 @@ public class AdminRequestCommandService {
     // 관리자 입장에선 불필요한 승인 실패로 보인다). admin_be가 단일 인스턴스로만 배포되므로
     // in-process 락으로 충분하다.
     private final ConcurrentHashMap<Long, Object> userApprovalLocks = new ConcurrentHashMap<>();
+
+    // 성공 결과를 받지 못해 반영을 멈춘 신청. 같은 알림이 폴러 주기마다 반복되지 않게 한 번 알린 신청을 기억한다.
+    private final Set<Long> reportedMissingResult = ConcurrentHashMap.newKeySet();
 
     private Object approvalLockFor(Long userId) {
         return userApprovalLocks.computeIfAbsent(userId, id -> new Object());
@@ -151,18 +155,7 @@ public class AdminRequestCommandService {
         ProvisionRegisterRequestDTO body = reuseAccount
                ? ProvisionRegisterRequestDTO.podOnly(requestId, username, requestGroupsToAdd)
                : ProvisionRegisterRequestDTO.withAccount(creationDtoRef[0]);
-        Long jobId;
-        try {
-           jobId = operationJobService.registerProvision(body);
-        } catch (Exception e) {
-           // 등록 자체가 실패했으면 아직 아무것도 만들어지지 않았다 — 정리할 자원 없이 되돌린다.
-           log.warn("[보상 트랜잭션] 생성 작업 등록 실패 → 상태 복구 시작: {}", username, e);
-           notifyApprovalFailure(String.format(
-                   "[승인 실패] 생성 작업 등록 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
-                   username, requestId, e.getMessage()), serverName);
-           revertToPendingIfStillProcessing(requestId, serverName);
-           throw e;
-        }
+        Long jobId = registerProvisionJob(body, requestId, username, serverName);
         // 결과 폴러가 이 번호의 결과만 반영하게 남긴다. 그 사이 상태가 바뀌었으면(거절 등) 건드리지 않는다.
         new TransactionTemplate(transactionManager).execute(status -> {
             requestRepository.findByIdForUpdate(requestId)
@@ -172,6 +165,51 @@ public class AdminRequestCommandService {
         });
 
         return responseRef[0];
+    }
+
+    private Long registerProvisionJob(ProvisionRegisterRequestDTO body, Long requestId, String username, String serverName) {
+        try {
+            return operationJobService.registerProvision(body);
+        } catch (Exception e) {
+            return registeredJobDespiteFailure(requestId, username, serverName, e);
+        }
+    }
+
+    /**
+     * 등록 요청이 실패로 보였을 때, 실제로 등록된 작업이 도는지 확인한다. 응답만 늦었거나(타임아웃) 앞선 승인이
+     * 남긴 작업이 아직 도는 경우(409) 작업은 config-server에 있다 — 그때 신청을 되돌리면 그 작업이 만든 컨테이너를
+     * 어떤 신청도 가리키지 않게 된다.
+     *
+     * @return 도는 중인 작업 번호. 이 신청은 PROCESSING으로 두고 결과 폴러가 이어받는다.
+     * @throws RuntimeException 작업이 없거나 끝났으면 PENDING으로 되돌린 뒤, 작업 상태를 모르면 되돌리지 않고
+     *                          (재조정 스케줄러가 작업 상태를 보고 판단한다) 원래 오류를 던진다
+     */
+    private Long registeredJobDespiteFailure(Long requestId, String username, String serverName, Exception cause) {
+        JobResultResponseDTO job;
+        try {
+            job = operationJobService.getResult(OperationJobService.KIND_PROVISION, requestId);
+        } catch (Exception lookupFailure) {
+            log.warn("생성 작업 등록 실패 후 작업 상태 조회도 실패 — PROCESSING 유지, 재조정에 맡김: requestId={}", requestId, lookupFailure);
+            notifyApprovalFailure(String.format(
+                    "[승인 확인 필요] 생성 작업 등록 결과를 확인하지 못해 PROCESSING으로 두었습니다(작업이 없으면 재조정이 되돌립니다): username=%s, requestId=%d, error=%s",
+                    username, requestId, cause.getMessage()), serverName);
+            throw asRuntime(cause);
+        }
+        if (job != null && OperationJobService.PHASE_START.equals(job.phase())) {
+            log.warn("생성 작업 등록 응답은 실패했지만 작업이 도는 중 — 이어받음: requestId={}, jobId={}", requestId, job.jobId(), cause);
+            return job.jobId();
+        }
+        // 등록된 작업이 없다 — 아직 아무것도 만들어지지 않았으므로 정리할 자원 없이 되돌린다.
+        log.warn("[보상 트랜잭션] 생성 작업 등록 실패 → 상태 복구 시작: {}", username, cause);
+        notifyApprovalFailure(String.format(
+                "[승인 실패] 생성 작업 등록 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
+                username, requestId, cause.getMessage()), serverName);
+        revertToPendingIfStillProcessing(requestId, serverName);
+        throw asRuntime(cause);
+    }
+
+    private static RuntimeException asRuntime(Exception e) {
+        return e instanceof RuntimeException re ? re : new BusinessException(ErrorCode.POD_CREATION_FAILED);
     }
 
     /**
@@ -196,6 +234,10 @@ public class AdminRequestCommandService {
         if (made == null || made.podName() == null) {
             // 작업은 성공했는데 만든 자원을 받지 못했다(결과 보관 기간이 지난 경우 등). 그대로 확정하면
             // 컨테이너 이름도 포트도 없는 신청이 승인 완료로 남으므로, 사람이 확인하도록 알리고 멈춘다.
+            // 신청이 PROCESSING에 남아 폴러가 매 바퀴 다시 부르므로 알림은 신청마다 한 번만 보낸다.
+            if (!reportedMissingResult.add(requestId)) {
+                return;
+            }
             log.error("생성 작업 성공 결과에 자원 정보가 없어 신청에 반영하지 못함: requestId={}", requestId);
             notifyApprovalFailure(String.format(
                     "[승인 확인 필요] 생성 작업은 성공했으나 결과 정보를 받지 못해 신청에 반영하지 못했습니다: requestId=%d",
@@ -322,22 +364,68 @@ public class AdminRequestCommandService {
                 .findFirst().orElse("");
     }
 
-    @Transactional
+    /**
+     * 신청을 거절한다. 거절은 상태만 DENIED로 바꾸고 인프라 자원을 회수하지 않으므로, 자원이 생길 수 있는
+     * 상태에서는 막는다. 사용 중인(FULFILLED) 컨테이너는 컨테이너 회수로 끝낸다.
+     *
+     * <p>PROCESSING은 생성 작업이 끝난 뒤(실패·결과 불명·관리자 이관·작업 없음)에만 거절한다. 도는 중이거나
+     * 성공을 아직 반영하지 않았으면 거절하는 순간 그 작업이 만든 컨테이너를 어떤 신청도 가리키지 않게 된다.
+     * 성공했지만 결과가 사라져 반영하지 못한 신청은 갇혀 있으므로 거절을 허용한다.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SaveRequestResponseDTO rejectRequest(RejectRequestDTO dto) {
-        // 행 잠금: PROCESSING 상태를 거절하는 동안 completeApprovalJob의 승인 확정
-        // 트랜잭션과 순서가 뒤섞이지 않게 한다. completeApprovalJob도 확정 직전에 상태를 다시 확인한다.
-        Request request = requestRepository.findByIdForUpdate(dto.requestId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        if (!(request.getStatus() == Status.PENDING || request.getStatus() == Status.PROCESSING || request.getStatus() == Status.FULFILLED)) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+        Long requestId = dto.requestId();
+        Status current = new TransactionTemplate(transactionManager).execute(status ->
+                requestRepository.findById(requestId)
+                        .map(Request::getStatus)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)));
+        if (current == Status.PROCESSING) {
+            ensureProvisionJobFinished(requestId);
         }
-        request.reject(dto.adminComment());
+
+        final Request[] rejectedRef = {null};
+        final SaveRequestResponseDTO[] responseRef = {null};
+        new TransactionTemplate(transactionManager).execute(status -> {
+            // 행 잠금 + 상태 재확인: 위 조회 뒤에 폴러가 승인을 확정했다면 FULFILLED가 되어 여기서 막힌다.
+            Request request = requestRepository.findByIdForUpdate(requestId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+            if (request.getStatus() != Status.PENDING && request.getStatus() != Status.PROCESSING) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+            }
+            request.reject(dto.adminComment());
+            // 응답은 트랜잭션 안에서 만든다(승인과 같은 이유). 메일이 쓰는 사용자·서버 정보도 이때 읽힌다.
+            responseRef[0] = SaveRequestResponseDTO.fromEntity(request);
+            rejectedRef[0] = request;
+            return null;
+        });
+        Request rejected = rejectedRef[0];
         sendNotificationSafely(
-                () -> alarmService.sendRequestRejectedEmail(request, dto.adminComment()),
+                () -> alarmService.sendRequestRejectedEmail(rejected, dto.adminComment()),
                 () -> {},
-                e -> log.warn("거절 안내 메일 발송 실패: requestId={}", dto.requestId(), e)
+                e -> log.warn("거절 안내 메일 발송 실패: requestId={}", requestId, e)
         );
-        return SaveRequestResponseDTO.fromEntity(request);
+        return responseRef[0];
+    }
+
+    /** 생성 작업이 아직 돌거나 성공 결과를 반영하기 전이면 거절을 막는다. 작업 상태를 모르면 막는다. */
+    private void ensureProvisionJobFinished(Long requestId) {
+        Request request = new TransactionTemplate(transactionManager).execute(status ->
+                requestRepository.findById(requestId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)));
+        if (OperationJobService.awaitingRegistration(request.getProvisionJobId(), request.getUpdatedAt())) {
+            throw new BusinessException(ErrorCode.PROVISION_JOB_IN_PROGRESS);
+        }
+        JobResultResponseDTO job = operationJobService.getResult(OperationJobService.KIND_PROVISION, requestId);
+        if (OperationJobService.isFromOtherJob(request.getProvisionJobId(), job)) {
+            // 이번 승인의 작업이 아직 보이지 않는다(이전 작업 결과가 보임).
+            throw new BusinessException(ErrorCode.PROVISION_JOB_IN_PROGRESS);
+        }
+        boolean running = OperationJobService.PHASE_START.equals(job.phase());
+        boolean successPending = OperationJobService.PHASE_SUCCESS.equals(job.phase())
+                && job.result() != null && job.result().podName() != null;
+        if (running || successPending) {
+            throw new BusinessException(ErrorCode.PROVISION_JOB_IN_PROGRESS);
+        }
     }
 
     /** 알림 발송을 시도하고, 실패해도 예외를 전파하지 않는다 (알림은 부가 기능 — 실패해도 이미 반영된 상태 변경을 되돌리지 않는다). */
