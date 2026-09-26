@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.global.alert.AlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
@@ -18,11 +19,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 회수 중(RELEASING)인 우분투 계정을 한 단계씩 진행한다. AccountRevokeJobPoller가 주기적으로 부른다.
@@ -49,8 +50,9 @@ public class UbuntuAccountReleaseService {
     private final AlarmService alarmService;
     private final PlatformTransactionManager transactionManager;
 
-    // 실패·결과 불명은 상태를 그대로 두므로 매 바퀴 다시 보인다. 같은 알림이 반복되지 않도록 알린 건을 기억한다.
-    private final Set<String> reported = ConcurrentHashMap.newKeySet();
+    // 실패·결과 불명은 상태를 그대로 두므로 매 바퀴 다시 보인다. 같은 알림이 반복되지 않게 한다.
+    // 작업 결과는 작업 번호로, 작업 번호가 없는 등록 실패는 날짜로 묶어 하루 한 번만 다시 알린다.
+    private final AlertDeduplicator alertDeduplicator;
 
     private record NodeJob(String nodeName, Long requestId, Long jobId) {}
 
@@ -81,7 +83,6 @@ public class UbuntuAccountReleaseService {
                     .ifPresent(User::releaseUbuntuAccount);
             return null;
         });
-        reported.removeIf(key -> key.startsWith(userId + ":"));
         log.info("[계정 회수] 완료: userId={}, username={}, nodes={}", userId, snapshot.username(),
                 snapshot.nodes().stream().map(NodeJob::nodeName).toList());
     }
@@ -173,7 +174,7 @@ public class UbuntuAccountReleaseService {
         }
         if (jobId == null) {
             // 번호가 없으면 이 작업의 결과를 가려낼 수 없다. config-server 응답 계약 위반이다.
-            if (reported.add(userId + ":" + node.nodeName() + ":no-job-id")) {
+            if (alertDeduplicator.firstOccurrence(dailyKey(userId, node, "no-job-id"))) {
                 alert(String.format("[계정 회수] 작업 번호 없이 등록됨 - 수동 확인 필요: userId=%d, node=%s, requestId=%d",
                         userId, node.nodeName(), node.requestId()));
             }
@@ -189,17 +190,21 @@ public class UbuntuAccountReleaseService {
 
     private void reportRegistrationFailure(Long userId, NodeJob node, Exception e) {
         log.warn("[계정 회수] 작업 등록 실패 - 다음 바퀴에 다시 등록: userId={}, node={}", userId, node.nodeName(), e);
-        if (reported.add(userId + ":" + node.nodeName() + ":register")) {
+        if (alertDeduplicator.firstOccurrence(dailyKey(userId, node, "register"))) {
             alert(String.format("[계정 회수] 작업 등록 실패(계속 재시도): userId=%d, node=%s, error=%s",
                     userId, node.nodeName(), e.getMessage()));
         }
     }
 
     private void reportOnce(Long userId, NodeJob node, JobResultResponseDTO result, String what) {
-        if (reported.add(userId + ":" + node.nodeName() + ":" + node.jobId())) {
+        if (alertDeduplicator.firstOccurrence("account-revoke:" + userId + ":" + node.nodeName() + ":" + node.jobId())) {
             alert(String.format("[계정 회수] %s - 계정 회수를 다시 실행해 주세요: userId=%d, node=%s, requestId=%d, error=%s",
                     what, userId, node.nodeName(), node.requestId(), result.errorCode()));
         }
+    }
+
+    private static String dailyKey(Long userId, NodeJob node, String what) {
+        return "account-revoke-" + what + ":" + userId + ":" + node.nodeName() + ":" + LocalDate.now();
     }
 
     private void alert(String message) {

@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
+import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
@@ -33,7 +34,7 @@ class MigrationJobPollerTest {
 
     @BeforeEach
     void setUp() {
-        poller = new MigrationJobPoller(requestRepository, jobClient, podMigrationService);
+        poller = new MigrationJobPoller(requestRepository, jobClient, new InMemoryAlertDeduplicator(), podMigrationService);
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(1L);
         when(request.getJobId()).thenReturn(5L); // given()의 작업 번호와 같다

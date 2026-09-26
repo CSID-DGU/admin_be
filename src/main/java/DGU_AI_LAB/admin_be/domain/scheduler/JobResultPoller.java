@@ -6,10 +6,8 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.global.alert.AlertDeduplicator;
 import lombok.extern.slf4j.Slf4j;
-
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 작업을 기다리는 상태의 신청마다 작업 결과를 조회해 반영하는 폴러의 공통 뼈대. 생성(PROCESSING)·마이그레이션
@@ -19,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li>작업 번호가 아직 없는 직후의 신청은 건너뛴다 — 이전 작업의 결과가 보인다</li>
  *   <li>이번에 등록한 작업이 아닌 결과는 반영하지 않는다</li>
  *   <li>SUCCESS → {@link #onSuccess}, 일반 FAIL → {@link #onFailure}</li>
- *   <li>DEGRADED·UNKNOWN → 자원이 남았을 수 있어 신청을 그대로 두고 {@link #onUnresolved}를 신청마다 한 번만 부른다</li>
+ *   <li>DEGRADED·UNKNOWN → 자원이 남았을 수 있어 신청을 그대로 두고 {@link #onUnresolved}를 작업마다 한 번만 부른다</li>
  *   <li>START·none → 다음 바퀴에 다시 본다(오래 방치되면 RequestSchedulerService 재조정이 판단한다)</li>
  *   <li>한 신청의 조회·반영 실패가 나머지 신청 처리를 막지 않는다</li>
  * </ul>
@@ -31,13 +29,14 @@ public abstract class JobResultPoller {
     private final JobClient jobClient;
     private final Status watchedStatus;
     private final String kind;
+    // 미해결 결과는 신청 상태를 그대로 두므로 다음 바퀴에도 계속 잡힌다. 같은 작업의 알림이 반복되지 않게 한다.
+    private final AlertDeduplicator alertDeduplicator;
 
-    // 미해결 결과는 신청 상태를 그대로 두므로 다음 바퀴에도 계속 잡힌다. 같은 알림이 반복되지 않도록 알린 신청을 기억한다.
-    private final Set<Long> reported = ConcurrentHashMap.newKeySet();
-
-    protected JobResultPoller(RequestRepository requestRepository, JobClient jobClient, Status watchedStatus, String kind) {
+    protected JobResultPoller(RequestRepository requestRepository, JobClient jobClient, AlertDeduplicator alertDeduplicator,
+                              Status watchedStatus, String kind) {
         this.requestRepository = requestRepository;
         this.jobClient = jobClient;
+        this.alertDeduplicator = alertDeduplicator;
         this.watchedStatus = watchedStatus;
         this.kind = kind;
     }
@@ -62,18 +61,13 @@ public abstract class JobResultPoller {
     }
 
     private void dispatch(Request request, JobResultResponseDTO result) {
-        Long requestId = request.getRequestId();
         switch (result.phase()) {
-            case JobResults.PHASE_SUCCESS -> {
-                reported.remove(requestId);
-                onSuccess(request, result);
-            }
+            case JobResults.PHASE_SUCCESS -> onSuccess(request, result);
             case JobResults.PHASE_FAIL -> {
                 if (JobResults.isDegraded(result)) {
                     reportOnce(request, result);
                     return;
                 }
-                reported.remove(requestId);
                 onFailure(request, result);
             }
             case JobResults.PHASE_UNKNOWN -> reportOnce(request, result);
@@ -83,8 +77,10 @@ public abstract class JobResultPoller {
         }
     }
 
+    /** 작업 번호까지 키에 넣는다 — 같은 신청을 다시 처리하다 또 미해결이 되면 새 작업이라 다시 알린다. */
     private void reportOnce(Request request, JobResultResponseDTO result) {
-        if (reported.add(request.getRequestId())) {
+        String eventKey = "job-unresolved:" + kind + ":" + request.getRequestId() + ":" + result.jobId();
+        if (alertDeduplicator.firstOccurrence(eventKey)) {
             onUnresolved(request, result);
         }
     }

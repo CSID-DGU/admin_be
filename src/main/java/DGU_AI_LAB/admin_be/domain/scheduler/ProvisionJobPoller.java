@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.global.alert.AlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -19,9 +20,9 @@ public class ProvisionJobPoller extends JobResultPoller {
 
     private final AdminRequestCommandService adminRequestCommandService;
 
-    public ProvisionJobPoller(RequestRepository requestRepository, JobClient jobClient,
+    public ProvisionJobPoller(RequestRepository requestRepository, JobClient jobClient, AlertDeduplicator alertDeduplicator,
                               AdminRequestCommandService adminRequestCommandService) {
-        super(requestRepository, jobClient, Status.PROCESSING, JobResults.KIND_PROVISION);
+        super(requestRepository, jobClient, alertDeduplicator, Status.PROCESSING, JobResults.KIND_PROVISION);
         this.adminRequestCommandService = adminRequestCommandService;
     }
 

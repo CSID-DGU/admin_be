@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
+import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
@@ -38,7 +39,7 @@ class ProvisionJobPollerTest {
 
     @BeforeEach
     void setUp() {
-        poller = new ProvisionJobPoller(requestRepository, jobClient, adminRequestCommandService);
+        poller = new ProvisionJobPoller(requestRepository, jobClient, new InMemoryAlertDeduplicator(), adminRequestCommandService);
     }
 
     private void givenProcessing(Long... requestIds) {
