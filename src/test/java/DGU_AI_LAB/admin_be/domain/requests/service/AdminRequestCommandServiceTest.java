@@ -521,6 +521,21 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
+        @DisplayName("config-server에 연결조차 못 했으면 작업이 없는 것이 확실하므로 조회 없이 바로 PENDING으로 되돌린다")
+        void revertsImmediatelyWhenServerUnreachable() {
+            Long requestId = 208L;
+            Request request = buildMockedRequest(requestId);
+            doThrow(new BusinessException("작업 등록 중 오류", ErrorCode.POD_CREATION_FAILED,
+                    new RuntimeException(new java.net.ConnectException("Connection refused"))))
+                    .when(operationJobService).registerProvision(any());
+
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
+                    .isInstanceOf(BusinessException.class);
+            verify(request).revertToPending();
+            verify(operationJobService, never()).getResult(any(), any());
+        }
+
+        @Test
         @DisplayName("등록 실패 후 작업 상태도 조회하지 못하면 되돌리지 않고 오류를 전파한다(재조정이 판단)")
         void keepsProcessingWhenJobLookupAlsoFails() {
             Long requestId = 206L;

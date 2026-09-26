@@ -16,6 +16,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.net.ConnectException;
+import java.net.UnknownHostException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -130,6 +132,20 @@ public class OperationJobService {
     }
 
     /**
+     * 등록 요청이 config-server에 닿지도 못했는가(연결 거부·주소 해석 실패). 그렇다면 작업은 등록되지 않은 것이
+     * 확실하므로, 등록 실패를 "결과 불명"으로 두지 않고 바로 되돌려도 된다. 연결 뒤의 시간 초과는 요청이
+     * 닿았을 수 있어 여기에 넣지 않는다.
+     */
+    public static boolean neverReachedServer(Throwable failure) {
+        for (Throwable t = failure; t != null; t = t.getCause()) {
+            if (t instanceof ConnectException || t instanceof UnknownHostException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 계정 회수가 이미 없는 계정을 지우려다 실패한 것인가. 목표 상태(계정 없음)에 이미 도달했으므로 성공으로 본다.
      */
     public static boolean isAccountAlreadyAbsent(JobResultResponseDTO result) {
@@ -163,7 +179,7 @@ public class OperationJobService {
             throw e;
         } catch (Exception e) {
             log.error("작업 등록 중 예기치 않은 오류: {}, requestId: {}", uri, requestId, e);
-            throw new BusinessException(failureCode);
+            throw new BusinessException("작업 등록 중 오류: " + e.getMessage(), failureCode, e);
         }
         Long jobId = response != null && response.get("job_id") instanceof Number n ? n.longValue() : null;
         log.info("작업 등록 완료: {}, requestId: {}, jobId: {}", uri, requestId, jobId);

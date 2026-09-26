@@ -189,6 +189,11 @@ public class AdminRequestCommandService {
      *                          (재조정 스케줄러가 작업 상태를 보고 판단한다) 원래 오류를 던진다
      */
     private Long registeredJobDespiteFailure(Long requestId, String username, String serverName, Exception cause) {
+        if (OperationJobService.neverReachedServer(cause)) {
+            // 요청이 config-server에 닿지도 않았으므로 작업은 없다. 작업 상태 조회(대개 같은 이유로 실패한다)를
+            // 기다리지 않고 바로 되돌린다 — 그러지 않으면 재조정이 돌 때까지 PROCESSING에 갇힌다.
+            return revertUnregistered(requestId, username, serverName, cause);
+        }
         JobResultResponseDTO job;
         try {
             job = operationJobService.getResult(OperationJobService.KIND_PROVISION, requestId);
@@ -203,7 +208,11 @@ public class AdminRequestCommandService {
             log.warn("생성 작업 등록 응답은 실패했지만 작업이 도는 중 — 이어받음: requestId={}, jobId={}", requestId, job.jobId(), cause);
             return job.jobId();
         }
-        // 등록된 작업이 없다 — 아직 아무것도 만들어지지 않았으므로 정리할 자원 없이 되돌린다.
+        return revertUnregistered(requestId, username, serverName, cause);
+    }
+
+    /** 등록된 작업이 없다 — 아직 아무것도 만들어지지 않았으므로 정리할 자원 없이 되돌린다. */
+    private Long revertUnregistered(Long requestId, String username, String serverName, Exception cause) {
         log.warn("[보상 트랜잭션] 생성 작업 등록 실패 → 상태 복구 시작: {}", username, cause);
         notifyApprovalFailure(String.format(
                 "[승인 실패] 생성 작업 등록 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",

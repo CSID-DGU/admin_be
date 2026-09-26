@@ -222,6 +222,41 @@ class OperationJobServiceTest {
     }
 
     @Nested
+    @DisplayName("neverReachedServer")
+    class NeverReachedServer {
+
+        @Test
+        @DisplayName("연결 거부·주소 해석 실패는 요청이 닿지 않은 것이다(원인 사슬 어디에 있어도)")
+        void connectFailures() {
+            assertThat(OperationJobService.neverReachedServer(
+                    new BusinessException("x", ErrorCode.POD_DELETION_FAILED,
+                            new RuntimeException(new java.net.ConnectException("refused"))))).isTrue();
+            assertThat(OperationJobService.neverReachedServer(new java.net.UnknownHostException("h"))).isTrue();
+        }
+
+        @Test
+        @DisplayName("시간 초과·HTTP 오류는 요청이 닿았을 수 있어 아니다")
+        void otherFailures() {
+            assertThat(OperationJobService.neverReachedServer(new java.net.SocketTimeoutException("read"))).isFalse();
+            assertThat(OperationJobService.neverReachedServer(
+                    new BusinessException("작업 등록 실패", ErrorCode.POD_DELETION_FAILED))).isFalse();
+            assertThat(OperationJobService.neverReachedServer(null)).isFalse();
+        }
+
+        @Test
+        @DisplayName("등록 중 예기치 않은 오류는 원인을 잃지 않고 올린다 — 호출자가 연결 실패를 가려낸다")
+        void registerKeepsCause() {
+            when(responseSpec.bodyToMono(Map.class)).thenReturn(
+                    Mono.error(new RuntimeException(new java.net.ConnectException("refused"))));
+
+            assertThatThrownBy(() -> service.registerRevoke(
+                    new RevokeRegisterRequestDTO(41L, "pod", null, null, false), ErrorCode.POD_DELETION_FAILED))
+                    .isInstanceOf(BusinessException.class)
+                    .satisfies(e -> assertThat(OperationJobService.neverReachedServer(e)).isTrue());
+        }
+    }
+
+    @Nested
     @DisplayName("isAccountAlreadyAbsent")
     class AccountAlreadyAbsent {
 

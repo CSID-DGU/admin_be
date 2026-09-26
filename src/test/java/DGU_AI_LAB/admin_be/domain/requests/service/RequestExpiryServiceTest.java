@@ -189,6 +189,21 @@ class RequestExpiryServiceTest {
         }
 
         @Test
+        @DisplayName("config-server에 연결조차 못 했으면 조회 없이 바로 FULFILLED로 되돌린다 — 작업이 없는 것이 확실하다")
+        void unreachableServerRevertsImmediately() {
+            Request request = mockRequest(7L, Status.FULFILLED);
+            when(operationJobService.registerRevoke(any(), any())).thenThrow(new BusinessException(
+                    "작업 등록 중 오류", ErrorCode.POD_DELETION_FAILED,
+                    new RuntimeException(new java.net.ConnectException("Connection refused"))));
+
+            assertThatThrownBy(() -> service.deleteContainerByAdmin(7L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.POD_DELETION_FAILED);
+            assertThat(request.getStatus()).isEqualTo(Status.FULFILLED);
+            verify(operationJobService, never()).getResult(any(), anyLong());
+        }
+
+        @Test
         @DisplayName("등록 실패 후 작업 상태도 모르면 EXPIRING으로 두고 예외를 올린다 — 재조정이 작업 상태를 보고 판단한다")
         void registrationAndLookupFailureKeepsExpiring() {
             Request request = mockRequest(6L, Status.FULFILLED);
