@@ -107,4 +107,14 @@ public class AdminRequestController implements AdminRequestApi {
         requestExpiryService.deleteContainerByAdmin(requestId);
         return SuccessResponse.accepted(null);
     }
+
+    /**
+     * 컨테이너 회수가 DEGRADED·UNKNOWN으로 끝나 EXPIRING에 멈춘 신청을, 관리자가 클러스터를 직접 확인한
+     * 뒤 강제로 완료 처리한다. API 자체는 자원 존재를 재확인하지 않는다.
+     */
+    @PostMapping("/{requestId}/container/force-complete")
+    public ResponseEntity<SuccessResponse<?>> forceCompleteRevoke(@PathVariable Long requestId) {
+        requestExpiryService.forceCompleteRevoke(requestId);
+        return SuccessResponse.ok(null);
+    }
 }

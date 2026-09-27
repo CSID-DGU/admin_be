@@ -206,7 +206,7 @@ public class AdminRequestCommandService {
                     username, requestId, cause.getMessage()), serverName);
             throw asRuntime(cause);
         }
-        if (job != null && JobResults.PHASE_START.equals(job.phase())) {
+        if (job != null && JobResults.isRunning(job.phase())) {
             log.warn("생성 작업 등록 응답은 실패했지만 작업이 도는 중 — 이어받음: requestId={}, jobId={}", requestId, job.jobId(), cause);
             return job.jobId();
         }
@@ -350,6 +350,19 @@ public class AdminRequestCommandService {
                 requestId, result.jobId()), serverNameOf(requestId));
     }
 
+    /**
+     * 생성 작업은 성공했지만 그 결과를 신청에 반영하는 중(예: {@link #completeApprovalJob}) 예외가 났다 —
+     * 대표적으로 회수됐다 돌아온 사용자가 다른 uid로 성공해 계정에 이미 배정된 uid와 충돌하는 경우
+     * ({@code UBUNTU_ACCOUNT_ALREADY_ASSIGNED}). 원인이 해소되지 않는 한 폴러가 매 바퀴 같은 예외를
+     * 되풀이하므로, 신청 상태는 건드리지 않고(원인을 모르는 채 되돌리면 이미 만들어진 자원과 어긋난다)
+     * 신청마다 한 번만 관리자에게 알린다. {@code JobResultPoller#onApplyFailed}가 호출한다.
+     */
+    public void reportApplyFailure(Long requestId, String detail) {
+        notifyApprovalFailure(String.format(
+                "[승인 확인 필요] 생성 작업 결과를 신청에 반영하는 중 오류가 났습니다: requestId=%d, error=%s",
+                requestId, detail), serverNameOf(requestId));
+    }
+
     /** 알림을 관리자가 실제로 보는 farm/lab 채널로 보내기 위한 서버 구분. 조회 실패는 알림 실패로 번지지 않게 삼킨다. */
     private String serverNameOf(Long requestId) {
         try {
@@ -430,7 +443,7 @@ public class AdminRequestCommandService {
             // 이번 승인의 작업이 아직 보이지 않는다(이전 작업 결과가 보임).
             throw new BusinessException(ErrorCode.PROVISION_JOB_IN_PROGRESS);
         }
-        boolean running = JobResults.PHASE_START.equals(job.phase());
+        boolean running = JobResults.isRunning(job.phase());
         boolean successPending = JobResults.PHASE_SUCCESS.equals(job.phase())
                 && job.result() != null && job.result().podName() != null;
         if (running || successPending) {

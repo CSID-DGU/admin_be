@@ -81,6 +81,19 @@ class MigrationJobPollerTest {
     }
 
     @Test
+    @DisplayName("결과 반영이 예외로 실패해도(기본 구현은 알리지 않음) 폴러는 죽지 않고 조용히 넘어간다 — 회귀 확인")
+    void applyFailureIsSilentByDefault() {
+        JobResultResponseDTO.Result made = new JobResultResponseDTO.Result(null, null, "p", "farm7", List.of());
+        given("SUCCESS", null, made);
+        doThrow(new RuntimeException("db busy")).when(podMigrationService).completeMigrationJob(1L, made);
+
+        poller.pollMigrationJobs(); // 예외가 밖으로 나가면 이 시험 자체가 실패한다
+
+        verify(podMigrationService).completeMigrationJob(1L, made);
+        verifyNoMoreInteractions(podMigrationService);
+    }
+
+    @Test
     @DisplayName("재마이그레이션 직후 보이는 이전 작업의 결과는 반영하지 않는다")
     void ignoresPreviousJobResult() {
         Request request = mock(Request.class);

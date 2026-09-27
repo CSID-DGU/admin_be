@@ -194,4 +194,60 @@ class ProvisionJobPollerTest {
 
         verify(adminRequestCommandService).completeApprovalJob(eq(6L), any());
     }
+
+    @Test
+    @DisplayName("조회 자체가 실패하면 소음을 막기 위해 알리지 않는다 — 대개 다음 바퀴에 스스로 회복된다")
+    void lookupFailureDoesNotNotify() {
+        givenProcessing(5L);
+        when(jobClient.getResult("provision", 5L))
+                .thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
+
+        poller.pollProvisionJobs();
+        poller.pollProvisionJobs();
+
+        verify(adminRequestCommandService, never()).reportApplyFailure(anyLong(), anyString());
+    }
+
+    @Test
+    @DisplayName("성공 반영이 예외로 실패하면(uid 충돌 등) 신청당 한 번만 알리고, 신청 상태는 건드리지 않는다")
+    void applyFailureIsReportedOnceWithoutRevert() {
+        givenProcessing(9L);
+        JobResultResponseDTO.Result made = new JobResultResponseDTO.Result(
+                50007L, 50007L, "ailab-testuser-x", "farm2", List.of());
+        when(jobClient.getResult("provision", 9L)).thenReturn(result(9L, "SUCCESS", made));
+        doThrow(new BusinessException(ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED))
+                .when(adminRequestCommandService).completeApprovalJob(9L, made);
+
+        poller.pollProvisionJobs();
+        poller.pollProvisionJobs();
+        poller.pollProvisionJobs();
+
+        verify(adminRequestCommandService, times(3)).completeApprovalJob(9L, made); // 매 바퀴 다시 시도한다
+        verify(adminRequestCommandService, times(1)).reportApplyFailure(eq(9L), anyString());
+        verify(adminRequestCommandService, never()).failApprovalJob(anyLong(), any());
+        verify(adminRequestCommandService, never()).reportDegradedApprovalJob(anyLong(), any());
+        verify(adminRequestCommandService, never()).reportUnknownApprovalJob(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("반영 실패가 회복되면(다음 바퀴는 예외 없이 끝남) 알림 기록이 지워져 다시 실패해도 또 한 번 알린다")
+    void applyFailureNotificationResetsAfterRecovery() {
+        Request request = mock(Request.class);
+        when(request.getRequestId()).thenReturn(9L);
+        when(request.getJobId()).thenReturn(1L);
+        when(requestRepository.findAllByStatus(Status.PROCESSING)).thenReturn(List.of(request));
+        JobResultResponseDTO.Result made = new JobResultResponseDTO.Result(
+                50007L, 50007L, "ailab-testuser-x", "farm2", List.of());
+        when(jobClient.getResult("provision", 9L)).thenReturn(result(9L, "SUCCESS", made));
+        doThrow(new BusinessException(ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED))
+                .doNothing()
+                .doThrow(new BusinessException(ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED))
+                .when(adminRequestCommandService).completeApprovalJob(9L, made);
+
+        poller.pollProvisionJobs(); // 1바퀴: 실패 → 알림
+        poller.pollProvisionJobs(); // 2바퀴: 성공 → 기록 초기화
+        poller.pollProvisionJobs(); // 3바퀴: 다시 실패 → 다시 알림
+
+        verify(adminRequestCommandService, times(2)).reportApplyFailure(eq(9L), anyString());
+    }
 }

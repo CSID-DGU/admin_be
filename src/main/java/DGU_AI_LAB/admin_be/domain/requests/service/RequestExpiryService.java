@@ -126,7 +126,7 @@ public class RequestExpiryService {
                 log.warn("회수 작업 등록 실패 후 작업 상태 조회도 실패 — EXPIRING 유지, 재조정에 맡김: requestId={}", requestId, lookupFailure);
                 throw asBusiness(e);
             }
-            if (job != null && JobResults.PHASE_START.equals(job.phase())) {
+            if (job != null && JobResults.isRunning(job.phase())) {
                 log.warn("회수 작업 등록 응답은 실패했지만 작업이 도는 중 — 이어받음: requestId={}, jobId={}", requestId, job.jobId(), e);
                 return job.jobId();
             }
@@ -172,6 +172,38 @@ public class RequestExpiryService {
             log.info("컨테이너 회수 완료: requestId={}, pod={}", requestId, request.getPodName());
             return null;
         });
+    }
+
+    /**
+     * 관리자가 클러스터를 직접 확인한 뒤, DEGRADED·UNKNOWN으로 끝나 EXPIRING에 멈춘 회수를 강제로 완료
+     * 처리한다. 이 메서드 자체는 자원이 실제로 없는지 다시 확인하지 않는다 — 그 확인은 이미 사람이 클러스터를
+     * 보고 끝냈다는 전제다. 아무 EXPIRING이나 강제로 끝낼 수 있게 하면 실수로 멀쩡히 도는 회수까지 지울 수
+     * 있어, 마지막 회수 결과가 DEGRADED이거나 결과 불명(UNKNOWN)일 때만 허용한다.
+     *
+     * <p>정리 자체는 {@link #completeContainerRevoke}를 그대로 재사용한다 — 이 메서드만 상태를 바꾸고
+     * 외부 포트 정리·안내 이벤트를 빠뜨리면, 정상 회수 완료와 다른 반쪽짜리 종료 상태가 생긴다.
+     *
+     * @throws BusinessException status가 EXPIRING이 아니거나, 회수 결과가 DEGRADED·UNKNOWN이 아니면 409
+     */
+    public void forceCompleteRevoke(Long requestId) {
+        // 행 잠금 + 상태 확인. 네트워크 호출(jobClient.getResult) 동안 잠금을 쥐지 않도록 짧게 끊는다 —
+        // 그 사이 상태가 바뀌어도 아래 completeContainerRevoke가 스스로 다시 잠그고 재확인한다.
+        String podName = new TransactionTemplate(transactionManager).execute(status -> {
+            Request request = requestRepository.findByIdForUpdate(requestId)
+                    .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
+            if (request.getStatus() != Status.EXPIRING) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+            }
+            return request.getPodName();
+        });
+        JobResultResponseDTO result = jobClient.getResult(JobResults.KIND_REVOKE, requestId);
+        boolean stuck = JobResults.isDegraded(result) || JobResults.PHASE_UNKNOWN.equals(result.phase());
+        if (!stuck) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+        }
+        log.warn("[강제 완료] 관리자가 회수 결과를 직접 확인한 뒤 강제로 완료 처리: requestId={}, pod={}, phase={}, error={}",
+                requestId, podName, result.phase(), result.errorCode());
+        completeContainerRevoke(requestId);
     }
 
     private static boolean isExpired(Request request) {

@@ -17,6 +17,12 @@ public final class JobResults {
     public static final String PHASE_NONE = "none";
     /** 등록됐고 아직 끝나지 않았다(대기 또는 실행 중). */
     public static final String PHASE_START = "START";
+    /**
+     * 등록됐고 아직 끝나지 않았다 — 단계 하나가 일시적으로 실패해 그 단계를 다시 시도하는 중이다.
+     * {@link #PHASE_START}와 같은 "진행 중" 부류이지 실패가 아니다. 이 값을 놓치고 START만 진행 중으로
+     * 보면, 재시도 중인 작업을 "끝났다"고 오판해 거절을 통과시키거나 신청을 되돌려 고아 자원을 만든다.
+     */
+    public static final String PHASE_RETRY = "RETRY";
     public static final String PHASE_SUCCESS = "SUCCESS";
     public static final String PHASE_FAIL = "FAIL";
     /**
@@ -60,6 +66,12 @@ public final class JobResults {
     public static boolean awaitingRegistration(Long registeredJobId, LocalDateTime stateChangedAt) {
         return registeredJobId == null && stateChangedAt != null
                 && stateChangedAt.isAfter(LocalDateTime.now().minus(REGISTRATION_GRACE));
+    }
+
+    /** 등록됐고 아직 끝나지 않았는가(대기·실행 중이거나 단계 재시도 중). "실행 중이면 되돌리지 않는다"는
+     * 판정을 하는 모든 호출부가 START만 보지 않고 이 헬퍼를 쓰게 해, RETRY를 놓치는 실수를 막는다. */
+    public static boolean isRunning(String phase) {
+        return PHASE_START.equals(phase) || PHASE_RETRY.equals(phase);
     }
 
     /** 이번에 등록한 작업이 아닌 작업(재시도 직후 보이는 이전 작업)의 결과인가. */

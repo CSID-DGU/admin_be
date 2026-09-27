@@ -191,6 +191,21 @@ class RequestExpiryServiceTest {
         }
 
         @Test
+        @DisplayName("등록 응답은 실패했지만 회수 작업이 단계 재시도(RETRY) 중이면 이어받는다 — START만 보면 놓친다")
+        void registrationFailureWithRetryingJobAdoptsIt() {
+            Request request = mockRequest(8L, Status.FULFILLED);
+            when(jobClient.registerRevoke(any(), any()))
+                    .thenThrow(new BusinessException("이미 처리 중", ErrorCode.INVALID_REQUEST_STATUS));
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 8L))
+                    .thenReturn(revokeJob(JobResults.PHASE_RETRY, 813L));
+
+            service.deleteContainerByAdmin(8L);
+
+            assertThat(request.getStatus()).isEqualTo(Status.EXPIRING);
+            verify(request).recordJob(813L);
+        }
+
+        @Test
         @DisplayName("config-server에 연결조차 못 했으면 조회 없이 바로 FULFILLED로 되돌린다 — 작업이 없는 것이 확실하다")
         void unreachableServerRevertsImmediately() {
             Request request = mockRequest(7L, Status.FULFILLED);
@@ -283,6 +298,84 @@ class RequestExpiryServiceTest {
             Request deleted = mockRequest(15L, Status.DELETED);
             service.revertStaleExpiring(15L);
             verify(deleted, never()).endExpiry();
+        }
+    }
+
+    @Nested
+    @DisplayName("강제 완료")
+    class ForceComplete {
+
+        @Test
+        @DisplayName("DEGRADED로 멈춘 EXPIRING은 강제 완료 처리된다 — 정상 완료와 같은 정리(포트 회수·안내)를 거친다")
+        void degradedIsForceCompleted() {
+            Request request = mockRequest(16L, Status.EXPIRING);
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 16L)).thenReturn(new JobResultResponseDTO(
+                    "16", JobResults.KIND_REVOKE, 900L, JobResults.PHASE_FAIL, JobResults.ERROR_DEGRADED, null, null));
+
+            service.forceCompleteRevoke(16L);
+
+            assertThat(request.getStatus()).isEqualTo(Status.DELETED);
+            verify(podExternalPortRepository).deleteByRequestRequestId(16L);
+            // publishEvent가 Object/ApplicationEvent로 오버로드돼 있어 타입 없는 any()는 특정 오버로드에만
+            // 묶인다 — Object로 캡처해야 실제 호출(비-ApplicationEvent 이벤트)을 잡는다(파일의 다른 시험과 동일).
+            ArgumentCaptor<Object> event = ArgumentCaptor.forClass(Object.class);
+            verify(eventPublisher).publishEvent(event.capture());
+        }
+
+        @Test
+        @DisplayName("UNKNOWN(결과 불명)으로 멈춘 EXPIRING도 강제 완료 처리된다")
+        void unknownIsForceCompleted() {
+            Request request = mockRequest(17L, Status.EXPIRING);
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 17L)).thenReturn(new JobResultResponseDTO(
+                    "17", JobResults.KIND_REVOKE, 900L, JobResults.PHASE_UNKNOWN, "TIMEOUT", null, null));
+
+            service.forceCompleteRevoke(17L);
+
+            assertThat(request.getStatus()).isEqualTo(Status.DELETED);
+        }
+
+        @Test
+        @DisplayName("EXPIRING이 아니면 409 — 정상 사용 중인 컨테이너까지 강제로 지우면 안 된다")
+        void rejectsNonExpiring() {
+            mockRequest(18L, Status.FULFILLED);
+
+            assertThatThrownBy(() -> service.forceCompleteRevoke(18L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REQUEST_STATUS);
+            verify(jobClient, never()).getResult(any(), any());
+        }
+
+        @Test
+        @DisplayName("EXPIRING이어도 회수 결과가 평범한 FAIL(자원을 안 남긴 실패)이면 거부한다 — 자동으로 되돌아갈 여지가 있다")
+        void rejectsPlainFail() {
+            Request request = mockRequest(19L, Status.EXPIRING);
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 19L)).thenReturn(new JobResultResponseDTO(
+                    "19", JobResults.KIND_REVOKE, 900L, JobResults.PHASE_FAIL, "POD_DELETE_FAILED", null, null));
+
+            assertThatThrownBy(() -> service.forceCompleteRevoke(19L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REQUEST_STATUS);
+            verify(request, never()).deleteAfterCleanup();
+        }
+
+        @Test
+        @DisplayName("EXPIRING이어도 아직 실행 중(START·RETRY)이면 거부한다")
+        void rejectsStillRunning() {
+            Request request = mockRequest(20L, Status.EXPIRING);
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 20L)).thenReturn(revokeJob(JobResults.PHASE_RETRY, 900L));
+
+            assertThatThrownBy(() -> service.forceCompleteRevoke(20L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REQUEST_STATUS);
+            verify(request, never()).deleteAfterCleanup();
+        }
+
+        @Test
+        @DisplayName("신청이 없으면 EntityNotFoundException")
+        void missing() {
+            when(requestRepository.findByIdForUpdate(999L)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.forceCompleteRevoke(999L)).isInstanceOf(EntityNotFoundException.class);
         }
     }
 }
