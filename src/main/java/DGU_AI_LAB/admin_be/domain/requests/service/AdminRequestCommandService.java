@@ -350,6 +350,19 @@ public class AdminRequestCommandService {
                 requestId, result.jobId()), serverNameOf(requestId));
     }
 
+    /**
+     * 생성 작업은 성공했지만 그 결과를 신청에 반영하는 중(예: {@link #completeApprovalJob}) 예외가 났다 —
+     * 대표적으로 회수됐다 돌아온 사용자가 다른 uid로 성공해 계정에 이미 배정된 uid와 충돌하는 경우
+     * ({@code UBUNTU_ACCOUNT_ALREADY_ASSIGNED}). 원인이 해소되지 않는 한 폴러가 매 바퀴 같은 예외를
+     * 되풀이하므로, 신청 상태는 건드리지 않고(원인을 모르는 채 되돌리면 이미 만들어진 자원과 어긋난다)
+     * 신청마다 한 번만 관리자에게 알린다. {@code JobResultPoller#onApplyFailed}가 호출한다.
+     */
+    public void reportApplyFailure(Long requestId, String detail) {
+        notifyApprovalFailure(String.format(
+                "[승인 확인 필요] 생성 작업 결과를 신청에 반영하는 중 오류가 났습니다: requestId=%d, error=%s",
+                requestId, detail), serverNameOf(requestId));
+    }
+
     /** 알림을 관리자가 실제로 보는 farm/lab 채널로 보내기 위한 서버 구분. 조회 실패는 알림 실패로 번지지 않게 삼킨다. */
     private String serverNameOf(Long requestId) {
         try {

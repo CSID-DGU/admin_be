@@ -52,4 +52,14 @@ public class ProvisionJobPoller extends JobResultPoller {
             adminRequestCommandService.reportUnknownApprovalJob(request.getRequestId(), result);
         }
     }
+
+    /**
+     * 대표 사례: 회수됐다 돌아온 사용자가 다른 uid로 성공해 {@code completeApprovalJob}이
+     * UBUNTU_ACCOUNT_ALREADY_ASSIGNED로 실패하는 경우 — 원인이 해소될 때까지 매 바퀴 반복될 수 있어
+     * 신청마다 한 번은 관리자에게 알린다. 상태는 건드리지 않는다(공통 뼈대의 기본 정책과 동일).
+     */
+    @Override
+    protected void onApplyFailed(Request request, Exception e) {
+        adminRequestCommandService.reportApplyFailure(request.getRequestId(), e.getMessage());
+    }
 }

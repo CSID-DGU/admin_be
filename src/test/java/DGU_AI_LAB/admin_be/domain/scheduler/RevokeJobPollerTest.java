@@ -130,6 +130,17 @@ class RevokeJobPollerTest {
     }
 
     @Test
+    @DisplayName("결과 반영이 예외로 실패해도(기본 구현은 알리지 않음) 폴러는 죽지 않고 조용히 넘어간다 — 회귀 확인")
+    void applyFailureIsSilentByDefault() {
+        givenResult(JobResults.PHASE_SUCCESS, JOB_ID, null);
+        doThrow(new RuntimeException("db busy")).when(requestExpiryService).completeContainerRevoke(REQUEST_ID);
+
+        poller.pollRevokeJobs(); // 예외가 밖으로 나가면 이 시험 자체가 실패한다
+
+        verify(alarmService, never()).sendSlackAlert(anyString(), any());
+    }
+
+    @Test
     @DisplayName("한 신청의 조회 실패가 다른 신청 처리를 막지 않는다")
     void lookupFailureIsIsolated() {
         Request other = mock(Request.class);
