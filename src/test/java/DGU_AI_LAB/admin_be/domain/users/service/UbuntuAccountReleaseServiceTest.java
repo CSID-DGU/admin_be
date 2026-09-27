@@ -32,6 +32,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
@@ -160,6 +161,26 @@ class UbuntuAccountReleaseServiceTest {
 
         assertThat(user.getUbuntuAccountStatus()).isEqualTo(UbuntuAccountStatus.RELEASING);
         verify(alarmService, times(1)).sendSlackAlert(contains("ACCOUNT_IN_USE"), isNull());
+    }
+
+    @Test
+    @DisplayName("ACCOUNT_ABSENT_UNVERIFIED는 재시도로 안 풀리므로 '다시 실행' 대신 원인 확인을 권한다")
+    void accountAbsentUnverifiedGetsDifferentAdvice() {
+        request(30L, Status.DELETED, "farm1", 501L);
+        request(20L, Status.DELETED, "farm2", 502L);
+        givenResult(30L, 501L, JobResults.PHASE_SUCCESS, null);
+        givenResult(20L, 502L, JobResults.PHASE_FAIL, "ACCOUNT_ABSENT_UNVERIFIED");
+
+        service.advance(USER_ID);
+        service.advance(USER_ID);
+
+        assertThat(user.getUbuntuAccountStatus()).isEqualTo(UbuntuAccountStatus.RELEASING);
+        verify(alarmService, times(1)).sendSlackAlert(
+                argThat(msg -> msg.contains("ACCOUNT_ABSENT_UNVERIFIED")
+                        && msg.contains("다시 실행해도 풀리지 않습니다")
+                        && msg.contains("계정 파일과 삭제 기록을 확인")
+                        && !msg.contains("다시 실행해 주세요")),
+                isNull());
     }
 
     @Test

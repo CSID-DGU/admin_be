@@ -197,9 +197,21 @@ public class UbuntuAccountReleaseService {
 
     private void reportOnce(Long userId, NodeJob node, JobResultResponseDTO result, String what) {
         if (reported.add(userId + ":" + node.nodeName() + ":" + node.jobId())) {
-            alert(String.format("[계정 회수] %s - 계정 회수를 다시 실행해 주세요: userId=%d, node=%s, requestId=%d, error=%s",
-                    what, userId, node.nodeName(), node.requestId(), result.errorCode()));
+            alert(String.format("[계정 회수] %s - %s: userId=%d, node=%s, requestId=%d, error=%s",
+                    what, adviceFor(result), userId, node.nodeName(), node.requestId(), result.errorCode()));
         }
+    }
+
+    /**
+     * 실패 알림에 붙일 조치 안내. ACCOUNT_ABSENT_UNVERIFIED(계정 파일 손상, 또는 지운 뒤 기록을 남기기 전에
+     * 제어기가 죽은 경우)는 증거 자체가 없는 것이라 재시도로 풀리지 않는다 — "다시 실행"을 권하면 관리자가
+     * 원인을 보지 않고 재시도만 반복하게 된다(config-server #213 후속).
+     */
+    private static String adviceFor(JobResultResponseDTO result) {
+        if (JobResults.isAccountAbsentUnverified(result)) {
+            return "계정 회수를 다시 실행해도 풀리지 않습니다 - 계정 파일과 삭제 기록을 확인해 주세요";
+        }
+        return "계정 회수를 다시 실행해 주세요";
     }
 
     private void alert(String message) {

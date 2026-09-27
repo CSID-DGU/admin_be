@@ -31,6 +31,13 @@ public final class JobResults {
      */
     public static final String ERROR_DEGRADED = "DEGRADED";
 
+    /**
+     * 계정 회수에서 계정이 파일에 없는데 지운 증거도 없을 때의 error_code(config-server #213 후속).
+     * {@link #isAccountAlreadyAbsent}(운영 시절 코드, baseline)와 달리 재시도로 풀리지 않는다 — 계정 파일이
+     * 손상됐거나, 지운 뒤 기록을 남기기 전에 제어기가 죽은 경우다. 회수 완료로 오인하면 안 된다.
+     */
+    public static final String ERROR_ACCOUNT_ABSENT_UNVERIFIED = "ACCOUNT_ABSENT_UNVERIFIED";
+
     public static final String KIND_PROVISION = "provision";
     public static final String KIND_REVOKE = "revoke";
     public static final String KIND_MIGRATE = "migrate";
@@ -84,5 +91,13 @@ public final class JobResults {
         String errorCode = result == null ? null : result.errorCode();
         return errorCode != null
                 && (errorCode.equalsIgnoreCase("user not found") || errorCode.equalsIgnoreCase("USER_NOT_FOUND"));
+    }
+
+    /**
+     * 계정이 없는데 지운 증거가 없어 실패한 것인가(위 {@link #ERROR_ACCOUNT_ABSENT_UNVERIFIED}). 이 실패는
+     * 재시도해도 같은 결과라, 알림 문구를 "다시 실행"이 아니라 "원인 확인"으로 갈라야 한다.
+     */
+    public static boolean isAccountAbsentUnverified(JobResultResponseDTO result) {
+        return result != null && ERROR_ACCOUNT_ABSENT_UNVERIFIED.equals(result.errorCode());
     }
 }
