@@ -72,4 +72,15 @@ class JobResultsTest {
         assertThat(JobResults.isAccountAlreadyAbsent(result(7L, JobResults.PHASE_FAIL, null))).isFalse();
         assertThat(JobResults.isAccountAlreadyAbsent(null)).isFalse();
     }
+
+    @Test
+    @DisplayName("ACCOUNT_ABSENT_UNVERIFIED만 증거 없는 부재다 — user not found와 분리된 별개 코드")
+    void accountAbsentUnverified() {
+        assertThat(JobResults.isAccountAbsentUnverified(
+                result(7L, JobResults.PHASE_FAIL, JobResults.ERROR_ACCOUNT_ABSENT_UNVERIFIED))).isTrue();
+        assertThat(JobResults.isAccountAbsentUnverified(result(7L, JobResults.PHASE_FAIL, "user not found"))).isFalse();
+        assertThat(JobResults.isAccountAbsentUnverified(result(7L, JobResults.PHASE_FAIL, "USER_NOT_FOUND"))).isFalse();
+        assertThat(JobResults.isAccountAbsentUnverified(result(7L, JobResults.PHASE_FAIL, null))).isFalse();
+        assertThat(JobResults.isAccountAbsentUnverified(null)).isFalse();
+    }
 }
