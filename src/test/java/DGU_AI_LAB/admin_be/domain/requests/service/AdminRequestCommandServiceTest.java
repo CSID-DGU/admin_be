@@ -227,6 +227,20 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
+        @DisplayName("PROCESSING 요청은 단계 재시도(RETRY) 중이어도 거절할 수 없다 — START만 보면 재시도 중인 작업을 놓친다")
+        void rejectRequest_throws_whenProvisionJobRetrying() {
+            Request request = buildMockedRequestWithStatus(40L, Status.PROCESSING);
+            when(jobClient.getResult(JobResults.KIND_PROVISION, 40L))
+                    .thenReturn(job("RETRY", null));
+
+            assertThatThrownBy(() -> service.rejectRequest(new RejectRequestDTO(40L, "취소")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PROVISION_JOB_IN_PROGRESS);
+            verify(request, never()).reject(any());
+        }
+
+        @Test
         @DisplayName("PROCESSING 요청은 작업이 성공했는데 아직 반영 전이면 거절할 수 없다")
         void rejectRequest_throws_whenProvisionSucceededButNotApplied() {
             Request request = buildMockedRequestWithStatus(36L, Status.PROCESSING);
@@ -520,6 +534,22 @@ class AdminRequestCommandServiceTest {
 
             verify(request, never()).revertToPending();
             verify(request).recordJob(77L);
+        }
+
+        @Test
+        @DisplayName("등록 응답은 실패했지만 작업이 단계 재시도(RETRY) 중이면 되돌리지 않고 이어받는다")
+        void adoptsRetryingJobWhenRegistrationResponseFails() {
+            Long requestId = 210L;
+            Request request = buildMockedRequest(requestId);
+            doThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED))
+                    .when(jobClient).registerProvision(any());
+            when(jobClient.getResult(JobResults.KIND_PROVISION, requestId))
+                    .thenReturn(job("RETRY", null, 78L));
+
+            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
+
+            verify(request, never()).revertToPending();
+            verify(request).recordJob(78L);
         }
 
         @Test

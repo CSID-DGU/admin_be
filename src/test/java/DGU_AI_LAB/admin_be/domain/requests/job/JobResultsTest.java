@@ -40,6 +40,18 @@ class JobResultsTest {
     }
 
     @Test
+    @DisplayName("START·RETRY만 실행 중이다 — RETRY도 진행 중이지 실패가 아니다")
+    void isRunning() {
+        assertThat(JobResults.isRunning(JobResults.PHASE_START)).isTrue();
+        assertThat(JobResults.isRunning(JobResults.PHASE_RETRY)).isTrue();
+        assertThat(JobResults.isRunning(JobResults.PHASE_SUCCESS)).isFalse();
+        assertThat(JobResults.isRunning(JobResults.PHASE_FAIL)).isFalse();
+        assertThat(JobResults.isRunning(JobResults.PHASE_UNKNOWN)).isFalse();
+        assertThat(JobResults.isRunning(JobResults.PHASE_NONE)).isFalse();
+        assertThat(JobResults.isRunning(null)).isFalse();
+    }
+
+    @Test
     @DisplayName("DEGRADED 오류 코드만 자원을 남긴 실패다")
     void isDegraded() {
         assertThat(JobResults.isDegraded(result(7L, JobResults.PHASE_FAIL, JobResults.ERROR_DEGRADED))).isTrue();

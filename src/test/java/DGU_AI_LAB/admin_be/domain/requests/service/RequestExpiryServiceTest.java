@@ -191,6 +191,21 @@ class RequestExpiryServiceTest {
         }
 
         @Test
+        @DisplayName("등록 응답은 실패했지만 회수 작업이 단계 재시도(RETRY) 중이면 이어받는다 — START만 보면 놓친다")
+        void registrationFailureWithRetryingJobAdoptsIt() {
+            Request request = mockRequest(8L, Status.FULFILLED);
+            when(jobClient.registerRevoke(any(), any()))
+                    .thenThrow(new BusinessException("이미 처리 중", ErrorCode.INVALID_REQUEST_STATUS));
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 8L))
+                    .thenReturn(revokeJob(JobResults.PHASE_RETRY, 813L));
+
+            service.deleteContainerByAdmin(8L);
+
+            assertThat(request.getStatus()).isEqualTo(Status.EXPIRING);
+            verify(request).recordJob(813L);
+        }
+
+        @Test
         @DisplayName("config-server에 연결조차 못 했으면 조회 없이 바로 FULFILLED로 되돌린다 — 작업이 없는 것이 확실하다")
         void unreachableServerRevertsImmediately() {
             Request request = mockRequest(7L, Status.FULFILLED);

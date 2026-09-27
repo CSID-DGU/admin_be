@@ -126,7 +126,7 @@ public class RequestExpiryService {
                 log.warn("회수 작업 등록 실패 후 작업 상태 조회도 실패 — EXPIRING 유지, 재조정에 맡김: requestId={}", requestId, lookupFailure);
                 throw asBusiness(e);
             }
-            if (job != null && JobResults.PHASE_START.equals(job.phase())) {
+            if (job != null && JobResults.isRunning(job.phase())) {
                 log.warn("회수 작업 등록 응답은 실패했지만 작업이 도는 중 — 이어받음: requestId={}, jobId={}", requestId, job.jobId(), e);
                 return job.jobId();
             }

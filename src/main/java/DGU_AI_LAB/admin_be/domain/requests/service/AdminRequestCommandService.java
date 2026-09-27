@@ -206,7 +206,7 @@ public class AdminRequestCommandService {
                     username, requestId, cause.getMessage()), serverName);
             throw asRuntime(cause);
         }
-        if (job != null && JobResults.PHASE_START.equals(job.phase())) {
+        if (job != null && JobResults.isRunning(job.phase())) {
             log.warn("생성 작업 등록 응답은 실패했지만 작업이 도는 중 — 이어받음: requestId={}, jobId={}", requestId, job.jobId(), cause);
             return job.jobId();
         }
@@ -430,7 +430,7 @@ public class AdminRequestCommandService {
             // 이번 승인의 작업이 아직 보이지 않는다(이전 작업 결과가 보임).
             throw new BusinessException(ErrorCode.PROVISION_JOB_IN_PROGRESS);
         }
-        boolean running = JobResults.PHASE_START.equals(job.phase());
+        boolean running = JobResults.isRunning(job.phase());
         boolean successPending = JobResults.PHASE_SUCCESS.equals(job.phase())
                 && job.result() != null && job.result().podName() != null;
         if (running || successPending) {
