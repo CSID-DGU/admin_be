@@ -97,4 +97,14 @@ class AdminRequestControllerTest extends WebMvcTestSupport {
         verify(requestExpiryService).deleteContainerByAdmin(15L);
         verifyNoInteractions(adminRequestCommandService);
     }
+
+    @Test
+    @DisplayName("POST /{id}/container/force-complete: 경로의 신청 번호를 강제 완료 처리하고 200을 반환한다")
+    void forceCompleteRevoke() throws Exception {
+        mockMvc.perform(post("/api/admin/requests/16/container/force-complete"))
+                .andExpect(status().isOk());
+
+        verify(requestExpiryService).forceCompleteRevoke(16L);
+        verifyNoInteractions(adminRequestCommandService);
+    }
 }
