@@ -24,6 +24,10 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 
 /**
  * Pod 노드 마이그레이션. config-server에 마이그레이션 작업을 등록하고 바로 돌아오며, 결과는
@@ -159,6 +163,7 @@ public class PodMigrationService {
             return;
         }
         final boolean[] applied = {false};
+        final Request[] portsChangedRequest = {null};
         try {
             new TransactionTemplate(transactionManager).execute(status -> {
                 Request req = requestRepository.findByIdForUpdate(requestId)
@@ -168,6 +173,7 @@ public class PodMigrationService {
                     return null;
                 }
                 if (made != null && made.isMigrated()) {
+                    Set<String> oldPorts = portKeys(podExternalPortRepository.findByRequestRequestId(requestId));
                     req.assignPodInfo(made.podName(), made.node());
                     podExternalPortRepository.deleteByRequestRequestId(requestId);
                     if (made.ports() != null) {
@@ -179,6 +185,12 @@ public class PodMigrationService {
                                     .usagePurpose(port.usagePurpose())
                                     .build());
                         }
+                    }
+                    if (made.ports() != null && !made.ports().isEmpty() && !oldPorts.equals(newPortKeys(made.ports()))) {
+                        // 커밋 뒤 안내 메일에서 쓰는 지연 연관을 트랜잭션 안에서 채워 둔다.
+                        req.getUser().getEmail();
+                        req.getResourceGroup().getServerName();
+                        portsChangedRequest[0] = req;
                     }
                 }
                 req.endMigration();
@@ -198,6 +210,9 @@ public class PodMigrationService {
             if ("failed".equals(made.oldPodCleanup())) {
                 alert(String.format("[마이그레이션] 새 Pod는 정상 반영됐지만 기존 Pod 정리 실패 - 수동 확인 필요: requestId=%d, oldPod=%s, oldNode=%s",
                         requestId, made.oldPodName(), made.fromNode()), null);
+            }
+            if (portsChangedRequest[0] != null) {
+                notifyPortsChanged(portsChangedRequest[0]);
             }
         } else {
             log.info("Pod 마이그레이션 건너뜀: requestId={}, reason={}", requestId, made == null ? null : made.reason());
@@ -236,6 +251,32 @@ public class PodMigrationService {
         } catch (Exception e) {
             alert(String.format("[마이그레이션] MIGRATING 상태 복구 실패 - 수동 확인 필요: requestId=%d", requestId), e);
         }
+    }
+
+    /** 새 Pod에 다른 포트가 배정되면 사용자에게 새 접속 정보를 알린다. 메일 실패가 반영된 결과를 되돌리지 않는다. */
+    private void notifyPortsChanged(Request request) {
+        try {
+            alarmService.sendContainerPortsChangedEmail(request);
+            log.info("마이그레이션 포트 변경 안내 메일 발송: requestId={}", request.getRequestId());
+        } catch (Exception e) {
+            log.warn("마이그레이션 포트 변경 안내 메일 발송 실패: requestId={}", request.getRequestId(), e);
+        }
+    }
+
+    private static Set<String> portKeys(List<PodExternalPort> ports) {
+        return ports.stream()
+                .map(p -> portKey(p.getUsagePurpose(), p.getInternalPort(), p.getExternalPort()))
+                .collect(Collectors.toSet());
+    }
+
+    private static Set<String> newPortKeys(List<CreatePodResponseDTO.PortInfo> ports) {
+        return ports.stream()
+                .map(p -> portKey(p.usagePurpose(), p.internalPort(), p.externalPort()))
+                .collect(Collectors.toSet());
+    }
+
+    private static String portKey(String purpose, Integer internalPort, Integer externalPort) {
+        return purpose + ":" + internalPort + ":" + externalPort;
     }
 
     private void alert(String message, Exception cause) {

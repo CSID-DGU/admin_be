@@ -14,6 +14,8 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,6 +52,8 @@ class PodMigrationServiceTest {
     @Mock private TransactionStatus transactionStatus;
     @Mock private AlarmService alarmService;
     @Mock private Request request;
+    @Mock private User user;
+    @Mock private ResourceGroup resourceGroup;
 
     private PodMigrationService service;
 
@@ -62,6 +66,13 @@ class PodMigrationServiceTest {
         when(request.getUbuntuUsername()).thenReturn("testuser");
         when(request.getPodName()).thenReturn("ailab-testuser-old");
         when(requestRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(request));
+        when(request.getUser()).thenReturn(user);
+        when(request.getResourceGroup()).thenReturn(resourceGroup);
+    }
+
+    private PodExternalPort port(String purpose, int internalPort, int externalPort) {
+        return PodExternalPort.builder().request(request).usagePurpose(purpose)
+                .internalPort(internalPort).externalPort(externalPort).build();
     }
 
     private static JobResultResponseDTO.Result migrated(String cleanup) {
@@ -228,6 +239,67 @@ class PodMigrationServiceTest {
         verify(podExternalPortRepository).save(any(PodExternalPort.class));
         verify(request).endMigration();
         verify(alarmService, never()).sendSlackAlert(anyString(), any());
+    }
+
+    @Test
+    @DisplayName("옮기면서 포트가 바뀌면 커밋 뒤 사용자에게 새 접속 정보를 메일로 알린다")
+    void completeMigratedWithNewPortsMailsUser() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        when(podExternalPortRepository.findByRequestRequestId(1L)).thenReturn(List.of(port("ssh", 22, 32001)));
+
+        service.completeMigrationJob(1L, migrated(null));
+
+        var order = inOrder(request, alarmService);
+        order.verify(request).endMigration();
+        order.verify(alarmService).sendContainerPortsChangedEmail(request);
+    }
+
+    @Test
+    @DisplayName("옮겼어도 포트가 그대로면 메일을 보내지 않는다")
+    void completeMigratedWithSamePortsSendsNoMail() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        when(podExternalPortRepository.findByRequestRequestId(1L)).thenReturn(List.of(port("ssh", 22, 32010)));
+
+        service.completeMigrationJob(1L, migrated(null));
+
+        verify(request).endMigration();
+        verify(alarmService, never()).sendContainerPortsChangedEmail(any());
+    }
+
+    @Test
+    @DisplayName("결과에 포트가 없으면 안내할 접속 정보가 없으므로 메일을 보내지 않는다")
+    void completeMigratedWithoutPortsSendsNoMail() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        when(podExternalPortRepository.findByRequestRequestId(1L)).thenReturn(List.of(port("ssh", 22, 32001)));
+        JobResultResponseDTO.Result noPorts = new JobResultResponseDTO.Result(null, null, "ailab-testuser-new", "farm7",
+                null, "migrated", null, "farm2", "farm7", "ailab-testuser-old", null);
+
+        service.completeMigrationJob(1L, noPorts);
+
+        verify(request).endMigration();
+        verify(alarmService, never()).sendContainerPortsChangedEmail(any());
+    }
+
+    @Test
+    @DisplayName("안내 메일 발송이 실패해도 반영된 결과는 그대로 두고 예외를 올리지 않는다")
+    void completeMigratedMailFailureDoesNotPropagate() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        doThrow(new RuntimeException("smtp down")).when(alarmService).sendContainerPortsChangedEmail(request);
+
+        service.completeMigrationJob(1L, migrated(null));
+
+        verify(request).endMigration();
+        verify(alarmService).sendContainerPortsChangedEmail(request);
+    }
+
+    @Test
+    @DisplayName("상태가 이미 바뀌어 반영하지 않았으면 메일도 보내지 않는다")
+    void completeIgnoredSendsNoMail() {
+        when(request.getStatus()).thenReturn(Status.FULFILLED);
+
+        service.completeMigrationJob(1L, migrated(null));
+
+        verify(alarmService, never()).sendContainerPortsChangedEmail(any());
     }
 
     @Test
