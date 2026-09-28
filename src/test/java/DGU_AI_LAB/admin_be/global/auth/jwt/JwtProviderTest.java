@@ -174,6 +174,42 @@ class JwtProviderTest {
             assertThatThrownBy(() -> jwtProvider.validateAccessToken("bad.token"))
                     .isInstanceOf(UnauthorizedException.class);
         }
+
+        @Test
+        @DisplayName("리프레시 토큰은 액세스 토큰으로 쓸 수 없다")
+        void throwsUnauthorized_whenRefreshTokenIsUsedAsAccessToken() {
+            String refreshToken = jwtProvider.getIssueToken(1L, false);
+
+            assertThatThrownBy(() -> jwtProvider.validateAccessToken(refreshToken))
+                    .isInstanceOf(UnauthorizedException.class);
+        }
+
+        @Test
+        @DisplayName("종류가 적히지 않은(이전 방식) 토큰은 액세스 토큰으로 받지 않는다")
+        void throwsUnauthorized_whenTokenTypeIsMissing() {
+            Key key = Keys.hmacShaKeyFor(SECRET.getBytes());
+            Date now = new Date();
+            String untyped = Jwts.builder()
+                    .setSubject("1")
+                    .setIssuedAt(now)
+                    .setExpiration(new Date(now.getTime() + ACCESS_TTL))
+                    .signWith(key, SignatureAlgorithm.HS256)
+                    .compact();
+
+            assertThatThrownBy(() -> jwtProvider.validateAccessToken(untyped))
+                    .isInstanceOf(UnauthorizedException.class);
+        }
+
+        @Test
+        @DisplayName("액세스 토큰은 리프레시 토큰 검증을 통과하지 못한다")
+        void throwsUnauthorized_whenAccessTokenIsUsedAsRefreshToken() {
+            String accessToken = jwtProvider.getIssueToken(1L, true);
+
+            assertThatThrownBy(() -> jwtProvider.validateRefreshToken(accessToken))
+                    .isInstanceOf(UnauthorizedException.class);
+            assertThatCode(() -> jwtProvider.validateRefreshToken(jwtProvider.getIssueToken(1L, false)))
+                    .doesNotThrowAnyException();
+        }
     }
 
     // ───────────────────────────────────────────────────────────────
