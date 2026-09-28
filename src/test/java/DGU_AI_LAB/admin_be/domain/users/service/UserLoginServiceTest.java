@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.global.auth.EmailDomainPolicy;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
@@ -61,6 +62,9 @@ class UserLoginServiceTest {
 
     @Mock
     private ValueOperations<String, String> valueOperations;
+
+    @Mock
+    private EmailDomainPolicy emailDomainPolicy;
 
     private User activeUser;
 

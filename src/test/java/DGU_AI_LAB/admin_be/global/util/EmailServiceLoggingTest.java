@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.global.util;
 
+import DGU_AI_LAB.admin_be.global.auth.EmailDomainPolicy;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.support.LogCaptor;
 import jakarta.mail.internet.MimeMessage;
@@ -54,6 +55,12 @@ class EmailServiceLoggingTest {
 
     @Mock
     private MessageUtils messageUtils;
+
+    @Mock
+    private EmailDomainPolicy emailDomainPolicy;
+
+    @Mock
+    private EmailSendThrottle emailSendThrottle;
 
     @BeforeEach
     void setUp() {

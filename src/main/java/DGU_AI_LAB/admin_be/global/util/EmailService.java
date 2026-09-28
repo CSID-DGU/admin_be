@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.global.util;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.auth.EmailDomainPolicy;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,8 @@ public class EmailService {
     private final RedisTemplate<String, String> redisTemplate;
     private final UserRepository userRepository;
     private final MessageUtils messageUtils;
+    private final EmailDomainPolicy emailDomainPolicy;
+    private final EmailSendThrottle emailSendThrottle;
 
     private static final long AUTH_CODE_EXPIRE_SECONDS = 60 * 5; // 5분
     private static final String EMAIL_VERIFY_PREFIX = "email:verify:";
@@ -34,12 +37,14 @@ public class EmailService {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     public void sendEmailVerificationCode(String email) {
+        emailDomainPolicy.requireAllowed(email);
         // 이미 가입된 이메일이면 인증 메일 자체를 보내지 않는다 — 어차피 register()에서도
         // 막히지만, 그 전에 걸러야 이미 가입된 사람에게 혼란만 주는 인증 메일 발송과
         // 5분짜리 인증 코드 발급을 아낀다.
         if (userRepository.existsByEmail(email)) {
             throw new BusinessException(ErrorCode.USER_ALREADY_EXISTS);
         }
+        emailSendThrottle.acquire(email);
 
         String authCode = createRandomCode();
         String redisKey = EMAIL_VERIFY_PREFIX + email;
