@@ -79,8 +79,12 @@ public class AdminRequestCommandService {
      * <p>baseline·noprobe·full 세 방식이 모두 이 경로를 쓴다. 방식 차이(재시도, 결과 확인, 접근 시험)는
      * config-server 제어기의 실행 방식에서만 난다. 옛 동기 승인 경로는 {@code legacy-sync} 태그에 남아 있다.
      *
-     * <p>같은 사용자의 신청 두 건을 동시에 승인하면 뒤쪽 작업은 계정이 이미 있다는 이유로 실패하고
-     * PENDING으로 되돌아간다. 다시 승인하면 그때는 계정을 재사용해 정상 처리된다.
+     * <p>같은 사용자의 신청 두 건을 동시에 승인하면, 등록 요청을 보내기 전 서로를 볼 수 있게 같은 사용자
+     * 단위로 직렬화하고(아래 {@code approvalLockFor}) 자기 차례가 왔을 때 그 사용자의 다른 신청이 이미
+     * PROCESSING인지 확인한다. 있으면 등록을 보내지 않고 그 자리에서 PENDING으로 되돌린다(#607) —
+     * 그러지 않으면 돌아온 사용자(config-server CSID-DGU/admin_infra-proposed#204, expected_uid로 예전
+     * uid를 요청)의 경우 config-server가 "번호가 같으니 이어받기"로 보고 둘 다 성공시켜, 계정 하나에
+     * 컨테이너 두 개가 붙는 상태가 될 수 있다.
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SaveRequestResponseDTO approveRequest(ApproveRequestDTO dto) {
@@ -141,27 +145,44 @@ public class AdminRequestCommandService {
 
         // 이미 리눅스 계정이 있는 사용자면 계정 정보를 빼고 등록한다 — 그래야 제어기가 계정 단계를
         // 건너뛰고 컨테이너만 만들어, 기존 홈 디렉터리를 그대로 물려받는다.
-        final boolean[] reuseAccountRef = {false};
+        //
+        // "계정 있어?" 확인부터 등록 요청을 보내는 것까지를 사용자 단위로 통째로 직렬화한다(#607). 확인만
+        // 잠그고 등록은 잠금 밖에서 보내면, 같은 사용자의 신청 두 건이 동시에 "계정 없음"을 보고 각자
+        // 등록을 보낼 수 있다. 처음 계정을 만드는 사용자는 config-server가 뒤쪽을 거절해 안전하지만,
+        // 돌아온 사용자(expected_uid로 예전 uid를 요청)는 번호가 같아 "이어받기"로 보고 둘 다 성공시켜
+        // 계정 하나에 컨테이너 두 개가 붙을 수 있다.
+        final Long[] jobIdRef = {null};
         synchronized (approvalLockFor(userId)) {
-            new TransactionTemplate(transactionManager).execute(status -> {
-                User owner = userRepository.findByIdForUpdate(userId)
-                        .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-                reuseAccountRef[0] = owner.hasUbuntuAccount();
-                return null;
-            });
+            // 내 차례가 왔을 때, 같은 사용자의 다른 신청이 이미 등록 중(PROCESSING)이면 나는 등록을
+            // 보내지 않고 물러난다 — 앞선 신청이 끝난 뒤 다시 승인하면 그때는 계정이 생겨 있어 정상적으로
+            // 재사용 경로를 탄다.
+            // 앞선 신청이 DEGRADED 등으로 PROCESSING에 멈춰 있으면 저절로 끝나지 않으므로, 관리자가 찾아
+            // 정리할 수 있게 막고 있는 신청 번호를 로그에 남긴다.
+            List<Long> blockingRequestIds = requestRepository.findAllByUser_UserIdAndStatus(userId, Status.PROCESSING)
+                    .stream().map(Request::getRequestId).filter(id -> !id.equals(requestId)).toList();
+            if (!blockingRequestIds.isEmpty()) {
+                revertToPendingIfStillProcessing(requestId, serverName);
+                throw new BusinessException(String.format(
+                        "requestId=%d 승인 거절: 같은 사용자의 신청 %s이(가) PROCESSING", requestId, blockingRequestIds),
+                        ErrorCode.USER_APPROVAL_ALREADY_IN_PROGRESS);
+            }
+            boolean reuseAccount = Boolean.TRUE.equals(new TransactionTemplate(transactionManager).execute(status ->
+                    userRepository.findByIdForUpdate(userId)
+                            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND))
+                            .hasUbuntuAccount()));
+
+            // 계정을 새로 만드는 경우의 그룹은 작업이 계정을 만들 때 함께 넣는다.
+            // 재사용 계정의 경우, config-server의 provision 제어기가 Pod 생성 후 그룹을 추가하므로
+            // 여기서는 그룹 정보를 구성만 하고 로컬 호출은 하지 않는다.
+            List<UserCreationRequestDTO.SupplementaryGroup> requestGroupsToAdd =
+                    creationDtoRef[0].supplementaryGroups();
+
+            ProvisionRegisterRequestDTO body = reuseAccount
+                    ? ProvisionRegisterRequestDTO.podOnly(requestId, username, requestGroupsToAdd)
+                    : ProvisionRegisterRequestDTO.withAccount(creationDtoRef[0]);
+            jobIdRef[0] = registerProvisionJob(body, requestId, username, serverName);
         }
-        boolean reuseAccount = reuseAccountRef[0];
-
-        // 계정을 새로 만드는 경우의 그룹은 작업이 계정을 만들 때 함께 넣는다. 
-        // 재사용 계정의 경우, config-server의 provision 제어기가 Pod 생성 후 그룹을 추가하므로
-        // 여기서는 그룹 정보를 구성만 하고 로컬 호출은 하지 않는다.
-        List<UserCreationRequestDTO.SupplementaryGroup> requestGroupsToAdd = 
-               creationDtoRef[0].supplementaryGroups();
-
-        ProvisionRegisterRequestDTO body = reuseAccount
-               ? ProvisionRegisterRequestDTO.podOnly(requestId, username, requestGroupsToAdd)
-               : ProvisionRegisterRequestDTO.withAccount(creationDtoRef[0]);
-        Long jobId = registerProvisionJob(body, requestId, username, serverName);
+        Long jobId = jobIdRef[0];
         // 결과 폴러가 이 번호의 결과만 반영하게 남긴다. 그 사이 상태가 바뀌었으면(거절 등) 건드리지 않는다.
         new TransactionTemplate(transactionManager).execute(status -> {
             requestRepository.findByIdForUpdate(requestId)

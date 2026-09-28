@@ -453,6 +453,41 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
+        @DisplayName("자기 자신만 PROCESSING이면(정상적인 단독 승인) 충돌로 보지 않고 그대로 등록한다")
+        void doesNotConflictWithItself() {
+            Long requestId = 220L;
+            Request request = buildMockedRequest(requestId);
+            // findAllByUser_UserIdAndStatus가 이 신청 자신만 돌려준다 — markAsProcessing 뒤의 정상 상태.
+            when(requestRepository.findAllByUser_UserIdAndStatus(100L, Status.PROCESSING))
+                    .thenReturn(List.of(request));
+
+            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
+
+            verify(jobClient).registerProvision(any());
+            verify(request, never()).revertToPending();
+        }
+
+        @Test
+        @DisplayName("같은 사용자의 다른 신청이 이미 처리 중이면 등록을 보내지 않고 PENDING으로 되돌린다(#607) — " +
+                "돌아온 사용자가 두 신청 다 같은 uid로 성공해 계정 하나에 컨테이너 두 개가 붙는 것을 막는다")
+        void rejectsWhenAnotherRequestOfSameUserIsAlreadyProcessing() {
+            Long requestId = 221L;
+            Request request = buildMockedRequest(requestId);
+            Request otherProcessing = mock(Request.class);
+            when(otherProcessing.getRequestId()).thenReturn(999L); // 같은 사용자의 다른 신청
+            when(requestRepository.findAllByUser_UserIdAndStatus(100L, Status.PROCESSING))
+                    .thenReturn(List.of(request, otherProcessing));
+
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_APPROVAL_ALREADY_IN_PROGRESS)
+                    .hasMessageContaining("[999]");
+
+            verify(jobClient, never()).registerProvision(any());
+            verify(request).revertToPending();
+        }
+
+        @Test
         @DisplayName("계정 회수가 도는 중인 사용자는 승인을 거절한다 — 새 컨테이너가 곧 지워질 계정을 쓰게 된다")
         void rejectsWhileAccountReleasing() {
             Long requestId = 206L;
