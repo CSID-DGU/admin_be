@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
@@ -90,7 +91,7 @@ class AdminRequestCommandServiceApprovalContractTest {
         service = new AdminRequestCommandService(
                 alarmService, requestRepository, userRepository, containerImageRepository,
                 resourceGroupRepository, podExternalPortRepository, jobClient,
-                transactionManager
+                transactionManager, new InMemoryAlertDeduplicator()
         );
 
         when(mockUser.getUserId()).thenReturn(100L);

@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
+import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
@@ -38,7 +39,7 @@ class ProvisionJobPollerTest {
 
     @BeforeEach
     void setUp() {
-        poller = new ProvisionJobPoller(requestRepository, jobClient, adminRequestCommandService);
+        poller = new ProvisionJobPoller(requestRepository, jobClient, new InMemoryAlertDeduplicator(), adminRequestCommandService);
     }
 
     private void givenProcessing(Long... requestIds) {
@@ -230,8 +231,8 @@ class ProvisionJobPollerTest {
     }
 
     @Test
-    @DisplayName("반영 실패가 회복되면(다음 바퀴는 예외 없이 끝남) 알림 기록이 지워져 다시 실패해도 또 한 번 알린다")
-    void applyFailureNotificationResetsAfterRecovery() {
+    @DisplayName("반영 실패 알림은 작업마다 한 번 — 같은 신청이라도 새 작업에서 다시 실패하면 또 알린다")
+    void applyFailureIsReportedAgainForNewJob() {
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(9L);
         when(request.getJobId()).thenReturn(1L);
@@ -240,13 +241,15 @@ class ProvisionJobPollerTest {
                 50007L, 50007L, "ailab-testuser-x", "farm2", List.of());
         when(jobClient.getResult("provision", 9L)).thenReturn(result(9L, "SUCCESS", made));
         doThrow(new BusinessException(ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED))
-                .doNothing()
-                .doThrow(new BusinessException(ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED))
                 .when(adminRequestCommandService).completeApprovalJob(9L, made);
 
-        poller.pollProvisionJobs(); // 1바퀴: 실패 → 알림
-        poller.pollProvisionJobs(); // 2바퀴: 성공 → 기록 초기화
-        poller.pollProvisionJobs(); // 3바퀴: 다시 실패 → 다시 알림
+        poller.pollProvisionJobs(); // 작업 1: 실패 → 알림
+        poller.pollProvisionJobs(); // 작업 1: 또 실패 → 알리지 않음
+
+        when(request.getJobId()).thenReturn(2L);
+        when(jobClient.getResult("provision", 9L)).thenReturn(
+                new JobResultResponseDTO("9", "provision", 2L, "SUCCESS", null, null, made));
+        poller.pollProvisionJobs(); // 작업 2: 실패 → 새 사건이라 다시 알림
 
         verify(adminRequestCommandService, times(2)).reportApplyFailure(eq(9L), anyString());
     }
