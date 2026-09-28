@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.global.util;
 
+import DGU_AI_LAB.admin_be.global.auth.EmailDomainPolicy;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -46,6 +47,12 @@ class EmailServiceTest {
 
     @Mock
     private MessageUtils messageUtils;
+
+    @Mock
+    private EmailDomainPolicy emailDomainPolicy;
+
+    @Mock
+    private EmailSendThrottle emailSendThrottle;
 
     @BeforeEach
     void setUp() {
@@ -106,6 +113,30 @@ class EmailServiceTest {
 
             assertThatThrownBy(() -> emailService.sendEmailVerificationCode("test@example.com"))
                     .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("허용되지 않은 도메인이면 발송 횟수도 세지 않고 메일을 보내지 않는다")
+        void sendEmailVerificationCode_disallowedDomain_doesNotSend() {
+            doThrow(new BusinessException(ErrorCode.EMAIL_DOMAIN_NOT_ALLOWED))
+                    .when(emailDomainPolicy).requireAllowed("test@gmail.com");
+
+            assertThatThrownBy(() -> emailService.sendEmailVerificationCode("test@gmail.com"))
+                    .isInstanceOf(BusinessException.class);
+
+            verifyNoInteractions(emailSendThrottle, mailSender, valueOperations);
+        }
+
+        @Test
+        @DisplayName("발송 제한에 걸리면 코드를 만들지 않고 메일을 보내지 않는다")
+        void sendEmailVerificationCode_throttled_doesNotSend() {
+            doThrow(new BusinessException(ErrorCode.TOO_MANY_EMAIL_SENDS))
+                    .when(emailSendThrottle).acquire("test@dgu.ac.kr");
+
+            assertThatThrownBy(() -> emailService.sendEmailVerificationCode("test@dgu.ac.kr"))
+                    .isInstanceOf(BusinessException.class);
+
+            verifyNoInteractions(mailSender, valueOperations);
         }
 
         @Test

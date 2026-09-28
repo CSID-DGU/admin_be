@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.global.auth.EmailDomainPolicy;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
@@ -34,6 +35,7 @@ public class UserLoginService {
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
     private final RedisTemplate<String, String> redisTemplate;
+    private final EmailDomainPolicy emailDomainPolicy;
 
     @Value("${jwt.refresh-token-expire-time}")
     private long REFRESH_TOKEN_EXPIRE_TIME;
@@ -50,6 +52,7 @@ public class UserLoginService {
     /** 회원가입 */
     @Transactional
     public void register(UserRegisterRequestDTO request) {
+        emailDomainPolicy.requireAllowed(request.email());
         String redisKey = "VERIFIED:" + request.email();
 
         if (!Boolean.TRUE.equals(redisTemplate.hasKey(redisKey))) {
