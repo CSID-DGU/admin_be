@@ -22,7 +22,6 @@ import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
-import DGU_AI_LAB.admin_be.global.util.LinuxPasswordHasher;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -200,14 +199,10 @@ public class RequestCommandService {
         ContainerImage img = containerImageRepository.findById(dto.imageId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        // 비밀번호는 유저네임처럼 웹 계정에 하나다. 첫 신청에서만 받고, 그 뒤 신청은 보내와도 무시한다 —
-        // 바꾸려면 계정 페이지의 비밀번호 변경을 쓴다(떠 있는 컨테이너까지 함께 바뀐다).
+        // SSH 비밀번호는 웹 계정 비밀번호 하나다. 해시는 가입·로그인·비밀번호 변경 때 만들어지므로, 없다면
+        // 그 전에 발급된 로그인 세션이다 — 다시 로그인하면 채워진다.
         if (!user.hasUbuntuPassword()) {
-            String ubuntuPassword = dto.ubuntuPassword();
-            if (ubuntuPassword == null || ubuntuPassword.isBlank()) {
-                throw new BusinessException(ErrorCode.UBUNTU_PASSWORD_REQUIRED);
-            }
-            user.changeUbuntuPasswordHash(LinuxPasswordHasher.sha512Crypt(ubuntuPassword));
+            throw new BusinessException(ErrorCode.UBUNTU_PASSWORD_REQUIRED);
         }
 
         // addGroup()/포트 신청이 requestId를 요구하므로 여기서 즉시 flush해 ID를 확보한다.

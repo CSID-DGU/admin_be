@@ -11,6 +11,7 @@ import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import DGU_AI_LAB.admin_be.global.auth.jwt.JwtProvider;
 import DGU_AI_LAB.admin_be.global.validation.ReservedLinuxNames;
+import DGU_AI_LAB.admin_be.global.util.LinuxPasswordHasher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -67,6 +68,8 @@ public class UserLoginService {
 
         String encoded = passwordEncoder.encode(request.password());
         User user = request.toEntity(encoded);
+        // 웹 계정 비밀번호가 곧 SSH(Ubuntu) 비밀번호다. 평문은 지금만 있으므로 리눅스용 해시를 함께 만든다.
+        user.changeUbuntuPasswordHash(LinuxPasswordHasher.sha512Crypt(request.password()));
 
         try {
             // 위 사전 검사와 여기 사이에 같은 이메일/유저네임으로 동시에 가입이 들어올 수 있다.
@@ -123,6 +126,7 @@ public class UserLoginService {
 
         redisTemplate.delete(attemptKey);
         user.recordLogin();
+        fillSshPasswordHashIfAbsent(user, request.password());
 
         String accessToken = jwtProvider.getIssueToken(user.getUserId(), true);
         String refreshToken = jwtProvider.getIssueToken(user.getUserId(), false);
@@ -132,6 +136,20 @@ public class UserLoginService {
         );
 
         return UserTokenResponseDTO.of(accessToken, refreshToken);
+    }
+
+    /**
+     * SSH 비밀번호가 웹 비밀번호로 합쳐지기 전에 가입한 계정은 리눅스용 해시가 없다. 평문을 볼 수 있는 로그인
+     * 때 채워, 다음 컨테이너부터 웹 비밀번호로 SSH에 접속하게 한다. 이미 떠 있는 컨테이너는 건드리지 않는다
+     * (로그인이 config-server를 기다리지 않게) — 웹 비밀번호를 바꾸면 그때 함께 바뀐다.
+     */
+    private void fillSshPasswordHashIfAbsent(User user, String rawPassword) {
+        if (user.hasUbuntuPassword()) {
+            return;
+        }
+        if (userRepository.fillUbuntuPasswordHashIfAbsent(user.getUserId(), LinuxPasswordHasher.sha512Crypt(rawPassword)) > 0) {
+            log.info("[login] userId={} SSH 비밀번호 해시를 웹 비밀번호로 채움", user.getUserId());
+        }
     }
 
     /** 이메일당 15분 내 5회 실패 시 잠금 — 브루트포스 방지 */

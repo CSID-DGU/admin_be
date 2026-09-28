@@ -5,9 +5,11 @@ import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -35,6 +37,16 @@ public interface UserRepository extends JpaRepository<User,Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT u FROM User u WHERE u.userId = :userId")
     Optional<User> findByIdForUpdate(@Param("userId") Long userId);
+
+    /**
+     * SSH 비밀번호 해시가 비어 있을 때만 채운다. 로그인은 트랜잭션 없이 도므로 엔티티를 통째로 저장하면
+     * 그 사이 끝난 비밀번호 변경을 옛 값으로 덮어쓸 수 있다 — 이 칸 하나만, 비어 있을 때만 바꾼다.
+     */
+    @Transactional
+    @Modifying
+    @Query("UPDATE User u SET u.ubuntuPasswordHash = :hash WHERE u.userId = :userId "
+            + "AND (u.ubuntuPasswordHash IS NULL OR u.ubuntuPasswordHash = '')")
+    int fillUbuntuPasswordHashIfAbsent(@Param("userId") Long userId, @Param("hash") String hash);
 
     /**
      * [자동 탈퇴 대상 조회 쿼리]

@@ -98,6 +98,8 @@ class UserLoginServiceTest {
 
             ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
             verify(userRepository, times(1)).saveAndFlush(captor.capture());
+            // 웹 비밀번호가 곧 SSH 비밀번호다 — 가입 때 리눅스용 해시를 함께 만든다(평문은 남기지 않는다).
+            assertThat(captor.getValue().getUbuntuPasswordHash()).startsWith("$6$").doesNotContain("password123");
             // 가입 시 우분투 유저네임만 정해지고, 리눅스 계정(UID/GID)은 첫 승인 때 만들어진다.
             assertThat(captor.getValue().getUbuntuUsername()).isEqualTo("honggildong");
             assertThat(captor.getValue().hasUbuntuAccount()).isFalse();
@@ -251,6 +253,47 @@ class UserLoginServiceTest {
             assertThat(result.refreshToken()).isEqualTo("refreshToken");
             verify(passwordEncoder, times(1)).matches("password123", "encodedPassword");
             verify(valueOperations).set(anyString(), eq("refreshToken"), eq(604800000L), eq(TimeUnit.MILLISECONDS));
+        }
+
+        @Test
+        @DisplayName("SSH 비밀번호 해시가 없는 계정은 로그인한 비밀번호로 그 칸만 조건부로 채운다")
+        void login_fillsSshPasswordHashWhenAbsent() {
+            ReflectionTestUtils.setField(activeUser, "userId", 7L);
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
+            when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+            userLoginService.login(new UserLoginRequestDTO("test@dgu.ac.kr", "password123"));
+
+            ArgumentCaptor<String> hash = ArgumentCaptor.forClass(String.class);
+            verify(userRepository).fillUbuntuPasswordHashIfAbsent(eq(7L), hash.capture());
+            assertThat(hash.getValue()).startsWith("$6$").doesNotContain("password123");
+            verify(userRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("SSH 비밀번호 해시가 이미 있으면 로그인에서 건드리지 않는다")
+        void login_keepsExistingSshPasswordHash() {
+            activeUser.changeUbuntuPasswordHash("$6$existing$hash");
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
+            when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+            userLoginService.login(new UserLoginRequestDTO("test@dgu.ac.kr", "password123"));
+
+            verify(userRepository, never()).fillUbuntuPasswordHashIfAbsent(any(), anyString());
+        }
+
+        @Test
+        @DisplayName("비밀번호가 틀리면 SSH 비밀번호 해시를 채우지 않는다")
+        void login_wrongPassword_doesNotFillHash() {
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
+            when(passwordEncoder.matches("wrong", "encodedPassword")).thenReturn(false);
+
+            assertThatThrownBy(() -> userLoginService.login(new UserLoginRequestDTO("test@dgu.ac.kr", "wrong")))
+                    .isInstanceOf(UnauthorizedException.class);
+            verify(userRepository, never()).fillUbuntuPasswordHashIfAbsent(any(), anyString());
         }
 
         @Test

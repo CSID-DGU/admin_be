@@ -34,12 +34,6 @@ public record SaveRequestRequestDTO(
         @Positive(message = "이미지 ID는 양수여야 합니다.")
         Long imageId,
 
-        // 계정 비밀번호가 아직 없을 때(첫 신청)만 필요하다 — 서비스가 확인한다. 화면도 8자 이상을 요구한다.
-        @Schema(description = "Ubuntu 비밀번호. 계정 비밀번호가 없을 때(첫 신청)만 필요하고, 있으면 무시한다.",
-                example = "strongPassword123!")
-        @Size(min = 8, max = 128, message = "우분투 비밀번호는 8~128자여야 합니다.")
-        String ubuntuPassword,
-
         // requests.usage_purpose가 1000자다.
         @Schema(description = "사용 목적", example = "딥러닝 모델 학습")
         @NotBlank(message = "사용 목적은 필수입니다.")

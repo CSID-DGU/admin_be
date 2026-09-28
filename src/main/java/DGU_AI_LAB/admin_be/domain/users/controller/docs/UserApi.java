@@ -2,7 +2,6 @@ package DGU_AI_LAB.admin_be.domain.users.controller.docs;
 
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PasswordUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PhoneUpdateRequestDTO;
-import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuPasswordUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuUsernameRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
@@ -31,11 +30,15 @@ public interface UserApi {
             @AuthenticationPrincipal CustomUserDetails principal
     );
 
-    @Operation(summary = "사용자 비밀번호 변경", description = "로그인된 사용자의 비밀번호를 변경합니다.")
+    @Operation(summary = "사용자 비밀번호 변경",
+            description = "로그인된 사용자의 비밀번호를 변경합니다. 웹 비밀번호가 곧 SSH(Ubuntu) 비밀번호라, 리눅스 계정이 "
+                    + "있으면 떠 있는 모든 컨테이너에도 반영하고 이후 컨테이너도 이 비밀번호를 씁니다.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "성공"),
             @ApiResponse(responseCode = "400", description = "잘못된 요청 (현재 비밀번호 불일치 등)"),
-            @ApiResponse(responseCode = "401", description = "인증 실패")
+            @ApiResponse(responseCode = "401", description = "인증 실패"),
+            @ApiResponse(responseCode = "409", description = "컨테이너 생성 중이라 지금은 바꿀 수 없음"),
+            @ApiResponse(responseCode = "502", description = "컨테이너 반영 실패 (비밀번호는 바뀌지 않음, 다시 시도)")
     })
     @PatchMapping("/me/password")
     ResponseEntity<SuccessResponse<?>> updateUserPassword(
@@ -66,20 +69,5 @@ public interface UserApi {
     ResponseEntity<SuccessResponse<?>> registerUbuntuUsername(
             @AuthenticationPrincipal @Parameter(hidden = true) CustomUserDetails principal,
             @RequestBody @Valid UbuntuUsernameRegisterRequestDTO request
-    );
-
-    @Operation(summary = "Ubuntu 비밀번호 변경",
-            description = "웹 로그인 비밀번호로 본인을 확인한 뒤 계정의 Ubuntu 비밀번호를 바꿉니다. "
-                    + "떠 있는 모든 컨테이너에 바로 반영되고, 이후 만들어지는 컨테이너도 이 비밀번호를 씁니다.")
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "성공"),
-            @ApiResponse(responseCode = "400", description = "잘못된 요청 (현재 비밀번호 불일치, 비밀번호 형식 오류 등)"),
-            @ApiResponse(responseCode = "401", description = "인증 실패"),
-            @ApiResponse(responseCode = "502", description = "컨테이너 반영 실패 (비밀번호는 바뀌지 않음, 다시 시도)")
-    })
-    @PatchMapping("/me/ubuntu-password")
-    ResponseEntity<SuccessResponse<?>> updateUbuntuPassword(
-            @AuthenticationPrincipal @Parameter(hidden = true) CustomUserDetails principal,
-            @RequestBody @Valid UbuntuPasswordUpdateRequestDTO request
     );
 }
