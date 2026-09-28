@@ -480,7 +480,8 @@ class AdminRequestCommandServiceTest {
 
             assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
                     .isInstanceOf(BusinessException.class)
-                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_APPROVAL_ALREADY_IN_PROGRESS);
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_APPROVAL_ALREADY_IN_PROGRESS)
+                    .hasMessageContaining("[999]");
 
             verify(jobClient, never()).registerProvision(any());
             verify(request).revertToPending();

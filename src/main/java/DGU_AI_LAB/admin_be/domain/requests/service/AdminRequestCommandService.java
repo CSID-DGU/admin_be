@@ -156,11 +156,15 @@ public class AdminRequestCommandService {
             // 내 차례가 왔을 때, 같은 사용자의 다른 신청이 이미 등록 중(PROCESSING)이면 나는 등록을
             // 보내지 않고 물러난다 — 앞선 신청이 끝난 뒤 다시 승인하면 그때는 계정이 생겨 있어 정상적으로
             // 재사용 경로를 탄다.
-            boolean anotherApprovalInProgress = requestRepository.findAllByUser_UserIdAndStatus(userId, Status.PROCESSING)
-                    .stream().anyMatch(r -> !r.getRequestId().equals(requestId));
-            if (anotherApprovalInProgress) {
+            // 앞선 신청이 DEGRADED 등으로 PROCESSING에 멈춰 있으면 저절로 끝나지 않으므로, 관리자가 찾아
+            // 정리할 수 있게 막고 있는 신청 번호를 로그에 남긴다.
+            List<Long> blockingRequestIds = requestRepository.findAllByUser_UserIdAndStatus(userId, Status.PROCESSING)
+                    .stream().map(Request::getRequestId).filter(id -> !id.equals(requestId)).toList();
+            if (!blockingRequestIds.isEmpty()) {
                 revertToPendingIfStillProcessing(requestId, serverName);
-                throw new BusinessException(ErrorCode.USER_APPROVAL_ALREADY_IN_PROGRESS);
+                throw new BusinessException(String.format(
+                        "requestId=%d 승인 거절: 같은 사용자의 신청 %s이(가) PROCESSING", requestId, blockingRequestIds),
+                        ErrorCode.USER_APPROVAL_ALREADY_IN_PROGRESS);
             }
             boolean reuseAccount = Boolean.TRUE.equals(new TransactionTemplate(transactionManager).execute(status ->
                     userRepository.findByIdForUpdate(userId)
