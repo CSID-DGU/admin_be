@@ -34,7 +34,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 @Slf4j
@@ -61,13 +60,30 @@ public class AdminRequestCommandService {
     // config-server 409로 실패해 PENDING으로 되돌아가고 재시도하면 정상적으로 재사용하지만,
     // 관리자 입장에선 불필요한 승인 실패로 보인다). admin_be가 단일 인스턴스로만 배포되므로
     // in-process 락으로 충분하다.
-    private final ConcurrentHashMap<Long, Object> userApprovalLocks = new ConcurrentHashMap<>();
+    //
+    // 사용자마다 잠금 객체를 하나씩 쌓으면 한 번도 지워지지 않아 사용자 수만큼 커진다. 쓰고 나서 지우는 방식은
+    // 기다리던 스레드와 새로 온 스레드가 서로 다른 객체를 잡는 틈이 생기므로, 고정 개수의 잠금을 userId로
+    // 나눠 쓴다(lock striping). 다른 사용자가 같은 칸에 걸리면 잠깐 순서를 기다릴 뿐 결과는 같다.
+    static final int APPROVAL_LOCK_STRIPES = 64;
+    private final Object[] approvalLocks = newApprovalLocks();
 
     // 성공 결과를 받지 못해 반영을 멈춘 신청은 폴러가 매 바퀴 다시 부른다. 같은 알림이 반복되지 않게 한다.
     private final AlertDeduplicator alertDeduplicator;
 
+    private static Object[] newApprovalLocks() {
+        Object[] locks = new Object[APPROVAL_LOCK_STRIPES];
+        for (int i = 0; i < locks.length; i++) {
+            locks[i] = new Object();
+        }
+        return locks;
+    }
+
+    static int approvalLockStripe(Long userId) {
+        return Math.floorMod(Long.hashCode(userId), APPROVAL_LOCK_STRIPES);
+    }
+
     private Object approvalLockFor(Long userId) {
-        return userApprovalLocks.computeIfAbsent(userId, id -> new Object());
+        return approvalLocks[approvalLockStripe(userId)];
     }
 
     /**

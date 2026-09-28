@@ -764,4 +764,247 @@ class AdminRequestCommandServiceTest {
             verify(alarmService).sendAdminSlackNotification(any(), contains("결과가 불명"));
         }
     }
+    @Nested
+    @DisplayName("같은 사용자 승인 직렬화 잠금")
+    class ApprovalLockStripes {
+
+        private static final long WAIT_SECONDS = 5;
+
+        @BeforeEach
+        void stubApprovalLookups() {
+            when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
+            when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
+        }
+
+        private User userWithId(long userId) {
+            User user = mock(User.class);
+            when(user.getUserId()).thenReturn(userId);
+            when(user.getName()).thenReturn("user-" + userId);
+            when(user.getUbuntuPasswordHash()).thenReturn("$6$salt$hash");
+            when(userRepository.findByIdForUpdate(userId)).thenReturn(Optional.of(user));
+            return user;
+        }
+
+        private void pendingRequestOf(Long requestId, User owner) {
+            Request request = mock(Request.class);
+            when(request.getRequestId()).thenReturn(requestId);
+            when(request.getStatus()).thenReturn(Status.PENDING, Status.PROCESSING);
+            when(request.getUbuntuUsername()).thenReturn("user" + requestId);
+            when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
+            when(request.getUser()).thenReturn(owner);
+            when(request.getResourceGroup()).thenReturn(mockRg);
+            when(request.getContainerImage()).thenReturn(mockImage);
+            when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+        }
+
+        /** 지정한 신청의 등록 호출에서 풀어 줄 때까지 멈춘다. 멈춘 동안 그 스레드는 사용자 잠금을 쥐고 있다. */
+        private java.util.concurrent.CountDownLatch[] holdRegistrationOf(Long heldRequestId) {
+            java.util.concurrent.CountDownLatch entered = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.atomic.AtomicLong nextJobId = new java.util.concurrent.atomic.AtomicLong(7000L);
+            when(jobClient.registerProvision(any())).thenAnswer(inv -> {
+                ProvisionRegisterRequestDTO body = inv.getArgument(0);
+                if (heldRequestId.equals(body.requestId())) {
+                    entered.countDown();
+                    if (!release.await(WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)) {
+                        throw new AssertionError("release timeout");
+                    }
+                }
+                return nextJobId.incrementAndGet();
+            });
+            return new java.util.concurrent.CountDownLatch[]{entered, release};
+        }
+
+        private Thread approveAsync(Long requestId, List<Throwable> failures) {
+            Thread t = new Thread(() -> {
+                try {
+                    service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
+                } catch (Throwable e) {
+                    failures.add(e);
+                }
+            }, "approve-" + requestId);
+            t.start();
+            return t;
+        }
+
+        private void awaitBlocked(Thread t) throws InterruptedException {
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
+            while (t.getState() != Thread.State.BLOCKED) {
+                if (System.nanoTime() > deadline) {
+                    throw new AssertionError(t.getName() + " did not block, state=" + t.getState());
+                }
+                Thread.sleep(5);
+            }
+        }
+
+        private void joinAll(Thread... threads) throws InterruptedException {
+            for (Thread t : threads) {
+                t.join(java.util.concurrent.TimeUnit.SECONDS.toMillis(WAIT_SECONDS));
+                assertThat(t.isAlive()).as(t.getName() + " finished").isFalse();
+            }
+        }
+
+        @Test
+        @DisplayName("잠금 칸 번호는 어떤 userId(0·음수·극값 포함)에도 [0, 칸 수) 안에 든다")
+        void stripeAlwaysInRange() {
+            long[] ids = {0L, 1L, -1L, 63L, 64L, 65L, 100L, 164L, Integer.MAX_VALUE, Integer.MIN_VALUE,
+                    Long.MAX_VALUE, Long.MIN_VALUE, 1L << 32, (1L << 32) + 1, -(1L << 40)};
+            for (long id : ids) {
+                assertThat(AdminRequestCommandService.approvalLockStripe(id))
+                        .as("userId=%d", id)
+                        .isBetween(0, AdminRequestCommandService.APPROVAL_LOCK_STRIPES - 1);
+            }
+        }
+
+        @Test
+        @DisplayName("같은 userId는 항상 같은 칸에 걸린다(박싱 캐시 밖의 서로 다른 Long 객체여도)")
+        void sameUserSameStripe() {
+            for (long id = -500; id <= 500; id++) {
+                Long boxed = Long.valueOf(id);
+                Long parsed = Long.valueOf(Long.toString(id));
+                assertThat(AdminRequestCommandService.approvalLockStripe(boxed))
+                        .isEqualTo(AdminRequestCommandService.approvalLockStripe(parsed));
+            }
+        }
+
+        @Test
+        @DisplayName("연속된 userId는 칸 수만큼 서로 다른 칸에 고르게 퍼진다")
+        void consecutiveIdsSpreadAcrossAllStripes() {
+            java.util.Set<Integer> stripes = new java.util.HashSet<>();
+            for (long id = 1000; id < 1000 + AdminRequestCommandService.APPROVAL_LOCK_STRIPES; id++) {
+                stripes.add(AdminRequestCommandService.approvalLockStripe(id));
+            }
+            assertThat(stripes).hasSize(AdminRequestCommandService.APPROVAL_LOCK_STRIPES);
+        }
+
+        @Test
+        @DisplayName("잠금 개수는 고정이다 — 승인한 사용자 수만큼 늘지 않는다")
+        void lockCountDoesNotGrowWithUsers() {
+            java.util.concurrent.atomic.AtomicLong jobIds = new java.util.concurrent.atomic.AtomicLong(1L);
+            when(jobClient.registerProvision(any())).thenAnswer(inv -> jobIds.incrementAndGet());
+            Object[] before = (Object[]) ReflectionTestUtils.getField(service, "approvalLocks");
+
+            for (long userId = 10_000; userId < 10_200; userId++) {
+                Long requestId = 50_000 + userId;
+                pendingRequestOf(requestId, userWithId(userId));
+                service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
+            }
+
+            Object[] after = (Object[]) ReflectionTestUtils.getField(service, "approvalLocks");
+            assertThat(after).isSameAs(before).hasSize(AdminRequestCommandService.APPROVAL_LOCK_STRIPES);
+            assertThat(java.util.Arrays.stream(after).distinct().count())
+                    .isEqualTo(AdminRequestCommandService.APPROVAL_LOCK_STRIPES);
+            verify(jobClient, times(200)).registerProvision(any());
+        }
+
+        @Test
+        @DisplayName("같은 사용자의 두 승인은 앞선 등록이 끝날 때까지 뒤쪽이 기다린다")
+        void sameUserIsSerialized() throws Exception {
+            User owner = userWithId(100L);
+            pendingRequestOf(301L, owner);
+            pendingRequestOf(302L, owner);
+            var latches = holdRegistrationOf(301L);
+            List<Throwable> failures = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
+            Thread first = approveAsync(301L, failures);
+            assertThat(latches[0].await(WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            Thread second = approveAsync(302L, failures);
+            awaitBlocked(second);
+
+            // 앞선 등록이 잠금을 쥔 동안 뒤쪽은 PROCESSING 조회조차 하지 못한다.
+            verify(jobClient, times(1)).registerProvision(any());
+            verify(requestRepository, times(1)).findAllByUser_UserIdAndStatus(100L, Status.PROCESSING);
+
+            latches[1].countDown();
+            joinAll(first, second);
+            assertThat(failures).isEmpty();
+            verify(jobClient, times(2)).registerProvision(any());
+        }
+
+        @Test
+        @DisplayName("다른 칸에 걸린 다른 사용자는 앞선 등록이 멈춰 있어도 기다리지 않는다")
+        void differentStripeRunsInParallel() throws Exception {
+            assertThat(AdminRequestCommandService.approvalLockStripe(100L))
+                    .isNotEqualTo(AdminRequestCommandService.approvalLockStripe(101L));
+            pendingRequestOf(311L, userWithId(100L));
+            pendingRequestOf(312L, userWithId(101L));
+            var latches = holdRegistrationOf(311L);
+            List<Throwable> failures = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
+            Thread first = approveAsync(311L, failures);
+            assertThat(latches[0].await(WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            Thread other = approveAsync(312L, failures);
+            joinAll(other); // 앞선 스레드는 아직 등록 안에서 멈춰 있다
+
+            assertThat(first.isAlive()).isTrue();
+            latches[1].countDown();
+            joinAll(first);
+            assertThat(failures).isEmpty();
+            verify(jobClient, times(2)).registerProvision(any());
+        }
+
+        @Test
+        @DisplayName("같은 칸을 나눠 쓰는 다른 사용자는 잠깐 기다린 뒤 정상 승인된다 — 막히거나 거절되지 않는다")
+        void sharedStripeWaitsThenSucceeds() throws Exception {
+            long a = 100L;
+            long b = a + AdminRequestCommandService.APPROVAL_LOCK_STRIPES;
+            assertThat(AdminRequestCommandService.approvalLockStripe(a))
+                    .isEqualTo(AdminRequestCommandService.approvalLockStripe(b));
+            pendingRequestOf(321L, userWithId(a));
+            pendingRequestOf(322L, userWithId(b));
+            var latches = holdRegistrationOf(321L);
+            List<Throwable> failures = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
+            Thread first = approveAsync(321L, failures);
+            assertThat(latches[0].await(WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            Thread second = approveAsync(322L, failures);
+            awaitBlocked(second);
+            verify(jobClient, times(1)).registerProvision(any());
+
+            latches[1].countDown();
+            joinAll(first, second);
+            assertThat(failures).isEmpty();
+            verify(jobClient, times(2)).registerProvision(any());
+            // 다른 사용자라 서로를 "처리 중인 같은 사용자 신청"으로 보지 않는다.
+            verify(requestRepository).findAllByUser_UserIdAndStatus(a, Status.PROCESSING);
+            verify(requestRepository).findAllByUser_UserIdAndStatus(b, Status.PROCESSING);
+        }
+
+        @Test
+        @DisplayName("등록이 예외로 끝나도 잠금이 풀려 같은 사용자의 다음 승인이 진행된다")
+        void lockReleasedAfterRegistrationFailure() {
+            User owner = userWithId(100L);
+            pendingRequestOf(331L, owner);
+            pendingRequestOf(332L, owner);
+            when(jobClient.registerProvision(any()))
+                    .thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED))
+                    .thenReturn(7332L);
+
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(331L, 1L, 1, null)))
+                    .isInstanceOf(BusinessException.class);
+            assertThat(service.approveRequest(new ApproveRequestDTO(332L, 1L, 1, null))).isNotNull();
+            verify(jobClient, times(2)).registerProvision(any());
+        }
+
+        @Test
+        @DisplayName("다른 처리 중 신청 때문에 거절돼도 잠금이 풀려, 막던 신청이 끝난 뒤 다시 승인할 수 있다")
+        void lockReleasedAfterBlockedRejection() {
+            User owner = userWithId(100L);
+            pendingRequestOf(341L, owner);
+            Request blocking = mock(Request.class);
+            when(blocking.getRequestId()).thenReturn(340L);
+            when(requestRepository.findAllByUser_UserIdAndStatus(100L, Status.PROCESSING))
+                    .thenReturn(List.of(blocking))
+                    .thenReturn(List.of());
+            when(jobClient.registerProvision(any())).thenReturn(7341L);
+
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(341L, 1L, 1, null)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_APPROVAL_ALREADY_IN_PROGRESS);
+
+            pendingRequestOf(341L, owner); // PENDING으로 되돌아간 뒤 관리자가 다시 승인
+            assertThat(service.approveRequest(new ApproveRequestDTO(341L, 1L, 1, null))).isNotNull();
+            verify(jobClient, times(1)).registerProvision(any());
+        }
+    }
 }

@@ -89,6 +89,8 @@ class RequestExpiryServiceTest {
         when(request.getResourceGroup()).thenReturn(mockRg);
         when(request.getPodName()).thenReturn(POD_NAME);
         when(request.getExpiresAt()).thenReturn(expiresAt);
+        // Mockito는 Long getter에 0L을 돌려준다 — 실제 엔티티처럼 "작업 번호 없음"은 null이어야 한다.
+        when(request.getJobId()).thenReturn(null);
         when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
         when(podExternalPortRepository.findByRequestRequestId(requestId)).thenReturn(List.of());
         return request;
@@ -376,6 +378,219 @@ class RequestExpiryServiceTest {
             when(requestRepository.findByIdForUpdate(999L)).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> service.forceCompleteRevoke(999L)).isInstanceOf(EntityNotFoundException.class);
+        }
+        private JobResultResponseDTO revokeResult(Long jobId, String phase, String errorCode) {
+            return new JobResultResponseDTO("1", JobResults.KIND_REVOKE, jobId, phase, errorCode, null, null);
+        }
+
+        private JobResultResponseDTO degraded(Long jobId) {
+            return revokeResult(jobId, JobResults.PHASE_FAIL, JobResults.ERROR_DEGRADED);
+        }
+
+        private void assertRejectedUntouched(Long requestId, Request request) {
+            assertThatThrownBy(() -> service.forceCompleteRevoke(requestId))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REQUEST_STATUS);
+            assertThat(request.getStatus()).isEqualTo(Status.EXPIRING);
+            verify(request, never()).deleteAfterCleanup();
+            verify(podExternalPortRepository, never()).deleteByRequestRequestId(anyLong());
+            verify(eventPublisher, never()).publishEvent(any(Object.class));
+        }
+
+        @Test
+        @DisplayName("기록된 작업 번호와 결과의 작업 번호가 같으면 강제 완료한다")
+        void matchingJobIsForceCompleted() {
+            Request request = mockRequest(30L, Status.EXPIRING);
+            when(request.getJobId()).thenReturn(910L);
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 30L)).thenReturn(degraded(910L));
+
+            service.forceCompleteRevoke(30L);
+
+            assertThat(request.getStatus()).isEqualTo(Status.DELETED);
+            verify(podExternalPortRepository).deleteByRequestRequestId(30L);
+        }
+
+        @Test
+        @DisplayName("결과가 이전 회수 작업의 것이면(번호 다름) 거부한다 — 지금 도는 회수를 건너뛰고 DELETED로 끝내면 안 된다")
+        void rejectsResultOfOtherJob() {
+            Request request = mockRequest(31L, Status.EXPIRING);
+            when(request.getJobId()).thenReturn(920L);
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 31L)).thenReturn(degraded(919L));
+
+            assertRejectedUntouched(31L, request);
+        }
+
+        @Test
+        @DisplayName("이전 작업의 결과가 UNKNOWN이어도 번호가 다르면 거부한다")
+        void rejectsUnknownOfOtherJob() {
+            Request request = mockRequest(32L, Status.EXPIRING);
+            when(request.getJobId()).thenReturn(930L);
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 32L))
+                    .thenReturn(revokeResult(929L, JobResults.PHASE_UNKNOWN, "TIMEOUT"));
+
+            assertRejectedUntouched(32L, request);
+        }
+
+        @Test
+        @DisplayName("회수를 막 시작해 작업 번호가 아직 없으면(등록 대기) 결과를 조회하지 않고 거부한다 — 보이는 결과는 이전 작업의 것이다")
+        void rejectsWhileAwaitingRegistration() {
+            Request request = mockRequest(33L, Status.EXPIRING);
+            when(request.getJobId()).thenReturn(null);
+            when(request.getUpdatedAt()).thenReturn(LocalDateTime.now().minusSeconds(5));
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 33L)).thenReturn(degraded(800L));
+
+            assertRejectedUntouched(33L, request);
+            verify(jobClient, never()).getResult(any(), any());
+        }
+
+        @Test
+        @DisplayName("작업 번호가 끝내 기록되지 못했어도 등록 유예가 지났으면 결과 폴러와 같이 보이는 결과를 받아들인다")
+        void acceptsResultWhenJobIdNeverRecordedAfterGrace() {
+            Request request = mockRequest(34L, Status.EXPIRING);
+            when(request.getJobId()).thenReturn(null);
+            when(request.getUpdatedAt()).thenReturn(
+                    LocalDateTime.now().minus(JobResults.REGISTRATION_GRACE).minusMinutes(1));
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 34L)).thenReturn(degraded(940L));
+
+            service.forceCompleteRevoke(34L);
+
+            assertThat(request.getStatus()).isEqualTo(Status.DELETED);
+        }
+
+        @Test
+        @DisplayName("작업 번호가 기록됐으면 방금 상태가 바뀌었어도 등록 대기로 보지 않는다")
+        void recordedJobIsNotAwaitingRegistration() {
+            Request request = mockRequest(35L, Status.EXPIRING);
+            when(request.getJobId()).thenReturn(950L);
+            when(request.getUpdatedAt()).thenReturn(LocalDateTime.now());
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 35L)).thenReturn(degraded(950L));
+
+            service.forceCompleteRevoke(35L);
+
+            assertThat(request.getStatus()).isEqualTo(Status.DELETED);
+        }
+
+        @Test
+        @DisplayName("결과에 작업 번호가 없으면(구버전 응답) 다른 작업으로 판정하지 않는다 — 결과 폴러와 같은 기준")
+        void resultWithoutJobIdIsNotOtherJob() {
+            Request request = mockRequest(36L, Status.EXPIRING);
+            when(request.getJobId()).thenReturn(960L);
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 36L)).thenReturn(degraded(null));
+
+            service.forceCompleteRevoke(36L);
+
+            assertThat(request.getStatus()).isEqualTo(Status.DELETED);
+        }
+
+        @Test
+        @DisplayName("결과 조회가 null을 돌려주면 NPE 대신 409로 거부한다")
+        void rejectsNullResult() {
+            Request request = mockRequest(37L, Status.EXPIRING);
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 37L)).thenReturn(null);
+
+            assertRejectedUntouched(37L, request);
+        }
+
+        @Test
+        @DisplayName("결과 조회가 실패하면 예외를 그대로 올리고 신청은 건드리지 않는다")
+        void propagatesLookupFailure() {
+            Request request = mockRequest(38L, Status.EXPIRING);
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 38L)).thenThrow(new IllegalStateException("config-server down"));
+
+            assertThatThrownBy(() -> service.forceCompleteRevoke(38L)).isInstanceOf(IllegalStateException.class);
+            assertThat(request.getStatus()).isEqualTo(Status.EXPIRING);
+            verify(request, never()).deleteAfterCleanup();
+        }
+
+        @Test
+        @DisplayName("회수가 성공(SUCCESS)했으면 거부한다 — 결과 폴러가 정상 경로로 완료한다")
+        void rejectsSuccess() {
+            Request request = mockRequest(39L, Status.EXPIRING);
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 39L))
+                    .thenReturn(revokeResult(990L, JobResults.PHASE_SUCCESS, null));
+
+            assertRejectedUntouched(39L, request);
+        }
+
+        @Test
+        @DisplayName("등록 이력이 없으면(none) 거부한다 — 재조정 스케줄러가 FULFILLED로 되돌린다")
+        void rejectsNone() {
+            Request request = mockRequest(40L, Status.EXPIRING);
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 40L))
+                    .thenReturn(revokeResult(null, JobResults.PHASE_NONE, null));
+
+            assertRejectedUntouched(40L, request);
+        }
+
+        @Test
+        @DisplayName("START로 실행 중이면 거부한다")
+        void rejectsStart() {
+            Request request = mockRequest(41L, Status.EXPIRING);
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 41L)).thenReturn(revokeJob(JobResults.PHASE_START, 410L));
+
+            assertRejectedUntouched(41L, request);
+        }
+
+        @Test
+        @DisplayName("상태 확인 뒤 결과 조회 사이에 다른 경로가 FULFILLED로 되돌렸으면 완료 처리하지 않는다")
+        void skipsWhenStateChangedDuringLookup() {
+            Request request = mockRequest(42L, Status.EXPIRING);
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 42L)).thenAnswer(inv -> {
+                request.endExpiry();
+                return degraded(420L);
+            });
+
+            service.forceCompleteRevoke(42L);
+
+            assertThat(request.getStatus()).isEqualTo(Status.FULFILLED);
+            verify(request, never()).deleteAfterCleanup();
+            verify(podExternalPortRepository, never()).deleteByRequestRequestId(anyLong());
+            verify(eventPublisher, never()).publishEvent(any(Object.class));
+        }
+
+        @Test
+        @DisplayName("만료일이 지난 신청을 강제 완료하면 만료 안내를 보낸다")
+        void expiredSendsExpiredEvent() {
+            mockRequest(43L, Status.EXPIRING, LocalDateTime.now().minusDays(1));
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 43L)).thenReturn(degraded(430L));
+
+            service.forceCompleteRevoke(43L);
+
+            ArgumentCaptor<Object> event = ArgumentCaptor.forClass(Object.class);
+            verify(eventPublisher).publishEvent(event.capture());
+            assertThat(event.getValue()).isInstanceOf(RequestExpiredEvent.class);
+        }
+
+        @Test
+        @DisplayName("만료일 전 신청을 강제 완료하면 회수 안내를 보낸다")
+        void notExpiredSendsDeletedEvent() {
+            mockRequest(44L, Status.EXPIRING, LocalDateTime.now().plusDays(30));
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 44L)).thenReturn(degraded(440L));
+
+            service.forceCompleteRevoke(44L);
+
+            ArgumentCaptor<Object> event = ArgumentCaptor.forClass(Object.class);
+            verify(eventPublisher).publishEvent(event.capture());
+            assertThat(event.getValue()).isInstanceOf(RequestContainerDeletedEvent.class);
+        }
+
+        @Test
+        @DisplayName("EXPIRING이 아니면 상태마다 결과 조회 없이 409")
+        void rejectsEveryNonExpiringStatus() {
+            long id = 50L;
+            for (Status status : Status.values()) {
+                if (status == Status.EXPIRING) {
+                    continue;
+                }
+                Request request = mockRequest(id, status);
+                assertThatThrownBy(() -> service.forceCompleteRevoke(request.getRequestId()))
+                        .as("status=%s", status)
+                        .isInstanceOf(BusinessException.class)
+                        .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REQUEST_STATUS);
+                verify(request, never()).deleteAfterCleanup();
+                id++;
+            }
+            verify(jobClient, never()).getResult(any(), any());
         }
     }
 }
