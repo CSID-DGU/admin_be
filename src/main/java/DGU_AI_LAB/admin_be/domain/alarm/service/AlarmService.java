@@ -194,6 +194,44 @@ public class AlarmService {
         sendMonitoringLog(user.getName(), user.getEmail(), subject);
     }
 
+    /**
+     * [접속 포트 변경 안내 메일] 마이그레이션으로 새 Pod에 다른 포트가 배정됐을 때 보낸다. 사용자가 저장해 둔
+     * SSH 설정이 조용히 끊기지 않게 생성 안내와 같은 방식(FARM은 공인 포트)으로 새 접속 정보를 알린다.
+     * 포트는 커밋된 신청의 포트 기록에서 읽는다.
+     */
+    public void sendContainerPortsChangedEmail(Request request) {
+        User user = request.getUser();
+        String serverName = request.getResourceGroup().getServerName();
+        List<PodExternalPort> allPorts = podExternalPortRepository.findByRequestRequestId(request.getRequestId());
+
+        String sshPort = externalPortOf(allPorts, "ssh");
+        String jupyterPort = externalPortOf(allPorts, "jupyter");
+        if ("FARM".equalsIgnoreCase(serverName)) {
+            sshPort = toFarmPublicPort(sshPort);
+            jupyterPort = toFarmPublicPort(jupyterPort);
+        }
+
+        String subject = messageUtils.get("email.container.ports-changed.subject", serverName);
+        String body = messageUtils.get("email.container.ports-changed.body",
+                user.getName(),                                   // {0}
+                request.getUbuntuUsername(),                      // {1}
+                sshPort,                                          // {2}
+                jupyterPort,                                      // {3}
+                resolveHostIp(serverName),                        // {4}
+                PodPortUtils.formatExtraPortSummary(allPorts));   // {5}
+
+        sendMailAlert(user.getEmail(), subject, body);
+        sendMonitoringLog(user.getName(), user.getEmail(), subject);
+    }
+
+    private static String externalPortOf(List<PodExternalPort> ports, String purpose) {
+        return ports.stream()
+                .filter(p -> purpose.equalsIgnoreCase(p.getUsagePurpose()))
+                .map(p -> String.valueOf(p.getExternalPort()))
+                .findFirst()
+                .orElse("");
+    }
+
     // ponytail: pfSense FARM 오프셋 매핑 하드코딩(admin_fe publicEndpoint.js와 동일 공식). 대역이 늘면 설정으로.
     private static final int NODEPORT_BASE = 30000;
     private static final int FARM_PUBLIC_PORT_BASE = 9300;
