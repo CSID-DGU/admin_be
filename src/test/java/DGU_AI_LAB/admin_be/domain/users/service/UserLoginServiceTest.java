@@ -323,6 +323,8 @@ class UserLoginServiceTest {
             assertThatThrownBy(() -> userLoginService.login(dto))
                     .isInstanceOf(UnauthorizedException.class);
             verify(valueOperations).increment("LOGIN_FAIL:notexist@dgu.ac.kr");
+            // 있는 계정과 응답 시간이 같도록 없는 이메일에도 BCrypt 검사를 한 번 돌린다
+            verify(passwordEncoder, times(1)).matches(eq("password"), any());
         }
 
         @Test
@@ -340,11 +342,36 @@ class UserLoginServiceTest {
 
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);
             when(userRepository.findByEmail("inactive@dgu.ac.kr")).thenReturn(Optional.of(inactiveUser));
+            when(passwordEncoder.matches("password", "encodedPassword")).thenReturn(true);
 
             UserLoginRequestDTO dto = new UserLoginRequestDTO("inactive@dgu.ac.kr", "password");
 
             assertThatThrownBy(() -> userLoginService.login(dto))
-                    .isInstanceOf(UnauthorizedException.class);
+                    .isInstanceOf(UnauthorizedException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCode.ACCOUNT_DISABLED);
+        }
+
+        @Test
+        @DisplayName("비활성 계정이라도 비밀번호가 틀리면 비활성 여부를 알리지 않고 일반 로그인 실패로 답한다")
+        void login_disabledAccountWithWrongPassword_doesNotRevealAccount() {
+            User inactiveUser = User.builder()
+                    .email("inactive@dgu.ac.kr")
+                    .password("encodedPassword")
+                    .name("비활성유저")
+                    .studentId("2021000001")
+                    .phone("010-0000-0000")
+                    .department("컴퓨터공학과")
+                    .build();
+            inactiveUser.withdraw();
+
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(userRepository.findByEmail("inactive@dgu.ac.kr")).thenReturn(Optional.of(inactiveUser));
+            when(passwordEncoder.matches("wrong", "encodedPassword")).thenReturn(false);
+
+            assertThatThrownBy(() -> userLoginService.login(new UserLoginRequestDTO("inactive@dgu.ac.kr", "wrong")))
+                    .isInstanceOf(UnauthorizedException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCode.INVALID_LOGIN_INFO);
+            verify(valueOperations).increment("LOGIN_FAIL:inactive@dgu.ac.kr");
         }
 
         @Test

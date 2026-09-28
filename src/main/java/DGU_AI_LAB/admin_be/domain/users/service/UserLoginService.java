@@ -41,6 +41,12 @@ public class UserLoginService {
     private static final int MAX_LOGIN_ATTEMPTS = 5;
     private static final long LOGIN_LOCKOUT_SECONDS = 900; // 15분
 
+    /**
+     * 없는 이메일에도 비밀번호 검사를 한 번 돌리기 위한 해시. 건너뛰면 응답이 BCrypt 한 번만큼 빨라져 가입된
+     * 이메일인지 응답 시간으로 드러난다(Spring Security DaoAuthenticationProvider와 같은 방식).
+     */
+    private volatile String userNotFoundEncodedPassword;
+
     /** 회원가입 */
     @Transactional
     public void register(UserRegisterRequestDTO request) {
@@ -109,19 +115,21 @@ public class UserLoginService {
             throw new BusinessException(ErrorCode.TOO_MANY_LOGIN_ATTEMPTS);
         }
 
-        User user = userRepository.findByEmail(request.email())
-                .orElseThrow(() -> {
-                    recordFailedAttempt(attemptKey);
-                    return new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO);
-                });
-
-        if (!user.getIsActive()) {
-            throw new UnauthorizedException(ErrorCode.ACCOUNT_DISABLED);
+        User user = userRepository.findByEmail(request.email()).orElse(null);
+        if (user == null) {
+            passwordEncoder.matches(request.password(), userNotFoundEncodedPassword());
+            recordFailedAttempt(attemptKey);
+            throw new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO);
         }
 
         if (!passwordEncoder.matches(request.password(), user.getPassword())) {
             recordFailedAttempt(attemptKey);
             throw new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO);
+        }
+
+        // 비활성 여부는 비밀번호가 맞은 뒤에만 알린다. 먼저 알리면 아무 비밀번호로도 가입 여부가 드러난다.
+        if (!user.getIsActive()) {
+            throw new UnauthorizedException(ErrorCode.ACCOUNT_DISABLED);
         }
 
         redisTemplate.delete(attemptKey);
@@ -152,6 +160,15 @@ public class UserLoginService {
         if (userRepository.replaceWeakUbuntuPasswordHash(user.getUserId(), hash, LinuxPasswordHasher.currentPrefix()) > 0) {
             log.info("[login] userId={} SSH 비밀번호 해시를 지금 강도로 다시 만듦", user.getUserId());
         }
+    }
+
+    private String userNotFoundEncodedPassword() {
+        String encoded = userNotFoundEncodedPassword;
+        if (encoded == null) {
+            encoded = passwordEncoder.encode("userNotFoundPassword");
+            userNotFoundEncodedPassword = encoded;
+        }
+        return encoded;
     }
 
     /** 이메일당 15분 내 5회 실패 시 잠금 — 브루트포스 방지 */
