@@ -123,8 +123,9 @@ public class PodMigrationService {
         if (made == null) {
             // 성공했는데 결과가 없다(결과 보관 기간이 지남). 옮겼는지 건너뛰었는지 알 수 없으므로 "건너뜀"으로
             // 확정하면 안 된다 — 옮겼다면 신청은 지워진 옛 Pod를 가리키고 새 Pod는 추적되지 않는다.
-            // MIGRATING에 둔 채 한 번만 알린다. 새 Pod 이름은 작업 단계 기록에서 확인할 수 있다.
-            if (alertDeduplicator.firstOccurrence("migration-missing-result:" + requestId)) {
+            // MIGRATING에 둔 채 작업마다 한 번만 알린다. 새 Pod 이름은 작업 단계 기록에서 확인할 수 있다.
+            Long jobId = requestRepository.findById(requestId).map(Request::getJobId).orElse(null);
+            if (alertDeduplicator.firstOccurrence("migration-missing-result:" + requestId + ":" + jobId)) {
                 log.error("마이그레이션 성공 결과에 자원 정보가 없어 신청에 반영하지 못함: requestId={}", requestId);
                 alert(String.format("[마이그레이션 확인 필요] 작업은 성공했으나 결과 정보를 받지 못해 신청에 반영하지 못했습니다: requestId=%d", requestId), null);
             }

@@ -245,8 +245,8 @@ public class AdminRequestCommandService {
         if (made == null || made.podName() == null) {
             // 작업은 성공했는데 만든 자원을 받지 못했다(결과 보관 기간이 지난 경우 등). 그대로 확정하면
             // 컨테이너 이름도 포트도 없는 신청이 승인 완료로 남으므로, 사람이 확인하도록 알리고 멈춘다.
-            // 신청이 PROCESSING에 남아 폴러가 매 바퀴 다시 부르므로 알림은 신청마다 한 번만 보낸다.
-            if (!alertDeduplicator.firstOccurrence("provision-missing-result:" + requestId)) {
+            // 신청이 PROCESSING에 남아 폴러가 매 바퀴 다시 부르므로 알림은 작업마다 한 번만 보낸다.
+            if (!alertDeduplicator.firstOccurrence("provision-missing-result:" + requestId + ":" + jobIdOf(requestId))) {
                 return;
             }
             log.error("생성 작업 성공 결과에 자원 정보가 없어 신청에 반영하지 못함: requestId={}", requestId);
@@ -361,6 +361,11 @@ public class AdminRequestCommandService {
         notifyApprovalFailure(String.format(
                 "[승인 확인 필요] 생성 작업 결과를 신청에 반영하는 중 오류가 났습니다: requestId=%d, error=%s",
                 requestId, detail), serverNameOf(requestId));
+    }
+
+    /** 알림 중복 키용 현재 작업 번호. 같은 신청이라도 새 작업이면 새 사건으로 다시 알린다. */
+    private Long jobIdOf(Long requestId) {
+        return requestRepository.findById(requestId).map(Request::getJobId).orElse(null);
     }
 
     /** 알림을 관리자가 실제로 보는 farm/lab 채널로 보내기 위한 서버 구분. 조회 실패는 알림 실패로 번지지 않게 삼킨다. */
