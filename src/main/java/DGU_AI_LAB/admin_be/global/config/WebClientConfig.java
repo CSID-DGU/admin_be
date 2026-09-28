@@ -45,9 +45,10 @@ public class WebClientConfig {
         return configServerClient(baseUrl, httpClient, apiToken);
     }
 
+    /** 고아 Pod 삭제 전용. config-server가 Pod·Service를 지운 뒤 노드 keytab 정리 SSH(최대 150초)를 하므로 그보다 길게 잡는다. */
     @Bean
     public WebClient podWebClient(@Value("${config.base-url}") String baseUrl,
-                                  @Value("${config.pod-timeout-seconds:600}") int podTimeout,
+                                  @Value("${config.pod-timeout-seconds:300}") int podTimeout,
                                   @Value("${config.api-token:}") String apiToken) {
 
         ConnectionProvider provider = ConnectionProvider.builder("pod-connection-pool")
