@@ -102,7 +102,7 @@ public enum ErrorCode {
     UBUNTU_USERNAME_ALREADY_ASSIGNED(HttpStatus.CONFLICT, "이미 우분투 계정명이 등록되어 있어 변경할 수 없습니다."),
     UBUNTU_ACCOUNT_ALREADY_ASSIGNED(HttpStatus.CONFLICT, "이미 다른 우분투 계정이 배정된 사용자입니다."),
     UBUNTU_ACCOUNT_RELEASING(HttpStatus.CONFLICT, "우분투 계정을 회수하는 중입니다. 회수가 끝난 뒤 다시 시도해주세요."),
-    UBUNTU_PASSWORD_CHANGE_WHILE_PROVISIONING(HttpStatus.CONFLICT, "컨테이너를 만드는 중이라 지금은 Ubuntu 비밀번호를 바꿀 수 없습니다. 생성이 끝난 뒤 다시 시도해주세요."),
+    UBUNTU_PASSWORD_CHANGE_WHILE_PROVISIONING(HttpStatus.CONFLICT, "컨테이너를 만드는 중이라 지금은 비밀번호를 바꿀 수 없습니다. 생성이 끝난 뒤 다시 시도해주세요."),
     // 인증 계층(로그인/토큰 갱신/JWT 필터) 전부에서 던져지는 예외라 401이어야 프론트가
     // 세션만료 처리 흐름(재로그인 모달)을 타운다. 404였을 때는 로그인 후 계정이 비활성화된
     // 세션에서 모든 API 호출이 조용히 실패하고 아무 안내도 뜨지 않았다.
@@ -116,8 +116,8 @@ public enum ErrorCode {
     INVALID_PASSWORD(HttpStatus.BAD_REQUEST, "현재 비밀번호가 일치하지 않습니다."),
     PASSWORD_CHANGE_SAME_AS_OLD(HttpStatus.BAD_REQUEST, "새 비밀번호가 현재 비밀번호와 동일합니다."),
     TOO_MANY_PASSWORD_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "현재 비밀번호를 여러 번 틀렸습니다. 15분 후 다시 시도해주세요."),
-    UBUNTU_PASSWORD_REQUIRED(HttpStatus.BAD_REQUEST, "첫 신청에는 우분투 비밀번호가 필요합니다."),
-    UBUNTU_PASSWORD_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "우분투 비밀번호를 컨테이너에 반영하지 못했습니다. 잠시 후 다시 시도해주세요."),
+    UBUNTU_PASSWORD_REQUIRED(HttpStatus.BAD_REQUEST, "SSH 비밀번호를 준비하려면 다시 로그인해주세요."),
+    UBUNTU_PASSWORD_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "비밀번호를 컨테이너에 반영하지 못해 바꾸지 않았습니다. 잠시 후 다시 시도해주세요."),
 
     /**
      * Group Error

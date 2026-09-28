@@ -71,7 +71,15 @@ class RequestCommandServiceTest {
     private AlarmService alarmService;
 
     /** 가입 시 우분투 계정명이 정해진 사용자 — 신청은 이 값을 그대로 복사해 쓴다. */
+    /** 가입(또는 로그인) 때 웹 비밀번호로 SSH 비밀번호 해시가 채워진 사용자. */
     private static User userWithUbuntuUsername(String ubuntuUsername) {
+        User user = userWithoutSshPassword(ubuntuUsername);
+        user.changeUbuntuPasswordHash("$6$existing$hash");
+        return user;
+    }
+
+    /** SSH 비밀번호 해시가 생기기 전에 로그인해 둔 세션의 사용자. */
+    private static User userWithoutSshPassword(String ubuntuUsername) {
         return User.builder()
                 .email("test@dgu.ac.kr").password("pw").name("홍길동")
                 .studentId("2021001234").phone("010-0000-0000").department("컴퓨터공학과")
@@ -107,7 +115,6 @@ class RequestCommandServiceTest {
             SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
             when(dto.resourceGroupId()).thenReturn(1);
             when(dto.imageId()).thenReturn(1L);
-            when(dto.ubuntuPassword()).thenReturn("strongPassword1!");
             when(dto.toEntity(any(), any(), any())).thenReturn(savedReq);
             when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
 
@@ -272,7 +279,6 @@ class RequestCommandServiceTest {
             SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
             when(dto.resourceGroupId()).thenReturn(1);
             when(dto.imageId()).thenReturn(1L);
-            when(dto.ubuntuPassword()).thenReturn("strongPassword1!");
             when(dto.toEntity(any(), any(), any())).thenReturn(savedReq);
             when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
             // GID 2개 요청했지만 0개만 발견 → 예외 발생 (portRequests 도달 전)
@@ -307,7 +313,6 @@ class RequestCommandServiceTest {
             SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
             when(dto.resourceGroupId()).thenReturn(1);
             when(dto.imageId()).thenReturn(1L);
-            when(dto.ubuntuPassword()).thenReturn("strongPassword1!");
             when(dto.toEntity(any(), any(), any())).thenReturn(savedReq);
             when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
 
@@ -317,7 +322,7 @@ class RequestCommandServiceTest {
             assertThat(response.ubuntuUsername()).isEqualTo("honggildong");
         }
 
-        private SaveRequestRequestDTO stubbedCreate(User user, String ubuntuPassword) {
+        private SaveRequestRequestDTO stubbedCreate(User user) {
             ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
             ContainerImage img = ContainerImage.builder()
                     .imageName("cuda").imageVersion("11.8").cudaVersion("11.8").description("test").build();
@@ -332,45 +337,32 @@ class RequestCommandServiceTest {
             SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
             lenient().when(dto.resourceGroupId()).thenReturn(1);
             lenient().when(dto.imageId()).thenReturn(1L);
-            lenient().when(dto.ubuntuPassword()).thenReturn(ubuntuPassword);
             lenient().when(dto.toEntity(any(), any(), any())).thenReturn(savedReq);
             lenient().when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
             return dto;
         }
 
         @Test
-        @DisplayName("첫 신청의 비밀번호는 해시로 바꿔 웹 계정에 저장한다")
-        void createRequest_storesFirstPasswordHashOnUser() {
+        @DisplayName("신청은 비밀번호를 받지 않고 웹 계정의 SSH 비밀번호 해시를 그대로 둔다")
+        void createRequest_keepsAccountPassword() {
             User user = userWithUbuntuUsername("honggildong");
 
-            requestCommandService.createRequest(1L, stubbedCreate(user, "strongPassword1!"));
-
-            assertThat(user.getUbuntuPasswordHash()).startsWith("$6$").doesNotContain("strongPassword1!");
-        }
-
-        @Test
-        @DisplayName("계정 비밀번호가 이미 있으면 신청에 담긴 비밀번호는 무시한다")
-        void createRequest_keepsExistingAccountPassword() {
-            User user = userWithUbuntuUsername("honggildong");
-            user.changeUbuntuPasswordHash("$6$existing$hash");
-
-            requestCommandService.createRequest(1L, stubbedCreate(user, "anotherPassword1!"));
+            requestCommandService.createRequest(1L, stubbedCreate(user));
 
             assertThat(user.getUbuntuPasswordHash()).isEqualTo("$6$existing$hash");
         }
 
         @Test
-        @DisplayName("계정 비밀번호가 없는데 비밀번호를 보내지 않으면 UBUNTU_PASSWORD_REQUIRED")
-        void createRequest_requiresPasswordOnFirstRequest() {
-            User user = userWithUbuntuUsername("honggildong");
-            SaveRequestRequestDTO dto = stubbedCreate(user, "   ");
+        @DisplayName("SSH 비밀번호 해시가 없는 세션이면 저장하지 않고 UBUNTU_PASSWORD_REQUIRED(다시 로그인 안내)")
+        void createRequest_requiresSshPasswordHash() {
+            User user = userWithoutSshPassword("honggildong");
+            SaveRequestRequestDTO dto = stubbedCreate(user);
 
             assertThatThrownBy(() -> requestCommandService.createRequest(1L, dto))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.UBUNTU_PASSWORD_REQUIRED);
             verify(requestRepository, never()).saveAndFlush(any());
-            assertThat(user.hasUbuntuPassword()).isFalse();
         }
     }
 
