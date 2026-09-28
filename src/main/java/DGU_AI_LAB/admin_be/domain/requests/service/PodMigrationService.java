@@ -97,14 +97,8 @@ public class PodMigrationService {
             podNameRef[0] = req.getPodName();
             return null;
         });
-        Long jobId;
-        try {
-            jobId = jobClient.registerMigrate(new MigrateRegisterRequestDTO(
-                    requestId, podNameRef[0], usernameRef[0], dto.nodes(), dto.minImprovementRatio(), dto.force()));
-        } catch (RuntimeException e) {
-            revertToFulfilled(requestId);
-            throw e;
-        }
+        Long jobId = registerMigration(new MigrateRegisterRequestDTO(
+                requestId, podNameRef[0], usernameRef[0], dto.nodes(), dto.minImprovementRatio(), dto.force()));
         // 결과 폴러가 이 번호의 결과만 반영하게 남긴다. 그 사이 끝났거나 되돌려졌으면 건드리지 않는다.
         new TransactionTemplate(transactionManager).execute(status -> {
             requestRepository.findByIdForUpdate(requestId)
@@ -113,6 +107,39 @@ public class PodMigrationService {
             return null;
         });
         log.info("마이그레이션 작업 등록: requestId={}, username={}, pod={}", requestId, usernameRef[0], podNameRef[0]);
+    }
+
+    /**
+     * 등록이 실패로 보이면 실제로 등록된 작업이 도는지 확인한다. 응답만 늦었으면(타임아웃) 작업은 config-server에서
+     * Pod를 옮기는 중이다 — 그때 FULFILLED로 되돌리면 결과 폴러(MIGRATING만 본다)가 결과를 반영하지 못해 신청이
+     * 지워진 옛 Pod를 가리키게 된다. 그래서 MIGRATING으로 두고 이어받는다. 요청이 닿지도 않았거나 작업이 없으면
+     * FULFILLED로 되돌리고, 작업 상태를 모르면 MIGRATING으로 두어 결과 폴러와 재조정 알림에 맡긴다.
+     */
+    private Long registerMigration(MigrateRegisterRequestDTO body) {
+        Long requestId = body.requestId();
+        try {
+            return jobClient.registerMigrate(body);
+        } catch (RuntimeException e) {
+            if (JobResults.neverReachedServer(e)) {
+                log.error("config-server에 닿지 못해 마이그레이션 작업이 등록되지 않음 — FULFILLED로 되돌림: requestId={}", requestId, e);
+                revertToFulfilled(requestId);
+                throw e;
+            }
+            JobResultResponseDTO job;
+            try {
+                job = jobClient.getResult(JobResults.KIND_MIGRATE, requestId);
+            } catch (Exception lookupFailure) {
+                alert(String.format("[마이그레이션 확인 필요] 작업 등록 결과를 확인하지 못해 MIGRATING으로 두었습니다: requestId=%d, error=%s",
+                        requestId, e.getMessage()), lookupFailure);
+                throw e;
+            }
+            if (job != null && JobResults.isRunning(job.phase())) {
+                log.warn("마이그레이션 작업 등록 응답은 실패했지만 작업이 도는 중 — 이어받음: requestId={}, jobId={}", requestId, job.jobId(), e);
+                return job.jobId();
+            }
+            revertToFulfilled(requestId);
+            throw e;
+        }
     }
 
     /**

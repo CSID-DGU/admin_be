@@ -172,6 +172,51 @@ class PodMigrationServiceTest {
     }
 
     @Test
+    @DisplayName("등록 응답이 실패로 보여도 작업이 도는 중이면(응답만 늦음) MIGRATING으로 두고 그 작업 번호를 이어받는다")
+    void startAdoptsRunningJobWhenRegistrationResponseFails() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        doThrow(new BusinessException("작업 등록 중 오류: timeout", ErrorCode.POD_MIGRATION_FAILED,
+                new java.util.concurrent.TimeoutException()))
+                .when(jobClient).registerMigrate(any());
+        when(jobClient.getResult("migrate", 1L)).thenReturn(
+                new JobResultResponseDTO("1", "migrate", 3800L, "RETRY", null, null, null));
+
+        service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null));
+
+        verify(request, never()).endMigration();
+        verify(request).recordJob(3800L);
+    }
+
+    @Test
+    @DisplayName("요청이 config-server에 닿지도 않았으면 작업을 조회하지 않고 바로 FULFILLED로 되돌린다")
+    void startRevertsImmediatelyWhenServerUnreachable() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        doThrow(new BusinessException("작업 등록 중 오류", ErrorCode.POD_MIGRATION_FAILED,
+                new java.net.ConnectException("refused")))
+                .when(jobClient).registerMigrate(any());
+
+        assertThatThrownBy(() -> service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null)))
+                .isInstanceOf(BusinessException.class);
+        verify(jobClient, never()).getResult(anyString(), any());
+        verify(request).endMigration();
+    }
+
+    @Test
+    @DisplayName("등록 실패 뒤 작업 상태도 조회하지 못하면 되돌리지 않고(작업이 돌 수 있다) 관리자에게 알린다")
+    void startKeepsMigratingWhenLookupAlsoFails() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        doThrow(new BusinessException("작업 등록 중 오류: timeout", ErrorCode.POD_MIGRATION_FAILED,
+                new java.util.concurrent.TimeoutException()))
+                .when(jobClient).registerMigrate(any());
+        when(jobClient.getResult("migrate", 1L)).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
+
+        assertThatThrownBy(() -> service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null)))
+                .isInstanceOf(BusinessException.class);
+        verify(request, never()).endMigration();
+        verify(alarmService).sendSlackAlert(contains("MIGRATING으로 두었습니다"), any());
+    }
+
+    @Test
     @DisplayName("옮겼으면 새 Pod·노드·포트로 바꾸고 FULFILLED로 돌린다")
     void completeMigratedUpdatesPod() {
         when(request.getStatus()).thenReturn(Status.MIGRATING);
