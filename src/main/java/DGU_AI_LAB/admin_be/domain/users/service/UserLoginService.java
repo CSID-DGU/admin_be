@@ -126,7 +126,7 @@ public class UserLoginService {
 
         redisTemplate.delete(attemptKey);
         user.recordLogin();
-        fillSshPasswordHashIfAbsent(user, request.password());
+        refreshSshPasswordHashIfWeak(user, request.password());
 
         String accessToken = jwtProvider.getIssueToken(user.getUserId(), true);
         String refreshToken = jwtProvider.getIssueToken(user.getUserId(), false);
@@ -139,16 +139,18 @@ public class UserLoginService {
     }
 
     /**
-     * SSH 비밀번호가 웹 비밀번호로 합쳐지기 전에 가입한 계정은 리눅스용 해시가 없다. 평문을 볼 수 있는 로그인
-     * 때 채워, 다음 컨테이너부터 웹 비밀번호로 SSH에 접속하게 한다. 이미 떠 있는 컨테이너는 건드리지 않는다
-     * (로그인이 config-server를 기다리지 않게) — 웹 비밀번호를 바꾸면 그때 함께 바뀐다.
+     * SSH 비밀번호가 웹 비밀번호로 합쳐지기 전에 가입한 계정은 리눅스용 해시가 없고, 반복 횟수를 올리기 전에
+     * 만든 해시는 약하다. 평문을 볼 수 있는 로그인 때 지금 강도로 다시 만들어, 다음 컨테이너부터 이 해시를 쓴다.
+     * 이미 떠 있는 컨테이너는 건드리지 않는다(로그인이 config-server를 기다리지 않게) — 비밀번호가 같으니
+     * 접속은 그대로 되고, 웹 비밀번호를 바꾸면 그때 함께 바뀐다.
      */
-    private void fillSshPasswordHashIfAbsent(User user, String rawPassword) {
-        if (user.hasUbuntuPassword()) {
+    private void refreshSshPasswordHashIfWeak(User user, String rawPassword) {
+        if (LinuxPasswordHasher.isCurrentStrength(user.getUbuntuPasswordHash())) {
             return;
         }
-        if (userRepository.fillUbuntuPasswordHashIfAbsent(user.getUserId(), LinuxPasswordHasher.sha512Crypt(rawPassword)) > 0) {
-            log.info("[login] userId={} SSH 비밀번호 해시를 웹 비밀번호로 채움", user.getUserId());
+        String hash = LinuxPasswordHasher.sha512Crypt(rawPassword);
+        if (userRepository.replaceWeakUbuntuPasswordHash(user.getUserId(), hash, LinuxPasswordHasher.currentPrefix()) > 0) {
+            log.info("[login] userId={} SSH 비밀번호 해시를 지금 강도로 다시 만듦", user.getUserId());
         }
     }
 

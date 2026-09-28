@@ -266,22 +266,38 @@ class UserLoginServiceTest {
             userLoginService.login(new UserLoginRequestDTO("test@dgu.ac.kr", "password123"));
 
             ArgumentCaptor<String> hash = ArgumentCaptor.forClass(String.class);
-            verify(userRepository).fillUbuntuPasswordHashIfAbsent(eq(7L), hash.capture());
-            assertThat(hash.getValue()).startsWith("$6$").doesNotContain("password123");
+            verify(userRepository).replaceWeakUbuntuPasswordHash(eq(7L), hash.capture(), eq("$6$rounds=656000$"));
+            assertThat(hash.getValue()).startsWith("$6$rounds=656000$").doesNotContain("password123");
             verify(userRepository, never()).save(any());
         }
 
         @Test
-        @DisplayName("SSH 비밀번호 해시가 이미 있으면 로그인에서 건드리지 않는다")
-        void login_keepsExistingSshPasswordHash() {
-            activeUser.changeUbuntuPasswordHash("$6$existing$hash");
+        @DisplayName("옛 반복 횟수(기본 5000회)로 만든 SSH 해시는 로그인 때 지금 강도로 다시 만든다")
+        void login_upgradesWeakSshPasswordHash() {
+            ReflectionTestUtils.setField(activeUser, "userId", 7L);
+            activeUser.changeUbuntuPasswordHash("$6$oldsalt$" + "a".repeat(86));
             when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
             when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 
             userLoginService.login(new UserLoginRequestDTO("test@dgu.ac.kr", "password123"));
 
-            verify(userRepository, never()).fillUbuntuPasswordHashIfAbsent(any(), anyString());
+            ArgumentCaptor<String> hash = ArgumentCaptor.forClass(String.class);
+            verify(userRepository).replaceWeakUbuntuPasswordHash(eq(7L), hash.capture(), eq("$6$rounds=656000$"));
+            assertThat(hash.getValue()).startsWith("$6$rounds=656000$");
+        }
+
+        @Test
+        @DisplayName("SSH 비밀번호 해시가 이미 지금 강도면 로그인에서 건드리지 않는다")
+        void login_keepsExistingSshPasswordHash() {
+            activeUser.changeUbuntuPasswordHash("$6$rounds=656000$existing$hash");
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
+            when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+            userLoginService.login(new UserLoginRequestDTO("test@dgu.ac.kr", "password123"));
+
+            verify(userRepository, never()).replaceWeakUbuntuPasswordHash(any(), anyString(), anyString());
         }
 
         @Test
@@ -293,7 +309,7 @@ class UserLoginServiceTest {
 
             assertThatThrownBy(() -> userLoginService.login(new UserLoginRequestDTO("test@dgu.ac.kr", "wrong")))
                     .isInstanceOf(UnauthorizedException.class);
-            verify(userRepository, never()).fillUbuntuPasswordHashIfAbsent(any(), anyString());
+            verify(userRepository, never()).replaceWeakUbuntuPasswordHash(any(), anyString(), anyString());
         }
 
         @Test
