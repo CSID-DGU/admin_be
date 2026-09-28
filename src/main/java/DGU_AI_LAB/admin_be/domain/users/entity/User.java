@@ -9,7 +9,10 @@ import lombok.*;
 
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -95,6 +98,9 @@ public class User extends BaseTimeEntity {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    @Column(name = "password_changed_at")
+    private LocalDateTime passwordChangedAt;
+
     @OneToMany(mappedBy = "user", cascade = CascadeType.REMOVE, orphanRemoval = true)
     private List<Request> requests = new ArrayList<>();
 
@@ -127,6 +133,16 @@ public class User extends BaseTimeEntity {
 
     public void updatePassword(String newEncodedPassword) {
         this.password = newEncodedPassword;
+        this.passwordChangedAt = LocalDateTime.now();
+    }
+
+    /** JWT 발급 시각(iat)은 초 단위라, 바꾼 시각도 초로 내려 같은 초에 새로 받은 토큰은 통과시킨다. */
+    public boolean isTokenIssuedBeforePasswordChange(Instant issuedAt) {
+        if (passwordChangedAt == null || issuedAt == null) {
+            return false;
+        }
+        Instant changedAt = passwordChangedAt.atZone(ZoneId.systemDefault()).toInstant().truncatedTo(ChronoUnit.SECONDS);
+        return issuedAt.isBefore(changedAt);
     }
 
     public void updatePhone(String newPhone) {
