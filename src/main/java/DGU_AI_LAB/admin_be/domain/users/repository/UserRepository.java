@@ -39,14 +39,16 @@ public interface UserRepository extends JpaRepository<User,Long> {
     Optional<User> findByIdForUpdate(@Param("userId") Long userId);
 
     /**
-     * SSH 비밀번호 해시가 비어 있을 때만 채운다. 로그인은 트랜잭션 없이 도므로 엔티티를 통째로 저장하면
-     * 그 사이 끝난 비밀번호 변경을 옛 값으로 덮어쓸 수 있다 — 이 칸 하나만, 비어 있을 때만 바꾼다.
+     * SSH 비밀번호 해시가 비어 있거나 지금 강도(currentPrefix로 시작)가 아닐 때만 바꾼다. 로그인은 트랜잭션 없이
+     * 도므로 엔티티를 통째로 저장하면 그 사이 끝난 비밀번호 변경을 옛 값으로 덮어쓸 수 있다 — 변경은 늘 지금
+     * 강도로 쓰므로, 이 조건이면 이 칸 하나만 그 변경과 겹치지 않고 바뀐다.
      */
     @Transactional
     @Modifying
     @Query("UPDATE User u SET u.ubuntuPasswordHash = :hash WHERE u.userId = :userId "
-            + "AND (u.ubuntuPasswordHash IS NULL OR u.ubuntuPasswordHash = '')")
-    int fillUbuntuPasswordHashIfAbsent(@Param("userId") Long userId, @Param("hash") String hash);
+            + "AND (u.ubuntuPasswordHash IS NULL OR u.ubuntuPasswordHash NOT LIKE CONCAT(:currentPrefix, '%'))")
+    int replaceWeakUbuntuPasswordHash(@Param("userId") Long userId, @Param("hash") String hash,
+                                      @Param("currentPrefix") String currentPrefix);
 
     /**
      * [자동 탈퇴 대상 조회 쿼리]
