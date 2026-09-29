@@ -348,6 +348,52 @@ class AdminUserServiceTest {
     }
 
     @Nested
+    @DisplayName("withdrawInactiveUser")
+    class WithdrawInactiveUser {
+
+        @BeforeEach
+        void setUp() {
+            lenient().when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+        }
+
+        @Test
+        @DisplayName("장기 미접속 유저도 관리자 탈퇴와 같이 컨테이너·우분투 계정 회수를 시작하고, 장기 미접속 안내를 보낸다")
+        void withdrawsAndStartsRevoke() {
+            Request fulfilled = mockRequest(Status.FULFILLED);
+            givenRequests(fulfilled);
+
+            adminUserService.withdrawInactiveUser(1L);
+
+            assertThat(mockUser.getIsActive()).isFalse();
+            assertThat(mockUser.getDeletedAt()).isNotNull();
+            assertThat(mockUser.getUbuntuAccountStatus()).isEqualTo(UbuntuAccountStatus.RELEASING);
+            verify(requestExpiryService).startContainerRevoke(fulfilled.getRequestId());
+            verify(tokenService).logout(1L);
+            verify(messageUtils).get("notification.user.soft-delete.subject");
+        }
+
+        @Test
+        @DisplayName("그 사이 이미 비활성화된 유저는 건너뛴다")
+        void skipsInactiveUser() {
+            mockUser.deactivate();
+
+            adminUserService.withdrawInactiveUser(1L);
+
+            verifyNoInteractions(requestExpiryService, tokenService);
+            assertThat(mockUser.getDeletedAt()).isNull();
+        }
+
+        @Test
+        @DisplayName("진행 중인 신청이 있으면 거부하고 탈퇴하지 않는다 — 다음 날 다시 시도된다")
+        void rejectsInFlight() {
+            givenRequests(mockRequest(Status.PROCESSING));
+
+            assertThatThrownBy(() -> adminUserService.withdrawInactiveUser(1L)).isInstanceOf(ConflictException.class);
+            assertThat(mockUser.getIsActive()).isTrue();
+        }
+    }
+
+    @Nested
     @DisplayName("reactivateUser")
     class ReactivateUser {
 

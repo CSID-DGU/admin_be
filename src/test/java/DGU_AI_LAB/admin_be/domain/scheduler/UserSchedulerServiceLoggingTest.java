@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
+import DGU_AI_LAB.admin_be.domain.users.service.AdminUserService;
 import DGU_AI_LAB.admin_be.support.LogCaptor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,6 +37,9 @@ class UserSchedulerServiceLoggingTest {
 
     @Mock
     private UserLifecycleTransactionalService userLifecycleService;
+
+    @Mock
+    private AdminUserService adminUserService;
 
     @Test
     @DisplayName("수명주기 처리 실패 로그에 이메일 대신 userId가 남는다")
