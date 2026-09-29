@@ -21,7 +21,10 @@ public final class RuntimeDefaults {
                 "spring.mail.properties.mail.smtp.writetimeout", "10000",
                 // 결과 폴러·재조정·Slack 워커·승인 안내 메일이 모두 스케줄러 스레드에서 돈다. 기본값(1)이면 느린
                 // 외부 호출 하나가 나머지를 전부 멈춘다. 같은 신청을 동시에 만지는 경로는 행 잠금 + 상태 재확인을 거친다.
-                "spring.task.scheduling.pool.size", "4"
+                "spring.task.scheduling.pool.size", "4",
+                // API 문서는 전체 경로와 요청 형식을 보여 준다. 운영에서는 끄고, 필요한 개발 환경만 설정 파일에서 켠다.
+                "springdoc.api-docs.enabled", "false",
+                "springdoc.swagger-ui.enabled", "false"
         );
     }
 }
