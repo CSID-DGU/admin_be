@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.global.util;
 
+import DGU_AI_LAB.admin_be.global.auth.EmailDomainPolicy;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.support.LogCaptor;
 import jakarta.mail.internet.MimeMessage;
@@ -18,9 +19,11 @@ import org.springframework.mail.javamail.JavaMailSender;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -50,8 +53,19 @@ class EmailServiceLoggingTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private MessageUtils messageUtils;
+
+    @Mock
+    private EmailDomainPolicy emailDomainPolicy;
+
+    @Mock
+    private EmailSendThrottle emailSendThrottle;
+
     @BeforeEach
     void setUp() {
+        lenient().when(messageUtils.get("email.verify.subject")).thenReturn("인증 코드");
+        lenient().when(messageUtils.get(eq("email.verify.body"), any())).thenReturn("본문");
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
     }

@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobHistoryService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApprovalRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectionRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
@@ -16,7 +17,6 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestQueryService;
-import DGU_AI_LAB.admin_be.domain.requests.service.OperationJobService;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodMigrationService;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
@@ -35,7 +35,7 @@ public class AdminRequestController implements AdminRequestApi {
     private final AdminRequestCommandService adminRequestCommandService;
     private final AdminRequestQueryService adminRequestQueryService;
     private final PodMigrationService podMigrationService;
-    private final OperationJobService operationJobService;
+    private final JobHistoryService jobHistoryService;
     private final RequestExpiryService requestExpiryService;
 
 
@@ -81,7 +81,7 @@ public class AdminRequestController implements AdminRequestApi {
     @GetMapping("/{requestId}/job-steps")
     public ResponseEntity<SuccessResponse<?>> getJobSteps(@PathVariable Long requestId) {
         // 신청 조회 트랜잭션을 config-server 호출 동안 붙잡지 않도록 생성 시각만 먼저 받는다.
-        return SuccessResponse.ok(operationJobService.getJobHistory(
+        return SuccessResponse.ok(jobHistoryService.getJobHistory(
                 requestId, adminRequestQueryService.getRequestCreatedAt(requestId)));
     }
 
@@ -105,6 +105,16 @@ public class AdminRequestController implements AdminRequestApi {
     @DeleteMapping("/{requestId}/container")
     public ResponseEntity<SuccessResponse<?>> deleteContainer(@PathVariable Long requestId) {
         requestExpiryService.deleteContainerByAdmin(requestId);
+        return SuccessResponse.accepted(null);
+    }
+
+    /**
+     * 컨테이너 회수가 DEGRADED·UNKNOWN으로 끝나 EXPIRING에 멈춘 신청을, 관리자가 클러스터를 직접 확인한
+     * 뒤 강제로 완료 처리한다. API 자체는 자원 존재를 재확인하지 않는다.
+     */
+    @PostMapping("/{requestId}/container/force-complete")
+    public ResponseEntity<SuccessResponse<?>> forceCompleteRevoke(@PathVariable Long requestId) {
+        requestExpiryService.forceCompleteRevoke(requestId);
         return SuccessResponse.ok(null);
     }
 }

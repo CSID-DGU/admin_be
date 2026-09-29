@@ -3,6 +3,8 @@ package DGU_AI_LAB.admin_be.global.auth.jwt;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetailsService;
 import DGU_AI_LAB.admin_be.support.LogCaptor;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,6 +19,8 @@ import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.context.SecurityContextHolder;
+
+import java.util.Date;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
@@ -65,7 +69,7 @@ class JwtAuthenticationFilterLoggingTest {
                 .department("컴퓨터공학과")
                 .build();
 
-        when(jwtProvider.getSubject(RAW_TOKEN)).thenReturn(1L);
+        when(jwtProvider.parseAccessToken(RAW_TOKEN)).thenReturn(claims(new Date()));
         when(customUserDetailsService.loadUserEntityById(1L)).thenReturn(user);
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/requests/me");
@@ -80,6 +84,39 @@ class JwtAuthenticationFilterLoggingTest {
         }
 
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("비밀번호를 바꾸기 전에 발급된 토큰은 401로 거절하고 인증을 세우지 않는다")
+    void rejectsTokenIssuedBeforePasswordChange() throws Exception {
+        User user = User.builder()
+                .email("test@dgu.ac.kr")
+                .password("encoded")
+                .name("홍길동")
+                .studentId("2021001234")
+                .phone("010-1234-5678")
+                .department("컴퓨터공학과")
+                .build();
+        user.updatePassword("new-encoded");
+
+        when(jwtProvider.parseAccessToken(RAW_TOKEN)).thenReturn(claims(new Date(System.currentTimeMillis() - 60_000)));
+        when(customUserDetailsService.loadUserEntityById(1L)).thenReturn(user);
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/requests/me");
+        request.addHeader("Authorization", RAW_HEADER);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    private static Claims claims(Date issuedAt) {
+        Claims claims = Jwts.claims();
+        claims.setSubject("1");
+        claims.setIssuedAt(issuedAt);
+        return claims;
     }
 
     @Test

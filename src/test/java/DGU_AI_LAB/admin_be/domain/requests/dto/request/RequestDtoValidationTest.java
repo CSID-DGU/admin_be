@@ -57,7 +57,6 @@ class RequestDtoValidationTest {
             return SaveRequestRequestDTO.builder()
                     .resourceGroupId(1)
                     .imageId(1L)
-                    .ubuntuPassword("strongPassword1!")
                     .usagePurpose("딥러닝 모델 학습")
                     .formAnswers(Map.of("q", "a"))
                     .expiresAt(LocalDateTime.now().plusDays(30))
@@ -87,18 +86,6 @@ class RequestDtoValidationTest {
         void usagePurpose_over1000_isRejected() {
             assertThat(violatedPaths(valid().usagePurpose("a".repeat(1001)).build())).contains("usagePurpose");
             assertThat(violatedPaths(valid().usagePurpose("a".repeat(1000)).build())).doesNotContain("usagePurpose");
-        }
-
-        @Test
-        @DisplayName("우분투 비밀번호는 8자 이상이어야 한다")
-        void ubuntuPassword_minLength() {
-            assertThat(violatedPaths(valid().ubuntuPassword("short1!").build())).contains("ubuntuPassword");
-        }
-
-        @Test
-        @DisplayName("우분투 비밀번호는 생략할 수 있다 — 첫 신청인지는 서비스가 계정으로 판단한다")
-        void ubuntuPassword_optional() {
-            assertThat(violatedPaths(valid().ubuntuPassword(null).build())).doesNotContain("ubuntuPassword");
         }
 
         @Test

@@ -1,5 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.global.alert.AlertDeduplicator;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
@@ -31,7 +34,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 @Slf4j
@@ -47,7 +49,7 @@ public class AdminRequestCommandService {
     private final ContainerImageRepository containerImageRepository;
     private final ResourceGroupRepository resourceGroupRepository;
     private final PodExternalPortRepository podExternalPortRepository;
-    private final OperationJobService operationJobService;
+    private final JobClient jobClient;
     private final PlatformTransactionManager transactionManager;
 
     // 계정 존재 확인~생성~UID 커밋 구간을 userId별로 직렬화한다. 이 구간은 짧은 DB
@@ -58,10 +60,30 @@ public class AdminRequestCommandService {
     // config-server 409로 실패해 PENDING으로 되돌아가고 재시도하면 정상적으로 재사용하지만,
     // 관리자 입장에선 불필요한 승인 실패로 보인다). admin_be가 단일 인스턴스로만 배포되므로
     // in-process 락으로 충분하다.
-    private final ConcurrentHashMap<Long, Object> userApprovalLocks = new ConcurrentHashMap<>();
+    //
+    // 사용자마다 잠금 객체를 하나씩 쌓으면 한 번도 지워지지 않아 사용자 수만큼 커진다. 쓰고 나서 지우는 방식은
+    // 기다리던 스레드와 새로 온 스레드가 서로 다른 객체를 잡는 틈이 생기므로, 고정 개수의 잠금을 userId로
+    // 나눠 쓴다(lock striping). 다른 사용자가 같은 칸에 걸리면 잠깐 순서를 기다릴 뿐 결과는 같다.
+    static final int APPROVAL_LOCK_STRIPES = 64;
+    private final Object[] approvalLocks = newApprovalLocks();
+
+    // 성공 결과를 받지 못해 반영을 멈춘 신청은 폴러가 매 바퀴 다시 부른다. 같은 알림이 반복되지 않게 한다.
+    private final AlertDeduplicator alertDeduplicator;
+
+    private static Object[] newApprovalLocks() {
+        Object[] locks = new Object[APPROVAL_LOCK_STRIPES];
+        for (int i = 0; i < locks.length; i++) {
+            locks[i] = new Object();
+        }
+        return locks;
+    }
+
+    static int approvalLockStripe(Long userId) {
+        return Math.floorMod(Long.hashCode(userId), APPROVAL_LOCK_STRIPES);
+    }
 
     private Object approvalLockFor(Long userId) {
-        return userApprovalLocks.computeIfAbsent(userId, id -> new Object());
+        return approvalLocks[approvalLockStripe(userId)];
     }
 
     /**
@@ -73,8 +95,12 @@ public class AdminRequestCommandService {
      * <p>baseline·noprobe·full 세 방식이 모두 이 경로를 쓴다. 방식 차이(재시도, 결과 확인, 접근 시험)는
      * config-server 제어기의 실행 방식에서만 난다. 옛 동기 승인 경로는 {@code legacy-sync} 태그에 남아 있다.
      *
-     * <p>같은 사용자의 신청 두 건을 동시에 승인하면 뒤쪽 작업은 계정이 이미 있다는 이유로 실패하고
-     * PENDING으로 되돌아간다. 다시 승인하면 그때는 계정을 재사용해 정상 처리된다.
+     * <p>같은 사용자의 신청 두 건을 동시에 승인하면, 등록 요청을 보내기 전 서로를 볼 수 있게 같은 사용자
+     * 단위로 직렬화하고(아래 {@code approvalLockFor}) 자기 차례가 왔을 때 그 사용자의 다른 신청이 이미
+     * PROCESSING인지 확인한다. 있으면 등록을 보내지 않고 그 자리에서 PENDING으로 되돌린다(#607) —
+     * 그러지 않으면 돌아온 사용자(config-server CSID-DGU/admin_infra-proposed#204, expected_uid로 예전
+     * uid를 요청)의 경우 config-server가 "번호가 같으니 이어받기"로 보고 둘 다 성공시켜, 계정 하나에
+     * 컨테이너 두 개가 붙는 상태가 될 수 있다.
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SaveRequestResponseDTO approveRequest(ApproveRequestDTO dto) {
@@ -106,6 +132,10 @@ public class AdminRequestCommandService {
             // 계정이 만들어질 수 있다(비밀번호 변경은 PROCESSING 신청이 있으면 거절한다).
             User owner = userRepository.findByIdForUpdate(req.getUser().getUserId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+            // 계정 회수가 도는 중이면 새 컨테이너가 곧 지워질 계정을 쓰게 된다. 회수가 끝난 뒤 승인하면 되살린다.
+            if (owner.isReleasingUbuntuAccount()) {
+                throw new BusinessException(ErrorCode.UBUNTU_ACCOUNT_RELEASING);
+            }
             creationDtoRef[0] = new UserCreationRequestDTO(
                     dto.requestId(),
                     req.getUbuntuUsername(),
@@ -131,61 +161,117 @@ public class AdminRequestCommandService {
 
         // 이미 리눅스 계정이 있는 사용자면 계정 정보를 빼고 등록한다 — 그래야 제어기가 계정 단계를
         // 건너뛰고 컨테이너만 만들어, 기존 홈 디렉터리를 그대로 물려받는다.
-        final boolean[] reuseAccountRef = {false};
+        //
+        // "계정 있어?" 확인부터 등록 요청을 보내는 것까지를 사용자 단위로 통째로 직렬화한다(#607). 확인만
+        // 잠그고 등록은 잠금 밖에서 보내면, 같은 사용자의 신청 두 건이 동시에 "계정 없음"을 보고 각자
+        // 등록을 보낼 수 있다. 처음 계정을 만드는 사용자는 config-server가 뒤쪽을 거절해 안전하지만,
+        // 돌아온 사용자(expected_uid로 예전 uid를 요청)는 번호가 같아 "이어받기"로 보고 둘 다 성공시켜
+        // 계정 하나에 컨테이너 두 개가 붙을 수 있다.
+        final Long[] jobIdRef = {null};
         synchronized (approvalLockFor(userId)) {
-            new TransactionTemplate(transactionManager).execute(status -> {
-                User owner = userRepository.findByIdForUpdate(userId)
-                        .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-                reuseAccountRef[0] = owner.hasUbuntuAccount();
-                return null;
-            });
-        }
-        boolean reuseAccount = reuseAccountRef[0];
+            // 내 차례가 왔을 때, 같은 사용자의 다른 신청이 이미 등록 중(PROCESSING)이면 나는 등록을
+            // 보내지 않고 물러난다 — 앞선 신청이 끝난 뒤 다시 승인하면 그때는 계정이 생겨 있어 정상적으로
+            // 재사용 경로를 탄다.
+            // 앞선 신청이 DEGRADED 등으로 PROCESSING에 멈춰 있으면 저절로 끝나지 않으므로, 관리자가 찾아
+            // 정리할 수 있게 막고 있는 신청 번호를 로그에 남긴다.
+            List<Long> blockingRequestIds = requestRepository.findAllByUser_UserIdAndStatus(userId, Status.PROCESSING)
+                    .stream().map(Request::getRequestId).filter(id -> !id.equals(requestId)).toList();
+            if (!blockingRequestIds.isEmpty()) {
+                revertToPendingIfStillProcessing(requestId, serverName);
+                throw new BusinessException(String.format(
+                        "requestId=%d 승인 거절: 같은 사용자의 신청 %s이(가) PROCESSING", requestId, blockingRequestIds),
+                        ErrorCode.USER_APPROVAL_ALREADY_IN_PROGRESS);
+            }
+            boolean reuseAccount = Boolean.TRUE.equals(new TransactionTemplate(transactionManager).execute(status ->
+                    userRepository.findByIdForUpdate(userId)
+                            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND))
+                            .hasUbuntuAccount()));
 
-        // 계정을 새로 만드는 경우의 그룹은 작업이 계정을 만들 때 함께 넣는다. 
-        // 재사용 계정의 경우, config-server의 provision 제어기가 Pod 생성 후 그룹을 추가하므로
-        // 여기서는 그룹 정보를 구성만 하고 로컬 호출은 하지 않는다.
-        List<UserCreationRequestDTO.SupplementaryGroup> requestGroupsToAdd = 
-               creationDtoRef[0].supplementaryGroups();
+            // 계정을 새로 만드는 경우의 그룹은 작업이 계정을 만들 때 함께 넣는다.
+            // 재사용 계정의 경우, config-server의 provision 제어기가 Pod 생성 후 그룹을 추가하므로
+            // 여기서는 그룹 정보를 구성만 하고 로컬 호출은 하지 않는다.
+            List<UserCreationRequestDTO.SupplementaryGroup> requestGroupsToAdd =
+                    creationDtoRef[0].supplementaryGroups();
 
-        ProvisionRegisterRequestDTO body = reuseAccount
-               ? ProvisionRegisterRequestDTO.podOnly(requestId, username, requestGroupsToAdd)
-               : ProvisionRegisterRequestDTO.withAccount(creationDtoRef[0]);
-        Long jobId;
-        try {
-           jobId = operationJobService.registerProvision(body);
-        } catch (Exception e) {
-           // 등록 자체가 실패했으면 아직 아무것도 만들어지지 않았다 — 정리할 자원 없이 되돌린다.
-           log.warn("[보상 트랜잭션] 생성 작업 등록 실패 → 상태 복구 시작: {}", username, e);
-           notifyApprovalFailure(String.format(
-                   "[승인 실패] 생성 작업 등록 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
-                   username, requestId, e.getMessage()), serverName);
-           revertToPendingIfStillProcessing(requestId, serverName);
-           throw e;
+            ProvisionRegisterRequestDTO body = reuseAccount
+                    ? ProvisionRegisterRequestDTO.podOnly(requestId, username, requestGroupsToAdd)
+                    : ProvisionRegisterRequestDTO.withAccount(creationDtoRef[0]);
+            jobIdRef[0] = registerProvisionJob(body, requestId, username, serverName);
         }
+        Long jobId = jobIdRef[0];
         // 결과 폴러가 이 번호의 결과만 반영하게 남긴다. 그 사이 상태가 바뀌었으면(거절 등) 건드리지 않는다.
         new TransactionTemplate(transactionManager).execute(status -> {
             requestRepository.findByIdForUpdate(requestId)
                     .filter(r -> r.getStatus() == Status.PROCESSING)
-                    .ifPresent(r -> r.recordProvisionJob(jobId));
+                    .ifPresent(r -> r.recordJob(jobId));
             return null;
         });
 
         return responseRef[0];
     }
 
+    private Long registerProvisionJob(ProvisionRegisterRequestDTO body, Long requestId, String username, String serverName) {
+        try {
+            return jobClient.registerProvision(body);
+        } catch (Exception e) {
+            return registeredJobDespiteFailure(requestId, username, serverName, e);
+        }
+    }
+
     /**
-     * 이 사용자가 예전 신청에서 쓰던 UID. 계정 기록(User.ubuntuUid)이 있으면 계정 생성 자체를 건너뛰므로 필요 없다.
-     * 계정 기록이 빠졌는데 원장에는 계정이 남은 경우(실패 작업이 계정을 남겼거나 수동 정리), config-server가
-     * 이 값과 원장 UID가 같을 때만 계정을 이어받는다 — 다른 사람이 쓰던 같은 이름의 계정은 이어받지 않는다.
+     * 등록 요청이 실패로 보였을 때, 실제로 등록된 작업이 도는지 확인한다. 응답만 늦었거나(타임아웃) 앞선 승인이
+     * 남긴 작업이 아직 도는 경우(409) 작업은 config-server에 있다 — 그때 신청을 되돌리면 그 작업이 만든 컨테이너를
+     * 어떤 신청도 가리키지 않게 된다.
+     *
+     * @return 도는 중인 작업 번호. 이 신청은 PROCESSING으로 두고 결과 폴러가 이어받는다.
+     * @throws RuntimeException 작업이 없거나 끝났으면 PENDING으로 되돌린 뒤, 작업 상태를 모르면 되돌리지 않고
+     *                          (재조정 스케줄러가 작업 상태를 보고 판단한다) 원래 오류를 던진다
+     */
+    private Long registeredJobDespiteFailure(Long requestId, String username, String serverName, Exception cause) {
+        if (JobResults.neverReachedServer(cause)) {
+            // 요청이 config-server에 닿지도 않았으므로 작업은 없다. 작업 상태 조회(대개 같은 이유로 실패한다)를
+            // 기다리지 않고 바로 되돌린다 — 그러지 않으면 재조정이 돌 때까지 PROCESSING에 갇힌다.
+            return revertUnregistered(requestId, username, serverName, cause);
+        }
+        JobResultResponseDTO job;
+        try {
+            job = jobClient.getResult(JobResults.KIND_PROVISION, requestId);
+        } catch (Exception lookupFailure) {
+            log.warn("생성 작업 등록 실패 후 작업 상태 조회도 실패 — PROCESSING 유지, 재조정에 맡김: requestId={}", requestId, lookupFailure);
+            notifyApprovalFailure(String.format(
+                    "[승인 확인 필요] 생성 작업 등록 결과를 확인하지 못해 PROCESSING으로 두었습니다(작업이 없으면 재조정이 되돌립니다): username=%s, requestId=%d, error=%s",
+                    username, requestId, cause.getMessage()), serverName);
+            throw asRuntime(cause);
+        }
+        if (job != null && JobResults.isRunning(job.phase())) {
+            log.warn("생성 작업 등록 응답은 실패했지만 작업이 도는 중 — 이어받음: requestId={}, jobId={}", requestId, job.jobId(), cause);
+            return job.jobId();
+        }
+        return revertUnregistered(requestId, username, serverName, cause);
+    }
+
+    /** 등록된 작업이 없다 — 아직 아무것도 만들어지지 않았으므로 정리할 자원 없이 되돌린다. */
+    private Long revertUnregistered(Long requestId, String username, String serverName, Exception cause) {
+        log.warn("[보상 트랜잭션] 생성 작업 등록 실패 → 상태 복구 시작: {}", username, cause);
+        notifyApprovalFailure(String.format(
+                "[승인 실패] 생성 작업 등록 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
+                username, requestId, cause.getMessage()), serverName);
+        revertToPendingIfStillProcessing(requestId, serverName);
+        throw asRuntime(cause);
+    }
+
+    private static RuntimeException asRuntime(Exception e) {
+        return e instanceof RuntimeException re ? re : new BusinessException(ErrorCode.POD_CREATION_FAILED);
+    }
+
+    /**
+     * 계정을 새로 만들 때 config-server에 보낼 expected_uid. 계정이 살아 있으면 계정 생성 자체를 건너뛰므로 필요 없다.
+     * 이 사람이 예전에 받은 UID가 있으면(회수 후 재승인) 그 번호를 보낸다 — 원장에 계정이 남았으면 이 값과
+     * 원장 UID가 같을 때만 이어받고, 없으면 NAS 홈 소유자가 이 값일 때 같은 UID로 다시 만든다.
+     * 첫 승인이면 null이라 새 번호를 받는다.
      */
     private Long previousUbuntuUid(User user) {
-        if (user.hasUbuntuAccount()) {
-            return null;
-        }
-        return requestRepository.findFirstByUser_UserIdAndUbuntuUidIsNotNullOrderByRequestIdDesc(user.getUserId())
-                .map(Request::getUbuntuUid)
-                .orElse(null);
+        return user.hasUbuntuAccount() ? null : user.getUbuntuUid();
     }
 
     /**
@@ -196,6 +282,10 @@ public class AdminRequestCommandService {
         if (made == null || made.podName() == null) {
             // 작업은 성공했는데 만든 자원을 받지 못했다(결과 보관 기간이 지난 경우 등). 그대로 확정하면
             // 컨테이너 이름도 포트도 없는 신청이 승인 완료로 남으므로, 사람이 확인하도록 알리고 멈춘다.
+            // 신청이 PROCESSING에 남아 폴러가 매 바퀴 다시 부르므로 알림은 작업마다 한 번만 보낸다.
+            if (!alertDeduplicator.firstOccurrence("provision-missing-result:" + requestId + ":" + jobIdOf(requestId))) {
+                return;
+            }
             log.error("생성 작업 성공 결과에 자원 정보가 없어 신청에 반영하지 못함: requestId={}", requestId);
             notifyApprovalFailure(String.format(
                     "[승인 확인 필요] 생성 작업은 성공했으나 결과 정보를 받지 못해 신청에 반영하지 못했습니다: requestId=%d",
@@ -220,7 +310,6 @@ public class AdminRequestCommandService {
                 // 재사용 경로라 결과의 UID는 같은 값이다.
                 owner.assignUbuntuAccount(made.uid(), made.gid());
             }
-            req.assignUbuntuIds(owner.getUbuntuUid(), owner.getUbuntuGid());
             req.assignPodInfo(made.podName(), made.node());
             req.completeApproval();
             // 작업이 성공했다는 건 이 신청이 요청한 그룹이 실제로 AD(계정 단위)에 반영됐다는 뜻이다.
@@ -298,6 +387,24 @@ public class AdminRequestCommandService {
                 requestId, result.jobId()), serverNameOf(requestId));
     }
 
+    /**
+     * 생성 작업은 성공했지만 그 결과를 신청에 반영하는 중(예: {@link #completeApprovalJob}) 예외가 났다 —
+     * 대표적으로 회수됐다 돌아온 사용자가 다른 uid로 성공해 계정에 이미 배정된 uid와 충돌하는 경우
+     * ({@code UBUNTU_ACCOUNT_ALREADY_ASSIGNED}). 원인이 해소되지 않는 한 폴러가 매 바퀴 같은 예외를
+     * 되풀이하므로, 신청 상태는 건드리지 않고(원인을 모르는 채 되돌리면 이미 만들어진 자원과 어긋난다)
+     * 작업마다 한 번만 관리자에게 알린다. {@code JobResultPoller#onApplyFailed}가 호출한다.
+     */
+    public void reportApplyFailure(Long requestId, String detail) {
+        notifyApprovalFailure(String.format(
+                "[승인 확인 필요] 생성 작업 결과를 신청에 반영하는 중 오류가 났습니다: requestId=%d, error=%s",
+                requestId, detail), serverNameOf(requestId));
+    }
+
+    /** 알림 중복 키용 현재 작업 번호. 같은 신청이라도 새 작업이면 새 사건으로 다시 알린다. */
+    private Long jobIdOf(Long requestId) {
+        return requestRepository.findById(requestId).map(Request::getJobId).orElse(null);
+    }
+
     /** 알림을 관리자가 실제로 보는 farm/lab 채널로 보내기 위한 서버 구분. 조회 실패는 알림 실패로 번지지 않게 삼킨다. */
     private String serverNameOf(Long requestId) {
         try {
@@ -322,22 +429,68 @@ public class AdminRequestCommandService {
                 .findFirst().orElse("");
     }
 
-    @Transactional
+    /**
+     * 신청을 거절한다. 거절은 상태만 DENIED로 바꾸고 인프라 자원을 회수하지 않으므로, 자원이 생길 수 있는
+     * 상태에서는 막는다. 사용 중인(FULFILLED) 컨테이너는 컨테이너 회수로 끝낸다.
+     *
+     * <p>PROCESSING은 생성 작업이 끝난 뒤(실패·결과 불명·관리자 이관·작업 없음)에만 거절한다. 도는 중이거나
+     * 성공을 아직 반영하지 않았으면 거절하는 순간 그 작업이 만든 컨테이너를 어떤 신청도 가리키지 않게 된다.
+     * 성공했지만 결과가 사라져 반영하지 못한 신청은 갇혀 있으므로 거절을 허용한다.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SaveRequestResponseDTO rejectRequest(RejectRequestDTO dto) {
-        // 행 잠금: PROCESSING 상태를 거절하는 동안 completeApprovalJob의 승인 확정
-        // 트랜잭션과 순서가 뒤섞이지 않게 한다. completeApprovalJob도 확정 직전에 상태를 다시 확인한다.
-        Request request = requestRepository.findByIdForUpdate(dto.requestId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        if (!(request.getStatus() == Status.PENDING || request.getStatus() == Status.PROCESSING || request.getStatus() == Status.FULFILLED)) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+        Long requestId = dto.requestId();
+        Status current = new TransactionTemplate(transactionManager).execute(status ->
+                requestRepository.findById(requestId)
+                        .map(Request::getStatus)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)));
+        if (current == Status.PROCESSING) {
+            ensureProvisionJobFinished(requestId);
         }
-        request.reject(dto.adminComment());
+
+        final Request[] rejectedRef = {null};
+        final SaveRequestResponseDTO[] responseRef = {null};
+        new TransactionTemplate(transactionManager).execute(status -> {
+            // 행 잠금 + 상태 재확인: 위 조회 뒤에 폴러가 승인을 확정했다면 FULFILLED가 되어 여기서 막힌다.
+            Request request = requestRepository.findByIdForUpdate(requestId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+            if (request.getStatus() != Status.PENDING && request.getStatus() != Status.PROCESSING) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+            }
+            request.reject(dto.adminComment());
+            // 응답은 트랜잭션 안에서 만든다(승인과 같은 이유). 메일이 쓰는 사용자·서버 정보도 이때 읽힌다.
+            responseRef[0] = SaveRequestResponseDTO.fromEntity(request);
+            rejectedRef[0] = request;
+            return null;
+        });
+        Request rejected = rejectedRef[0];
         sendNotificationSafely(
-                () -> alarmService.sendRequestRejectedEmail(request, dto.adminComment()),
+                () -> alarmService.sendRequestRejectedEmail(rejected, dto.adminComment()),
                 () -> {},
-                e -> log.warn("거절 안내 메일 발송 실패: requestId={}", dto.requestId(), e)
+                e -> log.warn("거절 안내 메일 발송 실패: requestId={}", requestId, e)
         );
-        return SaveRequestResponseDTO.fromEntity(request);
+        return responseRef[0];
+    }
+
+    /** 생성 작업이 아직 돌거나 성공 결과를 반영하기 전이면 거절을 막는다. 작업 상태를 모르면 막는다. */
+    private void ensureProvisionJobFinished(Long requestId) {
+        Request request = new TransactionTemplate(transactionManager).execute(status ->
+                requestRepository.findById(requestId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)));
+        if (JobResults.awaitingRegistration(request.getJobId(), request.getUpdatedAt())) {
+            throw new BusinessException(ErrorCode.PROVISION_JOB_IN_PROGRESS);
+        }
+        JobResultResponseDTO job = jobClient.getResult(JobResults.KIND_PROVISION, requestId);
+        if (JobResults.isFromOtherJob(request.getJobId(), job)) {
+            // 이번 승인의 작업이 아직 보이지 않는다(이전 작업 결과가 보임).
+            throw new BusinessException(ErrorCode.PROVISION_JOB_IN_PROGRESS);
+        }
+        boolean running = JobResults.isRunning(job.phase());
+        boolean successPending = JobResults.PHASE_SUCCESS.equals(job.phase())
+                && job.result() != null && job.result().podName() != null;
+        if (running || successPending) {
+            throw new BusinessException(ErrorCode.PROVISION_JOB_IN_PROGRESS);
+        }
     }
 
     /** 알림 발송을 시도하고, 실패해도 예외를 전파하지 않는다 (알림은 부가 기능 — 실패해도 이미 반영된 상태 변경을 되돌리지 않는다). */

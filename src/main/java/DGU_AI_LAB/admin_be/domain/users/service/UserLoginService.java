@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.global.auth.EmailDomainPolicy;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
@@ -10,6 +11,8 @@ import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import DGU_AI_LAB.admin_be.global.auth.jwt.JwtProvider;
+import DGU_AI_LAB.admin_be.global.validation.ReservedLinuxNames;
+import DGU_AI_LAB.admin_be.global.util.LinuxPasswordHasher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,9 +31,11 @@ public class UserLoginService {
 
     private final UserRepository userRepository;
     private final GroupRepository groupRepository;
+    private final ReservedLinuxNames reservedLinuxNames;
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
     private final RedisTemplate<String, String> redisTemplate;
+    private final EmailDomainPolicy emailDomainPolicy;
 
     @Value("${jwt.refresh-token-expire-time}")
     private long REFRESH_TOKEN_EXPIRE_TIME;
@@ -38,9 +43,16 @@ public class UserLoginService {
     private static final int MAX_LOGIN_ATTEMPTS = 5;
     private static final long LOGIN_LOCKOUT_SECONDS = 900; // 15분
 
+    /**
+     * 없는 이메일에도 비밀번호 검사를 한 번 돌리기 위한 해시. 건너뛰면 응답이 BCrypt 한 번만큼 빨라져 가입된
+     * 이메일인지 응답 시간으로 드러난다(Spring Security DaoAuthenticationProvider와 같은 방식).
+     */
+    private volatile String userNotFoundEncodedPassword;
+
     /** 회원가입 */
     @Transactional
     public void register(UserRegisterRequestDTO request) {
+        emailDomainPolicy.requireAllowed(request.email());
         String redisKey = "VERIFIED:" + request.email();
 
         if (!Boolean.TRUE.equals(redisTemplate.hasKey(redisKey))) {
@@ -54,6 +66,9 @@ public class UserLoginService {
         if (userRepository.existsByUbuntuUsername(request.ubuntuUsername())) {
             throw new BusinessException(ErrorCode.DUPLICATE_USERNAME);
         }
+        if (reservedLinuxNames.contains(request.ubuntuUsername())) {
+            throw new BusinessException(ErrorCode.UBUNTU_USERNAME_RESERVED);
+        }
         // 개인 그룹도 계정명으로 만들고 AD는 사용자·그룹 이름 공간을 공유한다 — 같은 이름의 그룹이
         // 있으면 승인 뒤 계정 생성이 실패한다.
         if (groupRepository.existsByGroupName(request.ubuntuUsername())) {
@@ -62,6 +77,8 @@ public class UserLoginService {
 
         String encoded = passwordEncoder.encode(request.password());
         User user = request.toEntity(encoded);
+        // 웹 계정 비밀번호가 곧 SSH(Ubuntu) 비밀번호다. 평문은 지금만 있으므로 리눅스용 해시를 함께 만든다.
+        user.changeUbuntuPasswordHash(LinuxPasswordHasher.sha512Crypt(request.password()));
 
         try {
             // 위 사전 검사와 여기 사이에 같은 이메일/유저네임으로 동시에 가입이 들어올 수 있다.
@@ -101,14 +118,11 @@ public class UserLoginService {
             throw new BusinessException(ErrorCode.TOO_MANY_LOGIN_ATTEMPTS);
         }
 
-        User user = userRepository.findByEmail(request.email())
-                .orElseThrow(() -> {
-                    recordFailedAttempt(attemptKey);
-                    return new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO);
-                });
-
-        if (!user.getIsActive()) {
-            throw new UnauthorizedException(ErrorCode.ACCOUNT_DISABLED);
+        User user = userRepository.findByEmail(request.email()).orElse(null);
+        if (user == null) {
+            passwordEncoder.matches(request.password(), userNotFoundEncodedPassword());
+            recordFailedAttempt(attemptKey);
+            throw new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO);
         }
 
         if (!passwordEncoder.matches(request.password(), user.getPassword())) {
@@ -116,8 +130,14 @@ public class UserLoginService {
             throw new UnauthorizedException(ErrorCode.INVALID_LOGIN_INFO);
         }
 
+        // 비활성 여부는 비밀번호가 맞은 뒤에만 알린다. 먼저 알리면 아무 비밀번호로도 가입 여부가 드러난다.
+        if (!user.getIsActive()) {
+            throw new UnauthorizedException(ErrorCode.ACCOUNT_DISABLED);
+        }
+
         redisTemplate.delete(attemptKey);
         user.recordLogin();
+        refreshSshPasswordHashIfWeak(user, request.password());
 
         String accessToken = jwtProvider.getIssueToken(user.getUserId(), true);
         String refreshToken = jwtProvider.getIssueToken(user.getUserId(), false);
@@ -127,6 +147,31 @@ public class UserLoginService {
         );
 
         return UserTokenResponseDTO.of(accessToken, refreshToken);
+    }
+
+    /**
+     * SSH 비밀번호가 웹 비밀번호로 합쳐지기 전에 가입한 계정은 리눅스용 해시가 없고, 반복 횟수를 올리기 전에
+     * 만든 해시는 약하다. 평문을 볼 수 있는 로그인 때 지금 강도로 다시 만들어, 다음 컨테이너부터 이 해시를 쓴다.
+     * 이미 떠 있는 컨테이너는 건드리지 않는다(로그인이 config-server를 기다리지 않게) — 비밀번호가 같으니
+     * 접속은 그대로 되고, 웹 비밀번호를 바꾸면 그때 함께 바뀐다.
+     */
+    private void refreshSshPasswordHashIfWeak(User user, String rawPassword) {
+        if (LinuxPasswordHasher.isCurrentStrength(user.getUbuntuPasswordHash())) {
+            return;
+        }
+        String hash = LinuxPasswordHasher.sha512Crypt(rawPassword);
+        if (userRepository.replaceWeakUbuntuPasswordHash(user.getUserId(), hash, LinuxPasswordHasher.currentPrefix()) > 0) {
+            log.info("[login] userId={} SSH 비밀번호 해시를 지금 강도로 다시 만듦", user.getUserId());
+        }
+    }
+
+    private String userNotFoundEncodedPassword() {
+        String encoded = userNotFoundEncodedPassword;
+        if (encoded == null) {
+            encoded = passwordEncoder.encode("userNotFoundPassword");
+            userNotFoundEncodedPassword = encoded;
+        }
+        return encoded;
     }
 
     /** 이메일당 15분 내 5회 실패 시 잠금 — 브루트포스 방지 */

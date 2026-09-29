@@ -1,5 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.global.alert.AlertDeduplicator;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
@@ -21,6 +24,11 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+
 /**
  * Pod 노드 마이그레이션. config-server에 마이그레이션 작업을 등록하고 바로 돌아오며, 결과는
  * {@code MigrationJobPoller}가 조회해 {@link #completeMigrationJob}·{@link #failMigrationJob}으로 반영한다.
@@ -34,9 +42,12 @@ public class PodMigrationService {
 
     private final RequestRepository requestRepository;
     private final PodExternalPortRepository podExternalPortRepository;
-    private final OperationJobService operationJobService;
+    private final JobClient jobClient;
     private final PlatformTransactionManager transactionManager;
     private final AlarmService alarmService;
+
+    // 성공 결과를 받지 못해 반영을 멈춘 신청은 폴러가 매 바퀴 다시 부른다. 같은 알림이 반복되지 않게 한다.
+    private final AlertDeduplicator alertDeduplicator;
 
     /**
      * 신청을 MIGRATING으로 바꾸고 마이그레이션 작업을 등록한다. 행 잠금과 상태 전환을 같은 트랜잭션에서 커밋해야
@@ -57,17 +68,17 @@ public class PodMigrationService {
         try {
             Request req = requestRepository.findById(requestId).orElse(null);
             if (req == null || req.getStatus() != Status.MIGRATING
-                    || OperationJobService.awaitingRegistration(req.getMigrationJobId(), req.getUpdatedAt())) {
+                    || JobResults.awaitingRegistration(req.getJobId(), req.getUpdatedAt())) {
                 return;
             }
-            JobResultResponseDTO result = operationJobService.getResult(OperationJobService.KIND_MIGRATE, requestId);
-            if (OperationJobService.isFromOtherJob(req.getMigrationJobId(), result)) {
+            JobResultResponseDTO result = jobClient.getResult(JobResults.KIND_MIGRATE, requestId);
+            if (JobResults.isFromOtherJob(req.getJobId(), result)) {
                 return;
             }
             switch (result.phase()) {
-                case OperationJobService.PHASE_SUCCESS -> completeMigrationJob(requestId, result.result());
-                case OperationJobService.PHASE_FAIL -> {
-                    if (!OperationJobService.isDegraded(result)) {
+                case JobResults.PHASE_SUCCESS -> completeMigrationJob(requestId, result.result());
+                case JobResults.PHASE_FAIL -> {
+                    if (!JobResults.isDegraded(result)) {
                         failMigrationJob(requestId, result);
                     }
                 }
@@ -90,22 +101,49 @@ public class PodMigrationService {
             podNameRef[0] = req.getPodName();
             return null;
         });
-        Long jobId;
-        try {
-            jobId = operationJobService.registerMigrate(new MigrateRegisterRequestDTO(
-                    requestId, podNameRef[0], usernameRef[0], dto.nodes(), dto.minImprovementRatio(), dto.force()));
-        } catch (RuntimeException e) {
-            revertToFulfilled(requestId);
-            throw e;
-        }
+        Long jobId = registerMigration(new MigrateRegisterRequestDTO(
+                requestId, podNameRef[0], usernameRef[0], dto.nodes(), dto.minImprovementRatio(), dto.force()));
         // 결과 폴러가 이 번호의 결과만 반영하게 남긴다. 그 사이 끝났거나 되돌려졌으면 건드리지 않는다.
         new TransactionTemplate(transactionManager).execute(status -> {
             requestRepository.findByIdForUpdate(requestId)
                     .filter(r -> r.getStatus() == Status.MIGRATING)
-                    .ifPresent(r -> r.recordMigrationJob(jobId));
+                    .ifPresent(r -> r.recordJob(jobId));
             return null;
         });
         log.info("마이그레이션 작업 등록: requestId={}, username={}, pod={}", requestId, usernameRef[0], podNameRef[0]);
+    }
+
+    /**
+     * 등록이 실패로 보이면 실제로 등록된 작업이 도는지 확인한다. 응답만 늦었으면(타임아웃) 작업은 config-server에서
+     * Pod를 옮기는 중이다 — 그때 FULFILLED로 되돌리면 결과 폴러(MIGRATING만 본다)가 결과를 반영하지 못해 신청이
+     * 지워진 옛 Pod를 가리키게 된다. 그래서 MIGRATING으로 두고 이어받는다. 요청이 닿지도 않았거나 작업이 없으면
+     * FULFILLED로 되돌리고, 작업 상태를 모르면 MIGRATING으로 두어 결과 폴러와 재조정 알림에 맡긴다.
+     */
+    private Long registerMigration(MigrateRegisterRequestDTO body) {
+        Long requestId = body.requestId();
+        try {
+            return jobClient.registerMigrate(body);
+        } catch (RuntimeException e) {
+            if (JobResults.neverReachedServer(e)) {
+                log.error("config-server에 닿지 못해 마이그레이션 작업이 등록되지 않음 — FULFILLED로 되돌림: requestId={}", requestId, e);
+                revertToFulfilled(requestId);
+                throw e;
+            }
+            JobResultResponseDTO job;
+            try {
+                job = jobClient.getResult(JobResults.KIND_MIGRATE, requestId);
+            } catch (Exception lookupFailure) {
+                alert(String.format("[마이그레이션 확인 필요] 작업 등록 결과를 확인하지 못해 MIGRATING으로 두었습니다: requestId=%d, error=%s",
+                        requestId, e.getMessage()), lookupFailure);
+                throw e;
+            }
+            if (job != null && JobResults.isRunning(job.phase())) {
+                log.warn("마이그레이션 작업 등록 응답은 실패했지만 작업이 도는 중 — 이어받음: requestId={}, jobId={}", requestId, job.jobId(), e);
+                return job.jobId();
+            }
+            revertToFulfilled(requestId);
+            throw e;
+        }
     }
 
     /**
@@ -113,7 +151,19 @@ public class PodMigrationService {
      * DB 반영이 실패하면 MIGRATING으로 남겨 재마이그레이션을 막고 관리자에게 알린다(실제 Pod는 이미 옮겨졌을 수 있다).
      */
     public void completeMigrationJob(Long requestId, JobResultResponseDTO.Result made) {
+        if (made == null) {
+            // 성공했는데 결과가 없다(결과 보관 기간이 지남). 옮겼는지 건너뛰었는지 알 수 없으므로 "건너뜀"으로
+            // 확정하면 안 된다 — 옮겼다면 신청은 지워진 옛 Pod를 가리키고 새 Pod는 추적되지 않는다.
+            // MIGRATING에 둔 채 작업마다 한 번만 알린다. 새 Pod 이름은 작업 단계 기록에서 확인할 수 있다.
+            Long jobId = requestRepository.findById(requestId).map(Request::getJobId).orElse(null);
+            if (alertDeduplicator.firstOccurrence("migration-missing-result:" + requestId + ":" + jobId)) {
+                log.error("마이그레이션 성공 결과에 자원 정보가 없어 신청에 반영하지 못함: requestId={}", requestId);
+                alert(String.format("[마이그레이션 확인 필요] 작업은 성공했으나 결과 정보를 받지 못해 신청에 반영하지 못했습니다: requestId=%d", requestId), null);
+            }
+            return;
+        }
         final boolean[] applied = {false};
+        final Request[] portsChangedRequest = {null};
         try {
             new TransactionTemplate(transactionManager).execute(status -> {
                 Request req = requestRepository.findByIdForUpdate(requestId)
@@ -123,6 +173,7 @@ public class PodMigrationService {
                     return null;
                 }
                 if (made != null && made.isMigrated()) {
+                    Set<String> oldPorts = portKeys(podExternalPortRepository.findByRequestRequestId(requestId));
                     req.assignPodInfo(made.podName(), made.node());
                     podExternalPortRepository.deleteByRequestRequestId(requestId);
                     if (made.ports() != null) {
@@ -134,6 +185,12 @@ public class PodMigrationService {
                                     .usagePurpose(port.usagePurpose())
                                     .build());
                         }
+                    }
+                    if (made.ports() != null && !made.ports().isEmpty() && !oldPorts.equals(newPortKeys(made.ports()))) {
+                        // 커밋 뒤 안내 메일에서 쓰는 지연 연관을 트랜잭션 안에서 채워 둔다.
+                        req.getUser().getEmail();
+                        req.getResourceGroup().getServerName();
+                        portsChangedRequest[0] = req;
                     }
                 }
                 req.endMigration();
@@ -153,6 +210,9 @@ public class PodMigrationService {
             if ("failed".equals(made.oldPodCleanup())) {
                 alert(String.format("[마이그레이션] 새 Pod는 정상 반영됐지만 기존 Pod 정리 실패 - 수동 확인 필요: requestId=%d, oldPod=%s, oldNode=%s",
                         requestId, made.oldPodName(), made.fromNode()), null);
+            }
+            if (portsChangedRequest[0] != null) {
+                notifyPortsChanged(portsChangedRequest[0]);
             }
         } else {
             log.info("Pod 마이그레이션 건너뜀: requestId={}, reason={}", requestId, made == null ? null : made.reason());
@@ -177,7 +237,7 @@ public class PodMigrationService {
         if (!requestRepository.existsById(requestId)) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
-        return MigrationResultResponseDTO.from(operationJobService.getResult(OperationJobService.KIND_MIGRATE, requestId));
+        return MigrationResultResponseDTO.from(jobClient.getResult(JobResults.KIND_MIGRATE, requestId));
     }
 
     private void revertToFulfilled(Long requestId) {
@@ -191,6 +251,32 @@ public class PodMigrationService {
         } catch (Exception e) {
             alert(String.format("[마이그레이션] MIGRATING 상태 복구 실패 - 수동 확인 필요: requestId=%d", requestId), e);
         }
+    }
+
+    /** 새 Pod에 다른 포트가 배정되면 사용자에게 새 접속 정보를 알린다. 메일 실패가 반영된 결과를 되돌리지 않는다. */
+    private void notifyPortsChanged(Request request) {
+        try {
+            alarmService.sendContainerPortsChangedEmail(request);
+            log.info("마이그레이션 포트 변경 안내 메일 발송: requestId={}", request.getRequestId());
+        } catch (Exception e) {
+            log.warn("마이그레이션 포트 변경 안내 메일 발송 실패: requestId={}", request.getRequestId(), e);
+        }
+    }
+
+    private static Set<String> portKeys(List<PodExternalPort> ports) {
+        return ports.stream()
+                .map(p -> portKey(p.getUsagePurpose(), p.getInternalPort(), p.getExternalPort()))
+                .collect(Collectors.toSet());
+    }
+
+    private static Set<String> newPortKeys(List<CreatePodResponseDTO.PortInfo> ports) {
+        return ports.stream()
+                .map(p -> portKey(p.usagePurpose(), p.internalPort(), p.externalPort()))
+                .collect(Collectors.toSet());
+    }
+
+    private static String portKey(String purpose, Integer internalPort, Integer externalPort) {
+        return purpose + ":" + internalPort + ":" + externalPort;
     }
 
     private void alert(String message, Exception cause) {

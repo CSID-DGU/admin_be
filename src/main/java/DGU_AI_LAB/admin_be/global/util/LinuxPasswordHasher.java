@@ -12,6 +12,12 @@ import java.security.SecureRandom;
  */
 public final class LinuxPasswordHasher {
 
+    /**
+     * 반복 횟수. glibc 기본값 5000은 GPU 대입에 BCrypt(cost 10)보다 수백 배 약하다 — 같은 비밀번호가 웹 로그인에도
+     * 쓰이므로 이 해시가 가장 약한 고리가 된다. passlib의 sha512_crypt 기본값을 따른다.
+     */
+    static final int ROUNDS = 656_000;
+    private static final String CURRENT_PREFIX = "$6$rounds=" + ROUNDS + "$";
     private static final String SALT_ALPHABET = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     private static final int SALT_LENGTH = 16;
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -20,11 +26,21 @@ public final class LinuxPasswordHasher {
     }
 
     public static String sha512Crypt(String plaintext) {
-        return sha512Crypt(plaintext, randomSalt());
+        return crypt(plaintext, CURRENT_PREFIX + randomSalt());
     }
 
-    static String sha512Crypt(String plaintext, String salt) {
-        return Sha2Crypt.sha512Crypt(plaintext.getBytes(StandardCharsets.UTF_8), "$6$" + salt);
+    /** 지금 반복 횟수로 만든 해시인지. 아니면(옛 5000회 해시 등) 평문을 볼 수 있을 때 다시 만든다. */
+    public static boolean isCurrentStrength(String hash) {
+        return hash != null && hash.startsWith(CURRENT_PREFIX);
+    }
+
+    public static String currentPrefix() {
+        return CURRENT_PREFIX;
+    }
+
+    /** setting은 crypt(3)의 "$6$[rounds=N$]salt" 부분. */
+    static String crypt(String plaintext, String setting) {
+        return Sha2Crypt.sha512Crypt(plaintext.getBytes(StandardCharsets.UTF_8), setting);
     }
 
     private static String randomSalt() {

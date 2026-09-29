@@ -7,6 +7,7 @@ import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetailsService;
 import DGU_AI_LAB.admin_be.global.auth.SecurityWhitelist;
+import io.jsonwebtoken.Claims;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -46,11 +47,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             final String accessToken = getAccessTokenFromHttpServletRequest(request);
 
-            jwtProvider.validateAccessToken(accessToken);
+            final Claims claims = jwtProvider.parseAccessToken(accessToken);
             log.debug("[JwtAuthFilter] AccessToken 유효성 검사 통과");
 
-            final Long userId = jwtProvider.getSubject(accessToken);
+            final Long userId = Long.valueOf(claims.getSubject());
             User user = customUserDetailsService.loadUserEntityById(userId);
+            // 비밀번호를 바꾸면 그 전에 발급된 토큰(도난당했을 수 있는)은 더 쓰지 못한다.
+            if (user.isTokenIssuedBeforePasswordChange(claims.getIssuedAt().toInstant())) {
+                throw new UnauthorizedException(ErrorCode.INVALID_ACCESS_TOKEN_VALUE);
+            }
 
             CustomUserDetails userDetails = new CustomUserDetails(user, null);
             UsernamePasswordAuthenticationToken authentication =

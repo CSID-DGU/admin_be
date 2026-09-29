@@ -36,7 +36,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <pre>
  * completeApproval    생성 작업이 성공해서 승인을 확정한다   → 생성의 시스템 선언으로 센다
  * deleteAfterCleanup  회수 정리가 끝나 삭제를 확정한다       → 회수의 시스템 선언으로 센다
- * approve             동기 경로의 즉시 승인이다              → 비동기 경로를 쓰는 실험 대상이 아니다
  * endMigration        마이그레이션이 끝나 원래대로 돌아간다  → 마이그레이션은 실험 범위 밖이다
  * endExpiry           회수에 실패해서 되돌린다               → 선언이 아니라 되돌리기다
  * delete              사용자나 관리자가 신청을 취소한다      → 회수 절차를 거치지 않았으므로 선언이 아니다
@@ -56,7 +55,7 @@ class StatusDeclarationContractTest {
                     + "시험을 통과시키려고 기대 집합을 실제 집합에 맞춰 넓히지 않는다.";
 
     @Test
-    @DisplayName("FULFILLED 로 바꾸는 진입점은 approve·completeApproval·endMigration·endExpiry 네 개뿐이다")
+    @DisplayName("FULFILLED 로 바꾸는 진입점은 completeApproval·endMigration·endExpiry 세 개뿐이다")
     void fulfilledDeclarationSitesAreFixed() throws IOException {
         Set<String> actual = methodsAssigning("FULFILLED");
 
@@ -64,8 +63,8 @@ class StatusDeclarationContractTest {
                 .withFailMessage(
                         "status 를 FULFILLED 로 바꾸는 메서드 집합이 달라졌다.%n"
                                 + "기대한 집합: %s%n실제 집합: %s%n%s",
-                        Set.of("approve", "completeApproval", "endExpiry", "endMigration"), actual, DECIDE)
-                .containsExactlyInAnyOrder("approve", "completeApproval", "endMigration", "endExpiry");
+                        Set.of("completeApproval", "endExpiry", "endMigration"), actual, DECIDE)
+                .containsExactlyInAnyOrder("completeApproval", "endMigration", "endExpiry");
     }
 
     @Test
@@ -82,29 +81,29 @@ class StatusDeclarationContractTest {
     }
 
     @Test
-    @DisplayName("여섯 진입점 중 실험이 시스템 선언으로 세는 것은 completeApproval 과 deleteAfterCleanup 두 개다")
+    @DisplayName("다섯 진입점 중 실험이 시스템 선언으로 세는 것은 completeApproval 과 deleteAfterCleanup 두 개다")
     void onlyTwoSitesCountAsSystemDeclaration() throws IOException {
         Set<String> all = new TreeSet<>(methodsAssigning("FULFILLED"));
         all.addAll(methodsAssigning("DELETED"));
 
         assertThat(all)
                 .withFailMessage(
-                        "완료 선언 지점의 총수가 여섯 개가 아니다.%n기대한 집합: %s%n실제 집합: %s%n%s",
-                        Set.of("approve", "completeApproval", "delete", "deleteAfterCleanup", "endExpiry", "endMigration"),
+                        "완료 선언 지점의 총수가 다섯 개가 아니다.%n기대한 집합: %s%n실제 집합: %s%n%s",
+                        Set.of("completeApproval", "delete", "deleteAfterCleanup", "endExpiry", "endMigration"),
                         all, DECIDE)
-                .hasSize(6);
+                .hasSize(5);
 
-        // 실험이 집계하는 두 자리다. 나머지 네 자리는 뜻이 달라서 세지 않는다.
+        // 실험이 집계하는 두 자리다. 나머지 세 자리는 뜻이 달라서 세지 않는다.
         assertThat(all)
                 .withFailMessage("시스템 선언으로 세는 두 메서드가 Request.java 에서 사라졌다.%n실제 집합: %s%n%s", all, DECIDE)
                 .contains("completeApproval", "deleteAfterCleanup");
     }
 
-    /** {@code this.status = Status.<value>;} 를 담고 있는 메서드 이름을 모은다. */
+    /** {@code transitionTo(Status.<value>, ...)} 를 부르는 메서드 이름을 모은다. 상태는 transitionTo 한 곳에서만 바뀐다. */
     private Set<String> methodsAssigning(String statusValue) throws IOException {
         assertThat(REQUEST_SOURCE).exists();
         List<String> lines = Files.readAllLines(REQUEST_SOURCE, StandardCharsets.UTF_8);
-        String assignment = "this.status = Status." + statusValue + ";";
+        String assignment = "transitionTo(Status." + statusValue + ",";
 
         Map<String, String> found = new LinkedHashMap<>();
         String currentMethod = null;

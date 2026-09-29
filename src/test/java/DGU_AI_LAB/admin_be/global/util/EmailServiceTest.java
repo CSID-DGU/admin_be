@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.global.util;
 
+import DGU_AI_LAB.admin_be.global.auth.EmailDomainPolicy;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -44,8 +45,19 @@ class EmailServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private MessageUtils messageUtils;
+
+    @Mock
+    private EmailDomainPolicy emailDomainPolicy;
+
+    @Mock
+    private EmailSendThrottle emailSendThrottle;
+
     @BeforeEach
     void setUp() {
+        lenient().when(messageUtils.get("email.verify.subject")).thenReturn("인증 코드");
+        lenient().when(messageUtils.get(eq("email.verify.body"), any())).thenReturn("본문");
         // 이미 가입된 이메일을 거부하는 테스트는 이 스텁까지 도달하기 전에 끝나므로 lenient로 둔다.
         lenient().when(redisTemplate.opsForValue()).thenReturn(valueOperations);
     }
@@ -71,6 +83,19 @@ class EmailServiceTest {
         }
 
         @Test
+        @DisplayName("메일 본문 양식에는 Redis에 저장한 것과 같은 인증번호를 넘긴다")
+        void sendEmailVerificationCode_passesStoredCodeToBodyTemplate() throws Exception {
+            when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+
+            emailService.sendEmailVerificationCode("test@example.com");
+
+            ArgumentCaptor<String> codeCaptor = ArgumentCaptor.forClass(String.class);
+            verify(valueOperations).set(anyString(), codeCaptor.capture(), anyLong(), any());
+            verify(messageUtils).get("email.verify.body", codeCaptor.getValue());
+            verify(mimeMessage).setSubject("인증 코드", "UTF-8");
+        }
+
+        @Test
         @DisplayName("이메일 인증번호 발송 성공 시 정상 처리된다")
         void sendEmailVerificationCode_success() {
             when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
@@ -88,6 +113,30 @@ class EmailServiceTest {
 
             assertThatThrownBy(() -> emailService.sendEmailVerificationCode("test@example.com"))
                     .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("허용되지 않은 도메인이면 발송 횟수도 세지 않고 메일을 보내지 않는다")
+        void sendEmailVerificationCode_disallowedDomain_doesNotSend() {
+            doThrow(new BusinessException(ErrorCode.EMAIL_DOMAIN_NOT_ALLOWED))
+                    .when(emailDomainPolicy).requireAllowed("test@gmail.com");
+
+            assertThatThrownBy(() -> emailService.sendEmailVerificationCode("test@gmail.com"))
+                    .isInstanceOf(BusinessException.class);
+
+            verifyNoInteractions(emailSendThrottle, mailSender, valueOperations);
+        }
+
+        @Test
+        @DisplayName("발송 제한에 걸리면 코드를 만들지 않고 메일을 보내지 않는다")
+        void sendEmailVerificationCode_throttled_doesNotSend() {
+            doThrow(new BusinessException(ErrorCode.TOO_MANY_EMAIL_SENDS))
+                    .when(emailSendThrottle).acquire("test@dgu.ac.kr");
+
+            assertThatThrownBy(() -> emailService.sendEmailVerificationCode("test@dgu.ac.kr"))
+                    .isInstanceOf(BusinessException.class);
+
+            verifyNoInteractions(mailSender, valueOperations);
         }
 
         @Test

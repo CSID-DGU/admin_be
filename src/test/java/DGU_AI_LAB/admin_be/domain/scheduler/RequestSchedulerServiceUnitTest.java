@@ -1,12 +1,13 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
-import DGU_AI_LAB.admin_be.domain.requests.service.OperationJobService;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
@@ -41,7 +42,7 @@ class RequestSchedulerServiceUnitTest {
     @Mock private MessageUtils messageUtils;
     @Mock private RequestNotificationService requestNotificationService;
     @Mock private AdminRequestCommandService adminRequestCommandService;
-    @Mock private OperationJobService operationJobService;
+    @Mock private JobClient jobClient;
 
     @Mock private ResourceGroup mockRg;
 
@@ -51,11 +52,11 @@ class RequestSchedulerServiceUnitTest {
     void setUp() {
         service = new RequestSchedulerService(
                 requestRepository, alarmService, requestExpiryService, messageUtils, requestNotificationService,
-                adminRequestCommandService, operationJobService
+                adminRequestCommandService, jobClient
         );
         when(mockRg.getServerName()).thenReturn("FARM-01");
         // 기본: 등록된 생성 작업이 없는 신청 (승인 도중 admin_be가 죽어 작업 등록 전에 멈춘 경우)
-        when(operationJobService.getResult(eq(OperationJobService.KIND_PROVISION), any())).thenReturn(provisionJob(OperationJobService.PHASE_NONE));
+        when(jobClient.getResult(eq(JobResults.KIND_PROVISION), any())).thenReturn(provisionJob(JobResults.PHASE_NONE));
     }
 
     private Request buildMockedRequest(Long requestId) {
@@ -171,7 +172,7 @@ class RequestSchedulerServiceUnitTest {
     }
 
     private static JobResultResponseDTO provisionJob(String phase) {
-        return new JobResultResponseDTO(null, OperationJobService.KIND_PROVISION, null, phase, null, null, null);
+        return new JobResultResponseDTO(null, JobResults.KIND_PROVISION, null, phase, null, null, null);
     }
 
     @Test
@@ -179,8 +180,8 @@ class RequestSchedulerServiceUnitTest {
     void reconcile_staleProcessing_jobStillRunning_doesNotRevert() {
         Request request = buildMockedRequest(11L);
         when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.PROCESSING), any())).thenReturn(List.of(request));
-        when(operationJobService.getResult(OperationJobService.KIND_PROVISION, 11L))
-                .thenReturn(provisionJob(OperationJobService.PHASE_START));
+        when(jobClient.getResult(JobResults.KIND_PROVISION, 11L))
+                .thenReturn(provisionJob(JobResults.PHASE_START));
 
         service.reconcileStaleInFlightRequests();
 
@@ -193,8 +194,8 @@ class RequestSchedulerServiceUnitTest {
     void reconcile_staleProcessing_jobFailed_reverts() {
         Request request = buildMockedRequest(12L);
         when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.PROCESSING), any())).thenReturn(List.of(request));
-        when(operationJobService.getResult(OperationJobService.KIND_PROVISION, 12L))
-                .thenReturn(provisionJob(OperationJobService.PHASE_FAIL));
+        when(jobClient.getResult(JobResults.KIND_PROVISION, 12L))
+                .thenReturn(provisionJob(JobResults.PHASE_FAIL));
 
         service.reconcileStaleInFlightRequests();
 
@@ -206,8 +207,8 @@ class RequestSchedulerServiceUnitTest {
     void reconcile_staleProcessing_jobDegraded_doesNotRevert() {
         Request request = buildMockedRequest(16L);
         when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.PROCESSING), any())).thenReturn(List.of(request));
-        when(operationJobService.getResult(OperationJobService.KIND_PROVISION, 16L)).thenReturn(
-                new JobResultResponseDTO(null, OperationJobService.KIND_PROVISION, null, OperationJobService.PHASE_FAIL, "DEGRADED", null, null));
+        when(jobClient.getResult(JobResults.KIND_PROVISION, 16L)).thenReturn(
+                new JobResultResponseDTO(null, JobResults.KIND_PROVISION, null, JobResults.PHASE_FAIL, "DEGRADED", null, null));
 
         service.reconcileStaleInFlightRequests();
 
@@ -220,10 +221,10 @@ class RequestSchedulerServiceUnitTest {
         Request succeeded = buildMockedRequest(13L);
         Request unknown = buildMockedRequest(14L);
         when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.PROCESSING), any())).thenReturn(List.of(succeeded, unknown));
-        when(operationJobService.getResult(OperationJobService.KIND_PROVISION, 13L))
-                .thenReturn(provisionJob(OperationJobService.PHASE_SUCCESS));
-        when(operationJobService.getResult(OperationJobService.KIND_PROVISION, 14L))
-                .thenReturn(provisionJob(OperationJobService.PHASE_UNKNOWN));
+        when(jobClient.getResult(JobResults.KIND_PROVISION, 13L))
+                .thenReturn(provisionJob(JobResults.PHASE_SUCCESS));
+        when(jobClient.getResult(JobResults.KIND_PROVISION, 14L))
+                .thenReturn(provisionJob(JobResults.PHASE_UNKNOWN));
 
         service.reconcileStaleInFlightRequests();
 
@@ -235,11 +236,54 @@ class RequestSchedulerServiceUnitTest {
     void reconcile_staleProcessing_jobLookupFails_doesNotRevert() {
         Request request = buildMockedRequest(15L);
         when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.PROCESSING), any())).thenReturn(List.of(request));
-        when(operationJobService.getResult(OperationJobService.KIND_PROVISION, 15L))
+        when(jobClient.getResult(JobResults.KIND_PROVISION, 15L))
                 .thenThrow(new RuntimeException("config-server down"));
 
         service.reconcileStaleInFlightRequests();
 
         verify(adminRequestCommandService, never()).revertToPendingIfStillProcessing(any(), any());
+    }
+
+    private static JobResultResponseDTO revokeJob(String phase) {
+        return new JobResultResponseDTO(null, JobResults.KIND_REVOKE, 900L, phase, null, null, null);
+    }
+
+    @Test
+    @DisplayName("회수 작업 없이 방치된 EXPIRING은 FULFILLED로 되돌린다 — 선점 뒤 등록 전에 admin_be가 멈춘 경우")
+    void reconcile_staleExpiring_withoutJob_reverts() {
+        Request request = buildMockedRequest(30L);
+        when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.EXPIRING), any())).thenReturn(List.of(request));
+        when(jobClient.getResult(JobResults.KIND_REVOKE, 30L)).thenReturn(revokeJob(JobResults.PHASE_NONE));
+
+        service.reconcileStaleInFlightRequests();
+
+        verify(requestExpiryService).revertStaleExpiring(30L);
+    }
+
+    @Test
+    @DisplayName("회수 작업이 있으면(실행 중·끝남·불명) EXPIRING을 되돌리지 않고 결과 폴러에 맡긴다")
+    void reconcile_staleExpiring_withJob_leftToPoller() {
+        Request request = buildMockedRequest(31L);
+        when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.EXPIRING), any())).thenReturn(List.of(request));
+        for (String phase : List.of(JobResults.PHASE_START, JobResults.PHASE_SUCCESS,
+                JobResults.PHASE_FAIL, JobResults.PHASE_UNKNOWN)) {
+            when(jobClient.getResult(JobResults.KIND_REVOKE, 31L)).thenReturn(revokeJob(phase));
+
+            service.reconcileStaleInFlightRequests();
+        }
+
+        verify(requestExpiryService, never()).revertStaleExpiring(any());
+    }
+
+    @Test
+    @DisplayName("회수 작업 상태를 조회하지 못하면 EXPIRING을 되돌리지 않는다")
+    void reconcile_staleExpiring_lookupFails_doesNotRevert() {
+        Request request = buildMockedRequest(32L);
+        when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.EXPIRING), any())).thenReturn(List.of(request));
+        when(jobClient.getResult(JobResults.KIND_REVOKE, 32L)).thenThrow(new RuntimeException("down"));
+
+        service.reconcileStaleInFlightRequests();
+
+        verify(requestExpiryService, never()).revertStaleExpiring(any());
     }
 }

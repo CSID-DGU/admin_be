@@ -9,7 +9,10 @@ import lombok.*;
 
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -63,14 +66,21 @@ public class User extends BaseTimeEntity {
     private String ubuntuUsername;
 
     /**
-     * 실제 리눅스 계정이 만들어진 시점(첫 승인)에만 채워진다. 승인 없이 탈락하는 사용자에게
-     * 리눅스 계정을 미리 할당하지 않으려고 회원가입 시점에는 비워둔다.
+     * 첫 승인에서 리눅스 계정이 만들어질 때 채워지고, 그 뒤로는 절대 비우지 않는다 — 유저네임·홈
+     * 디렉터리처럼 사람을 가리키는 값이라 계정이 회수돼도 이 사람의 번호로 남는다. 다시 승인되면
+     * 이 번호를 expected_uid로 보내 같은 번호·같은 홈으로 계정을 되살린다. 승인 없이 탈락하는
+     * 사용자에게 미리 할당하지 않으려고 회원가입 시점에는 비워둔다.
      */
     @Column(name = "ubuntu_uid")
     private Long ubuntuUid;
 
     @Column(name = "ubuntu_gid")
     private Long ubuntuGid;
+
+    /** 리눅스 계정이 지금 원장(AD)에 있는가. 회수가 끝나면 NONE이 되고 UID/GID는 그대로 남는다. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "ubuntu_account_status", nullable = false, length = 20)
+    private UbuntuAccountStatus ubuntuAccountStatus = UbuntuAccountStatus.NONE;
 
     /**
      * 우분투 로그인 비밀번호의 SHA-512 crypt 해시($6$...). 유저네임처럼 웹 계정에 하나다 — 첫 신청에서
@@ -87,6 +97,9 @@ public class User extends BaseTimeEntity {
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
+
+    @Column(name = "password_changed_at")
+    private LocalDateTime passwordChangedAt;
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.REMOVE, orphanRemoval = true)
     private List<Request> requests = new ArrayList<>();
@@ -120,6 +133,16 @@ public class User extends BaseTimeEntity {
 
     public void updatePassword(String newEncodedPassword) {
         this.password = newEncodedPassword;
+        this.passwordChangedAt = LocalDateTime.now();
+    }
+
+    /** JWT 발급 시각(iat)은 초 단위라, 바꾼 시각도 초로 내려 같은 초에 새로 받은 토큰은 통과시킨다. */
+    public boolean isTokenIssuedBeforePasswordChange(Instant issuedAt) {
+        if (passwordChangedAt == null || issuedAt == null) {
+            return false;
+        }
+        Instant changedAt = passwordChangedAt.atZone(ZoneId.systemDefault()).toInstant().truncatedTo(ChronoUnit.SECONDS);
+        return issuedAt.isBefore(changedAt);
     }
 
     public void updatePhone(String newPhone) {
@@ -161,44 +184,74 @@ public class User extends BaseTimeEntity {
         this.ubuntuPasswordHash = ubuntuPasswordHash;
     }
 
-    /** 실제 리눅스 계정(UID/GID)이 이미 배정되어 있는지. false면 승인 시 계정 생성 API를 호출해야 한다. */
+    /** 리눅스 계정이 지금 살아 있는지. false면 승인 시 계정 생성(또는 같은 UID로 되살리기)을 요청해야 한다. */
     public boolean hasUbuntuAccount() {
-        return this.ubuntuUid != null && this.ubuntuGid != null;
+        return this.ubuntuAccountStatus == UbuntuAccountStatus.ACTIVE;
+    }
+
+    /** 계정 회수 작업이 도는 중인지. 그 사이 승인·비밀번호 변경은 거절해야 한다 — 지워질 계정에 반영된다. */
+    public boolean isReleasingUbuntuAccount() {
+        return this.ubuntuAccountStatus == UbuntuAccountStatus.RELEASING;
     }
 
     /**
-     * 첫 승인에서 발급받은 UID/GID를 이 계정에 귀속시킨다.
-     * 같은 사용자의 다른 신청이 먼저 같은 값을 배정했다면 그대로 통과시키고(멱등),
-     * 다른 값이 이미 배정돼 있으면 실패시킨다 — 한 웹 계정이 서로 다른 리눅스 계정
-     * 두 개를 가리키면 홈 디렉터리 소유권이 어긋난다.
+     * 계정이 만들어졌거나 되살아났음을 기록한다. 이 사람이 예전에 받은 UID/GID가 있으면 그 값과
+     * 같아야 한다(멱등) — 다른 값이면 실패시킨다. 한 사람이 두 번호를 가리키면 보존된 홈 디렉터리의
+     * 소유자와 어긋나고, 옛 번호가 다른 사람에게 넘어간 것처럼 보인다.
      */
     public void assignUbuntuAccount(Long ubuntuUid, Long ubuntuGid) {
         if (ubuntuUid == null || ubuntuGid == null || ubuntuUid <= 0 || ubuntuGid <= 0) {
             throw new BusinessException(ErrorCode.UID_ALLOCATION_FAILED);
         }
-        if (hasUbuntuAccount()) {
-            if (!this.ubuntuUid.equals(ubuntuUid) || !this.ubuntuGid.equals(ubuntuGid)) {
-                throw new BusinessException(
-                        "이미 다른 UID/GID가 배정된 계정입니다.", ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED);
-            }
-            return;
+        if (this.ubuntuUid != null
+                && (!this.ubuntuUid.equals(ubuntuUid) || !ubuntuGid.equals(this.ubuntuGid))) {
+            throw new BusinessException(
+                    "이미 다른 UID/GID가 배정된 계정입니다.", ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED);
+        }
+        if (isReleasingUbuntuAccount()) {
+            throw new BusinessException(ErrorCode.UBUNTU_ACCOUNT_RELEASING);
         }
         this.ubuntuUid = ubuntuUid;
         this.ubuntuGid = ubuntuGid;
+        this.ubuntuAccountStatus = UbuntuAccountStatus.ACTIVE;
     }
 
     /**
-     * 리눅스 계정이 실제로 삭제됐을 때 UID/GID만 비운다. 유저네임은 남긴다 —
-     * 유저네임은 컨테이너가 아니라 웹 계정에 평생 귀속되고(재가입/재활성화 후 같은 홈으로
-     * 돌아와야 한다), UID는 계정 삭제와 동시에 config-server가 다른 사용자에게 재할당할 수
-     * 있어 그대로 들고 있으면 다음 승인이 남의 UID로 Pod를 만든다.
+     * 계정 회수를 시작한다. 이미 회수 중이면 그대로 둔다(관리자의 재시도). 계정이 없으면 회수할 것도 없다.
+     *
+     * @return 회수가 진행 중이면 true — 계정 회수 폴러가 컨테이너 회수가 끝나기를 기다렸다가 계정을 지운다
+     */
+    public boolean beginUbuntuAccountRelease() {
+        if (this.ubuntuAccountStatus == UbuntuAccountStatus.NONE) {
+            return false;
+        }
+        this.ubuntuAccountStatus = UbuntuAccountStatus.RELEASING;
+        return true;
+    }
+
+    /** 회수할 노드를 몰라 계정을 지우지 못했을 때 계정이 살아 있는 상태로 되돌린다. */
+    public void abortUbuntuAccountRelease() {
+        requireReleasing();
+        this.ubuntuAccountStatus = UbuntuAccountStatus.ACTIVE;
+    }
+
+    /**
+     * 리눅스 계정이 실제로 삭제됐음을 기록한다. 유저네임·UID·GID는 남긴다 — 사람을 가리키는 값이라
+     * 재활성화 후 같은 번호·같은 홈으로 돌아와야 한다. 다음 승인은 이 UID를 expected_uid로 보내고,
+     * config-server는 NAS 홈 소유자가 그 번호일 때 같은 번호로 계정을 되살린다.
      */
     public void releaseUbuntuAccount() {
-        this.ubuntuUid = null;
-        this.ubuntuGid = null;
+        requireReleasing();
+        this.ubuntuAccountStatus = UbuntuAccountStatus.NONE;
         // 계정 삭제는 AD 사용자째 지우므로 그룹 소속도 함께 사라진다. 남겨 두면 화면엔 여전히
         // 멤버로 보이고, 다시 승인될 때 AD에 없는 소속이 새 Pod 에 실린다.
         this.userGroups.clear();
+    }
+
+    private void requireReleasing() {
+        if (!isReleasingUbuntuAccount()) {
+            throw new BusinessException("회수 중인 계정이 아닙니다.", ErrorCode.INVALID_REQUEST_STATUS);
+        }
     }
 
     /**

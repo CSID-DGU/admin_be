@@ -76,10 +76,19 @@ public interface AdminRequestApi {
     ResponseEntity<SuccessResponse<?>> getLatestMigration(Long requestId);
 
     @Operation(summary = "컨테이너 회수", description = "신청 하나의 컨테이너만 회수합니다. 우분투 계정과 홈 디렉터리는 남고, "
-            + "같은 사용자의 다른 컨테이너는 영향받지 않습니다. 계정까지 회수하려면 사용자 관리의 계정 회수를 사용하세요.")
-    @ApiResponse(responseCode = "200", description = "회수 완료")
+            + "같은 사용자의 다른 컨테이너는 영향받지 않습니다. 계정까지 회수하려면 사용자 관리의 계정 회수를 사용하세요. "
+            + "작업만 등록하고 돌아오며(신청은 EXPIRING), 끝나면 DELETED(실패하면 FULFILLED로 되돌림)가 됩니다.")
+    @ApiResponse(responseCode = "202", description = "회수 작업 등록됨")
     @ApiResponse(responseCode = "404", description = "신청을 찾을 수 없음", content = @Content)
     @ApiResponse(responseCode = "409", description = "FULFILLED 상태가 아님", content = @Content)
-    @ApiResponse(responseCode = "502", description = "config-server 회수 실패", content = @Content)
+    @ApiResponse(responseCode = "502", description = "config-server 회수 작업 등록 실패", content = @Content)
     ResponseEntity<SuccessResponse<?>> deleteContainer(Long requestId);
+
+    @Operation(summary = "멈춘 회수 강제 완료", description = "컨테이너 회수가 자원을 남긴 채 멈추거나(DEGRADED) 결과 불명(UNKNOWN)으로 "
+            + "끝나 EXPIRING에 멈춘 신청을, 관리자가 클러스터를 직접 확인한 뒤 강제로 DELETED 처리합니다. "
+            + "이 API 자체는 자원이 실제로 없는지 재확인하지 않습니다 — 확인은 호출 전에 사람이 끝냈다는 전제입니다.")
+    @ApiResponse(responseCode = "200", description = "강제 완료 처리됨")
+    @ApiResponse(responseCode = "404", description = "신청을 찾을 수 없음", content = @Content)
+    @ApiResponse(responseCode = "409", description = "EXPIRING이 아니거나, 회수 결과가 DEGRADED·UNKNOWN이 아님", content = @Content)
+    ResponseEntity<SuccessResponse<?>> forceCompleteRevoke(Long requestId);
 }

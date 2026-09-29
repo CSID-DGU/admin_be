@@ -17,6 +17,7 @@ import DGU_AI_LAB.admin_be.domain.users.entity.UserGroup;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.global.validation.ReservedLinuxNames;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,12 +46,13 @@ class ConfigRequestServiceTest {
     @Mock private PortRequestRepository portRequestRepository;
     @Mock private NodeRepository nodeRepository;
     @Mock private GroupRepository groupRepository;
+    @Mock private ReservedLinuxNames reservedLinuxNames;
 
     private ConfigRequestService service;
 
     @BeforeEach
     void setUp() {
-        service = new ConfigRequestService(requestRepository, userRepository, portRequestRepository, nodeRepository, groupRepository);
+        service = new ConfigRequestService(requestRepository, userRepository, portRequestRepository, nodeRepository, groupRepository, reservedLinuxNames);
     }
 
     /** AcceptInfoResponseDTO.groups는 이제 request.getUser().getUserGroups()를 읽으므로 기본은 그룹 없는 계정. */
@@ -97,9 +99,9 @@ class ConfigRequestServiceTest {
     @DisplayName("시스템 예약 이름과 같은 이름의 그룹이 있는 username은 쓸 수 없다고 답한다")
     void isUbuntuUsernameAvailable_rejectsReservedAndGroupNames() {
         when(groupRepository.existsByGroupName("developers")).thenReturn(true);
+        when(reservedLinuxNames.contains("docker")).thenReturn(true);
 
         assertThat(service.isUbuntuUsernameAvailable("docker")).isFalse();
-        assertThat(service.isUbuntuUsernameAvailable("www-data")).isFalse();
         assertThat(service.isUbuntuUsernameAvailable("developers")).isFalse();
     }
 

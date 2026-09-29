@@ -1,12 +1,15 @@
 package DGU_AI_LAB.admin_be.domain.users.repository;
 
+import DGU_AI_LAB.admin_be.domain.users.entity.UbuntuAccountStatus;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -23,6 +26,8 @@ public interface UserRepository extends JpaRepository<User,Long> {
 
     Optional<User> findByUbuntuUsername(String ubuntuUsername);
 
+    List<User> findAllByUbuntuAccountStatus(UbuntuAccountStatus ubuntuAccountStatus);
+
     /**
      * 우분투 계정(UID/GID) 배정 시점의 "확인 후 배정" 경합을 막기 위한 행 잠금 조회.
      * 같은 사용자의 서로 다른 신청 두 건이 동시에 승인되면 둘 다 "아직 계정 없음"으로 보고
@@ -32,6 +37,18 @@ public interface UserRepository extends JpaRepository<User,Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT u FROM User u WHERE u.userId = :userId")
     Optional<User> findByIdForUpdate(@Param("userId") Long userId);
+
+    /**
+     * SSH 비밀번호 해시가 비어 있거나 지금 강도(currentPrefix로 시작)가 아닐 때만 바꾼다. 로그인은 트랜잭션 없이
+     * 도므로 엔티티를 통째로 저장하면 그 사이 끝난 비밀번호 변경을 옛 값으로 덮어쓸 수 있다 — 변경은 늘 지금
+     * 강도로 쓰므로, 이 조건이면 이 칸 하나만 그 변경과 겹치지 않고 바뀐다.
+     */
+    @Transactional
+    @Modifying
+    @Query("UPDATE User u SET u.ubuntuPasswordHash = :hash WHERE u.userId = :userId "
+            + "AND (u.ubuntuPasswordHash IS NULL OR u.ubuntuPasswordHash NOT LIKE CONCAT(:currentPrefix, '%'))")
+    int replaceWeakUbuntuPasswordHash(@Param("userId") Long userId, @Param("hash") String hash,
+                                      @Param("currentPrefix") String currentPrefix);
 
     /**
      * [자동 탈퇴 대상 조회 쿼리]

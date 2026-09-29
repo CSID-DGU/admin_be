@@ -12,8 +12,7 @@ public class SecurityWhitelist {
             "/auth/callback/**",
             "/actuator/health", "/actuator/info",
             "/api/requests/config/**", // JWT 대신 InternalTokenFilter(X-Internal-Token)로 보호
-            "/api/internal/**",        // JWT 대신 InternalTokenFilter(X-Internal-Token)로 보호
-            "/api/monitoring/**"       // 공개 모니터링 지표 (인증 불필요)
+            "/api/internal/**"         // JWT 대신 InternalTokenFilter(X-Internal-Token)로 보호
             //"/api/groups/**"
     );
 }

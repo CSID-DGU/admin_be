@@ -13,6 +13,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -58,6 +59,31 @@ class AdminPathAccessDeniedTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(response.getBody()).contains("ACCESS_DENIED");
+    }
+
+    @Test
+    @DisplayName("일반 사용자는 컨테이너 이미지를 등록할 수 없다 — 등록한 이름이 그대로 Pod 이미지가 된다")
+    void imageRegistration_withUserRole_isRejected() {
+        User user = userRepository.save(User.builder()
+                .email("user@dgu.ac.kr")
+                .password("encoded")
+                .name("일반사용자")
+                .studentId("2021001234")
+                .phone("010-1111-2222")
+                .department("컴퓨터공학과")
+                .build());
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(jwtProvider.getIssueToken(user.getUserId(), true));
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        String body = "{\"imageName\":\"attacker/evil\",\"imageVersion\":\"latest\",\"cudaVersion\":\"12\",\"description\":\"x\"}";
+
+        ResponseEntity<String> admin = restTemplate.exchange(
+                "/api/admin/images", HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
+        ResponseEntity<String> legacy = restTemplate.exchange(
+                "/api/images", HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
+
+        assertThat(admin.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(legacy.getStatusCode()).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
     }
 
     @Test

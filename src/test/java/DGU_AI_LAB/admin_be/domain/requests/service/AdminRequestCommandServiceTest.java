@@ -1,5 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
@@ -78,7 +81,7 @@ class AdminRequestCommandServiceTest {
     @Mock private GroupRepository groupRepository;
     @Mock private GroupService groupService;
     @Mock private PodExternalPortRepository podExternalPortRepository;
-    @Mock private OperationJobService operationJobService;
+    @Mock private JobClient jobClient;
     @Mock private PortRequestService portRequestService;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
@@ -98,8 +101,8 @@ class AdminRequestCommandServiceTest {
         // @RequiredArgsConstructor 생성자 필드 선언 순서대로 주입
         service = new AdminRequestCommandService(
                 alarmService, requestRepository, userRepository, containerImageRepository,
-                resourceGroupRepository, podExternalPortRepository, operationJobService,
-                transactionManager
+                resourceGroupRepository, podExternalPortRepository, jobClient,
+                transactionManager, new InMemoryAlertDeduplicator()
         );
         // 공유 엔티티 기본 설정
         when(mockUser.getName()).thenReturn("테스트유저");
@@ -150,7 +153,7 @@ class AdminRequestCommandServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
 
-            verify(operationJobService, never()).registerProvision(any());
+            verify(jobClient, never()).registerProvision(any());
         }
 
         @Test
@@ -187,25 +190,95 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
-        @DisplayName("FULFILLED 상태 요청도 거절 가능하다 (현재 정책)")
-        void rejectRequest_success_whenStatusIsFulfilled() {
+        @DisplayName("FULFILLED 요청은 거절할 수 없다 — 거절은 컨테이너를 회수하지 않는다")
+        void rejectRequest_throws_whenStatusIsFulfilled() {
             Request request = buildMockedRequestWithStatus(31L, Status.FULFILLED);
 
-            RejectRequestDTO dto = new RejectRequestDTO(31L, "계정 정책 위반");
-            service.rejectRequest(dto);
-
-            verify(request).reject("계정 정책 위반");
+            assertThatThrownBy(() -> service.rejectRequest(new RejectRequestDTO(31L, "계정 정책 위반")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+            verify(request, never()).reject(any());
         }
 
         @Test
-        @DisplayName("PROCESSING 상태 요청도 거절 가능하다 (승인 진행 중 취소)")
-        void rejectRequest_success_whenStatusIsProcessing() {
+        @DisplayName("PROCESSING 요청은 생성 작업이 실패로 끝났으면 거절할 수 있다")
+        void rejectRequest_success_whenProvisionJobFailed() {
             Request request = buildMockedRequestWithStatus(34L, Status.PROCESSING);
+            when(jobClient.getResult(JobResults.KIND_PROVISION, 34L))
+                    .thenReturn(job("FAIL", null));
 
-            RejectRequestDTO dto = new RejectRequestDTO(34L, "승인 취소");
-            service.rejectRequest(dto);
+            service.rejectRequest(new RejectRequestDTO(34L, "승인 취소"));
 
             verify(request).reject("승인 취소");
+        }
+
+        @Test
+        @DisplayName("PROCESSING 요청은 생성 작업이 도는 중이면 거절할 수 없다")
+        void rejectRequest_throws_whenProvisionJobRunning() {
+            Request request = buildMockedRequestWithStatus(35L, Status.PROCESSING);
+            when(jobClient.getResult(JobResults.KIND_PROVISION, 35L))
+                    .thenReturn(job("START", null));
+
+            assertThatThrownBy(() -> service.rejectRequest(new RejectRequestDTO(35L, "취소")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PROVISION_JOB_IN_PROGRESS);
+            verify(request, never()).reject(any());
+        }
+
+        @Test
+        @DisplayName("PROCESSING 요청은 단계 재시도(RETRY) 중이어도 거절할 수 없다 — START만 보면 재시도 중인 작업을 놓친다")
+        void rejectRequest_throws_whenProvisionJobRetrying() {
+            Request request = buildMockedRequestWithStatus(40L, Status.PROCESSING);
+            when(jobClient.getResult(JobResults.KIND_PROVISION, 40L))
+                    .thenReturn(job("RETRY", null));
+
+            assertThatThrownBy(() -> service.rejectRequest(new RejectRequestDTO(40L, "취소")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PROVISION_JOB_IN_PROGRESS);
+            verify(request, never()).reject(any());
+        }
+
+        @Test
+        @DisplayName("PROCESSING 요청은 작업이 성공했는데 아직 반영 전이면 거절할 수 없다")
+        void rejectRequest_throws_whenProvisionSucceededButNotApplied() {
+            Request request = buildMockedRequestWithStatus(36L, Status.PROCESSING);
+            when(jobClient.getResult(JobResults.KIND_PROVISION, 36L))
+                    .thenReturn(job("SUCCESS", new JobResultResponseDTO.Result(1L, 1L, "ailab-testuser-x", "farm2", List.of())));
+
+            assertThatThrownBy(() -> service.rejectRequest(new RejectRequestDTO(36L, "취소")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PROVISION_JOB_IN_PROGRESS);
+            verify(request, never()).reject(any());
+        }
+
+        @Test
+        @DisplayName("성공 결과를 잃어 갇힌 PROCESSING 요청은 거절할 수 있다")
+        void rejectRequest_success_whenSuccessResultMissing() {
+            Request request = buildMockedRequestWithStatus(37L, Status.PROCESSING);
+            when(jobClient.getResult(JobResults.KIND_PROVISION, 37L))
+                    .thenReturn(job("SUCCESS", null));
+
+            service.rejectRequest(new RejectRequestDTO(37L, "정리"));
+
+            verify(request).reject("정리");
+        }
+
+        @Test
+        @DisplayName("방금 승인돼 작업 번호가 아직 기록되지 않은 PROCESSING 요청은 거절할 수 없다")
+        void rejectRequest_throws_whenAwaitingRegistration() {
+            Request request = buildMockedRequestWithStatus(38L, Status.PROCESSING);
+            when(request.getJobId()).thenReturn(null);
+            when(request.getUpdatedAt()).thenReturn(LocalDateTime.now());
+
+            assertThatThrownBy(() -> service.rejectRequest(new RejectRequestDTO(38L, "취소")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PROVISION_JOB_IN_PROGRESS);
+            verify(jobClient, never()).getResult(any(), any());
         }
 
         @Test
@@ -305,10 +378,19 @@ class AdminRequestCommandServiceTest {
         }
     }
 
+    private static JobResultResponseDTO job(String phase, JobResultResponseDTO.Result result) {
+        return job(phase, result, 1L);
+    }
+
+    private static JobResultResponseDTO job(String phase, JobResultResponseDTO.Result result, Long jobId) {
+        return new JobResultResponseDTO("0", "provision", jobId, phase, null, null, result);
+    }
+
     private Request buildMockedRequestWithStatus(Long requestId, Status status) {
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(requestId);
         when(request.getStatus()).thenReturn(status);
+        when(request.getJobId()).thenReturn(1L);   // job()이 돌려주는 작업 번호와 같은 작업
         when(request.getUbuntuUsername()).thenReturn("testuser");
         when(mockUser.getUbuntuPasswordHash()).thenReturn("$6$salt$hash");
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
@@ -355,7 +437,7 @@ class AdminRequestCommandServiceTest {
             // Then
             ArgumentCaptor<ProvisionRegisterRequestDTO> captor =
                     ArgumentCaptor.forClass(ProvisionRegisterRequestDTO.class);
-            verify(operationJobService).registerProvision(captor.capture());
+            verify(jobClient).registerProvision(captor.capture());
             ProvisionRegisterRequestDTO body = captor.getValue();
             assertThat(body.requestId()).isEqualTo(requestId);
             assertThat(body.username()).isEqualTo("testuser");
@@ -368,6 +450,54 @@ class AdminRequestCommandServiceTest {
             verify(request).markAsProcessing();
             verify(request).prepareAsyncApproval(mockImage, mockRg, "승인합니다");
             verify(request, never()).completeApproval();
+        }
+
+        @Test
+        @DisplayName("자기 자신만 PROCESSING이면(정상적인 단독 승인) 충돌로 보지 않고 그대로 등록한다")
+        void doesNotConflictWithItself() {
+            Long requestId = 220L;
+            Request request = buildMockedRequest(requestId);
+            // findAllByUser_UserIdAndStatus가 이 신청 자신만 돌려준다 — markAsProcessing 뒤의 정상 상태.
+            when(requestRepository.findAllByUser_UserIdAndStatus(100L, Status.PROCESSING))
+                    .thenReturn(List.of(request));
+
+            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
+
+            verify(jobClient).registerProvision(any());
+            verify(request, never()).revertToPending();
+        }
+
+        @Test
+        @DisplayName("같은 사용자의 다른 신청이 이미 처리 중이면 등록을 보내지 않고 PENDING으로 되돌린다(#607) — " +
+                "돌아온 사용자가 두 신청 다 같은 uid로 성공해 계정 하나에 컨테이너 두 개가 붙는 것을 막는다")
+        void rejectsWhenAnotherRequestOfSameUserIsAlreadyProcessing() {
+            Long requestId = 221L;
+            Request request = buildMockedRequest(requestId);
+            Request otherProcessing = mock(Request.class);
+            when(otherProcessing.getRequestId()).thenReturn(999L); // 같은 사용자의 다른 신청
+            when(requestRepository.findAllByUser_UserIdAndStatus(100L, Status.PROCESSING))
+                    .thenReturn(List.of(request, otherProcessing));
+
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_APPROVAL_ALREADY_IN_PROGRESS)
+                    .hasMessageContaining("[999]");
+
+            verify(jobClient, never()).registerProvision(any());
+            verify(request).revertToPending();
+        }
+
+        @Test
+        @DisplayName("계정 회수가 도는 중인 사용자는 승인을 거절한다 — 새 컨테이너가 곧 지워질 계정을 쓰게 된다")
+        void rejectsWhileAccountReleasing() {
+            Long requestId = 206L;
+            buildMockedRequest(requestId);
+            when(mockUser.isReleasingUbuntuAccount()).thenReturn(true);
+
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_ACCOUNT_RELEASING);
+            verify(jobClient, never()).registerProvision(any());
         }
 
         @Test
@@ -384,7 +514,7 @@ class AdminRequestCommandServiceTest {
             // Then
             ArgumentCaptor<ProvisionRegisterRequestDTO> captor =
                     ArgumentCaptor.forClass(ProvisionRegisterRequestDTO.class);
-            verify(operationJobService).registerProvision(captor.capture());
+            verify(jobClient).registerProvision(captor.capture());
             assertThat(captor.getValue().account()).isNull();
             assertThat(captor.getValue().supplementaryGroups()).isEmpty();
             // 계정을 새로 만들 때는 작업이 그룹까지 넣지만, 재사용 계정은 config-server의
@@ -418,12 +548,89 @@ class AdminRequestCommandServiceTest {
             Long requestId = 203L;
             Request request = buildMockedRequest(requestId);
             doThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED))
-                    .when(operationJobService).registerProvision(any());
+                    .when(jobClient).registerProvision(any());
 
             // When & Then
             assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
                     .isInstanceOf(BusinessException.class);
             verify(request).revertToPending();
+        }
+
+        @Test
+        @DisplayName("등록 응답은 실패했지만 작업이 도는 중이면 되돌리지 않고 그 작업을 이어받는다")
+        void adoptsRunningJobWhenRegistrationResponseFails() {
+            Long requestId = 205L;
+            Request request = buildMockedRequest(requestId);
+            doThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED))
+                    .when(jobClient).registerProvision(any());
+            when(jobClient.getResult(JobResults.KIND_PROVISION, requestId))
+                    .thenReturn(job("START", null, 77L));
+
+            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
+
+            verify(request, never()).revertToPending();
+            verify(request).recordJob(77L);
+        }
+
+        @Test
+        @DisplayName("등록 응답은 실패했지만 작업이 단계 재시도(RETRY) 중이면 되돌리지 않고 이어받는다")
+        void adoptsRetryingJobWhenRegistrationResponseFails() {
+            Long requestId = 210L;
+            Request request = buildMockedRequest(requestId);
+            doThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED))
+                    .when(jobClient).registerProvision(any());
+            when(jobClient.getResult(JobResults.KIND_PROVISION, requestId))
+                    .thenReturn(job("RETRY", null, 78L));
+
+            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
+
+            verify(request, never()).revertToPending();
+            verify(request).recordJob(78L);
+        }
+
+        @Test
+        @DisplayName("config-server에 연결조차 못 했으면 작업이 없는 것이 확실하므로 조회 없이 바로 PENDING으로 되돌린다")
+        void revertsImmediatelyWhenServerUnreachable() {
+            Long requestId = 208L;
+            Request request = buildMockedRequest(requestId);
+            doThrow(new BusinessException("작업 등록 중 오류", ErrorCode.POD_CREATION_FAILED,
+                    new RuntimeException(new java.net.ConnectException("Connection refused"))))
+                    .when(jobClient).registerProvision(any());
+
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
+                    .isInstanceOf(BusinessException.class);
+            verify(request).revertToPending();
+            verify(jobClient, never()).getResult(any(), any());
+        }
+
+        @Test
+        @DisplayName("등록 실패 후 작업 상태도 조회하지 못하면 되돌리지 않고 오류를 전파한다(재조정이 판단)")
+        void keepsProcessingWhenJobLookupAlsoFails() {
+            Long requestId = 206L;
+            Request request = buildMockedRequest(requestId);
+            doThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED))
+                    .when(jobClient).registerProvision(any());
+            when(jobClient.getResult(JobResults.KIND_PROVISION, requestId))
+                    .thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
+
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_CREATION_FAILED);
+            verify(request, never()).revertToPending();
+        }
+
+        @Test
+        @DisplayName("성공 결과가 없으면 반영하지 않고 알림은 신청마다 한 번만 보낸다")
+        void missingSuccessResultAlertsOnce() {
+            Long requestId = 207L;
+            Request request = processingRequest(requestId);
+
+            service.completeApprovalJob(requestId, null);
+            service.completeApprovalJob(requestId, null);
+
+            verify(alarmService, times(1)).sendAdminSlackNotification(any(), any());
+            verify(request, never()).completeApproval();
         }
 
         @Test
@@ -446,7 +653,6 @@ class AdminRequestCommandServiceTest {
 
             // Then
             verify(mockUser).assignUbuntuAccount(50001L, 50001L);
-            verify(request).assignUbuntuIds(50001L, 50001L);
             verify(request).assignPodInfo("ailab-testuser-abcd", "farm2");
             verify(request).completeApproval();
             verify(podExternalPortRepository, times(2)).save(any(PodExternalPort.class));
@@ -556,6 +762,249 @@ class AdminRequestCommandServiceTest {
             // Then
             verify(request, never()).revertToPending();
             verify(alarmService).sendAdminSlackNotification(any(), contains("결과가 불명"));
+        }
+    }
+    @Nested
+    @DisplayName("같은 사용자 승인 직렬화 잠금")
+    class ApprovalLockStripes {
+
+        private static final long WAIT_SECONDS = 5;
+
+        @BeforeEach
+        void stubApprovalLookups() {
+            when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
+            when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
+        }
+
+        private User userWithId(long userId) {
+            User user = mock(User.class);
+            when(user.getUserId()).thenReturn(userId);
+            when(user.getName()).thenReturn("user-" + userId);
+            when(user.getUbuntuPasswordHash()).thenReturn("$6$salt$hash");
+            when(userRepository.findByIdForUpdate(userId)).thenReturn(Optional.of(user));
+            return user;
+        }
+
+        private void pendingRequestOf(Long requestId, User owner) {
+            Request request = mock(Request.class);
+            when(request.getRequestId()).thenReturn(requestId);
+            when(request.getStatus()).thenReturn(Status.PENDING, Status.PROCESSING);
+            when(request.getUbuntuUsername()).thenReturn("user" + requestId);
+            when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
+            when(request.getUser()).thenReturn(owner);
+            when(request.getResourceGroup()).thenReturn(mockRg);
+            when(request.getContainerImage()).thenReturn(mockImage);
+            when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+        }
+
+        /** 지정한 신청의 등록 호출에서 풀어 줄 때까지 멈춘다. 멈춘 동안 그 스레드는 사용자 잠금을 쥐고 있다. */
+        private java.util.concurrent.CountDownLatch[] holdRegistrationOf(Long heldRequestId) {
+            java.util.concurrent.CountDownLatch entered = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.atomic.AtomicLong nextJobId = new java.util.concurrent.atomic.AtomicLong(7000L);
+            when(jobClient.registerProvision(any())).thenAnswer(inv -> {
+                ProvisionRegisterRequestDTO body = inv.getArgument(0);
+                if (heldRequestId.equals(body.requestId())) {
+                    entered.countDown();
+                    if (!release.await(WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)) {
+                        throw new AssertionError("release timeout");
+                    }
+                }
+                return nextJobId.incrementAndGet();
+            });
+            return new java.util.concurrent.CountDownLatch[]{entered, release};
+        }
+
+        private Thread approveAsync(Long requestId, List<Throwable> failures) {
+            Thread t = new Thread(() -> {
+                try {
+                    service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
+                } catch (Throwable e) {
+                    failures.add(e);
+                }
+            }, "approve-" + requestId);
+            t.start();
+            return t;
+        }
+
+        private void awaitBlocked(Thread t) throws InterruptedException {
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
+            while (t.getState() != Thread.State.BLOCKED) {
+                if (System.nanoTime() > deadline) {
+                    throw new AssertionError(t.getName() + " did not block, state=" + t.getState());
+                }
+                Thread.sleep(5);
+            }
+        }
+
+        private void joinAll(Thread... threads) throws InterruptedException {
+            for (Thread t : threads) {
+                t.join(java.util.concurrent.TimeUnit.SECONDS.toMillis(WAIT_SECONDS));
+                assertThat(t.isAlive()).as(t.getName() + " finished").isFalse();
+            }
+        }
+
+        @Test
+        @DisplayName("잠금 칸 번호는 어떤 userId(0·음수·극값 포함)에도 [0, 칸 수) 안에 든다")
+        void stripeAlwaysInRange() {
+            long[] ids = {0L, 1L, -1L, 63L, 64L, 65L, 100L, 164L, Integer.MAX_VALUE, Integer.MIN_VALUE,
+                    Long.MAX_VALUE, Long.MIN_VALUE, 1L << 32, (1L << 32) + 1, -(1L << 40)};
+            for (long id : ids) {
+                assertThat(AdminRequestCommandService.approvalLockStripe(id))
+                        .as("userId=%d", id)
+                        .isBetween(0, AdminRequestCommandService.APPROVAL_LOCK_STRIPES - 1);
+            }
+        }
+
+        @Test
+        @DisplayName("같은 userId는 항상 같은 칸에 걸린다(박싱 캐시 밖의 서로 다른 Long 객체여도)")
+        void sameUserSameStripe() {
+            for (long id = -500; id <= 500; id++) {
+                Long boxed = Long.valueOf(id);
+                Long parsed = Long.valueOf(Long.toString(id));
+                assertThat(AdminRequestCommandService.approvalLockStripe(boxed))
+                        .isEqualTo(AdminRequestCommandService.approvalLockStripe(parsed));
+            }
+        }
+
+        @Test
+        @DisplayName("연속된 userId는 칸 수만큼 서로 다른 칸에 고르게 퍼진다")
+        void consecutiveIdsSpreadAcrossAllStripes() {
+            java.util.Set<Integer> stripes = new java.util.HashSet<>();
+            for (long id = 1000; id < 1000 + AdminRequestCommandService.APPROVAL_LOCK_STRIPES; id++) {
+                stripes.add(AdminRequestCommandService.approvalLockStripe(id));
+            }
+            assertThat(stripes).hasSize(AdminRequestCommandService.APPROVAL_LOCK_STRIPES);
+        }
+
+        @Test
+        @DisplayName("잠금 개수는 고정이다 — 승인한 사용자 수만큼 늘지 않는다")
+        void lockCountDoesNotGrowWithUsers() {
+            java.util.concurrent.atomic.AtomicLong jobIds = new java.util.concurrent.atomic.AtomicLong(1L);
+            when(jobClient.registerProvision(any())).thenAnswer(inv -> jobIds.incrementAndGet());
+            Object[] before = (Object[]) ReflectionTestUtils.getField(service, "approvalLocks");
+
+            for (long userId = 10_000; userId < 10_200; userId++) {
+                Long requestId = 50_000 + userId;
+                pendingRequestOf(requestId, userWithId(userId));
+                service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
+            }
+
+            Object[] after = (Object[]) ReflectionTestUtils.getField(service, "approvalLocks");
+            assertThat(after).isSameAs(before).hasSize(AdminRequestCommandService.APPROVAL_LOCK_STRIPES);
+            assertThat(java.util.Arrays.stream(after).distinct().count())
+                    .isEqualTo(AdminRequestCommandService.APPROVAL_LOCK_STRIPES);
+            verify(jobClient, times(200)).registerProvision(any());
+        }
+
+        @Test
+        @DisplayName("같은 사용자의 두 승인은 앞선 등록이 끝날 때까지 뒤쪽이 기다린다")
+        void sameUserIsSerialized() throws Exception {
+            User owner = userWithId(100L);
+            pendingRequestOf(301L, owner);
+            pendingRequestOf(302L, owner);
+            var latches = holdRegistrationOf(301L);
+            List<Throwable> failures = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
+            Thread first = approveAsync(301L, failures);
+            assertThat(latches[0].await(WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            Thread second = approveAsync(302L, failures);
+            awaitBlocked(second);
+
+            // 앞선 등록이 잠금을 쥔 동안 뒤쪽은 PROCESSING 조회조차 하지 못한다.
+            verify(jobClient, times(1)).registerProvision(any());
+            verify(requestRepository, times(1)).findAllByUser_UserIdAndStatus(100L, Status.PROCESSING);
+
+            latches[1].countDown();
+            joinAll(first, second);
+            assertThat(failures).isEmpty();
+            verify(jobClient, times(2)).registerProvision(any());
+        }
+
+        @Test
+        @DisplayName("다른 칸에 걸린 다른 사용자는 앞선 등록이 멈춰 있어도 기다리지 않는다")
+        void differentStripeRunsInParallel() throws Exception {
+            assertThat(AdminRequestCommandService.approvalLockStripe(100L))
+                    .isNotEqualTo(AdminRequestCommandService.approvalLockStripe(101L));
+            pendingRequestOf(311L, userWithId(100L));
+            pendingRequestOf(312L, userWithId(101L));
+            var latches = holdRegistrationOf(311L);
+            List<Throwable> failures = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
+            Thread first = approveAsync(311L, failures);
+            assertThat(latches[0].await(WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            Thread other = approveAsync(312L, failures);
+            joinAll(other); // 앞선 스레드는 아직 등록 안에서 멈춰 있다
+
+            assertThat(first.isAlive()).isTrue();
+            latches[1].countDown();
+            joinAll(first);
+            assertThat(failures).isEmpty();
+            verify(jobClient, times(2)).registerProvision(any());
+        }
+
+        @Test
+        @DisplayName("같은 칸을 나눠 쓰는 다른 사용자는 잠깐 기다린 뒤 정상 승인된다 — 막히거나 거절되지 않는다")
+        void sharedStripeWaitsThenSucceeds() throws Exception {
+            long a = 100L;
+            long b = a + AdminRequestCommandService.APPROVAL_LOCK_STRIPES;
+            assertThat(AdminRequestCommandService.approvalLockStripe(a))
+                    .isEqualTo(AdminRequestCommandService.approvalLockStripe(b));
+            pendingRequestOf(321L, userWithId(a));
+            pendingRequestOf(322L, userWithId(b));
+            var latches = holdRegistrationOf(321L);
+            List<Throwable> failures = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
+            Thread first = approveAsync(321L, failures);
+            assertThat(latches[0].await(WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            Thread second = approveAsync(322L, failures);
+            awaitBlocked(second);
+            verify(jobClient, times(1)).registerProvision(any());
+
+            latches[1].countDown();
+            joinAll(first, second);
+            assertThat(failures).isEmpty();
+            verify(jobClient, times(2)).registerProvision(any());
+            // 다른 사용자라 서로를 "처리 중인 같은 사용자 신청"으로 보지 않는다.
+            verify(requestRepository).findAllByUser_UserIdAndStatus(a, Status.PROCESSING);
+            verify(requestRepository).findAllByUser_UserIdAndStatus(b, Status.PROCESSING);
+        }
+
+        @Test
+        @DisplayName("등록이 예외로 끝나도 잠금이 풀려 같은 사용자의 다음 승인이 진행된다")
+        void lockReleasedAfterRegistrationFailure() {
+            User owner = userWithId(100L);
+            pendingRequestOf(331L, owner);
+            pendingRequestOf(332L, owner);
+            when(jobClient.registerProvision(any()))
+                    .thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED))
+                    .thenReturn(7332L);
+
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(331L, 1L, 1, null)))
+                    .isInstanceOf(BusinessException.class);
+            assertThat(service.approveRequest(new ApproveRequestDTO(332L, 1L, 1, null))).isNotNull();
+            verify(jobClient, times(2)).registerProvision(any());
+        }
+
+        @Test
+        @DisplayName("다른 처리 중 신청 때문에 거절돼도 잠금이 풀려, 막던 신청이 끝난 뒤 다시 승인할 수 있다")
+        void lockReleasedAfterBlockedRejection() {
+            User owner = userWithId(100L);
+            pendingRequestOf(341L, owner);
+            Request blocking = mock(Request.class);
+            when(blocking.getRequestId()).thenReturn(340L);
+            when(requestRepository.findAllByUser_UserIdAndStatus(100L, Status.PROCESSING))
+                    .thenReturn(List.of(blocking))
+                    .thenReturn(List.of());
+            when(jobClient.registerProvision(any())).thenReturn(7341L);
+
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(341L, 1L, 1, null)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_APPROVAL_ALREADY_IN_PROGRESS);
+
+            pendingRequestOf(341L, owner); // PENDING으로 되돌아간 뒤 관리자가 다시 승인
+            assertThat(service.approveRequest(new ApproveRequestDTO(341L, 1L, 1, null))).isNotNull();
+            verify(jobClient, times(1)).registerProvision(any());
         }
     }
 }

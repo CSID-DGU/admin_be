@@ -34,6 +34,8 @@ out/
 /.nb-gradle/
 
 application.yml
+# 테스트 설정은 가짜 값만 담아 CI가 쓸 수 있게 올린다
+!src/test/resources/application.yml
 /.gradle
 .DS_Store
 

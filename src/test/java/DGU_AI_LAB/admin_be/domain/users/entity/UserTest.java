@@ -82,16 +82,73 @@ class UserTest {
         }
 
         @Test
-        @DisplayName("계정을 회수하면 UID/GID만 비우고 유저네임은 남긴다 — 유저네임은 웹 계정에 평생 귀속된다")
-        void releaseUbuntuAccount_clearsIdsButKeepsUsername() {
+        @DisplayName("계정을 회수해도 유저네임·UID·GID는 남는다 — 사람을 가리키는 값이라 되살릴 때 같은 번호를 쓴다")
+        void releaseUbuntuAccount_keepsIdentity() {
             user.assignUbuntuAccount(20001L, 20001L);
 
+            user.beginUbuntuAccountRelease();
             user.releaseUbuntuAccount();
 
             assertThat(user.hasUbuntuAccount()).isFalse();
-            assertThat(user.getUbuntuUid()).isNull();
-            assertThat(user.getUbuntuGid()).isNull();
+            assertThat(user.getUbuntuUid()).isEqualTo(20001L);
+            assertThat(user.getUbuntuGid()).isEqualTo(20001L);
             assertThat(user.getUbuntuUsername()).isEqualTo("honggildong");
+        }
+
+        @Test
+        @DisplayName("회수된 계정은 같은 UID/GID로만 되살릴 수 있다 — 다른 번호면 보존된 홈의 소유자와 어긋난다")
+        void reassignAfterRelease_requiresSameIds() {
+            user.assignUbuntuAccount(20001L, 20001L);
+            user.beginUbuntuAccountRelease();
+            user.releaseUbuntuAccount();
+
+            assertThatThrownBy(() -> user.assignUbuntuAccount(20002L, 20002L))
+                    .isInstanceOf(BusinessException.class);
+
+            user.assignUbuntuAccount(20001L, 20001L);
+            assertThat(user.hasUbuntuAccount()).isTrue();
+        }
+
+        @Test
+        @DisplayName("회수 생명주기: NONE은 회수할 것이 없고, ACTIVE → RELEASING → NONE으로만 끝난다")
+        void releaseLifecycle() {
+            assertThat(user.beginUbuntuAccountRelease()).isFalse();
+            assertThat(user.getUbuntuAccountStatus()).isEqualTo(UbuntuAccountStatus.NONE);
+            assertThatThrownBy(user::releaseUbuntuAccount).isInstanceOf(BusinessException.class);
+
+            user.assignUbuntuAccount(20001L, 20001L);
+            assertThatThrownBy(user::releaseUbuntuAccount).isInstanceOf(BusinessException.class);
+
+            assertThat(user.beginUbuntuAccountRelease()).isTrue();
+            assertThat(user.hasUbuntuAccount()).isFalse();
+            assertThat(user.isReleasingUbuntuAccount()).isTrue();
+            // 관리자의 재시도는 그대로 RELEASING이다.
+            assertThat(user.beginUbuntuAccountRelease()).isTrue();
+
+            user.releaseUbuntuAccount();
+            assertThat(user.getUbuntuAccountStatus()).isEqualTo(UbuntuAccountStatus.NONE);
+        }
+
+        @Test
+        @DisplayName("회수 중에는 계정을 배정하지 않는다 — 곧 지워질 계정에 새 컨테이너가 붙는다")
+        void assignWhileReleasingIsRejected() {
+            user.assignUbuntuAccount(20001L, 20001L);
+            user.beginUbuntuAccountRelease();
+
+            assertThatThrownBy(() -> user.assignUbuntuAccount(20001L, 20001L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_ACCOUNT_RELEASING);
+        }
+
+        @Test
+        @DisplayName("회수할 노드를 몰라 보류하면 계정이 살아 있는 상태로 돌아간다")
+        void abortRelease() {
+            user.assignUbuntuAccount(20001L, 20001L);
+            user.beginUbuntuAccountRelease();
+
+            user.abortUbuntuAccountRelease();
+
+            assertThat(user.hasUbuntuAccount()).isTrue();
         }
 
         @Test
@@ -100,6 +157,7 @@ class UserTest {
             user.assignUbuntuAccount(20001L, 20001L);
             user.addGroupIfAbsent(Group.builder().groupName("team").ubuntuGid(70001L).build());
 
+            user.beginUbuntuAccountRelease();
             user.releaseUbuntuAccount();
 
             assertThat(user.getUserGroups()).isEmpty();

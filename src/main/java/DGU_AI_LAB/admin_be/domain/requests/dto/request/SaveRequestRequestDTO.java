@@ -34,12 +34,6 @@ public record SaveRequestRequestDTO(
         @Positive(message = "이미지 ID는 양수여야 합니다.")
         Long imageId,
 
-        // 계정 비밀번호가 아직 없을 때(첫 신청)만 필요하다 — 서비스가 확인한다. 화면도 8자 이상을 요구한다.
-        @Schema(description = "Ubuntu 비밀번호. 계정 비밀번호가 없을 때(첫 신청)만 필요하고, 있으면 무시한다.",
-                example = "strongPassword123!")
-        @Size(min = 8, max = 128, message = "우분투 비밀번호는 8~128자여야 합니다.")
-        String ubuntuPassword,
-
         // requests.usage_purpose가 1000자다.
         @Schema(description = "사용 목적", example = "딥러닝 모델 학습")
         @NotBlank(message = "사용 목적은 필수입니다.")
@@ -67,15 +61,10 @@ public record SaveRequestRequestDTO(
         @Schema(description = "noVNC GUI 활성화 여부", example = "false")
         Boolean enableVnc
 ) {
-    /**
-     * @param ubuntuUsername 신청자가 입력하는 값이 아니라 가입 시 정해진 User.ubuntuUsername을
-     *                       그대로 복사해 넣는다 — 서비스에서 꺼내 넘긴다.
-     */
     public Request toEntity(
             User user,
             ResourceGroup resourceGroup,
-            ContainerImage image,
-            String ubuntuUsername
+            ContainerImage image
     ) {
         String formAnswersJson;
         try {
@@ -88,7 +77,6 @@ public record SaveRequestRequestDTO(
                 .user(user)
                 .resourceGroup(resourceGroup)
                 .containerImage(image)
-                .ubuntuUsername(ubuntuUsername)
                 .usagePurpose(usagePurpose)
                 .formAnswers(formAnswersJson)
                 .expiresAt(expiresAt)

@@ -93,14 +93,18 @@ public enum ErrorCode {
     TOO_MANY_LOGIN_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "로그인 시도 횟수를 초과했습니다. 15분 후 다시 시도해주세요."),
     INVALID_AUTH_CODE(HttpStatus.BAD_REQUEST, "올바르지 않은 인증 코드입니다."),
     TOO_MANY_AUTH_CODE_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "인증 코드 입력 횟수를 초과했습니다. 인증 코드를 다시 받아주세요."),
+    TOO_MANY_EMAIL_SENDS(HttpStatus.TOO_MANY_REQUESTS, "인증 메일을 너무 자주 요청했어요. 잠시 후 다시 시도해 주세요."),
+    EMAIL_DOMAIN_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "학교 이메일(@dgu.ac.kr, @dongguk.edu)로만 가입할 수 있어요."),
     GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "지정된 그룹을 찾을 수 없습니다."),
     UID_ALLOCATION_FAILED(HttpStatus.BAD_GATEWAY, "외부 API 응답에서 UID/GID를 확인할 수 없습니다."),
     DUPLICATE_USERNAME(HttpStatus.CONFLICT, "이미 사용 중인 username입니다. 다른 username을 입력해주세요."),
     UBUNTU_USERNAME_CONFLICTS_GROUP(HttpStatus.CONFLICT, "같은 이름의 그룹이 있어 쓸 수 없는 우분투 계정명입니다. 다른 이름을 입력해주세요."),
+    UBUNTU_USERNAME_RESERVED(HttpStatus.CONFLICT, "시스템 계정 이름이라 쓸 수 없는 우분투 계정명입니다. 다른 이름을 입력해주세요."),
     UBUNTU_USERNAME_NOT_ASSIGNED(HttpStatus.CONFLICT, "회원 정보에 우분투 계정명이 없습니다. 마이페이지에서 먼저 등록해주세요."),
     UBUNTU_USERNAME_ALREADY_ASSIGNED(HttpStatus.CONFLICT, "이미 우분투 계정명이 등록되어 있어 변경할 수 없습니다."),
     UBUNTU_ACCOUNT_ALREADY_ASSIGNED(HttpStatus.CONFLICT, "이미 다른 우분투 계정이 배정된 사용자입니다."),
-    UBUNTU_PASSWORD_CHANGE_WHILE_PROVISIONING(HttpStatus.CONFLICT, "컨테이너를 만드는 중이라 지금은 Ubuntu 비밀번호를 바꿀 수 없습니다. 생성이 끝난 뒤 다시 시도해주세요."),
+    UBUNTU_ACCOUNT_RELEASING(HttpStatus.CONFLICT, "우분투 계정을 회수하는 중입니다. 회수가 끝난 뒤 다시 시도해주세요."),
+    UBUNTU_PASSWORD_CHANGE_WHILE_PROVISIONING(HttpStatus.CONFLICT, "컨테이너를 만드는 중이라 지금은 비밀번호를 바꿀 수 없어요. 생성이 끝난 뒤 다시 시도해 주세요."),
     // 인증 계층(로그인/토큰 갱신/JWT 필터) 전부에서 던져지는 예외라 401이어야 프론트가
     // 세션만료 처리 흐름(재로그인 모달)을 타운다. 404였을 때는 로그인 후 계정이 비활성화된
     // 세션에서 모든 API 호출이 조용히 실패하고 아무 안내도 뜨지 않았다.
@@ -111,11 +115,11 @@ public enum ErrorCode {
 
     // 로그인한 사용자가 변경 폼에 적은 현재 비밀번호가 틀린 것이라 인증 실패(401)가 아니다. 401이면 화면이
     // 세션 만료로 보고 로그아웃시킨다.
-    INVALID_PASSWORD(HttpStatus.BAD_REQUEST, "현재 비밀번호가 일치하지 않습니다."),
-    PASSWORD_CHANGE_SAME_AS_OLD(HttpStatus.BAD_REQUEST, "새 비밀번호가 현재 비밀번호와 동일합니다."),
-    TOO_MANY_PASSWORD_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "현재 비밀번호를 여러 번 틀렸습니다. 15분 후 다시 시도해주세요."),
-    UBUNTU_PASSWORD_REQUIRED(HttpStatus.BAD_REQUEST, "첫 신청에는 우분투 비밀번호가 필요합니다."),
-    UBUNTU_PASSWORD_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "우분투 비밀번호를 컨테이너에 반영하지 못했습니다. 잠시 후 다시 시도해주세요."),
+    INVALID_PASSWORD(HttpStatus.BAD_REQUEST, "현재 비밀번호가 맞지 않아요."),
+    PASSWORD_CHANGE_SAME_AS_OLD(HttpStatus.BAD_REQUEST, "새 비밀번호가 현재 비밀번호와 같아요. 다르게 정해 주세요."),
+    TOO_MANY_PASSWORD_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "현재 비밀번호를 여러 번 틀렸어요. 15분 뒤에 다시 시도해 주세요."),
+    UBUNTU_PASSWORD_REQUIRED(HttpStatus.BAD_REQUEST, "SSH 비밀번호를 준비하려면 다시 로그인해 주세요."),
+    UBUNTU_PASSWORD_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "컨테이너에 반영하지 못해 비밀번호를 바꾸지 않았어요. 잠시 후 다시 시도해 주세요."),
 
     /**
      * Group Error
@@ -160,6 +164,8 @@ public enum ErrorCode {
     //FORBIDDEN_REQUEST(HttpStatus.BAD_REQUEST, "본인의 신청만 변경 신청할 수 있습니다."),
     UNSUPPORTED_CHANGE_TYPE(HttpStatus.BAD_REQUEST, "지원되지 않는 요청 타입(enum)입니다."),
     REQUEST_MIGRATION_IN_PROGRESS(HttpStatus.CONFLICT, "마이그레이션이 진행 중인 요청이 있어 삭제할 수 없습니다."),
+    PROVISION_JOB_IN_PROGRESS(HttpStatus.CONFLICT, "컨테이너 생성 작업이 아직 끝나지 않아 거절할 수 없습니다. 작업이 끝난 뒤 다시 시도해주세요."),
+    USER_APPROVAL_ALREADY_IN_PROGRESS(HttpStatus.CONFLICT, "같은 사용자의 다른 신청이 처리 중(PROCESSING)입니다. 그 신청이 완료된 뒤 다시 승인하고, 처리 중에 멈춰 있다면 관리자가 먼저 정리해주세요."),
     USER_REQUEST_CLEANUP_PARTIALLY_FAILED(HttpStatus.BAD_GATEWAY, "일부 컨테이너/계정 정리에 실패했습니다. 관리자에게 알림이 전송되었으니 확인 후 다시 시도해주세요."),
 
     /**
