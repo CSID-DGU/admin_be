@@ -424,6 +424,19 @@ class AdminUserServiceTest {
         }
 
         @Test
+        @DisplayName("마지막 활성 관리자는 비활성화하지 않고 아무것도 회수하지 않는다")
+        void rejectsLastActiveAdmin() {
+            mockUser.changeRole(Role.ADMIN);
+            when(userRepository.countByRoleAndIsActiveTrue(Role.ADMIN)).thenReturn(1L);
+
+            assertThatThrownBy(() -> adminUserService.deactivateUser(1L))
+                    .isInstanceOf(ConflictException.class)
+                    .hasMessageContaining(ErrorCode.LAST_ACTIVE_ADMIN.getMessage());
+            assertThat(mockUser.getIsActive()).isTrue();
+            verifyNoInteractions(requestExpiryService);
+        }
+
+        @Test
         @DisplayName("PROCESSING 신청이 있으면 비활성화 자체를 거부한다")
         void rejectsInFlight() {
             givenRequests(mockRequest(Status.PROCESSING));
@@ -505,6 +518,31 @@ class AdminUserServiceTest {
 
             assertThatThrownBy(() -> adminUserService.changeUserRole(99L, Role.ADMIN))
                     .isInstanceOf(EntityNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("마지막 활성 관리자를 USER로 내리면 거부한다")
+        void changeUserRole_rejectsDemotingLastActiveAdmin() {
+            mockUser.changeRole(Role.ADMIN);
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(userRepository.countByRoleAndIsActiveTrue(Role.ADMIN)).thenReturn(1L);
+
+            assertThatThrownBy(() -> adminUserService.changeUserRole(1L, Role.USER))
+                    .isInstanceOf(ConflictException.class)
+                    .hasMessageContaining(ErrorCode.LAST_ACTIVE_ADMIN.getMessage());
+            assertThat(mockUser.getRole()).isEqualTo(Role.ADMIN);
+        }
+
+        @Test
+        @DisplayName("다른 활성 관리자가 있으면 관리자를 USER로 내릴 수 있다")
+        void changeUserRole_allowsDemotingWhenOtherAdminsRemain() {
+            mockUser.changeRole(Role.ADMIN);
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            when(userRepository.countByRoleAndIsActiveTrue(Role.ADMIN)).thenReturn(2L);
+
+            adminUserService.changeUserRole(1L, Role.USER);
+
+            assertThat(mockUser.getRole()).isEqualTo(Role.USER);
         }
 
         @Test
