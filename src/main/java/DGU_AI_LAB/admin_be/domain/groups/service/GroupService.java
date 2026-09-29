@@ -42,6 +42,7 @@ public class GroupService {
     private final @Qualifier("configWebClient") WebClient groupCreationWebClient;
     private final PlatformTransactionManager transactionManager;
     private final AlarmService alarmService;
+    private final GroupCreateThrottle groupCreateThrottle;
 
     /**
      * 모든 그룹 정보를 조회하는 API
@@ -88,6 +89,9 @@ public class GroupService {
                 throw new BusinessException(ErrorCode.GROUP_NAME_CONFLICTS_USER);
             }
         });
+
+        // 검증을 통과한 요청만 센다 — 이름 중복 같은 실패로 한도를 쓰지 않게 한다.
+        groupCreateThrottle.acquire(userId);
 
         // 2. 트랜잭션 종료 후 외부 API 호출 (커넥션 미점유)
         List<String> members = Optional.ofNullable(dto.ubuntuUsername())
