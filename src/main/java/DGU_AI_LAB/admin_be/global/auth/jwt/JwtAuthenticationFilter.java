@@ -22,6 +22,7 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.util.AntPathMatcher;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.UrlPathHelper;
 
 import java.io.IOException;
 
@@ -98,7 +99,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getRequestURI();
+        // 라우팅·Spring Security와 같은 풀린(퍼센트 디코딩된) 경로로 판정한다(InternalTokenFilter와 같은 이유).
+        String path = UrlPathHelper.defaultInstance.getPathWithinApplication(request);
         log.debug("[JwtAuthFilter] 현재 요청 URI = {}", path);
 
         for (String pattern : SecurityWhitelist.UNPROTECTED_PATHS) {

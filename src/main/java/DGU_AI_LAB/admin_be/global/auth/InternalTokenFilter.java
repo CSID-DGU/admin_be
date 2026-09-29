@@ -10,6 +10,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.UrlPathHelper;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -44,7 +45,9 @@ public class InternalTokenFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getRequestURI();
+        // 원본 URI(getRequestURI)는 퍼센트 인코딩이 풀리지 않은 값이라 /api/requests/%63onfig/...처럼 글자를 인코딩하면
+        // 이 검사를 비껴가는데, 라우팅은 풀린 경로로 되어 컨트롤러에 닿는다. 라우팅과 같은 풀린 경로로 판정한다.
+        String path = UrlPathHelper.defaultInstance.getPathWithinApplication(request);
         if (EXEMPT_PATH.equals(path)) {
             return true;
         }

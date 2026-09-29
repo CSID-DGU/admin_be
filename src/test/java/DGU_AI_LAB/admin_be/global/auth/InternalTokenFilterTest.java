@@ -41,6 +41,17 @@ class InternalTokenFilterTest {
         verify(chain, never()).doFilter(any(), any());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"/api/requests/%63onfig/by-request/1", "/api/%72equests/config/alice",
+            "/api/%69nternal/slack/notify", "/api/requests/config/%63heck-username/../by-request/1"})
+    @DisplayName("글자를 퍼센트 인코딩한 보호 경로도 토큰이 없으면 거절한다")
+    void rejectsPercentEncodedProtectedPath(String uri) throws Exception {
+        MockHttpServletResponse response = run(TOKEN, uri, null);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        verify(chain, never()).doFilter(any(), any());
+    }
+
     @Test
     @DisplayName("보호 경로는 토큰이 틀리면 거절한다")
     void rejectsWrongToken() throws Exception {
