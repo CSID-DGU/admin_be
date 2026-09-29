@@ -154,6 +154,7 @@ public class AdminUserService {
                     log.error("[deleteUser] userId={} 존재하지 않음", userId);
                     return new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND);
                 }));
+        requireNotLastActiveAdmin(user);
 
         withdrawWithCleanup(userId, user, "deleteUser", "notification.user.admin-delete");
     }
@@ -170,6 +171,7 @@ public class AdminUserService {
             log.info("[withdrawInactiveUser] userId={} 이미 비활성 상태라 건너뜁니다", userId);
             return;
         }
+        requireNotLastActiveAdmin(user);
         log.warn("[withdrawInactiveUser] userId={} 장기 미접속 탈퇴 시작", userId);
         withdrawWithCleanup(userId, user, "withdrawInactiveUser", "notification.user.soft-delete");
     }
@@ -252,6 +254,7 @@ public class AdminUserService {
                 log.warn("[deactivateUser] userId={} 이미 비활성화 상태", userId);
                 throw new ConflictException(ErrorCode.USER_ALREADY_INACTIVE);
             }
+            requireNotLastActiveAdmin(found);
             return found;
         });
 
@@ -293,9 +296,24 @@ public class AdminUserService {
             log.warn("[changeUserRole] userId={} 이미 {} 권한", userId, newRole);
             throw new ConflictException(ErrorCode.USER_ALREADY_HAS_ROLE);
         }
+        if (newRole != Role.ADMIN) {
+            requireNotLastActiveAdmin(user);
+        }
 
         user.changeRole(newRole);
         log.info("[changeUserRole] userId={} role={} 변경 완료", userId, newRole);
         return UserSummaryDTO.fromEntity(user);
+    }
+
+    /**
+     * 활성 관리자가 한 명도 남지 않게 하는 변경을 막는다. 관리자가 없으면 관리 화면에 아무도 들어갈 수 없고,
+     * 서버에서 DB를 직접 고쳐야만 되살릴 수 있다. 관리자 자신에 대한 요청과 장기 미접속 자동 탈퇴에도 똑같이 적용된다.
+     */
+    private void requireNotLastActiveAdmin(User target) {
+        if (target.getRole() == Role.ADMIN && Boolean.TRUE.equals(target.getIsActive())
+                && userRepository.countByRoleAndIsActiveTrue(Role.ADMIN) <= 1) {
+            log.warn("[requireNotLastActiveAdmin] userId={} 마지막 활성 관리자라 거부", target.getUserId());
+            throw new ConflictException(ErrorCode.LAST_ACTIVE_ADMIN);
+        }
     }
 }

@@ -88,6 +88,7 @@ public enum ErrorCode {
     USER_ALREADY_ACTIVE(HttpStatus.CONFLICT, "이미 활성화된 사용자입니다."),
     USER_ALREADY_INACTIVE(HttpStatus.CONFLICT, "이미 비활성화된 사용자입니다."),
     USER_ALREADY_HAS_ROLE(HttpStatus.CONFLICT, "이미 해당 권한을 가진 사용자입니다."),
+    LAST_ACTIVE_ADMIN(HttpStatus.CONFLICT, "마지막 관리자는 권한을 내리거나 비활성화·탈퇴시킬 수 없습니다. 다른 관리자를 먼저 지정해 주세요."),
     DUPLICATE_NAME(HttpStatus.CONFLICT, "중복된 닉네임입니다."),
     INVALID_LOGIN_INFO(HttpStatus.UNAUTHORIZED, "잘못된 로그인 입력값입니다."),
     TOO_MANY_LOGIN_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "로그인 시도 횟수를 초과했습니다. 15분 후 다시 시도해주세요."),
