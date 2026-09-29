@@ -6,8 +6,6 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodMigrationService;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
-import DGU_AI_LAB.admin_be.domain.users.dto.request.UserUpdateRequestDTO;
-import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.UbuntuAccountStatus;
@@ -299,22 +297,5 @@ public class AdminUserService {
         user.changeRole(newRole);
         log.info("[changeUserRole] userId={} role={} 변경 완료", userId, newRole);
         return UserSummaryDTO.fromEntity(user);
-    }
-
-    /**
-     * 유저 정보 수정
-     */
-    @Transactional
-    public UserResponseDTO updateUser(Long userId, UserUpdateRequestDTO request) {
-        log.info("[updateUser] userId={} 정보 수정 시작", userId);
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
-        user.updateUserInfo(request.password(), request.isActive());
-        if (!Boolean.TRUE.equals(user.getIsActive())) {
-            // 비활성화 처리된 계정은 리프레시 토큰도 함께 폐기한다.
-            tokenService.logout(userId);
-        }
-        log.info("[updateUser] userId={} 정보 수정 완료", userId);
-        return UserResponseDTO.fromEntity(user);
     }
 }

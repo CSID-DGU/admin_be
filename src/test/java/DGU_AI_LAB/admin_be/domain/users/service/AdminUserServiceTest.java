@@ -8,8 +8,6 @@ import DGU_AI_LAB.admin_be.domain.requests.service.PodMigrationService;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
 import DGU_AI_LAB.admin_be.domain.requests.service.UbuntuAccountService;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
-import DGU_AI_LAB.admin_be.domain.users.dto.request.UserUpdateRequestDTO;
-import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.UbuntuAccountStatus;
@@ -137,53 +135,6 @@ class AdminUserServiceTest {
             List<UserSummaryDTO> result = adminUserService.getAllUsers();
 
             assertThat(result).isEmpty();
-        }
-    }
-
-    @Nested
-    @DisplayName("updateUser")
-    class UpdateUser {
-
-        @Test
-        @DisplayName("유저가 존재하면 정보를 수정하고 UserResponseDTO를 반환한다")
-        void updateUser_success() {
-            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
-
-            UserUpdateRequestDTO request = new UserUpdateRequestDTO("newPw", false);
-            UserResponseDTO result = adminUserService.updateUser(1L, request);
-
-            assertThat(result).isNotNull();
-        }
-
-        @Test
-        @DisplayName("계정을 비활성화하면 리프레시 토큰도 함께 폐기한다")
-        void updateUser_revokesRefreshToken_whenDeactivated() {
-            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
-
-            adminUserService.updateUser(1L, new UserUpdateRequestDTO("newPw", false));
-
-            verify(tokenService).logout(1L);
-        }
-
-        @Test
-        @DisplayName("계정이 활성 상태로 유지되면 리프레시 토큰을 건드리지 않는다")
-        void updateUser_keepsRefreshToken_whenStillActive() {
-            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
-
-            adminUserService.updateUser(1L, new UserUpdateRequestDTO("newPw", true));
-
-            verify(tokenService, never()).logout(anyLong());
-        }
-
-        @Test
-        @DisplayName("유저가 없으면 EntityNotFoundException을 던진다")
-        void updateUser_throwsException_whenUserNotFound() {
-            when(userRepository.findById(99L)).thenReturn(Optional.empty());
-
-            UserUpdateRequestDTO request = new UserUpdateRequestDTO("newPw", false);
-
-            assertThatThrownBy(() -> adminUserService.updateUser(99L, request))
-                    .isInstanceOf(EntityNotFoundException.class);
         }
     }
 

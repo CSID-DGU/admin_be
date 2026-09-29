@@ -22,6 +22,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -113,7 +115,9 @@ public class UserLoginService {
 
     /** 로그인 */
     public UserTokenResponseDTO login(UserLoginRequestDTO request) {
-        String attemptKey = "LOGIN_FAIL:" + request.email();
+        // DB는 이메일 대소문자를 구분하지 않아(utf8mb4_0900_ai_ci) 표기만 바꿔도 같은 계정으로 로그인된다.
+        // 잠금 키도 같은 기준으로 세야 대소문자 조합마다 5회씩 새로 받아 잠금을 피하지 못한다.
+        String attemptKey = "LOGIN_FAIL:" + request.email().trim().toLowerCase(Locale.ROOT);
         if (isLockedOut(attemptKey)) {
             throw new BusinessException(ErrorCode.TOO_MANY_LOGIN_ATTEMPTS);
         }
@@ -136,7 +140,7 @@ public class UserLoginService {
         }
 
         redisTemplate.delete(attemptKey);
-        user.recordLogin();
+        userRepository.recordLogin(user.getUserId(), LocalDateTime.now());
         refreshSshPasswordHashIfWeak(user, request.password());
 
         String accessToken = jwtProvider.getIssueToken(user.getUserId(), true);
