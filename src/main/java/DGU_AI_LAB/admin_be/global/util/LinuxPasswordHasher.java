@@ -14,9 +14,10 @@ public final class LinuxPasswordHasher {
 
     /**
      * 반복 횟수. glibc 기본값 5000은 GPU 대입에 BCrypt(cost 10)보다 수백 배 약하다 — 같은 비밀번호가 웹 로그인에도
-     * 쓰이므로 이 해시가 가장 약한 고리가 된다. passlib의 sha512_crypt 기본값을 따른다.
+     * 쓰이므로 이 해시가 가장 약한 고리가 된다. 가입·비밀번호 변경·로그인 응답이 해시 계산을 기다리므로
+     * passlib 기본값(656000)은 너무 느려 100000으로 둔다. 다른 횟수의 해시는 다음 로그인 때 이 횟수로 다시 만든다.
      */
-    static final int ROUNDS = 656_000;
+    static final int ROUNDS = 100_000;
     private static final String CURRENT_PREFIX = "$6$rounds=" + ROUNDS + "$";
     private static final String SALT_ALPHABET = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     private static final int SALT_LENGTH = 16;

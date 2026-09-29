@@ -116,7 +116,7 @@ class UserRepositoryTest {
     @DisplayName("replaceWeakUbuntuPasswordHash")
     class ReplaceWeakUbuntuPasswordHash {
 
-        private static final String CURRENT = "$6$rounds=656000$";
+        private static final String CURRENT = "$6$rounds=100000$";
 
         @Test
         @DisplayName("비어 있거나 옛 강도 해시만 바꾸고, 지금 강도 해시는 그대로 둔다")
