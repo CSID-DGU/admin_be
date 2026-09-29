@@ -151,15 +151,35 @@ public class AdminUserService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void deleteUser(Long userId) {
         log.warn("[deleteUser] userId={} 논리적 삭제 시도", userId);
-        TransactionTemplate tx = new TransactionTemplate(transactionManager);
-
-        User user = tx.execute(status -> userRepository.findById(userId)
+        User user = new TransactionTemplate(transactionManager).execute(status -> userRepository.findById(userId)
                 .orElseThrow(() -> {
                     log.error("[deleteUser] userId={} 존재하지 않음", userId);
                     return new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND);
                 }));
 
-        cleanupUserRequests(user, "deleteUser");
+        withdrawWithCleanup(userId, user, "deleteUser", "notification.user.admin-delete");
+    }
+
+    /**
+     * 장기 미접속 유저 탈퇴(수명주기 스케줄러). deleteUser와 같이 웹 계정을 탈퇴 처리하고 컨테이너·우분투 계정
+     * 회수를 시작하되, 안내 메일만 장기 미접속 안내로 보낸다. 그 사이 이미 비활성화된 유저는 건너뛴다.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void withdrawInactiveUser(Long userId) {
+        User user = new TransactionTemplate(transactionManager).execute(status -> userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND)));
+        if (!user.getIsActive()) {
+            log.info("[withdrawInactiveUser] userId={} 이미 비활성 상태라 건너뜁니다", userId);
+            return;
+        }
+        log.warn("[withdrawInactiveUser] userId={} 장기 미접속 탈퇴 시작", userId);
+        withdrawWithCleanup(userId, user, "withdrawInactiveUser", "notification.user.soft-delete");
+    }
+
+    private void withdrawWithCleanup(Long userId, User user, String logPrefix, String noticeKey) {
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+
+        cleanupUserRequests(user, logPrefix);
 
         User withdrawn = tx.execute(status -> {
             User managed = userRepository.findById(userId)
@@ -169,14 +189,14 @@ public class AdminUserService {
         });
         // 남아있는 리프레시 토큰으로 액세스 토큰을 계속 재발급받지 못하도록 함께 폐기한다.
         tokenService.logout(userId);
-        log.info("[deleteUser] userId={} 논리적 삭제 완료 (isActive=false)", userId);
+        log.info("[{}] userId={} 논리적 삭제 완료 (isActive=false)", logPrefix, userId);
 
         try {
-            String subject = messageUtils.get("notification.user.admin-delete.subject");
-            String body = messageUtils.get("notification.user.admin-delete.body", withdrawn.getName());
+            String subject = messageUtils.get(noticeKey + ".subject");
+            String body = messageUtils.get(noticeKey + ".body", withdrawn.getName());
             alarmService.sendAllAlerts(withdrawn.getName(), withdrawn.getEmail(), subject, body);
         } catch (Exception e) {
-            log.warn("[deleteUser] 계정 비활성화 안내 메일 발송 실패: userId={}", userId, e);
+            log.warn("[{}] 계정 비활성화 안내 메일 발송 실패: userId={}", logPrefix, userId, e);
         }
     }
 

@@ -9,6 +9,7 @@ import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
+import DGU_AI_LAB.admin_be.domain.users.service.AdminUserService;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,7 @@ import java.time.ZoneId;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @SpringBootTest
@@ -48,9 +50,13 @@ class UserSchedulerServiceTest {
     @MockitoBean
     private AlarmService alarmService;
 
+    // 탈퇴 경로(컨테이너·계정 회수)는 AdminUserServiceTest에서 검증한다. 여기선 대상 선정과 위임만 본다.
+    @MockitoBean
+    private AdminUserService adminUserService;
+
 
     @Test
-    @DisplayName("유저 수명주기 통합 테스트: 알림(D-7, D-1), Soft Delete, 활동 유저 보호")
+    @DisplayName("유저 수명주기 통합 테스트: 알림(D-7, D-1), 탈퇴 위임, 활동 유저 보호")
     void userLifecycleScheduler_IntegrationTest() {
         // --- Given ---
         // 서비스와 같은 시간대로 잡는다. JVM 기본 시간대(CI는 UTC)로 잡으면 UTC 15시~24시에 서울 날짜와 하루 어긋나
@@ -91,13 +97,9 @@ class UserSchedulerServiceTest {
                 "D1User", "1", d1DeleteDate.toLocalDate().toString());
 
 
-        // 5. [Soft Delete 대상]
+        // 5. [탈퇴 대상]
         User softTarget = createUser("soft@test.com", "SoftTarget");
         updateLastLogin(softTarget, now.minusMonths(3).minusDays(1));
-
-        // Soft Delete 예상 메시지
-        String softSubject = messageUtils.get("notification.user.soft-delete.subject");
-        String softBody = messageUtils.get("notification.user.soft-delete.body", "SoftTarget");
 
 
         // --- When ---
@@ -128,17 +130,12 @@ class UserSchedulerServiceTest {
                 eq(d1Body)
         );
 
-        // 5. [Soft Delete] 알림 검증 및 상태 확인
-        User resSoft = userRepository.findById(softTarget.getUserId()).get();
-        assertThat(resSoft.getIsActive()).isFalse();
-        assertThat(resSoft.getDeletedAt()).isNotNull();
-
-        verify(alarmService).sendAllAlerts(
-                eq("SoftTarget"),
-                eq("soft@test.com"),
-                eq(softSubject),
-                eq(softBody)
-        );
+        // 5. [탈퇴 대상]만 탈퇴 경로로 넘긴다
+        verify(adminUserService).withdrawInactiveUser(softTarget.getUserId());
+        verify(adminUserService, never()).withdrawInactiveUser(activeUser.getUserId());
+        verify(adminUserService, never()).withdrawInactiveUser(podUser.getUserId());
+        verify(adminUserService, never()).withdrawInactiveUser(d7User.getUserId());
+        verify(adminUserService, never()).withdrawInactiveUser(d1User.getUserId());
     }
 
 

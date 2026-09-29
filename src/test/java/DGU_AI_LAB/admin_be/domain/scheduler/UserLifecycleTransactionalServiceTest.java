@@ -16,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -131,18 +132,75 @@ class UserLifecycleTransactionalServiceTest {
         }
 
         @Test
-        @DisplayName("삭제 예정일이 지난 유저는 중복 방지와 무관하게 Soft Delete된다")
-        void softDeletesUser_regardlessOfDedup() {
+        @DisplayName("삭제 예정일이 지난 유저는 탈퇴 대상으로 돌려주고, 탈퇴 자체는 호출자에게 맡긴다")
+        void returnsWithdrawTarget_whenPastDeleteDate() {
             LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
-            LocalDateTime lastLoginAt = now.minusMonths(3).minusDays(1);
-            User user = buildUserWithLastLogin(lastLoginAt);
+            User user = buildUserWithLastLogin(now.minusMonths(3).minusDays(1));
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-            lifecycleService.processInactiveUser(1L, now);
+            boolean withdraw = lifecycleService.processInactiveUser(1L, now);
 
-            assertThat(user.getIsActive()).isFalse();
-            assertThat(user.getDeletedAt()).isNotNull();
-            verify(alarmService, times(1)).sendAllAlerts(any(), any(), any(), any());
+            assertThat(withdraw).isTrue();
+            assertThat(user.getIsActive()).isTrue();
+            verifyNoInteractions(alarmService);
+        }
+
+        @Test
+        @DisplayName("경고 대상은 탈퇴 대상이 아니다")
+        void warningTargetIsNotWithdrawn() {
+            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
+            User user = buildUserWithLastLogin(now.plusDays(3).minusMonths(3));
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+            assertThat(lifecycleService.processInactiveUser(1L, now)).isFalse();
+        }
+    }
+
+    @Nested
+    @DisplayName("processInactiveUser - 활동 기준 시각")
+    class ActivityBaseline {
+
+        @Test
+        @DisplayName("로그인 기록이 없으면 가입 시각부터 센다 — 예전엔 NPE로 매일 실패해 영영 처리되지 않았다")
+        void fallsBackToCreatedAt_whenNeverLoggedIn() {
+            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
+            User user = buildUserWithLastLogin(null);
+            ReflectionTestUtils.setField(user, "createdAt", now.minusMonths(4));
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+            assertThat(lifecycleService.processInactiveUser(1L, now)).isTrue();
+        }
+
+        @Test
+        @DisplayName("로그인 기록이 없어도 최근 가입자는 탈퇴 대상이 아니다")
+        void recentSignupWithoutLogin_isKept() {
+            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
+            User user = buildUserWithLastLogin(null);
+            ReflectionTestUtils.setField(user, "createdAt", now.minusMonths(1));
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+            assertThat(lifecycleService.processInactiveUser(1L, now)).isFalse();
+        }
+
+        @Test
+        @DisplayName("기준 시각이 전혀 없으면 판정을 건너뛴다")
+        void skips_whenNoBaseline() {
+            User user = buildUserWithLastLogin(null);
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+            assertThat(lifecycleService.processInactiveUser(1L, LocalDateTime.of(2026, 1, 10, 9, 0))).isFalse();
+            verifyNoInteractions(alarmService);
+        }
+
+        @Test
+        @DisplayName("이미 비활성화된 유저는 탈퇴 대상이 아니다")
+        void inactiveUser_isSkipped() {
+            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
+            User user = buildUserWithLastLogin(now.minusYears(1));
+            user.deactivate();
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+            assertThat(lifecycleService.processInactiveUser(1L, now)).isFalse();
         }
     }
 }

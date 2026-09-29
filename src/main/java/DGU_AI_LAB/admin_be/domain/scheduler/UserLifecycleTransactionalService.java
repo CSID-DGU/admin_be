@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
@@ -13,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.Objects;
 
 /**
  * 유저 생명주기 처리를 트랜잭션 경계 안에서 실행합니다.
@@ -32,25 +34,34 @@ public class UserLifecycleTransactionalService {
     private static final int INACTIVE_MONTHS = 3;
 
     /**
-     * 특정 유저의 비활성 여부를 판단하고, 경고 알림 발송 또는 Soft Delete를 수행합니다.
+     * 특정 유저의 비활성 여부를 판단해 경고 알림을 보내고, 탈퇴 대상인지 돌려준다.
+     * 탈퇴(컨테이너·우분투 계정 회수 포함)는 HTTP 호출이 있어 이 트랜잭션 밖에서 호출자가 수행한다.
      * 유저별 독립 트랜잭션으로 실행되어, 한 유저 실패가 다른 유저 처리에 영향을 주지 않습니다.
+     *
+     * @return 삭제 예정일이 지나 탈퇴시켜야 하면 true
      */
     @Transactional
-    public void processInactiveUser(Long userId, LocalDateTime now) {
+    public boolean processInactiveUser(Long userId, LocalDateTime now) {
         User user = userRepository.findById(userId).orElseThrow();
+        if (!user.getIsActive()) {
+            return false;
+        }
 
-        LocalDateTime lastActivity = user.getLastLoginAt();
+        // 로그인 기록이 없는 유저(로그인 시각 도입 전 가입)는 가입 시각부터 센다.
+        LocalDateTime lastActivity = user.getLastLoginAt() != null ? user.getLastLoginAt() : user.getCreatedAt();
 
         // Lazy 컬렉션을 트랜잭션 내에서 접근 (H-7 fix)
-        if (!user.getRequests().isEmpty()) {
-            LocalDateTime lastPodExpire = user.getRequests().stream()
-                    .map(req -> req.getExpiresAt())
-                    .max(LocalDateTime::compareTo)
-                    .orElse(LocalDateTime.MIN);
-
-            if (lastPodExpire.isAfter(lastActivity)) {
-                lastActivity = lastPodExpire;
-            }
+        LocalDateTime lastPodExpire = user.getRequests().stream()
+                .map(Request::getExpiresAt)
+                .filter(Objects::nonNull)
+                .max(LocalDateTime::compareTo)
+                .orElse(null);
+        if (lastPodExpire != null && (lastActivity == null || lastPodExpire.isAfter(lastActivity))) {
+            lastActivity = lastPodExpire;
+        }
+        if (lastActivity == null) {
+            log.warn("유저({}) 활동 기준 시각이 없어 수명주기 판정을 건너뜁니다", userId);
+            return false;
         }
 
         LocalDateTime deleteDate = lastActivity.plusMonths(INACTIVE_MONTHS);
@@ -58,9 +69,8 @@ public class UserLifecycleTransactionalService {
 
         if (daysLeft == 7 || daysLeft == 3 || daysLeft == 1) {
             sendWarningAlert(user, daysLeft, deleteDate, now.toLocalDate().toString());
-        } else if (daysLeft <= 0) {
-            softDeleteUser(user);
         }
+        return daysLeft <= 0;
     }
 
     private void sendWarningAlert(User user, long daysLeft, LocalDateTime deleteDate, String today) {
@@ -91,15 +101,5 @@ public class UserLifecycleTransactionalService {
             log.warn("Redis 중복 체크 실패, 발송 진행: {}", e.getMessage());
             return false;
         }
-    }
-
-    private void softDeleteUser(User user) {
-        user.withdraw();
-
-        String subject = messageUtils.get("notification.user.soft-delete.subject");
-        String body = messageUtils.get("notification.user.soft-delete.body", user.getName());
-
-        alarmService.sendAllAlerts(user.getName(), user.getEmail(), subject, body);
-        log.info("계정 비활성화(Soft Delete) 완료: {}", user.getEmail());
     }
 }
