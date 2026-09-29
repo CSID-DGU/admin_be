@@ -59,4 +59,12 @@ class RuntimeDefaultsTest {
                     .isEqualTo(2);
         }
     }
+
+    @Test
+    @DisplayName("API 문서와 Swagger 화면은 설정 파일에서 켜지 않으면 꺼져 있다")
+    void apiDocsDisabledByDefault() {
+        assertThat(RuntimeDefaults.values())
+                .containsEntry("springdoc.api-docs.enabled", "false")
+                .containsEntry("springdoc.swagger-ui.enabled", "false");
+    }
 }
