@@ -178,9 +178,9 @@ public class RequestSchedulerServiceTest {
         );
 
         // 관리자 알림 검증
-        // notification.admin.delete.success ({0}타입, {1}계정, {2}서버)
+        // notification.admin.delete.success ({0}서버 표시, {1}계정, {2}서버)
         String expectedAdminMsg = messageUtils.get("notification.admin.delete.success",
-                "FARM", "testuser", "FARM-01");
+                "FARM-01", "testuser", "FARM-01");
 
         verify(alarmService).sendAdminSlackNotification(
                 eq("FARM-01"),
