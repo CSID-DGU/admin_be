@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.messageTemplate.service;
 import DGU_AI_LAB.admin_be.domain.messageTemplate.entity.MessageTemplate;
 import DGU_AI_LAB.admin_be.domain.messageTemplate.repository.MessageTemplateRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -95,6 +96,17 @@ class MessageTemplateServiceTest {
                     .isInstanceOf(EntityNotFoundException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.MESSAGE_TEMPLATE_NOT_FOUND);
 
+            verify(repository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("MessageFormat으로 해석할 수 없는 값은 400 예외를 던지고 저장하지 않는다")
+        void update_rejectsUnparseablePattern() {
+            assertThatThrownBy(() -> messageTemplateService.update(KNOWN_KEY, "안녕하세요 {0님"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_INPUT_VALUE);
+
+            verify(repository, never()).findById(any());
             verify(repository, never()).save(any());
         }
     }
