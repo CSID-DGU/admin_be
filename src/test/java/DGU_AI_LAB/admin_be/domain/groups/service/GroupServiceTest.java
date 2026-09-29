@@ -63,6 +63,9 @@ class GroupServiceTest {
     @Mock
     private AlarmService alarmService;
 
+    @Mock
+    private GroupCreateThrottle groupCreateThrottle;
+
     @BeforeEach
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
@@ -134,6 +137,18 @@ class GroupServiceTest {
 
             assertThat(result.groupName()).isEqualTo("developers");
             assertThat(result.ubuntuGid()).isEqualTo(2000L);
+        }
+
+        @Test
+        @DisplayName("생성 한도를 넘으면 config-server를 부르지 않고 429 예외를 던진다")
+        void createGroup_overDailyLimit_doesNotCallConfigServer() {
+            when(groupRepository.existsByGroupName("developers")).thenReturn(false);
+            doThrow(new BusinessException(ErrorCode.TOO_MANY_GROUP_CREATIONS)).when(groupCreateThrottle).acquire(1L);
+
+            assertThatThrownBy(() -> groupService.createGroup(new CreateGroupRequestDTO("developers", null), 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.TOO_MANY_GROUP_CREATIONS);
+            verify(groupCreationWebClient, never()).post();
         }
 
         @Test
