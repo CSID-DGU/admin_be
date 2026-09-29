@@ -50,10 +50,6 @@ public class PodMigrationService {
     private final AlertDeduplicator alertDeduplicator;
 
     /**
-     * 신청을 MIGRATING으로 바꾸고 마이그레이션 작업을 등록한다. 행 잠금과 상태 전환을 같은 트랜잭션에서 커밋해야
-     * 동시에 들어온 두 번째 요청이 상태 검증에서 막힌다. 등록이 실패하면 FULFILLED로 되돌린다.
-     */
-    /**
      * 이미 끝난 마이그레이션 결과를 앞당겨 반영한다.
      *
      * <p>완료 여부는 작업 결과를 직접 조회해 판단하는데, 신청을 MIGRATING에서 되돌리는 것은 3초 주기
@@ -89,6 +85,10 @@ public class PodMigrationService {
         }
     }
 
+    /**
+     * 신청을 MIGRATING으로 바꾸고 마이그레이션 작업을 등록한다. 행 잠금과 상태 전환을 같은 트랜잭션에서 커밋해야
+     * 동시에 들어온 두 번째 요청이 상태 검증에서 막힌다. 등록이 실패하면 FULFILLED로 되돌린다.
+     */
     public void startMigration(Long requestId, MigratePodRequestDTO dto) {
         settleFinishedMigration(requestId);
         final String[] usernameRef = {null};

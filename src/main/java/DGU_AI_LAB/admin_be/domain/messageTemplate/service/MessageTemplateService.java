@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.messageTemplate.service;
 import DGU_AI_LAB.admin_be.domain.messageTemplate.entity.MessageTemplate;
 import DGU_AI_LAB.admin_be.domain.messageTemplate.repository.MessageTemplateRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.ClassPathResource;
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
+import java.text.MessageFormat;
 import java.util.*;
 
 /**
@@ -88,6 +90,7 @@ public class MessageTemplateService {
      */
     @Transactional
     public void update(String key, String value) {
+        requireValidPattern(value);
         repository.findById(key)
                 .ifPresentOrElse(
                         t -> t.updateValue(value),
@@ -109,6 +112,19 @@ public class MessageTemplateService {
     @Transactional
     public void reset(String key) {
         repository.deleteById(key);
+    }
+
+    /**
+     * 저장된 값은 발송 때마다 MessageFormat으로 해석된다(MessageSourceConfig). 짝이 맞지 않는 중괄호처럼
+     * 해석할 수 없는 값을 저장하면 이 키를 쓰는 알림이 모두 발송 시점에 실패하므로, 저장 전에 거른다.
+     */
+    private static void requireValidPattern(String value) {
+        try {
+            new MessageFormat(value);
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException("메시지 형식이 올바르지 않습니다(중괄호 짝을 확인하세요): " + e.getMessage(),
+                    ErrorCode.INVALID_INPUT_VALUE);
+        }
     }
 
     /**
