@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.global.auth.EmailDomainPolicy;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
@@ -7,6 +8,7 @@ import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.global.validation.ReservedLinuxNames;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
@@ -41,6 +43,9 @@ class UserLoginServiceTest {
     private UserLoginService userLoginService;
 
     @Mock
+    private ReservedLinuxNames reservedLinuxNames;
+
+    @Mock
     private UserRepository userRepository;
 
     @Mock
@@ -57,6 +62,9 @@ class UserLoginServiceTest {
 
     @Mock
     private ValueOperations<String, String> valueOperations;
+
+    @Mock
+    private EmailDomainPolicy emailDomainPolicy;
 
     private User activeUser;
 
@@ -94,6 +102,8 @@ class UserLoginServiceTest {
 
             ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
             verify(userRepository, times(1)).saveAndFlush(captor.capture());
+            // 웹 비밀번호가 곧 SSH 비밀번호다 — 가입 때 리눅스용 해시를 함께 만든다(평문은 남기지 않는다).
+            assertThat(captor.getValue().getUbuntuPasswordHash()).startsWith("$6$").doesNotContain("password123");
             // 가입 시 우분투 유저네임만 정해지고, 리눅스 계정(UID/GID)은 첫 승인 때 만들어진다.
             assertThat(captor.getValue().getUbuntuUsername()).isEqualTo("honggildong");
             assertThat(captor.getValue().hasUbuntuAccount()).isFalse();
@@ -114,6 +124,24 @@ class UserLoginServiceTest {
             assertThatThrownBy(() -> userLoginService.register(dto))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DUPLICATE_USERNAME);
+
+            verify(userRepository, never()).saveAndFlush(any(User.class));
+        }
+
+        @Test
+        @DisplayName("시스템 예약 이름으로 가입하면 UBUNTU_USERNAME_RESERVED를 던지고 저장하지 않는다")
+        void register_throwsException_whenUbuntuUsernameReserved() {
+            when(redisTemplate.hasKey("VERIFIED:test@dgu.ac.kr")).thenReturn(true);
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.empty());
+            when(reservedLinuxNames.contains("www-data")).thenReturn(true);
+
+            UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "www-data"
+            );
+
+            assertThatThrownBy(() -> userLoginService.register(dto))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_USERNAME_RESERVED);
 
             verify(userRepository, never()).saveAndFlush(any(User.class));
         }
@@ -232,6 +260,63 @@ class UserLoginServiceTest {
         }
 
         @Test
+        @DisplayName("SSH 비밀번호 해시가 없는 계정은 로그인한 비밀번호로 그 칸만 조건부로 채운다")
+        void login_fillsSshPasswordHashWhenAbsent() {
+            ReflectionTestUtils.setField(activeUser, "userId", 7L);
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
+            when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+            userLoginService.login(new UserLoginRequestDTO("test@dgu.ac.kr", "password123"));
+
+            ArgumentCaptor<String> hash = ArgumentCaptor.forClass(String.class);
+            verify(userRepository).replaceWeakUbuntuPasswordHash(eq(7L), hash.capture(), eq("$6$rounds=656000$"));
+            assertThat(hash.getValue()).startsWith("$6$rounds=656000$").doesNotContain("password123");
+            verify(userRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("옛 반복 횟수(기본 5000회)로 만든 SSH 해시는 로그인 때 지금 강도로 다시 만든다")
+        void login_upgradesWeakSshPasswordHash() {
+            ReflectionTestUtils.setField(activeUser, "userId", 7L);
+            activeUser.changeUbuntuPasswordHash("$6$oldsalt$" + "a".repeat(86));
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
+            when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+            userLoginService.login(new UserLoginRequestDTO("test@dgu.ac.kr", "password123"));
+
+            ArgumentCaptor<String> hash = ArgumentCaptor.forClass(String.class);
+            verify(userRepository).replaceWeakUbuntuPasswordHash(eq(7L), hash.capture(), eq("$6$rounds=656000$"));
+            assertThat(hash.getValue()).startsWith("$6$rounds=656000$");
+        }
+
+        @Test
+        @DisplayName("SSH 비밀번호 해시가 이미 지금 강도면 로그인에서 건드리지 않는다")
+        void login_keepsExistingSshPasswordHash() {
+            activeUser.changeUbuntuPasswordHash("$6$rounds=656000$existing$hash");
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
+            when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+            userLoginService.login(new UserLoginRequestDTO("test@dgu.ac.kr", "password123"));
+
+            verify(userRepository, never()).replaceWeakUbuntuPasswordHash(any(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("비밀번호가 틀리면 SSH 비밀번호 해시를 채우지 않는다")
+        void login_wrongPassword_doesNotFillHash() {
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
+            when(passwordEncoder.matches("wrong", "encodedPassword")).thenReturn(false);
+
+            assertThatThrownBy(() -> userLoginService.login(new UserLoginRequestDTO("test@dgu.ac.kr", "wrong")))
+                    .isInstanceOf(UnauthorizedException.class);
+            verify(userRepository, never()).replaceWeakUbuntuPasswordHash(any(), anyString(), anyString());
+        }
+
+        @Test
         @DisplayName("존재하지 않는 이메일로 로그인하면 UnauthorizedException을 던진다")
         void login_throwsException_whenEmailNotFound() {
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);
@@ -242,6 +327,8 @@ class UserLoginServiceTest {
             assertThatThrownBy(() -> userLoginService.login(dto))
                     .isInstanceOf(UnauthorizedException.class);
             verify(valueOperations).increment("LOGIN_FAIL:notexist@dgu.ac.kr");
+            // 있는 계정과 응답 시간이 같도록 없는 이메일에도 BCrypt 검사를 한 번 돌린다
+            verify(passwordEncoder, times(1)).matches(eq("password"), any());
         }
 
         @Test
@@ -259,11 +346,36 @@ class UserLoginServiceTest {
 
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);
             when(userRepository.findByEmail("inactive@dgu.ac.kr")).thenReturn(Optional.of(inactiveUser));
+            when(passwordEncoder.matches("password", "encodedPassword")).thenReturn(true);
 
             UserLoginRequestDTO dto = new UserLoginRequestDTO("inactive@dgu.ac.kr", "password");
 
             assertThatThrownBy(() -> userLoginService.login(dto))
-                    .isInstanceOf(UnauthorizedException.class);
+                    .isInstanceOf(UnauthorizedException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCode.ACCOUNT_DISABLED);
+        }
+
+        @Test
+        @DisplayName("비활성 계정이라도 비밀번호가 틀리면 비활성 여부를 알리지 않고 일반 로그인 실패로 답한다")
+        void login_disabledAccountWithWrongPassword_doesNotRevealAccount() {
+            User inactiveUser = User.builder()
+                    .email("inactive@dgu.ac.kr")
+                    .password("encodedPassword")
+                    .name("비활성유저")
+                    .studentId("2021000001")
+                    .phone("010-0000-0000")
+                    .department("컴퓨터공학과")
+                    .build();
+            inactiveUser.withdraw();
+
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(userRepository.findByEmail("inactive@dgu.ac.kr")).thenReturn(Optional.of(inactiveUser));
+            when(passwordEncoder.matches("wrong", "encodedPassword")).thenReturn(false);
+
+            assertThatThrownBy(() -> userLoginService.login(new UserLoginRequestDTO("inactive@dgu.ac.kr", "wrong")))
+                    .isInstanceOf(UnauthorizedException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCode.INVALID_LOGIN_INFO);
+            verify(valueOperations).increment("LOGIN_FAIL:inactive@dgu.ac.kr");
         }
 
         @Test

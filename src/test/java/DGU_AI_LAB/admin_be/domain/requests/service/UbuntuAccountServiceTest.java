@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -25,15 +26,17 @@ class UbuntuAccountServiceTest {
     private UbuntuAccountService ubuntuAccountService;
 
     @Mock
-    private OperationJobService operationJobService;
+    private JobClient jobClient;
 
     @Test
-    @DisplayName("계정 회수 작업을 신청 번호·노드와 함께 등록하고 끝날 때까지 기다린다 — Pod는 대상이 아니다")
-    void registersAccountRevokeAndWaits() {
-        ubuntuAccountService.deleteUbuntuAccount("testuser", "farm2", 4821L);
+    @DisplayName("계정 회수 작업을 신청 번호·노드와 함께 등록하고 작업 번호를 돌려준다 — Pod는 대상이 아니다")
+    void registersAccountRevoke() {
+        when(jobClient.registerRevoke(any(), any())).thenReturn(77L);
+
+        assertThat(ubuntuAccountService.registerAccountRevoke("testuser", "farm2", 4821L)).isEqualTo(77L);
 
         ArgumentCaptor<RevokeRegisterRequestDTO> captor = ArgumentCaptor.forClass(RevokeRegisterRequestDTO.class);
-        verify(operationJobService).revokeAndWait(captor.capture(), eq(ErrorCode.UBUNTU_USER_DELETION_FAILED));
+        verify(jobClient).registerRevoke(captor.capture(), eq(ErrorCode.UBUNTU_USER_DELETION_FAILED));
         RevokeRegisterRequestDTO body = captor.getValue();
         assertThat(body.requestId()).isEqualTo(4821L);
         assertThat(body.username()).isEqualTo("testuser");
@@ -45,21 +48,21 @@ class UbuntuAccountServiceTest {
     @Test
     @DisplayName("신청 번호가 없으면 작업을 등록하지 않고 실패한다 — 작업은 신청 번호로만 식별된다")
     void requiresRequestId() {
-        assertThatThrownBy(() -> ubuntuAccountService.deleteUbuntuAccount("testuser", "farm2", null))
+        assertThatThrownBy(() -> ubuntuAccountService.registerAccountRevoke("testuser", "farm2", null))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_USER_DELETION_FAILED);
 
-        verifyNoInteractions(operationJobService);
+        verifyNoInteractions(jobClient);
     }
 
     @Test
-    @DisplayName("회수 작업이 실패하면 예외를 그대로 전파한다")
-    void propagatesJobFailure() {
-        doThrow(new BusinessException("회수 작업 실패: ACCOUNT_IN_USE", ErrorCode.UBUNTU_USER_DELETION_FAILED))
-                .when(operationJobService).revokeAndWait(any(), any());
+    @DisplayName("등록이 실패하면 예외를 그대로 전파한다")
+    void propagatesRegistrationFailure() {
+        when(jobClient.registerRevoke(any(), any()))
+                .thenThrow(new BusinessException("작업 등록 실패", ErrorCode.UBUNTU_USER_DELETION_FAILED));
 
-        assertThatThrownBy(() -> ubuntuAccountService.deleteUbuntuAccount("testuser", "farm2", 1L))
+        assertThatThrownBy(() -> ubuntuAccountService.registerAccountRevoke("testuser", "farm2", 1L))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("ACCOUNT_IN_USE");
+                .hasMessageContaining("작업 등록 실패");
     }
 }

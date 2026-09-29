@@ -35,13 +35,13 @@ public class AdminUserController implements AdminUserApi {
     @DeleteMapping("/{id}")
     public ResponseEntity<SuccessResponse<?>> deleteUser(@PathVariable Long id) {
         adminUserService.deleteUser(id);
-        return SuccessResponse.ok(null);
+        return SuccessResponse.accepted(null);
     }
 
     @DeleteMapping("/{id}/ubuntu-account")
     public ResponseEntity<SuccessResponse<?>> deleteUbuntuAccount(@PathVariable Long id) {
         adminUserService.deleteUbuntuAccountOfUser(id);
-        return SuccessResponse.ok(null);
+        return SuccessResponse.accepted(null);
     }
 
     /** 활성 상태 변경. {"active": false}면 비활성화(컨테이너·계정 정리), true면 재활성화. */

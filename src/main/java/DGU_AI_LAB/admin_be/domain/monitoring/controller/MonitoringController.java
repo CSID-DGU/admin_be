@@ -1,4 +1,4 @@
-// Prometheus에서 서버별 GPU 사용량·활성 컨테이너를 조회하는 공개 모니터링 엔드포인트
+// Prometheus에서 서버별 GPU 사용량·활성 컨테이너를 조회하는 모니터링 엔드포인트(로그인 필요)
 package DGU_AI_LAB.admin_be.domain.monitoring.controller;
 
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;

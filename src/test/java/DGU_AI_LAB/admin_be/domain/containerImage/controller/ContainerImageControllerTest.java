@@ -24,7 +24,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(
-        value = ContainerImageController.class,
+        value = {ContainerImageController.class, AdminContainerImageController.class},
         excludeAutoConfiguration = {SecurityAutoConfiguration.class}
 )
 class ContainerImageControllerTest extends WebMvcTestSupport {
@@ -50,7 +50,7 @@ class ContainerImageControllerTest extends WebMvcTestSupport {
     }
 
     @Nested
-    @DisplayName("POST /api/images")
+    @DisplayName("POST /api/admin/images")
     class CreateImage {
 
         @Test
@@ -62,7 +62,7 @@ class ContainerImageControllerTest extends WebMvcTestSupport {
                     "pytorch", "2.1.0", "11.8", "PyTorch 2.1.0"
             );
 
-            mockMvc.perform(post("/api/images")
+            mockMvc.perform(post("/api/admin/images")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())

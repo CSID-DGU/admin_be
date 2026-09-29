@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -22,6 +23,9 @@ class UserRepositoryTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private TestEntityManager entityManager;
 
     private User user1;
     private User user2;
@@ -84,6 +88,28 @@ class UserRepositoryTest {
             List<User> result = userRepository.findInactiveUsers(thresholdDate);
 
             assertThat(result).extracting(User::getEmail).contains("active@dgu.ac.kr");
+        }
+    }
+
+    @Nested
+    @DisplayName("replaceWeakUbuntuPasswordHash")
+    class ReplaceWeakUbuntuPasswordHash {
+
+        private static final String CURRENT = "$6$rounds=656000$";
+
+        @Test
+        @DisplayName("비어 있거나 옛 강도 해시만 바꾸고, 지금 강도 해시는 그대로 둔다")
+        void replacesOnlyMissingOrWeakHash() {
+            user2.changeUbuntuPasswordHash("$6$oldsalt$old");
+            userRepository.saveAndFlush(user2);
+
+            assertThat(userRepository.replaceWeakUbuntuPasswordHash(user1.getUserId(), CURRENT + "s$new1", CURRENT)).isEqualTo(1);
+            assertThat(userRepository.replaceWeakUbuntuPasswordHash(user2.getUserId(), CURRENT + "s$new2", CURRENT)).isEqualTo(1);
+            assertThat(userRepository.replaceWeakUbuntuPasswordHash(user2.getUserId(), CURRENT + "s$new3", CURRENT)).isZero();
+            entityManager.clear();
+
+            assertThat(userRepository.findById(user2.getUserId()).orElseThrow().getUbuntuPasswordHash())
+                    .isEqualTo(CURRENT + "s$new2");
         }
     }
 }

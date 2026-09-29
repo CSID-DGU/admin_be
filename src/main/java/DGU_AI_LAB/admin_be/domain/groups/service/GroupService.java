@@ -73,7 +73,7 @@ public class GroupService {
         TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
         txTemplate.executeWithoutResult(status -> {
             if (StringUtils.hasText(dto.ubuntuUsername())) {
-                if (!requestRepository.existsByUbuntuUsernameAndUser_UserId(dto.ubuntuUsername(), userId)) {
+                if (!requestRepository.existsByUser_UbuntuUsernameAndUser_UserId(dto.ubuntuUsername(), userId)) {
                     throw new BusinessException(ErrorCode.FORBIDDEN_REQUEST);
                 }
             }

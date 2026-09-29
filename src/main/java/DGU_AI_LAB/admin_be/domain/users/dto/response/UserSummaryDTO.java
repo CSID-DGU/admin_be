@@ -25,6 +25,8 @@ public record UserSummaryDTO(
         String department,
         @Schema(description = "계정 활성화 여부", example = "true")
         Boolean isActive,
+        @Schema(description = "우분투 계정 상태(NONE·ACTIVE·RELEASING). RELEASING이면 회수 작업이 도는 중", example = "ACTIVE")
+        String ubuntuAccountStatus,
         @Schema(description = "계정 생성 일시", example = "2026-01-09T15:25:28")
         LocalDateTime createdAt,
         @Schema(description = "계정 수정 일시", example = "2026-01-09T15:25:28")
@@ -40,6 +42,7 @@ public record UserSummaryDTO(
                 .phone(user.getPhone())
                 .department(user.getDepartment())
                 .isActive(user.getIsActive())
+                .ubuntuAccountStatus(user.getUbuntuAccountStatus().name())
                 .createdAt(user.getCreatedAt())
                 .updatedAt(user.getUpdatedAt())
                 .build();

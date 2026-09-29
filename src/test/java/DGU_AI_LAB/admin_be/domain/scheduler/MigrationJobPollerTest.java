@@ -1,10 +1,11 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
+import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
-import DGU_AI_LAB.admin_be.domain.requests.service.OperationJobService;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodMigrationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,22 +27,22 @@ import static org.mockito.Mockito.*;
 class MigrationJobPollerTest {
 
     @Mock private RequestRepository requestRepository;
-    @Mock private OperationJobService operationJobService;
+    @Mock private JobClient jobClient;
     @Mock private PodMigrationService podMigrationService;
 
     private MigrationJobPoller poller;
 
     @BeforeEach
     void setUp() {
-        poller = new MigrationJobPoller(requestRepository, operationJobService, podMigrationService);
+        poller = new MigrationJobPoller(requestRepository, jobClient, new InMemoryAlertDeduplicator(), podMigrationService);
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(1L);
-        when(request.getMigrationJobId()).thenReturn(5L); // given()의 작업 번호와 같다
+        when(request.getJobId()).thenReturn(5L); // given()의 작업 번호와 같다
         when(requestRepository.findAllByStatus(Status.MIGRATING)).thenReturn(List.of(request));
     }
 
     private void given(String phase, String errorCode, JobResultResponseDTO.Result made) {
-        when(operationJobService.getResult("migrate", 1L))
+        when(jobClient.getResult("migrate", 1L))
                 .thenReturn(new JobResultResponseDTO("1", "migrate", 5L, phase, errorCode, null, made));
     }
 
@@ -81,11 +82,24 @@ class MigrationJobPollerTest {
     }
 
     @Test
+    @DisplayName("결과 반영이 예외로 실패해도(기본 구현은 알리지 않음) 폴러는 죽지 않고 조용히 넘어간다 — 회귀 확인")
+    void applyFailureIsSilentByDefault() {
+        JobResultResponseDTO.Result made = new JobResultResponseDTO.Result(null, null, "p", "farm7", List.of());
+        given("SUCCESS", null, made);
+        doThrow(new RuntimeException("db busy")).when(podMigrationService).completeMigrationJob(1L, made);
+
+        poller.pollMigrationJobs(); // 예외가 밖으로 나가면 이 시험 자체가 실패한다
+
+        verify(podMigrationService).completeMigrationJob(1L, made);
+        verifyNoMoreInteractions(podMigrationService);
+    }
+
+    @Test
     @DisplayName("재마이그레이션 직후 보이는 이전 작업의 결과는 반영하지 않는다")
     void ignoresPreviousJobResult() {
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(1L);
-        when(request.getMigrationJobId()).thenReturn(6L);
+        when(request.getJobId()).thenReturn(6L);
         when(requestRepository.findAllByStatus(Status.MIGRATING)).thenReturn(List.of(request));
         given("SUCCESS", null, null);
 

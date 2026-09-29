@@ -27,9 +27,8 @@ public interface RequestApi {
     @Operation(
             summary = "서버 사용 신청 생성",
             description = "로그인된 사용자의 서버 사용 신청을 생성합니다. " +
-                    "ubuntuPassword는 계정 비밀번호가 아직 없을 때(첫 신청)만 받습니다. 평문은 즉시 SHA-512 crypt " +
-                    "해시로 바꿔 웹 계정에 저장하고, 평문은 저장하지 않습니다. 이미 있으면 보내도 무시합니다(변경은 " +
-                    "PATCH /api/users/me/ubuntu-password). " +
+                    "SSH(Ubuntu) 비밀번호는 웹 계정 비밀번호와 같아 따로 받지 않습니다. 리눅스용 해시가 아직 없는 " +
+                    "세션(해시가 생기기 전에 로그인)이면 400 UBUNTU_PASSWORD_REQUIRED — 다시 로그인하면 채워집니다. " +
                     "배정 안내 메일에도 비밀번호는 들어가지 않습니다."
     )
     @ApiResponse(responseCode = "201", description = "신청 생성 성공",

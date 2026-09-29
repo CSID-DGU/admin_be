@@ -81,8 +81,8 @@ class DashboardServiceTest {
         @DisplayName("요청이 여러 개여도 노드 조회는 findAllByResourceGroupIn 한 번만 호출한다 (N+1 방지)")
         void getUserServers_callsBatchNodeQuery_onceForAllResourceGroups() {
             ResourceGroup rg = new ResourceGroup(1, "rg-name", "desc", "server1");
-            Request req1 = Request.builder().resourceGroup(rg).ubuntuUsername("user1").build();
-            Request req2 = Request.builder().resourceGroup(rg).ubuntuUsername("user2").build();
+            Request req1 = Request.builder().resourceGroup(rg).build();
+            Request req2 = Request.builder().resourceGroup(rg).build();
             Node node = Node.builder().nodeId("node-1").resourceGroup(rg).cpuCoreCount(8).memorySizeGB(32).build();
 
             when(requestRepository.findAllByUser_UserId(1L)).thenReturn(List.of(req1, req2));
@@ -99,7 +99,7 @@ class DashboardServiceTest {
         @DisplayName("노드 정보를 DTO에 올바르게 매핑한다")
         void getUserServers_mapsNodeInfoToDTO() {
             ResourceGroup rg = new ResourceGroup(1, "rg-name", "desc", "server1");
-            Request req = Request.builder().resourceGroup(rg).ubuntuUsername("user1").build();
+            Request req = Request.builder().resourceGroup(rg).build();
             Node node = Node.builder().nodeId("node-1").resourceGroup(rg).cpuCoreCount(16).memorySizeGB(64).build();
 
             when(requestRepository.findAllByUser_UserId(1L)).thenReturn(List.of(req));
@@ -117,7 +117,7 @@ class DashboardServiceTest {
         @Test
         @DisplayName("ResourceGroup이 없는 요청도 정상 처리된다")
         void getUserServers_handlesNullResourceGroup() {
-            Request req = Request.builder().ubuntuUsername("user1").resourceGroup(null).build();
+            Request req = Request.builder().resourceGroup(null).build();
 
             when(requestRepository.findAllByUser_UserId(1L)).thenReturn(List.of(req));
             when(nodeRepository.findAllByResourceGroupIn(anySet())).thenReturn(List.of());

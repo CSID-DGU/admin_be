@@ -30,6 +30,7 @@ public class ConfigRequestService {
     private final PortRequestRepository portRequestRepository;
     private final NodeRepository nodeRepository;
     private final GroupRepository groupRepository;
+    private final ReservedLinuxNames reservedLinuxNames;
 
     /**
      * ubuntu username 중복 검사 — 웹 계정 기준이다.
@@ -38,7 +39,7 @@ public class ConfigRequestService {
      */
     @Transactional(readOnly = true)
     public boolean isUbuntuUsernameAvailable(String username) {
-        return !ReservedLinuxNames.contains(username)
+        return !reservedLinuxNames.contains(username)
                 && !userRepository.existsByUbuntuUsername(username)
                 && !groupRepository.existsByGroupName(username);
     }

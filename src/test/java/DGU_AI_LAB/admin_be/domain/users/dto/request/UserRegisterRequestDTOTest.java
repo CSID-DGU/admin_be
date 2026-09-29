@@ -9,7 +9,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -182,22 +181,7 @@ class UserRegisterRequestDTOTest {
     }
 
     @Test
-    @DisplayName("시스템 계정 이름은 거절한다")
-    void ubuntuUsername_reserved_isRejected() {
-        assertThat(violatedFields(registerWithUbuntuUsername("root"))).contains("ubuntuUsername");
-        assertThat(violatedFields(registerWithUbuntuUsername("svmanager"))).contains("ubuntuUsername");
-    }
-
-    @Test
-    @DisplayName("원장 시드의 시스템 계정과 이미지 그룹 이름은 거절한다 — 승인 뒤 계정 생성 실패를 가입 단계에서 막는다")
-    void ubuntuUsername_imageAccountOrGroupName_isRejected() {
-        for (String name : List.of("www-data", "backup", "messagebus", "docker", "sudo", "video", "users", "staff")) {
-            assertThat(violatedFields(registerWithUbuntuUsername(name))).as(name).contains("ubuntuUsername");
-        }
-    }
-
-    @Test
-    @DisplayName("소문자/숫자/하이픈 조합은 통과하고, 예약어를 포함하기만 한 이름도 통과한다")
+    @DisplayName("소문자/숫자/하이픈 조합은 통과한다 — 시스템 예약 이름은 서비스 계층이 거른다")
     void ubuntuUsername_validPattern_isAccepted() {
         assertThat(violatedFields(registerWithUbuntuUsername("so-eun-2024"))).doesNotContain("ubuntuUsername");
         assertThat(violatedFields(registerWithUbuntuUsername("exp-fu-yoon6yo"))).doesNotContain("ubuntuUsername");

@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller;
 
+import DGU_AI_LAB.admin_be.domain.requests.job.JobHistoryService;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestQueryService;
 import DGU_AI_LAB.admin_be.support.WebMvcTestSupport;
@@ -17,7 +18,6 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doNothing;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-import DGU_AI_LAB.admin_be.domain.requests.service.OperationJobService;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodMigrationService;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -40,7 +40,7 @@ class AdminRequestControllerTest extends WebMvcTestSupport {
     @MockitoBean private AdminRequestCommandService adminRequestCommandService;
     @MockitoBean private AdminRequestQueryService adminRequestQueryService;
     @MockitoBean private PodMigrationService podMigrationService;
-    @MockitoBean private OperationJobService operationJobService;
+    @MockitoBean private JobHistoryService jobHistoryService;
     @MockitoBean private RequestExpiryService requestExpiryService;
 
     @Test
@@ -90,11 +90,21 @@ class AdminRequestControllerTest extends WebMvcTestSupport {
     @DisplayName("DELETE /{id}/container: 그 신청의 컨테이너만 회수한다 — 사용자 단위 정리 경로를 타지 않는다")
     void containerDeleteIsScopedToOneRequest() throws Exception {
         mockMvc.perform(delete("/api/admin/requests/15/container"))
-                .andExpect(status().isOk());
+                .andExpect(status().isAccepted());
 
         // 경로의 신청 번호 하나로만 회수한다. 예전에는 화면의 이 버튼이 계정 회수 API를 불러
         // 그 사용자의 컨테이너가 전부 사라졌다 — 그 회귀를 여기서 막는다.
         verify(requestExpiryService).deleteContainerByAdmin(15L);
+        verifyNoInteractions(adminRequestCommandService);
+    }
+
+    @Test
+    @DisplayName("POST /{id}/container/force-complete: 경로의 신청 번호를 강제 완료 처리하고 200을 반환한다")
+    void forceCompleteRevoke() throws Exception {
+        mockMvc.perform(post("/api/admin/requests/16/container/force-complete"))
+                .andExpect(status().isOk());
+
+        verify(requestExpiryService).forceCompleteRevoke(16L);
         verifyNoInteractions(adminRequestCommandService);
     }
 }

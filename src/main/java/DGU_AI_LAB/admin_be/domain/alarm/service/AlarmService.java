@@ -185,6 +185,40 @@ public class AlarmService {
         sendMonitoringLog(user.getName(), user.getEmail(), subject);
     }
 
+    /**
+     * [접속 포트 변경 안내 메일] 마이그레이션으로 새 Pod에 다른 포트가 배정됐을 때 보낸다. 사용자가 저장해 둔
+     * SSH 설정이 조용히 끊기지 않게 생성 안내와 같은 방식(포워딩 서버는 공인 포트)으로 새 접속 정보를 알린다.
+     * 포트는 커밋된 신청의 포트 기록에서 읽는다.
+     */
+    public void sendContainerPortsChangedEmail(Request request) {
+        User user = request.getUser();
+        String serverName = request.getResourceGroup().getServerName();
+        List<PodExternalPort> allPorts = podExternalPortRepository.findByRequestRequestId(request.getRequestId());
+
+        String sshPort = serverProfileRegistry.publicPort(serverName, externalPortOf(allPorts, "ssh"));
+        String jupyterPort = serverProfileRegistry.publicPort(serverName, externalPortOf(allPorts, "jupyter"));
+
+        String subject = messageUtils.get("email.container.ports-changed.subject", serverName);
+        String body = messageUtils.get("email.container.ports-changed.body",
+                user.getName(),                                   // {0}
+                request.getUbuntuUsername(),                      // {1}
+                sshPort,                                          // {2}
+                jupyterPort,                                      // {3}
+                resolveHostIp(serverName),                        // {4}
+                PodPortUtils.formatExtraPortSummary(allPorts));   // {5}
+
+        sendMailAlert(user.getEmail(), subject, body);
+        sendMonitoringLog(user.getName(), user.getEmail(), subject);
+    }
+
+    private static String externalPortOf(List<PodExternalPort> ports, String purpose) {
+        return ports.stream()
+                .filter(p -> purpose.equalsIgnoreCase(p.getUsagePurpose()))
+                .map(p -> String.valueOf(p.getExternalPort()))
+                .findFirst()
+                .orElse("");
+    }
+
     private String resolveHostIp(String serverName) {
         return serverProfileRegistry.publicHost(serverName).orElseGet(() -> {
             log.warn("호스트 주소 미상 serverName={}", serverName);

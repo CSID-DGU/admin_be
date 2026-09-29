@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.global.auth.EmailDomainPolicy;
+import DGU_AI_LAB.admin_be.global.validation.ReservedLinuxNames;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
@@ -33,6 +35,9 @@ class UserLoginServiceLoggingTest {
     private UserLoginService userLoginService;
 
     @Mock
+    private ReservedLinuxNames reservedLinuxNames;
+
+    @Mock
     private UserRepository userRepository;
 
     @Mock
@@ -46,6 +51,9 @@ class UserLoginServiceLoggingTest {
 
     @Mock
     private RedisTemplate<String, String> redisTemplate;
+
+    @Mock
+    private EmailDomainPolicy emailDomainPolicy;
 
     @Test
     @DisplayName("회원가입 완료 로그에 이메일 주소가 남지 않는다")

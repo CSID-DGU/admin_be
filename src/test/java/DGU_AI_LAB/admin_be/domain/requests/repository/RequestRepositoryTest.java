@@ -69,7 +69,6 @@ class RequestRepositoryTest {
                 .build());
 
         pendingRequest = requestRepository.save(Request.builder()
-                .ubuntuUsername("pendinguser")
                 .expiresAt(LocalDateTime.now().plusDays(30))
                 .usagePurpose("연구 목적")
                 .formAnswers("{}")
@@ -78,22 +77,31 @@ class RequestRepositoryTest {
                 .containerImage(containerImage)
                 .build());
 
-        Request req2 = Request.builder()
+        User fulfilledOwner = userRepository.save(User.builder()
+                .email("fulfilled@dgu.ac.kr")
+                .password("encoded")
+                .name("김철수")
+                .studentId("2021005678")
+                .phone("010-3333-4444")
+                .department("컴퓨터공학과")
                 .ubuntuUsername("fulfilleduser")
+                .build());
+
+        Request req2 = Request.builder()
                 .expiresAt(LocalDateTime.now().plusDays(60))
                 .usagePurpose("머신러닝")
                 .formAnswers("{}")
-                .user(user)
+                .user(fulfilledOwner)
                 .resourceGroup(resourceGroup)
                 .containerImage(containerImage)
                 .build();
-        req2.approve(containerImage, resourceGroup, null);
+        req2.markAsProcessing();
+        req2.prepareAsyncApproval(containerImage, resourceGroup, null);
+        req2.completeApproval();
         fulfilledRequest = requestRepository.save(req2);
 
-        // 같은 유저네임을 쓰는 종료된 이력 — 유저네임이 웹 계정 단위로 고정되면서
-        // Request.ubuntuUsername의 unique 제약이 사라졌음을 함께 검증한다.
+        // 같은 사용자(같은 유저네임)의 종료된 이력.
         Request denied = Request.builder()
-                .ubuntuUsername("pendinguser")
                 .expiresAt(LocalDateTime.now().plusDays(10))
                 .usagePurpose("지난 신청")
                 .formAnswers("{}")
@@ -114,7 +122,7 @@ class RequestRepositoryTest {
         void findAllByUser_returnsUserRequests() {
             List<Request> result = requestRepository.findAllByUser(user);
 
-            assertThat(result).hasSize(3);
+            assertThat(result).hasSize(2);
         }
     }
 
@@ -206,7 +214,7 @@ class RequestRepositoryTest {
         void findAllByUserUserId_returnsRequests() {
             List<Request> result = requestRepository.findAllByUser_UserId(user.getUserId());
 
-            assertThat(result).hasSize(3);
+            assertThat(result).hasSize(2);
         }
     }
 

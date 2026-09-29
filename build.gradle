@@ -44,6 +44,9 @@ dependencies {
 
 	// mysql
 	implementation 'mysql:mysql-connector-java:8.0.32'
+	// 스키마 변경은 Flyway 버전 파일로만 한다(src/main/resources/db/migration). ddl-auto는 validate.
+	implementation 'org.flywaydb:flyway-core'
+	implementation 'org.flywaydb:flyway-mysql'
 
 	//redis
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'

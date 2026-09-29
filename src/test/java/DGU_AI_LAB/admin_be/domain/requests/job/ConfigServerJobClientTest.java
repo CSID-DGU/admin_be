@@ -1,9 +1,8 @@
-package DGU_AI_LAB.admin_be.domain.requests.service;
+package DGU_AI_LAB.admin_be.domain.requests.job;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ProvisionRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.UserCreationRequestDTO;
-import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobHistoryResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobStepsResponseDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -23,7 +22,6 @@ import org.mockito.quality.Strictness;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -35,8 +33,8 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
-@DisplayName("OperationJobService")
-class OperationJobServiceTest {
+@DisplayName("ConfigServerJobClient")
+class ConfigServerJobClientTest {
 
     @Mock private WebClient configWebClient;
     @Mock private WebClient.RequestBodyUriSpec postUriSpec;
@@ -46,15 +44,14 @@ class OperationJobServiceTest {
     @Mock private WebClient.RequestHeadersSpec<?> getHeadersSpec;
     @Mock private WebClient.ResponseSpec responseSpec;
 
-    private OperationJobService service;
+    private ConfigServerJobClient service;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setUp() {
-        // 대기 없이, 제한 시간 60초로 폴링한다(시간 초과 시험은 따로 0초짜리를 만든다).
-        service = new OperationJobService(configWebClient, 0, 60);
+        service = new ConfigServerJobClient(configWebClient);
 
         when(configWebClient.post()).thenReturn(postUriSpec);
         when(postUriSpec.uri(anyString())).thenReturn(postBodySpec);
@@ -83,12 +80,13 @@ class OperationJobServiceTest {
     }
 
     @Test
-    @DisplayName("회수 작업은 /operations/revoke로 등록한다")
+    @DisplayName("회수 작업은 /operations/revoke로 등록하고 작업 번호를 돌려준다")
     void registersRevoke() {
         RevokeRegisterRequestDTO body =
                 new RevokeRegisterRequestDTO(41L, "ailab-exp-np-001-abcd", "exp-np-001", "farm2", true);
+        when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "accepted", "job_id", 3617)));
 
-        service.registerRevoke(body);
+        assertThat(service.registerRevoke(body, ErrorCode.POD_DELETION_FAILED)).isEqualTo(3617L);
 
         verify(postUriSpec).uri("/operations/revoke");
         verify(postBodySpec).bodyValue(body);
@@ -102,7 +100,7 @@ class OperationJobServiceTest {
                 new JobResultResponseDTO.Result(50001L, 50001L, "ailab-exp-np-001-abcd", "farm2", List.of()));
         when(responseSpec.bodyToMono(JobResultResponseDTO.class)).thenReturn(Mono.just(expected));
 
-        JobResultResponseDTO actual = service.getResult(OperationJobService.KIND_PROVISION, 41L);
+        JobResultResponseDTO actual = service.getResult(JobResults.KIND_PROVISION, 41L);
 
         verify(getUriSpec).uri("/operations/provision/41");
         assertThat(actual).isEqualTo(expected);
@@ -113,73 +111,9 @@ class OperationJobServiceTest {
     void failsOnEmptyResult() {
         when(responseSpec.bodyToMono(JobResultResponseDTO.class)).thenReturn(Mono.empty());
 
-        assertThatThrownBy(() -> service.getResult(OperationJobService.KIND_PROVISION, 41L))
+        assertThatThrownBy(() -> service.getResult(JobResults.KIND_PROVISION, 41L))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EXTERNAL_API_ERROR);
-    }
-
-    private static JobStepsResponseDTO.Job jobStartedAt(long jobId, String startedAt) {
-        return new JobStepsResponseDTO.Job(jobId, startedAt, startedAt, "SUCCESS", null, List.of());
-    }
-
-    // 신청 생성 2026-09-15 10:20:41 (서울) = 01:20:41Z
-    private static final LocalDateTime REQUEST_CREATED_AT = LocalDateTime.of(2026, 9, 15, 10, 20, 41);
-
-    @Test
-    @DisplayName("작업 단계 기록은 생성·회수를 각각 조회해 함께 돌려준다")
-    void getsJobHistory() {
-        JobStepsResponseDTO provision = new JobStepsResponseDTO("41", "provision", List.of(jobStartedAt(183, "2026-09-15T04:12:06Z")));
-        JobStepsResponseDTO revoke = new JobStepsResponseDTO("41", "revoke", List.of());
-        when(responseSpec.bodyToMono(JobStepsResponseDTO.class)).thenReturn(Mono.just(provision), Mono.just(revoke));
-
-        JobHistoryResponseDTO history = service.getJobHistory(41L, REQUEST_CREATED_AT);
-
-        verify(getUriSpec).uri("/operations/provision/41/steps");
-        verify(getUriSpec).uri("/operations/revoke/41/steps");
-        assertThat(history.provision()).isEqualTo(provision);
-        assertThat(history.revoke()).isEqualTo(revoke);
-    }
-
-    @Test
-    @DisplayName("신청이 만들어지기 전에 시작된 작업은 같은 번호를 쓰던 옛 신청의 것이라 뺀다")
-    void dropsJobsStartedBeforeRequestCreated() {
-        JobStepsResponseDTO provision = new JobStepsResponseDTO("2", "provision", List.of(
-                jobStartedAt(275, "2026-09-15T04:24:23Z"),
-                jobStartedAt(103, "2026-09-14T23:58:24Z")));
-        JobStepsResponseDTO revoke = new JobStepsResponseDTO("2", "revoke", List.of(
-                jobStartedAt(123, "2026-09-14T23:59:58Z")));
-        when(responseSpec.bodyToMono(JobStepsResponseDTO.class)).thenReturn(Mono.just(provision), Mono.just(revoke));
-
-        JobHistoryResponseDTO history = service.getJobHistory(2L, REQUEST_CREATED_AT);
-
-        assertThat(history.provision().jobs()).extracting(JobStepsResponseDTO.Job::jobId).containsExactly(275L);
-        assertThat(history.revoke().jobs()).isEmpty();
-    }
-
-    @Test
-    @DisplayName("신청 직후 시작된 작업은 시계 차이가 조금 있어도 남긴다")
-    void keepsJobsWithinClockSkew() {
-        JobStepsResponseDTO provision = new JobStepsResponseDTO("2", "provision", List.of(
-                jobStartedAt(7, "2026-09-15T01:20:11Z")));
-        when(responseSpec.bodyToMono(JobStepsResponseDTO.class))
-                .thenReturn(Mono.just(provision), Mono.just(new JobStepsResponseDTO("2", "revoke", List.of())));
-
-        JobHistoryResponseDTO history = service.getJobHistory(2L, REQUEST_CREATED_AT);
-
-        assertThat(history.provision().jobs()).hasSize(1);
-    }
-
-    @Test
-    @DisplayName("시작 시각을 읽을 수 없는 작업은 거르지 않는다")
-    void keepsJobsWithUnreadableStart() {
-        JobStepsResponseDTO provision = new JobStepsResponseDTO("2", "provision", List.of(
-                jobStartedAt(7, null), jobStartedAt(8, "not-a-time")));
-        when(responseSpec.bodyToMono(JobStepsResponseDTO.class))
-                .thenReturn(Mono.just(provision), Mono.just(new JobStepsResponseDTO("2", "revoke", List.of())));
-
-        JobHistoryResponseDTO history = service.getJobHistory(2L, REQUEST_CREATED_AT);
-
-        assertThat(history.provision().jobs()).hasSize(2);
     }
 
     @Test
@@ -187,126 +121,54 @@ class OperationJobServiceTest {
     void failsOnEmptySteps() {
         when(responseSpec.bodyToMono(JobStepsResponseDTO.class)).thenReturn(Mono.empty());
 
-        assertThatThrownBy(() -> service.getSteps(OperationJobService.KIND_PROVISION, 41L))
+        assertThatThrownBy(() -> service.getSteps(JobResults.KIND_PROVISION, 41L))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EXTERNAL_API_ERROR);
     }
 
     @Nested
-    @DisplayName("revokeAndWait")
-    class RevokeAndWait {
+    @DisplayName("registerRevoke")
+    class RegisterRevoke {
 
         private final RevokeRegisterRequestDTO podRevoke =
                 new RevokeRegisterRequestDTO(41L, "ailab-exp-np-001-abcd", null, null, false);
-        private final RevokeRegisterRequestDTO accountRevoke =
-                new RevokeRegisterRequestDTO(41L, null, "exp-np-001", "farm2", true);
-
-        private JobResultResponseDTO revokeJob(String phase, String errorCode) {
-            return new JobResultResponseDTO("41", OperationJobService.KIND_REVOKE, 7L, phase, errorCode, null, null);
-        }
 
         @Test
-        @DisplayName("작업을 등록하고 성공할 때까지 결과를 조회한다")
-        void waitsUntilSuccess() {
-            when(responseSpec.bodyToMono(JobResultResponseDTO.class)).thenReturn(
-                    Mono.just(revokeJob(OperationJobService.PHASE_START, null)),
-                    Mono.just(revokeJob(OperationJobService.PHASE_SUCCESS, null)));
-
-            service.revokeAndWait(podRevoke, ErrorCode.POD_DELETION_FAILED);
-
-            verify(postUriSpec).uri("/operations/revoke");
-            verify(postBodySpec).bodyValue(podRevoke);
-            verify(getUriSpec, times(2)).uri("/operations/revoke/41");
-        }
-
-        @Test
-        @DisplayName("작업이 실패로 끝나면 호출자가 준 오류 코드로 실패한다")
-        void failsWithCallerErrorCode() {
-            when(responseSpec.bodyToMono(JobResultResponseDTO.class))
-                    .thenReturn(Mono.just(revokeJob(OperationJobService.PHASE_FAIL, "ACCOUNT_IN_USE")));
-
-            assertThatThrownBy(() -> service.revokeAndWait(accountRevoke, ErrorCode.UBUNTU_USER_DELETION_FAILED))
-                    .isInstanceOf(BusinessException.class)
-                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_USER_DELETION_FAILED)
-                    .hasMessageContaining("ACCOUNT_IN_USE");
-        }
-
-        @Test
-        @DisplayName("이미 없는 계정을 지우려다 실패한 것은 성공으로 본다 — 목표 상태에 이미 도달했다")
-        void accountAlreadyAbsentIsSuccess() {
-            when(responseSpec.bodyToMono(JobResultResponseDTO.class))
-                    .thenReturn(Mono.just(revokeJob(OperationJobService.PHASE_FAIL, "user not found")));
-
-            service.revokeAndWait(accountRevoke, ErrorCode.UBUNTU_USER_DELETION_FAILED);
-        }
-
-        @Test
-        @DisplayName("계정 회수가 아닌 작업의 user not found 실패는 성공으로 보지 않는다")
-        void userNotFoundOnPodRevokeIsFailure() {
-            when(responseSpec.bodyToMono(JobResultResponseDTO.class))
-                    .thenReturn(Mono.just(revokeJob(OperationJobService.PHASE_FAIL, "user not found")));
-
-            assertThatThrownBy(() -> service.revokeAndWait(podRevoke, ErrorCode.POD_DELETION_FAILED))
-                    .isInstanceOf(BusinessException.class);
-        }
-
-        @Test
-        @DisplayName("결과 불명이면 실패로 올린다 — 자원이 남았을 수 있어 호출자가 정리를 확정하면 안 된다")
-        void unknownIsFailure() {
-            when(responseSpec.bodyToMono(JobResultResponseDTO.class))
-                    .thenReturn(Mono.just(revokeJob(OperationJobService.PHASE_UNKNOWN, "DEGRADED")));
-
-            assertThatThrownBy(() -> service.revokeAndWait(podRevoke, ErrorCode.POD_DELETION_FAILED))
-                    .isInstanceOf(BusinessException.class)
-                    .hasMessageContaining("결과 불명");
-        }
-
-        @Test
-        @DisplayName("제한 시간 안에 끝나지 않으면 실패한다")
-        void timesOut() {
-            OperationJobService impatient = new OperationJobService(configWebClient, 0, 0);
-            when(responseSpec.bodyToMono(JobResultResponseDTO.class))
-                    .thenReturn(Mono.just(revokeJob(OperationJobService.PHASE_START, null)));
-
-            assertThatThrownBy(() -> impatient.revokeAndWait(podRevoke, ErrorCode.POD_DELETION_FAILED))
-                    .isInstanceOf(BusinessException.class)
-                    .hasMessageContaining("제한 시간");
-        }
-
-        @Test
-        @DisplayName("같은 신청의 회수 작업이 이미 진행 중이면(409) 새로 등록하지 않고 그 결과를 기다린다")
-        void alreadyRegisteredWaitsForExistingJob() {
+        @DisplayName("같은 신청의 회수 작업이 이미 진행 중이면(409) INVALID_REQUEST_STATUS로 알린다")
+        void conflictIsInvalidRequestStatus() {
             when(responseSpec.bodyToMono(Map.class))
                     .thenReturn(Mono.error(new BusinessException("이미 처리 중", ErrorCode.INVALID_REQUEST_STATUS)));
-            when(responseSpec.bodyToMono(JobResultResponseDTO.class))
-                    .thenReturn(Mono.just(revokeJob(OperationJobService.PHASE_SUCCESS, null)));
 
-            service.revokeAndWait(podRevoke, ErrorCode.POD_DELETION_FAILED);
-
-            verify(getUriSpec).uri("/operations/revoke/41");
+            assertThatThrownBy(() -> service.registerRevoke(podRevoke, ErrorCode.POD_DELETION_FAILED))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REQUEST_STATUS);
         }
 
         @Test
-        @DisplayName("등록 자체가 실패하면 결과를 조회하지 않고 실패한다")
-        void registrationFailureStops() {
-            when(responseSpec.bodyToMono(Map.class))
-                    .thenReturn(Mono.error(new BusinessException("작업 등록 실패", ErrorCode.POD_DELETION_FAILED)));
+        @DisplayName("예기치 않은 등록 오류는 호출자가 준 오류 코드로 올린다")
+        void unexpectedErrorUsesCallerCode() {
+            when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.error(new RuntimeException("connection reset")));
 
-            assertThatThrownBy(() -> service.revokeAndWait(podRevoke, ErrorCode.POD_DELETION_FAILED))
-                    .isInstanceOf(BusinessException.class);
-            verify(configWebClient, never()).get();
+            assertThatThrownBy(() -> service.registerRevoke(podRevoke, ErrorCode.UBUNTU_USER_DELETION_FAILED))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_USER_DELETION_FAILED);
         }
+    }
+
+    @Nested
+    @DisplayName("등록 실패의 원인 보존")
+    class RegistrationFailureCause {
 
         @Test
-        @DisplayName("결과 조회가 한 번 실패해도 다시 조회해 결과를 받는다")
-        void transientLookupFailureRetries() {
-            when(responseSpec.bodyToMono(JobResultResponseDTO.class)).thenReturn(
-                    Mono.error(new RuntimeException("connection reset")),
-                    Mono.just(revokeJob(OperationJobService.PHASE_SUCCESS, null)));
+        @DisplayName("등록 중 예기치 않은 오류는 원인을 잃지 않고 올린다 — 호출자가 연결 실패를 가려낸다")
+        void registerKeepsCause() {
+            when(responseSpec.bodyToMono(Map.class)).thenReturn(
+                    Mono.error(new RuntimeException(new java.net.ConnectException("refused"))));
 
-            service.revokeAndWait(podRevoke, ErrorCode.POD_DELETION_FAILED);
-
-            verify(getUriSpec, times(2)).uri("/operations/revoke/41");
+            assertThatThrownBy(() -> service.registerRevoke(
+                    new RevokeRegisterRequestDTO(41L, "pod", null, null, false), ErrorCode.POD_DELETION_FAILED))
+                    .isInstanceOf(BusinessException.class)
+                    .satisfies(e -> assertThat(JobResults.neverReachedServer(e)).isTrue());
         }
     }
 
@@ -388,7 +250,7 @@ class OperationJobServiceTest {
 
             JobResultResponseDTO result = objectMapper.readValue(body, JobResultResponseDTO.class);
 
-            assertThat(result.phase()).isEqualTo(OperationJobService.PHASE_SUCCESS);
+            assertThat(result.phase()).isEqualTo(JobResults.PHASE_SUCCESS);
             assertThat(result.jobId()).isEqualTo(12L);
             assertThat(result.result().uid()).isEqualTo(50001L);
             assertThat(result.result().podName()).isEqualTo("ailab-exp-np-001-abcd");
@@ -430,7 +292,7 @@ class OperationJobServiceTest {
             JobResultResponseDTO result = objectMapper.readValue(
                     "{\"request_id\":\"41\",\"kind\":\"provision\",\"phase\":\"none\"}", JobResultResponseDTO.class);
 
-            assertThat(result.phase()).isEqualTo(OperationJobService.PHASE_NONE);
+            assertThat(result.phase()).isEqualTo(JobResults.PHASE_NONE);
             assertThat(result.result()).isNull();
         }
     }

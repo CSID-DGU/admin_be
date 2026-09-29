@@ -1,5 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
@@ -11,6 +14,8 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,22 +47,32 @@ class PodMigrationServiceTest {
 
     @Mock private RequestRepository requestRepository;
     @Mock private PodExternalPortRepository podExternalPortRepository;
-    @Mock private OperationJobService operationJobService;
+    @Mock private JobClient jobClient;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
     @Mock private AlarmService alarmService;
     @Mock private Request request;
+    @Mock private User user;
+    @Mock private ResourceGroup resourceGroup;
 
     private PodMigrationService service;
 
     @BeforeEach
     void setUp() {
-        when(request.getMigrationJobId()).thenReturn(10L); // result()의 작업 번호와 같다
+        when(request.getJobId()).thenReturn(10L); // result()의 작업 번호와 같다
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
-        service = new PodMigrationService(requestRepository, podExternalPortRepository, operationJobService, transactionManager, alarmService);
+        service = new PodMigrationService(requestRepository, podExternalPortRepository, jobClient, transactionManager, alarmService,
+                new InMemoryAlertDeduplicator());
         when(request.getUbuntuUsername()).thenReturn("testuser");
         when(request.getPodName()).thenReturn("ailab-testuser-old");
         when(requestRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(request));
+        when(request.getUser()).thenReturn(user);
+        when(request.getResourceGroup()).thenReturn(resourceGroup);
+    }
+
+    private PodExternalPort port(String purpose, int internalPort, int externalPort) {
+        return PodExternalPort.builder().request(request).usagePurpose(purpose)
+                .internalPort(internalPort).externalPort(externalPort).build();
     }
 
     private static JobResultResponseDTO.Result migrated(String cleanup) {
@@ -75,9 +90,9 @@ class PodMigrationServiceTest {
     void settleIgnoresPreviousJobResult() {
         when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
         when(request.getStatus()).thenReturn(Status.MIGRATING);
-        when(request.getMigrationJobId()).thenReturn(11L);
-        when(operationJobService.getResult(OperationJobService.KIND_MIGRATE, 1L))
-                .thenReturn(result(OperationJobService.PHASE_SUCCESS, migrated(null)));
+        when(request.getJobId()).thenReturn(11L);
+        when(jobClient.getResult(JobResults.KIND_MIGRATE, 1L))
+                .thenReturn(result(JobResults.PHASE_SUCCESS, migrated(null)));
 
         service.settleFinishedMigration(1L);
 
@@ -90,8 +105,8 @@ class PodMigrationServiceTest {
     void settleAppliesFinishedResult() {
         when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
         when(request.getStatus()).thenReturn(Status.MIGRATING);
-        when(operationJobService.getResult(OperationJobService.KIND_MIGRATE, 1L))
-                .thenReturn(result(OperationJobService.PHASE_SUCCESS, migrated(null)));
+        when(jobClient.getResult(JobResults.KIND_MIGRATE, 1L))
+                .thenReturn(result(JobResults.PHASE_SUCCESS, migrated(null)));
 
         service.settleFinishedMigration(1L);
 
@@ -104,8 +119,8 @@ class PodMigrationServiceTest {
     void settleIgnoresRunningJob() {
         when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
         when(request.getStatus()).thenReturn(Status.MIGRATING);
-        when(operationJobService.getResult(OperationJobService.KIND_MIGRATE, 1L))
-                .thenReturn(result(OperationJobService.PHASE_START, null));
+        when(jobClient.getResult(JobResults.KIND_MIGRATE, 1L))
+                .thenReturn(result(JobResults.PHASE_START, null));
 
         service.settleFinishedMigration(1L);
 
@@ -120,7 +135,7 @@ class PodMigrationServiceTest {
 
         service.settleFinishedMigration(1L);
 
-        verify(operationJobService, never()).getResult(anyString(), any());
+        verify(jobClient, never()).getResult(anyString(), any());
     }
 
     @Test
@@ -130,7 +145,7 @@ class PodMigrationServiceTest {
 
         verify(request).beginMigration();
         ArgumentCaptor<MigrateRegisterRequestDTO> captor = ArgumentCaptor.forClass(MigrateRegisterRequestDTO.class);
-        verify(operationJobService).registerMigrate(captor.capture());
+        verify(jobClient).registerMigrate(captor.capture());
         assertThat(captor.getValue()).isEqualTo(new MigrateRegisterRequestDTO(1L, "ailab-testuser-old", "testuser",
                 List.of("farm2", "farm7"), null, true));
     }
@@ -138,12 +153,12 @@ class PodMigrationServiceTest {
     @Test
     @DisplayName("등록한 작업 번호를 신청에 남긴다")
     void startRecordsJobId() {
-        when(operationJobService.registerMigrate(any())).thenReturn(3700L);
+        when(jobClient.registerMigrate(any())).thenReturn(3700L);
         when(request.getStatus()).thenReturn(Status.MIGRATING);
 
         service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null));
 
-        verify(request).recordMigrationJob(3700L);
+        verify(request).recordJob(3700L);
     }
 
     @Test
@@ -153,18 +168,63 @@ class PodMigrationServiceTest {
 
         assertThatThrownBy(() -> service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null)))
                 .isInstanceOf(BusinessException.class);
-        verifyNoInteractions(operationJobService);
+        verifyNoInteractions(jobClient);
     }
 
     @Test
     @DisplayName("등록이 실패하면 FULFILLED로 되돌리고 오류를 전파한다")
     void startRevertsWhenRegistrationFails() {
         when(request.getStatus()).thenReturn(Status.MIGRATING);
-        doThrow(new BusinessException(ErrorCode.INFRA_REQUEST_REJECTED)).when(operationJobService).registerMigrate(any());
+        doThrow(new BusinessException(ErrorCode.INFRA_REQUEST_REJECTED)).when(jobClient).registerMigrate(any());
 
         assertThatThrownBy(() -> service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null)))
                 .isInstanceOf(BusinessException.class);
         verify(request).endMigration();
+    }
+
+    @Test
+    @DisplayName("등록 응답이 실패로 보여도 작업이 도는 중이면(응답만 늦음) MIGRATING으로 두고 그 작업 번호를 이어받는다")
+    void startAdoptsRunningJobWhenRegistrationResponseFails() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        doThrow(new BusinessException("작업 등록 중 오류: timeout", ErrorCode.POD_MIGRATION_FAILED,
+                new java.util.concurrent.TimeoutException()))
+                .when(jobClient).registerMigrate(any());
+        when(jobClient.getResult("migrate", 1L)).thenReturn(
+                new JobResultResponseDTO("1", "migrate", 3800L, "RETRY", null, null, null));
+
+        service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null));
+
+        verify(request, never()).endMigration();
+        verify(request).recordJob(3800L);
+    }
+
+    @Test
+    @DisplayName("요청이 config-server에 닿지도 않았으면 작업을 조회하지 않고 바로 FULFILLED로 되돌린다")
+    void startRevertsImmediatelyWhenServerUnreachable() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        doThrow(new BusinessException("작업 등록 중 오류", ErrorCode.POD_MIGRATION_FAILED,
+                new java.net.ConnectException("refused")))
+                .when(jobClient).registerMigrate(any());
+
+        assertThatThrownBy(() -> service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null)))
+                .isInstanceOf(BusinessException.class);
+        verify(jobClient, never()).getResult(anyString(), any());
+        verify(request).endMigration();
+    }
+
+    @Test
+    @DisplayName("등록 실패 뒤 작업 상태도 조회하지 못하면 되돌리지 않고(작업이 돌 수 있다) 관리자에게 알린다")
+    void startKeepsMigratingWhenLookupAlsoFails() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        doThrow(new BusinessException("작업 등록 중 오류: timeout", ErrorCode.POD_MIGRATION_FAILED,
+                new java.util.concurrent.TimeoutException()))
+                .when(jobClient).registerMigrate(any());
+        when(jobClient.getResult("migrate", 1L)).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
+
+        assertThatThrownBy(() -> service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null)))
+                .isInstanceOf(BusinessException.class);
+        verify(request, never()).endMigration();
+        verify(alarmService).sendSlackAlert(contains("MIGRATING으로 두었습니다"), any());
     }
 
     @Test
@@ -182,6 +242,67 @@ class PodMigrationServiceTest {
     }
 
     @Test
+    @DisplayName("옮기면서 포트가 바뀌면 커밋 뒤 사용자에게 새 접속 정보를 메일로 알린다")
+    void completeMigratedWithNewPortsMailsUser() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        when(podExternalPortRepository.findByRequestRequestId(1L)).thenReturn(List.of(port("ssh", 22, 32001)));
+
+        service.completeMigrationJob(1L, migrated(null));
+
+        var order = inOrder(request, alarmService);
+        order.verify(request).endMigration();
+        order.verify(alarmService).sendContainerPortsChangedEmail(request);
+    }
+
+    @Test
+    @DisplayName("옮겼어도 포트가 그대로면 메일을 보내지 않는다")
+    void completeMigratedWithSamePortsSendsNoMail() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        when(podExternalPortRepository.findByRequestRequestId(1L)).thenReturn(List.of(port("ssh", 22, 32010)));
+
+        service.completeMigrationJob(1L, migrated(null));
+
+        verify(request).endMigration();
+        verify(alarmService, never()).sendContainerPortsChangedEmail(any());
+    }
+
+    @Test
+    @DisplayName("결과에 포트가 없으면 안내할 접속 정보가 없으므로 메일을 보내지 않는다")
+    void completeMigratedWithoutPortsSendsNoMail() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        when(podExternalPortRepository.findByRequestRequestId(1L)).thenReturn(List.of(port("ssh", 22, 32001)));
+        JobResultResponseDTO.Result noPorts = new JobResultResponseDTO.Result(null, null, "ailab-testuser-new", "farm7",
+                null, "migrated", null, "farm2", "farm7", "ailab-testuser-old", null);
+
+        service.completeMigrationJob(1L, noPorts);
+
+        verify(request).endMigration();
+        verify(alarmService, never()).sendContainerPortsChangedEmail(any());
+    }
+
+    @Test
+    @DisplayName("안내 메일 발송이 실패해도 반영된 결과는 그대로 두고 예외를 올리지 않는다")
+    void completeMigratedMailFailureDoesNotPropagate() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        doThrow(new RuntimeException("smtp down")).when(alarmService).sendContainerPortsChangedEmail(request);
+
+        service.completeMigrationJob(1L, migrated(null));
+
+        verify(request).endMigration();
+        verify(alarmService).sendContainerPortsChangedEmail(request);
+    }
+
+    @Test
+    @DisplayName("상태가 이미 바뀌어 반영하지 않았으면 메일도 보내지 않는다")
+    void completeIgnoredSendsNoMail() {
+        when(request.getStatus()).thenReturn(Status.FULFILLED);
+
+        service.completeMigrationJob(1L, migrated(null));
+
+        verify(alarmService, never()).sendContainerPortsChangedEmail(any());
+    }
+
+    @Test
     @DisplayName("건너뛰었으면 Pod 정보는 그대로 두고 FULFILLED로만 돌린다")
     void completeSkippedKeepsPod() {
         when(request.getStatus()).thenReturn(Status.MIGRATING);
@@ -193,6 +314,19 @@ class PodMigrationServiceTest {
         verify(request, never()).assignPodInfo(any(), any());
         verifyNoInteractions(podExternalPortRepository);
         verify(request).endMigration();
+    }
+
+    @Test
+    @DisplayName("성공 결과가 없으면 건너뜀으로 확정하지 않고 MIGRATING에 둔 채 한 번만 알린다")
+    void completeWithoutResultKeepsMigratingAndAlertsOnce() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+
+        service.completeMigrationJob(1L, null);
+        service.completeMigrationJob(1L, null);
+
+        verify(request, never()).endMigration();
+        verify(request, never()).assignPodInfo(any(), any());
+        verify(alarmService, times(1)).sendSlackAlert(anyString(), any());
     }
 
     @Test
@@ -241,7 +375,7 @@ class PodMigrationServiceTest {
     @DisplayName("마지막 마이그레이션 결과를 화면용으로 바꿔 준다")
     void latestMigration() {
         when(requestRepository.existsById(1L)).thenReturn(true);
-        when(operationJobService.getResult("migrate", 1L)).thenReturn(
+        when(jobClient.getResult("migrate", 1L)).thenReturn(
                 new JobResultResponseDTO("1", "migrate", 9L, "SUCCESS", null, "2026-09-15 12:00:00", migrated(null)));
 
         MigrationResultResponseDTO result = service.getLatestMigration(1L);

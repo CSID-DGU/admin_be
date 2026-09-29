@@ -1,5 +1,9 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import org.springframework.test.util.ReflectionTestUtils;
+import org.mockito.ArgumentCaptor;
+import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PasswordUpdateRequestDTO;
@@ -10,6 +14,7 @@ import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.global.validation.ReservedLinuxNames;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,10 +47,19 @@ class UserServiceTest {
     private GroupRepository groupRepository;
 
     @Mock
+    private ReservedLinuxNames reservedLinuxNames;
+
+    @Mock
     private PasswordEncoder passwordEncoder;
 
     @Mock
     private CurrentPasswordVerifier currentPasswordVerifier;
+
+    @Mock
+    private RequestRepository requestRepository;
+
+    @Mock
+    private UbuntuPasswordSyncClient ubuntuPasswordSyncClient;
 
     private User mockUser;
 
@@ -113,44 +127,91 @@ class UserServiceTest {
     }
 
     @Nested
-    @DisplayName("updatePassword")
+    @DisplayName("updatePassword — 웹 비밀번호가 곧 SSH 비밀번호")
     class UpdatePassword {
 
-        @Test
-        @DisplayName("현재 비밀번호가 일치하고 새 비밀번호가 다르면 비밀번호 변경에 성공한다")
-        void updatePassword_success() {
-            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
-            when(passwordEncoder.matches("newPw", "encodedPassword")).thenReturn(false);
-            when(passwordEncoder.encode("newPw")).thenReturn("newEncodedPw");
+        @BeforeEach
+        void lockUser() {
+            when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(mockUser));
+        }
 
-            PasswordUpdateRequestDTO request = new PasswordUpdateRequestDTO("currentPw", "newPw");
-            UserResponseDTO result = userService.updatePassword(1L, request);
+        @Test
+        @DisplayName("리눅스 계정이 없으면 컨테이너 반영 없이 웹 비밀번호와 SSH 해시를 함께 바꾼다")
+        void updatePassword_withoutAccount_updatesBothHashes() {
+            when(passwordEncoder.matches("newPassword1!", "encodedPassword")).thenReturn(false);
+            when(passwordEncoder.encode("newPassword1!")).thenReturn("newEncodedPw");
+
+            UserResponseDTO result = userService.updatePassword(1L, new PasswordUpdateRequestDTO("currentPw", "newPassword1!"));
 
             assertThat(result).isNotNull();
+            assertThat(mockUser.getPassword()).isEqualTo("newEncodedPw");
+            assertThat(mockUser.getUbuntuPasswordHash()).startsWith("$6$").doesNotContain("newPassword1!");
+            verifyNoInteractions(ubuntuPasswordSyncClient);
+        }
+
+        @Test
+        @DisplayName("리눅스 계정이 있으면 컨테이너에 먼저 반영하고 같은 해시를 저장한다")
+        void updatePassword_withAccount_appliesToContainersFirst() {
+            mockUser.assignUbuntuAccount(21000L, 21000L);
+            ReflectionTestUtils.setField(mockUser, "ubuntuUsername", "honggildong");
+            when(passwordEncoder.matches("newPassword1!", "encodedPassword")).thenReturn(false);
+            when(passwordEncoder.encode("newPassword1!")).thenReturn("newEncodedPw");
+
+            userService.updatePassword(1L, new PasswordUpdateRequestDTO("currentPw", "newPassword1!"));
+
+            ArgumentCaptor<String> hash = ArgumentCaptor.forClass(String.class);
+            verify(ubuntuPasswordSyncClient).apply(eq("honggildong"), hash.capture());
+            assertThat(mockUser.getUbuntuPasswordHash()).isEqualTo(hash.getValue());
+            assertThat(mockUser.getPassword()).isEqualTo("newEncodedPw");
+        }
+
+        @Test
+        @DisplayName("컨테이너 반영이 실패하면 웹 비밀번호도 SSH 해시도 바꾸지 않는다")
+        void updatePassword_syncFailure_changesNothing() {
+            mockUser.assignUbuntuAccount(21000L, 21000L);
+            ReflectionTestUtils.setField(mockUser, "ubuntuUsername", "honggildong");
+            mockUser.changeUbuntuPasswordHash("$6$old$hash");
+            when(passwordEncoder.matches("newPassword1!", "encodedPassword")).thenReturn(false);
+            doThrow(new BusinessException(ErrorCode.UBUNTU_PASSWORD_CHANGE_FAILED))
+                    .when(ubuntuPasswordSyncClient).apply(eq("honggildong"), anyString());
+
+            assertThatThrownBy(() -> userService.updatePassword(1L, new PasswordUpdateRequestDTO("currentPw", "newPassword1!")))
+                    .isInstanceOf(BusinessException.class);
+            assertThat(mockUser.getPassword()).isEqualTo("encodedPassword");
+            assertThat(mockUser.getUbuntuPasswordHash()).isEqualTo("$6$old$hash");
+        }
+
+        @Test
+        @DisplayName("컨테이너 생성 중이면 409로 막고 아무것도 바꾸지 않는다")
+        void updatePassword_whileProvisioning_isRejected() {
+            when(passwordEncoder.matches("newPassword1!", "encodedPassword")).thenReturn(false);
+            when(requestRepository.existsByUser_UserIdAndStatus(1L, Status.PROCESSING)).thenReturn(true);
+
+            assertThatThrownBy(() -> userService.updatePassword(1L, new PasswordUpdateRequestDTO("currentPw", "newPassword1!")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.UBUNTU_PASSWORD_CHANGE_WHILE_PROVISIONING);
+            assertThat(mockUser.getPassword()).isEqualTo("encodedPassword");
+            verifyNoInteractions(ubuntuPasswordSyncClient);
         }
 
         @Test
         @DisplayName("현재 비밀번호가 틀리면 BusinessException을 던진다")
         void updatePassword_throwsException_whenCurrentPasswordWrong() {
-            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
-            doThrow(new BusinessException(DGU_AI_LAB.admin_be.error.ErrorCode.INVALID_PASSWORD))
+            doThrow(new BusinessException(ErrorCode.INVALID_PASSWORD))
                     .when(currentPasswordVerifier).verify(mockUser, "wrongPw");
 
-            PasswordUpdateRequestDTO request = new PasswordUpdateRequestDTO("wrongPw", "newPw");
-
-            assertThatThrownBy(() -> userService.updatePassword(1L, request))
+            assertThatThrownBy(() -> userService.updatePassword(1L, new PasswordUpdateRequestDTO("wrongPw", "newPw")))
                     .isInstanceOf(BusinessException.class);
+            verifyNoInteractions(ubuntuPasswordSyncClient);
         }
 
         @Test
         @DisplayName("새 비밀번호가 현재 비밀번호와 같으면 BusinessException을 던진다")
         void updatePassword_throwsException_whenNewPasswordSameAsCurrent() {
-            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
             when(passwordEncoder.matches(anyString(), eq("encodedPassword"))).thenReturn(true);
 
-            PasswordUpdateRequestDTO request = new PasswordUpdateRequestDTO("currentPw", "currentPw");
-
-            assertThatThrownBy(() -> userService.updatePassword(1L, request))
+            assertThatThrownBy(() -> userService.updatePassword(1L, new PasswordUpdateRequestDTO("currentPw", "currentPw")))
                     .isInstanceOf(BusinessException.class);
         }
     }
@@ -186,6 +247,18 @@ class UserServiceTest {
     @Nested
     @DisplayName("registerUbuntuUsername")
     class RegisterUbuntuUsername {
+
+        @Test
+        @DisplayName("시스템 예약 이름이면 UBUNTU_USERNAME_RESERVED를 던지고 저장하지 않는다")
+        void registerUbuntuUsername_throwsException_whenReserved() {
+            when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(mockUser));
+            when(reservedLinuxNames.contains("docker")).thenReturn(true);
+
+            assertThatThrownBy(() -> userService.registerUbuntuUsername(1L, new UbuntuUsernameRegisterRequestDTO("docker")))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_USERNAME_RESERVED);
+            assertThat(mockUser.getUbuntuUsername()).isNull();
+        }
 
         @Test
         @DisplayName("같은 이름의 그룹이 있으면 UBUNTU_USERNAME_CONFLICTS_GROUP을 던지고 저장하지 않는다")
