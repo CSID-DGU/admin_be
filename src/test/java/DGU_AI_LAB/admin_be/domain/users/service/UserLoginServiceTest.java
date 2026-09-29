@@ -299,8 +299,8 @@ class UserLoginServiceTest {
             userLoginService.login(new UserLoginRequestDTO("test@dgu.ac.kr", "password123"));
 
             ArgumentCaptor<String> hash = ArgumentCaptor.forClass(String.class);
-            verify(userRepository).replaceWeakUbuntuPasswordHash(eq(7L), hash.capture(), eq("$6$rounds=656000$"));
-            assertThat(hash.getValue()).startsWith("$6$rounds=656000$").doesNotContain("password123");
+            verify(userRepository).replaceWeakUbuntuPasswordHash(eq(7L), hash.capture(), eq("$6$rounds=100000$"));
+            assertThat(hash.getValue()).startsWith("$6$rounds=100000$").doesNotContain("password123");
             verify(userRepository, never()).save(any());
         }
 
@@ -316,14 +316,14 @@ class UserLoginServiceTest {
             userLoginService.login(new UserLoginRequestDTO("test@dgu.ac.kr", "password123"));
 
             ArgumentCaptor<String> hash = ArgumentCaptor.forClass(String.class);
-            verify(userRepository).replaceWeakUbuntuPasswordHash(eq(7L), hash.capture(), eq("$6$rounds=656000$"));
-            assertThat(hash.getValue()).startsWith("$6$rounds=656000$");
+            verify(userRepository).replaceWeakUbuntuPasswordHash(eq(7L), hash.capture(), eq("$6$rounds=100000$"));
+            assertThat(hash.getValue()).startsWith("$6$rounds=100000$");
         }
 
         @Test
         @DisplayName("SSH 비밀번호 해시가 이미 지금 강도면 로그인에서 건드리지 않는다")
         void login_keepsExistingSshPasswordHash() {
-            activeUser.changeUbuntuPasswordHash("$6$rounds=656000$existing$hash");
+            activeUser.changeUbuntuPasswordHash("$6$rounds=100000$existing$hash");
             when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
             when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);

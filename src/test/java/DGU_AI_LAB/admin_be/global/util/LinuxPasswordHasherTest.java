@@ -8,7 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LinuxPasswordHasherTest {
 
     // config-server 요청 검증·이미지 entrypoint.sh의 USER_PW_HASH_RE와 같은 규칙
-    private static final String SHA512_CRYPT = "^\\$6\\$rounds=656000\\$[./0-9A-Za-z]{16}\\$[./0-9A-Za-z]{86}$";
+    private static final String SHA512_CRYPT = "^\\$6\\$rounds=100000\\$[./0-9A-Za-z]{16}\\$[./0-9A-Za-z]{86}$";
 
     @Test
     @DisplayName("glibc crypt(3)와 같은 값을 만든다 — /etc/shadow와 chpasswd -e가 그대로 받는다")
