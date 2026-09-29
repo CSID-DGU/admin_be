@@ -51,6 +51,16 @@ public interface UserRepository extends JpaRepository<User,Long> {
                                       @Param("currentPrefix") String currentPrefix);
 
     /**
+     * 로그인 시각을 기록한다. 로그인은 트랜잭션 없이 돌아 엔티티를 고쳐도 저장되지 않는다 — 이 칸이 가입 시각에
+     * 멈춰 있으면 매일 로그인하는 사용자도 장기 미접속 자동 탈퇴 대상이 된다. 엔티티를 통째로 저장하지 않고
+     * 이 칸 하나만 바꿔, 그 사이 끝난 비밀번호 변경 등을 옛 값으로 덮어쓰지 않는다.
+     */
+    @Transactional
+    @Modifying
+    @Query("UPDATE User u SET u.lastLoginAt = :loggedInAt WHERE u.userId = :userId")
+    int recordLogin(@Param("userId") Long userId, @Param("loggedInAt") LocalDateTime loggedInAt);
+
+    /**
      * [자동 탈퇴 대상 조회 쿼리]
      * 조건:
      * 1. Active 상태인 유저

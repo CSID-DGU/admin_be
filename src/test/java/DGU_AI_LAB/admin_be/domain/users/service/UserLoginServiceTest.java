@@ -28,6 +28,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -260,6 +261,34 @@ class UserLoginServiceTest {
         }
 
         @Test
+        @DisplayName("로그인에 성공하면 로그인 시각을 DB에 기록한다 — 기록되지 않으면 활동 중인 사용자도 장기 미접속 탈퇴 대상이 된다")
+        void login_recordsLoginTime() {
+            ReflectionTestUtils.setField(activeUser, "userId", 7L);
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
+            when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            LocalDateTime before = LocalDateTime.now();
+
+            userLoginService.login(new UserLoginRequestDTO("test@dgu.ac.kr", "password123"));
+
+            ArgumentCaptor<LocalDateTime> loggedInAt = ArgumentCaptor.forClass(LocalDateTime.class);
+            verify(userRepository).recordLogin(eq(7L), loggedInAt.capture());
+            assertThat(loggedInAt.getValue()).isAfterOrEqualTo(before);
+        }
+
+        @Test
+        @DisplayName("비밀번호가 틀리면 로그인 시각을 기록하지 않는다")
+        void login_doesNotRecordLoginTime_whenPasswordWrong() {
+            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
+            when(passwordEncoder.matches("wrong", "encodedPassword")).thenReturn(false);
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+            assertThatThrownBy(() -> userLoginService.login(new UserLoginRequestDTO("test@dgu.ac.kr", "wrong")))
+                    .isInstanceOf(UnauthorizedException.class);
+            verify(userRepository, never()).recordLogin(any(), any());
+        }
+
+        @Test
         @DisplayName("SSH 비밀번호 해시가 없는 계정은 로그인한 비밀번호로 그 칸만 조건부로 채운다")
         void login_fillsSshPasswordHashWhenAbsent() {
             ReflectionTestUtils.setField(activeUser, "userId", 7L);
@@ -405,6 +434,19 @@ class UserLoginServiceTest {
                     .isInstanceOf(BusinessException.class);
             verifyNoInteractions(passwordEncoder);
             verify(userRepository, never()).findByEmail(anyString());
+        }
+
+        @Test
+        @DisplayName("이메일 대소문자·앞뒤 공백만 바꿔도 같은 잠금 횟수를 쓴다 — DB는 대소문자를 구분하지 않아 같은 계정이다")
+        void login_locksOut_regardlessOfEmailCase() {
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.get("LOGIN_FAIL:test@dgu.ac.kr")).thenReturn("5");
+
+            UserLoginRequestDTO dto = new UserLoginRequestDTO(" TeSt@DGU.ac.kr ", "password123");
+
+            assertThatThrownBy(() -> userLoginService.login(dto))
+                    .isInstanceOf(BusinessException.class);
+            verifyNoInteractions(passwordEncoder);
         }
 
         @Test

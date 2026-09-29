@@ -126,11 +126,6 @@ public class User extends BaseTimeEntity {
 
     // ===== 비즈니스 메서드 =====
 
-    public void updateUserInfo(String encodedPassword, Boolean isActive) {
-        if (encodedPassword != null) this.password = encodedPassword;
-        if (isActive != null) this.isActive = isActive;
-    }
-
     public void updatePassword(String newEncodedPassword) {
         this.password = newEncodedPassword;
         this.passwordChangedAt = LocalDateTime.now();
@@ -147,10 +142,6 @@ public class User extends BaseTimeEntity {
 
     public void updatePhone(String newPhone) {
         this.phone = newPhone;
-    }
-
-    public void recordLogin() {
-        this.lastLoginAt = LocalDateTime.now();
     }
 
     public void withdraw() {

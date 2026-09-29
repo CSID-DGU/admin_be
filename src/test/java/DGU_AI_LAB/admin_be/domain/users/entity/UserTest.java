@@ -215,51 +215,6 @@ class UserTest {
     }
 
     @Nested
-    @DisplayName("updateUserInfo")
-    class UpdateUserInfo {
-
-        @Test
-        @DisplayName("encodedPassword가 null이 아니면 비밀번호를 업데이트한다")
-        void updateUserInfo_updatesPassword_whenNotNull() {
-            user.updateUserInfo("newPw", null);
-
-            assertThat(user.getPassword()).isEqualTo("newPw");
-        }
-
-        @Test
-        @DisplayName("isActive가 false이면 비활성화한다")
-        void updateUserInfo_deactivates_whenIsActiveFalse() {
-            user.updateUserInfo(null, false);
-
-            assertThat(user.getIsActive()).isFalse();
-        }
-
-        @Test
-        @DisplayName("null 값은 기존 값을 유지한다")
-        void updateUserInfo_doesNotChange_whenNull() {
-            user.updateUserInfo(null, null);
-
-            assertThat(user.getPassword()).isEqualTo("encodedPassword");
-            assertThat(user.getIsActive()).isTrue();
-        }
-    }
-
-    @Nested
-    @DisplayName("recordLogin")
-    class RecordLogin {
-
-        @Test
-        @DisplayName("로그인 기록 시 lastLoginAt이 갱신된다")
-        void recordLogin_updatesLastLoginAt() throws InterruptedException {
-            var before = user.getLastLoginAt();
-            Thread.sleep(10); // ensure time difference
-            user.recordLogin();
-
-            assertThat(user.getLastLoginAt()).isAfterOrEqualTo(before);
-        }
-    }
-
-    @Nested
     @DisplayName("withdraw")
     class Withdraw {
 

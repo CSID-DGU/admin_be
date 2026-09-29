@@ -74,6 +74,27 @@ class UserRepositoryTest {
     }
 
     @Nested
+    @DisplayName("recordLogin")
+    class RecordLogin {
+
+        @Test
+        @DisplayName("트랜잭션 밖에서 불러도 로그인 시각이 DB에 저장되고, 다른 칸은 건드리지 않는다")
+        void recordLogin_persistsLastLoginAt() {
+            LocalDateTime loggedInAt = LocalDateTime.of(2026, 9, 29, 10, 0);
+
+            int updated = userRepository.recordLogin(user1.getUserId(), loggedInAt);
+            entityManager.clear();
+
+            assertThat(updated).isEqualTo(1);
+            User reloaded = userRepository.findById(user1.getUserId()).orElseThrow();
+            assertThat(reloaded.getLastLoginAt()).isEqualTo(loggedInAt);
+            assertThat(reloaded.getPassword()).isEqualTo("encoded1");
+            assertThat(userRepository.findById(user2.getUserId()).orElseThrow().getLastLoginAt())
+                    .isNotEqualTo(loggedInAt);
+        }
+    }
+
+    @Nested
     @DisplayName("findInactiveUsers")
     class FindInactiveUsers {
 
