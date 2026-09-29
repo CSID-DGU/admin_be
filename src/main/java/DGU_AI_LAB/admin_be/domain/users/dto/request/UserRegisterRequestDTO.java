@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.users.dto.request;
 
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.global.validation.MaxUtf8Bytes;
 import DGU_AI_LAB.admin_be.global.validation.UbuntuUsername;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
@@ -17,9 +18,10 @@ public record UserRegisterRequestDTO(
         @Email @NotBlank @Size(max = 100)
         String email,
 
-        // 화면도 8자 이상을 요구한다. BCrypt는 72바이트 뒤를 버리므로 그 이상은 받지 않는다.
+        // 화면도 8자 이상을 요구한다. BCrypt는 72바이트를 넘으면 거절하므로 그 이상은 받지 않는다.
         @Schema(description = "비밀번호", example = "strongPassword123!")
         @NotBlank @Size(min = 8, max = 72, message = "비밀번호는 8~72자여야 합니다.")
+        @MaxUtf8Bytes(value = 72, message = "비밀번호가 너무 깁니다. 한글은 한 글자가 3바이트라 24자까지 쓸 수 있습니다.")
         String password,
 
         @Schema(description = "사용자 이름", example = "이소은")

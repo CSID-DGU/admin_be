@@ -50,6 +50,26 @@ class UserRegisterRequestDTOTest {
     }
 
     @Test
+    @DisplayName("글자 수는 72자 이하여도 UTF-8로 72바이트를 넘는 비밀번호는 위반이다(BCrypt 한도)")
+    void password_over72Bytes_isRejected() {
+        UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+                "user@dgu.ac.kr", "가".repeat(25), "이소은",
+                "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi");
+
+        assertThat(violatedFields(dto)).contains("password");
+    }
+
+    @Test
+    @DisplayName("UTF-8로 정확히 72바이트인 비밀번호는 통과한다")
+    void password_exactly72Bytes_isAccepted() {
+        UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+                "user@dgu.ac.kr", "가".repeat(24), "이소은",
+                "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi");
+
+        assertThat(violatedFields(dto)).doesNotContain("password");
+    }
+
+    @Test
     @DisplayName("name이 100자를 넘으면 위반이 발생한다")
     void name_over100_isRejected() {
         UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
