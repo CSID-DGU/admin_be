@@ -164,7 +164,7 @@ public class AlarmService {
                 request.getUbuntuUsername(),                               // {5}
                 SlackText.escape(resourceGroup.getResourceGroupName()),    // {6}
                 serverName,                                                // {7}
-                SlackText.quote(request.getUsagePurpose()),                // {8}
+                SlackText.escape(request.getUsagePurpose()),               // {8}
                 expiresOn.toString(),                                      // {9}
                 String.valueOf(request.getRequestId()),                    // {10}
                 describe(resourceGroup.getDescription()),                  // {11}
@@ -333,7 +333,7 @@ public class AlarmService {
         String body = messageUtils.get("email.request.rejected.body",
                 user.getName(),    // {0}
                 serverName,        // {1}
-                adminComment);     // {2}
+                orNone(adminComment)); // {2}
 
         sendMailAlert(user.getEmail(), subject, body);
         sendMonitoringLog(user.getName(), user.getEmail(), subject);
@@ -341,13 +341,13 @@ public class AlarmService {
 
     public void sendModificationRejectedEmail(ChangeRequest changeRequest, String adminComment) {
         User user = changeRequest.getRequestedBy();
-        String changeType = changeRequest.getChangeType().name();
+        String changeType = changeRequest.getChangeType().label();
 
         String subject = messageUtils.get("email.modification.rejected.subject", changeType);
         String body = messageUtils.get("email.modification.rejected.body",
                 user.getName(),    // {0}
                 changeType,        // {1}
-                adminComment);     // {2}
+                orNone(adminComment)); // {2}
 
         sendMailAlert(user.getEmail(), subject, body);
         sendMonitoringLog(user.getName(), user.getEmail(), subject);
@@ -359,13 +359,13 @@ public class AlarmService {
      */
     public void sendModificationApprovedEmail(ChangeRequest changeRequest, String adminComment) {
         User user = changeRequest.getRequestedBy();
-        String changeType = changeRequest.getChangeType().name();
+        String changeType = changeRequest.getChangeType().label();
 
         String subject = messageUtils.get("email.modification.approved.subject", changeType);
         String body = messageUtils.get("email.modification.approved.body",
                 user.getName(),    // {0}
                 changeType,        // {1}
-                adminComment);     // {2}
+                orNone(adminComment)); // {2}
 
         sendMailAlert(user.getEmail(), subject, body);
         sendMonitoringLog(user.getName(), user.getEmail(), subject);
@@ -377,7 +377,7 @@ public class AlarmService {
      */
     public void sendGroupAddedEmail(ChangeRequest changeRequest, String adminComment, List<String> groupNames) {
         User user = changeRequest.getRequestedBy();
-        String changeType = changeRequest.getChangeType().name();
+        String changeType = changeRequest.getChangeType().label();
         String teamDirs = groupNames.stream()
                 .map(name -> messageUtils.get("email.modification.approved.group.dir", name))
                 .collect(Collectors.joining("\n"));
@@ -386,11 +386,16 @@ public class AlarmService {
         String body = messageUtils.get("email.modification.approved.group.body",
                 user.getName(),    // {0}
                 changeType,        // {1}
-                adminComment,      // {2}
+                orNone(adminComment), // {2}
                 teamDirs);         // {3}
 
         sendMailAlert(user.getEmail(), subject, body);
         sendMonitoringLog(user.getName(), user.getEmail(), subject);
+    }
+
+    /** 관리자가 메모를 비워 두면 MessageFormat이 "null"을 찍으므로 "없음"으로 바꾼다. */
+    private static String orNone(String text) {
+        return text == null || text.isBlank() ? "없음" : text;
     }
 
     public void sendAdminSlackNotification(String serverName, String message) {
