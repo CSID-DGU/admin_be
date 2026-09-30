@@ -205,6 +205,7 @@ class ConfigRequestServiceTest {
         Node node = mock(Node.class);
         when(node.getNodeId()).thenReturn("farm2");
         when(node.getNumberGpu()).thenReturn(2);
+        when(node.getGpuModels()).thenReturn(List.of("RTX A5000"));
         when(node.getCpuCoreCount()).thenReturn(4);
         when(node.getMemorySizeGB()).thenReturn(8);
 
@@ -233,6 +234,7 @@ class ConfigRequestServiceTest {
         AcceptInfoResponseDTO.GpuNodeDTO gpuNode = result.gpu_nodes().get(0);
         assertThat(gpuNode.node_name()).isEqualTo("farm2");
         assertThat(gpuNode.num_gpu()).isEqualTo(2);
+        assertThat(gpuNode.gpu_models()).containsExactly("RTX A5000");
         assertThat(gpuNode.cpu_limit()).isEqualTo("4000m");
         assertThat(gpuNode.memory_limit()).isEqualTo("8192Mi");
     }
