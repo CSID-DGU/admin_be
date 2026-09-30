@@ -287,6 +287,8 @@ class GroupServiceTest {
             assertThatThrownBy(() -> groupService.createGroup(dto, 1L))
                     .isInstanceOf(BusinessException.class);
             verify(groupRepository, never()).saveAndFlush(any(Group.class));
+            // 결과를 못 받았으니 인프라에 그룹이 생겼는지 모른다 — 로그만 남기지 말고 관리자에게 알린다.
+            verify(alarmService).sendSlackAlert(contains("developers"), isNull());
         }
 
         @Test
