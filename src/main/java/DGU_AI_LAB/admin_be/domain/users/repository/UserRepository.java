@@ -66,7 +66,7 @@ public interface UserRepository extends JpaRepository<User,Long> {
     /**
      * [자동 탈퇴 대상 조회 쿼리]
      * 조건:
-     * 1. Active 상태인 유저
+     * 1. Active 상태인 일반 사용자 (관리자는 미접속으로 탈퇴시키면 운영할 사람이 사라지므로 제외)
      * 2. (현재 - 마지막 로그인) > 3개월
      * 3. (현재 - 가장 최근 만료된 Pod 날짜) > 3개월 (Pod 사용 기록이 없으면 로그인 날짜만 봄)
      * * 주의: COALESCE를 사용하여 Pod 기록이 없으면 아주 먼 과거(1900년)로 취급해 조건 통과시킴
@@ -74,6 +74,7 @@ public interface UserRepository extends JpaRepository<User,Long> {
     @Query("SELECT u FROM User u " +
             "LEFT JOIN u.requests r " +
             "WHERE u.isActive = true " +
+            "  AND u.role <> DGU_AI_LAB.admin_be.domain.users.entity.Role.ADMIN " +
             "GROUP BY u " +
             "HAVING " +
             "  (u.lastLoginAt IS NULL OR u.lastLoginAt < :thresholdDate) " +

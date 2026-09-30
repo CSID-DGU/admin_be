@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
@@ -44,6 +45,10 @@ public class UserLifecycleTransactionalService {
     public boolean processInactiveUser(Long userId, LocalDateTime now) {
         User user = userRepository.findById(userId).orElseThrow();
         if (!user.getIsActive()) {
+            return false;
+        }
+        // 조회 뒤 관리자로 승격됐을 수 있어 트랜잭션 안에서 다시 본다.
+        if (user.getRole() == Role.ADMIN) {
             return false;
         }
 

@@ -2,11 +2,12 @@ package DGU_AI_LAB.admin_be.domain.users.dto.request;
 
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.validation.MaxUtf8Bytes;
+import DGU_AI_LAB.admin_be.global.validation.PhoneNumber;
+import DGU_AI_LAB.admin_be.global.validation.PhoneNumbers;
 import DGU_AI_LAB.admin_be.global.validation.UbuntuUsername;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 @Schema(description = "회원가입 요청 DTO")
@@ -36,10 +37,9 @@ public record UserRegisterRequestDTO(
         @NotBlank @Size(max = 100)
         String studentId,
 
-        // 연락처 변경(PhoneUpdateRequestDTO)과 같은 형식을 요구한다.
-        @Schema(description = "전화번호", example = "010-1234-5678")
-        @NotBlank @Size(max = 100)
-        @Pattern(regexp = "^\\d{2,3}-\\d{3,4}-\\d{4}$", message = "유효한 전화번호 형식이 아닙니다. (예: 010-1234-5678)")
+        // 연락처 변경(PhoneUpdateRequestDTO)과 같은 규칙이다. 하이픈 없이 적어도 받고 저장할 때 모양을 맞춘다.
+        @Schema(description = "전화번호 (하이픈은 있어도 없어도 됨)", example = "010-1234-5678")
+        @PhoneNumber @Size(max = 100)
         String phone,
 
         // 웹 계정 하나당 우분투 계정 하나 — 가입 시 정하면 이후 모든 컨테이너가 이 이름을
@@ -56,7 +56,7 @@ public record UserRegisterRequestDTO(
                         .name(name)
                         .department(department)
                         .studentId(studentId)
-                        .phone(phone)
+                        .phone(PhoneNumbers.normalize(phone))
                         .ubuntuUsername(ubuntuUsername)
                         // role, isActive는 엔티티의 @Builder.Default 로 기본값 사용
                         .build();

@@ -151,11 +151,23 @@ class UserRegisterRequestDTOTest {
     }
 
     @Test
-    @DisplayName("phone은 연락처 변경과 같은 형식이어야 한다")
-    void phone_mustMatchFormat() {
-        assertThat(violatedFields(new UserRegisterRequestDTO(
-                "user@dgu.ac.kr", "strongPassword123!", "이소은", "컴퓨터공학과", "202312345", "01012345678", "sochoi")))
-                .contains("phone");
+    @DisplayName("phone은 하이픈이 없어도 받고, 저장할 때 010-1234-5678 모양으로 맞춘다")
+    void phone_acceptsDigitsOnly_andNormalizes() {
+        UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+                "user@dgu.ac.kr", "strongPassword123!", "이소은", "컴퓨터공학과", "202312345", "01012345678", "sochoi");
+
+        assertThat(violatedFields(dto)).doesNotContain("phone");
+        assertThat(dto.toEntity("encoded").getPhone()).isEqualTo("010-1234-5678");
+    }
+
+    @Test
+    @DisplayName("phone에 숫자가 아닌 글자나 모자란 자리가 있으면 거절한다")
+    void phone_rejectsMalformed() {
+        for (String phone : new String[]{"010-12-5678", "전화번호", "1012345678", "010.1234.5678"}) {
+            assertThat(violatedFields(new UserRegisterRequestDTO(
+                    "user@dgu.ac.kr", "strongPassword123!", "이소은", "컴퓨터공학과", "202312345", phone, "sochoi")))
+                    .as(phone).contains("phone");
+        }
     }
 
     @Test

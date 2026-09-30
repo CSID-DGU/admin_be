@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.repository;
 
+import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -109,6 +110,18 @@ class UserRepositoryTest {
             List<User> result = userRepository.findInactiveUsers(thresholdDate);
 
             assertThat(result).extracting(User::getEmail).contains("active@dgu.ac.kr");
+        }
+
+        @Test
+        @DisplayName("관리자는 오래 접속하지 않아도 조회하지 않는다")
+        void findInactiveUsers_excludesAdmins() {
+            ReflectionTestUtils.setField(user1, "lastLoginAt", LocalDateTime.now().minusMonths(4));
+            user1.changeRole(Role.ADMIN);
+            userRepository.saveAndFlush(user1);
+
+            List<User> result = userRepository.findInactiveUsers(LocalDateTime.now().minusMonths(3));
+
+            assertThat(result).extracting(User::getEmail).doesNotContain("active@dgu.ac.kr");
         }
     }
 
