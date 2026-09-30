@@ -69,7 +69,8 @@ class UserLifecycleTransactionalServiceTest {
         return request;
     }
 
-    private User buildUserWithLastLogin(LocalDateTime lastLoginAt) {
+    /** createdAt = 가입 시각, lastLoginAt = 마지막 로그인(판정에 쓰이지 않음을 확인하는 데만 쓴다). */
+    private User buildUser(LocalDateTime createdAt, LocalDateTime lastLoginAt) {
         User user = User.builder()
                 .email("test@dgu.ac.kr")
                 .password("pw")
@@ -78,18 +79,13 @@ class UserLifecycleTransactionalServiceTest {
                 .phone("010-1234-5678")
                 .department("컴퓨터공학과")
                 .build();
-        try {
-            var field = User.class.getDeclaredField("lastLoginAt");
-            field.setAccessible(true);
-            field.set(user, lastLoginAt);
-            var idField = User.class.getDeclaredField("userId");
-            idField.setAccessible(true);
-            idField.set(user, 1L);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        ReflectionTestUtils.setField(user, "userId", 1L);
+        ReflectionTestUtils.setField(user, "createdAt", createdAt);
+        ReflectionTestUtils.setField(user, "lastLoginAt", lastLoginAt);
         return user;
     }
+
+    private static final LocalDateTime NOW = LocalDateTime.of(2026, 1, 10, 9, 0);
 
     @Nested
     @DisplayName("processInactiveUser - 경고 알림 중복 방지")
@@ -98,12 +94,10 @@ class UserLifecycleTransactionalServiceTest {
         @Test
         @DisplayName("D-7 경고 대상이면 알림을 발송한다")
         void sendsWarning_whenSevenDaysLeft() {
-            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
-            LocalDateTime lastLoginAt = now.plusDays(7).minusMonths(3);
-            User user = buildUserWithLastLogin(lastLoginAt);
+            User user = buildUser(NOW.plusDays(7).minusYears(1), null);
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-            lifecycleService.processInactiveUser(1L, now);
+            lifecycleService.processInactiveUser(1L, NOW);
 
             verify(alarmService, times(1)).sendAllAlerts(any(), any(), any(), any());
         }
@@ -111,18 +105,16 @@ class UserLifecycleTransactionalServiceTest {
         @Test
         @DisplayName("같은 날 동일 유저에게 같은 daysLeft 경고를 두 번 트리거해도 한 번만 발송한다")
         void doesNotResendWarning_onSameDayDuplicateTrigger() {
-            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
-            LocalDateTime lastLoginAt = now.plusDays(7).minusMonths(3);
-            User user = buildUserWithLastLogin(lastLoginAt);
+            User user = buildUser(NOW.plusDays(7).minusYears(1), null);
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
             // 첫 호출: SETNX 성공(신규) → 발송
             when(valueOps.setIfAbsent(anyString(), any(), any(Duration.class))).thenReturn(true);
-            lifecycleService.processInactiveUser(1L, now);
+            lifecycleService.processInactiveUser(1L, NOW);
 
             // 재실행(재배포/수동 트리거 등): SETNX 실패(이미 존재) → 스킵
             when(valueOps.setIfAbsent(anyString(), any(), any(Duration.class))).thenReturn(false);
-            lifecycleService.processInactiveUser(1L, now);
+            lifecycleService.processInactiveUser(1L, NOW);
 
             verify(alarmService, times(1)).sendAllAlerts(any(), any(), any(), any());
         }
@@ -130,14 +122,12 @@ class UserLifecycleTransactionalServiceTest {
         @Test
         @DisplayName("Redis 장애 시에도 경고 발송은 계속 진행한다 (fail-open)")
         void sendsWarning_whenRedisFails() {
-            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
-            LocalDateTime lastLoginAt = now.plusDays(1).minusMonths(3);
-            User user = buildUserWithLastLogin(lastLoginAt);
+            User user = buildUser(NOW.plusDays(1).minusYears(1), null);
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
             when(valueOps.setIfAbsent(anyString(), any(), any(Duration.class)))
                     .thenThrow(new RuntimeException("Redis down"));
 
-            lifecycleService.processInactiveUser(1L, now);
+            lifecycleService.processInactiveUser(1L, NOW);
 
             verify(alarmService, times(1)).sendAllAlerts(any(), any(), any(), any());
         }
@@ -145,11 +135,10 @@ class UserLifecycleTransactionalServiceTest {
         @Test
         @DisplayName("삭제 예정일이 지난 유저는 탈퇴 대상으로 돌려주고, 탈퇴 자체는 호출자에게 맡긴다")
         void returnsWithdrawTarget_whenPastDeleteDate() {
-            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
-            User user = buildUserWithLastLogin(now.minusMonths(3).minusDays(1));
+            User user = buildUser(NOW.minusYears(1).minusDays(1), null);
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-            boolean withdraw = lifecycleService.processInactiveUser(1L, now);
+            boolean withdraw = lifecycleService.processInactiveUser(1L, NOW);
 
             assertThat(withdraw).isTrue();
             assertThat(user.getIsActive()).isTrue();
@@ -159,116 +148,110 @@ class UserLifecycleTransactionalServiceTest {
         @Test
         @DisplayName("경고 대상은 탈퇴 대상이 아니다")
         void warningTargetIsNotWithdrawn() {
-            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
-            User user = buildUserWithLastLogin(now.plusDays(3).minusMonths(3));
+            User user = buildUser(NOW.plusDays(3).minusYears(1), null);
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-            assertThat(lifecycleService.processInactiveUser(1L, now)).isFalse();
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isFalse();
         }
     }
 
     @Nested
-    @DisplayName("processInactiveUser - 활동 기준 시각")
-    class ActivityBaseline {
+    @DisplayName("processInactiveUser - 미사용 기준 시각")
+    class InactiveSince {
 
         @Test
-        @DisplayName("로그인 기록이 없으면 가입 시각부터 센다 — 예전엔 NPE로 매일 실패해 영영 처리되지 않았다")
-        void fallsBackToCreatedAt_whenNeverLoggedIn() {
-            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
-            User user = buildUserWithLastLogin(null);
-            ReflectionTestUtils.setField(user, "createdAt", now.minusMonths(4));
+        @DisplayName("마지막 컨테이너가 끝난 지 1년이 지나면 대상이다")
+        void containerEndedOverOneYearAgo_isWithdrawn() {
+            User user = buildUser(NOW.minusYears(3), null);
+            user.getRequests().add(request(Status.DELETED, NOW.minusYears(2), NOW.minusYears(1).minusDays(1)));
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-            assertThat(lifecycleService.processInactiveUser(1L, now)).isTrue();
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isTrue();
         }
 
         @Test
-        @DisplayName("로그인 기록이 없어도 최근 가입자는 탈퇴 대상이 아니다")
-        void recentSignupWithoutLogin_isKept() {
-            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
-            User user = buildUserWithLastLogin(null);
-            ReflectionTestUtils.setField(user, "createdAt", now.minusMonths(1));
+        @DisplayName("마지막 컨테이너가 끝난 지 1년이 안 됐으면 가입이 오래됐어도 대상이 아니다")
+        void containerEndedWithinOneYear_isKept() {
+            User user = buildUser(NOW.minusYears(3), null);
+            user.getRequests().add(request(Status.DELETED, NOW.minusYears(2), NOW.minusYears(2)));
+            user.getRequests().add(request(Status.DELETED, NOW.minusYears(1), NOW.minusMonths(11)));
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-            assertThat(lifecycleService.processInactiveUser(1L, now)).isFalse();
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isFalse();
+        }
+
+        @Test
+        @DisplayName("로그인은 보지 않는다 — 최근에 로그인했어도 컨테이너가 끝난 지 1년이 지나면 대상이다")
+        void recentLogin_doesNotKeepUser() {
+            User user = buildUser(NOW.minusYears(3), NOW.minusDays(1));
+            user.getRequests().add(request(Status.DELETED, NOW.minusYears(2), NOW.minusYears(1).minusDays(1)));
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isTrue();
+        }
+
+        @Test
+        @DisplayName("컨테이너를 쓴 적이 없으면 가입 시각부터 1년을 센다")
+        void neverHadContainer_countsFromSignup() {
+            User oldSignup = buildUser(NOW.minusYears(1).minusDays(1), NOW.minusDays(1));
+            when(userRepository.findById(1L)).thenReturn(Optional.of(oldSignup));
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isTrue();
+
+            User recentSignup = buildUser(NOW.minusMonths(11), null);
+            when(userRepository.findById(1L)).thenReturn(Optional.of(recentSignup));
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isFalse();
         }
 
         @Test
         @DisplayName("기준 시각이 전혀 없으면 판정을 건너뛴다")
         void skips_whenNoBaseline() {
-            User user = buildUserWithLastLogin(null);
+            User user = buildUser(null, null);
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-            assertThat(lifecycleService.processInactiveUser(1L, LocalDateTime.of(2026, 1, 10, 9, 0))).isFalse();
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isFalse();
             verifyNoInteractions(alarmService);
         }
 
         @Test
-        @DisplayName("끝나지 않은 신청(컨테이너 포함)이 있으면 오래 접속하지 않아도 대상이 아니다")
+        @DisplayName("끝나지 않은 신청(컨테이너 포함)이 있으면 대상이 아니다")
         void userWithOpenRequest_isKept() {
-            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
-            User user = buildUserWithLastLogin(now.minusYears(1));
-            user.getRequests().add(request(Status.FULFILLED, now.minusYears(1), now.minusYears(1)));
+            User user = buildUser(NOW.minusYears(3), null);
+            user.getRequests().add(request(Status.FULFILLED, NOW.minusYears(2), NOW.minusYears(2)));
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-            assertThat(lifecycleService.processInactiveUser(1L, now)).isFalse();
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isFalse();
             verifyNoInteractions(alarmService);
-        }
-
-        @Test
-        @DisplayName("마지막 컨테이너가 사라진 지 3개월이 안 됐으면 접속이 오래돼도 대상이 아니다")
-        void recentlyRemovedContainer_isKept() {
-            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
-            User user = buildUserWithLastLogin(now.minusYears(1));
-            user.getRequests().add(request(Status.DELETED, now.minusYears(1), now.minusMonths(2)));
-            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-
-            assertThat(lifecycleService.processInactiveUser(1L, now)).isFalse();
-        }
-
-        @Test
-        @DisplayName("컨테이너가 0개가 된 지와 마지막 접속이 모두 3개월을 넘으면 대상이다")
-        void bothOverThreeMonths_isWithdrawn() {
-            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
-            User user = buildUserWithLastLogin(now.minusMonths(5));
-            user.getRequests().add(request(Status.DELETED, now.minusMonths(8), now.minusMonths(3).minusDays(1)));
-            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-
-            assertThat(lifecycleService.processInactiveUser(1L, now)).isTrue();
         }
 
         @Test
         @DisplayName("승인 전에 취소된 신청은 컨테이너가 없었으니 기준 시각에 넣지 않는다")
         void cancelledBeforeApproval_isIgnored() {
-            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
-            User user = buildUserWithLastLogin(now.minusMonths(4));
-            user.getRequests().add(request(Status.DELETED, null, now.minusDays(1)));
+            User user = buildUser(NOW.minusYears(1).minusDays(1), null);
+            user.getRequests().add(request(Status.DELETED, null, NOW.minusDays(1)));
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-            assertThat(lifecycleService.processInactiveUser(1L, now)).isTrue();
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isTrue();
         }
 
         @Test
-        @DisplayName("관리자는 오래 접속하지 않아도 경고·탈퇴 대상이 아니다")
+        @DisplayName("관리자는 경고·탈퇴 대상이 아니다")
         void admin_isNeverWithdrawn() {
-            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
-            User user = buildUserWithLastLogin(now.minusYears(1));
+            User user = buildUser(NOW.minusYears(3), null);
             user.changeRole(Role.ADMIN);
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-            assertThat(lifecycleService.processInactiveUser(1L, now)).isFalse();
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isFalse();
             verifyNoInteractions(alarmService);
         }
 
         @Test
         @DisplayName("이미 비활성화된 유저는 탈퇴 대상이 아니다")
         void inactiveUser_isSkipped() {
-            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
-            User user = buildUserWithLastLogin(now.minusYears(1));
+            User user = buildUser(NOW.minusYears(3), null);
             user.deactivate();
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-            assertThat(lifecycleService.processInactiveUser(1L, now)).isFalse();
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isFalse();
         }
     }
 }

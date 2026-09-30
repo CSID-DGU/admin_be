@@ -56,9 +56,8 @@ public interface UserRepository extends JpaRepository<User,Long> {
                                       @Param("currentPrefix") String currentPrefix);
 
     /**
-     * 로그인 시각을 기록한다. 로그인은 트랜잭션 없이 돌아 엔티티를 고쳐도 저장되지 않는다 — 이 칸이 가입 시각에
-     * 멈춰 있으면 매일 로그인하는 사용자도 장기 미접속 자동 탈퇴 대상이 된다. 엔티티를 통째로 저장하지 않고
-     * 이 칸 하나만 바꿔, 그 사이 끝난 비밀번호 변경 등을 옛 값으로 덮어쓰지 않는다.
+     * 로그인 시각을 기록한다. 로그인은 트랜잭션 없이 돌아 엔티티를 고쳐도 저장되지 않는다. 엔티티를 통째로 저장하지
+     * 않고 이 칸 하나만 바꿔, 그 사이 끝난 비밀번호 변경 등을 옛 값으로 덮어쓰지 않는다.
      */
     @Transactional
     @Modifying
@@ -66,14 +65,15 @@ public interface UserRepository extends JpaRepository<User,Long> {
     int recordLogin(@Param("userId") Long userId, @Param("loggedInAt") LocalDateTime loggedInAt);
 
     /**
-     * 장기 미접속 판정 후보. 마지막 접속(없으면 가입 시각)이 기준일보다 이르고, 끝나지 않은 신청(컨테이너 포함)이
-     * 하나도 없는 활성 일반 사용자다. 관리자는 미접속으로 비활성화하면 운영할 사람이 사라지므로 뺀다.
-     * 마지막 컨테이너가 사라진 시각까지 따진 최종 판정은 UserLifecycleTransactionalService가 한 곳에서 한다.
+     * 장기 미사용 판정 후보. 가입 시각이 기준일보다 이르고, 끝나지 않은 신청(컨테이너 포함)이 하나도 없는 활성 일반
+     * 사용자다. 관리자는 비활성화하면 운영할 사람이 사라지므로 뺀다. 미사용 기준 시각은 가입 시각보다 이르지 않아
+     * 가입 시각으로 추려도 대상이 빠지지 않는다. 마지막 컨테이너가 끝난 시각까지 따진 최종 판정은
+     * UserLifecycleTransactionalService가 한 곳에서 한다.
      */
     @Query("SELECT u FROM User u " +
             "WHERE u.isActive = true " +
             "  AND u.role <> DGU_AI_LAB.admin_be.domain.users.entity.Role.ADMIN " +
-            "  AND COALESCE(u.lastLoginAt, u.createdAt) < :thresholdDate " +
+            "  AND u.createdAt < :thresholdDate " +
             "  AND NOT EXISTS (SELECT r FROM Request r WHERE r.user = u AND r.status IN :openStatuses)")
     List<User> findInactiveUsers(@Param("thresholdDate") LocalDateTime thresholdDate,
                                  @Param("openStatuses") Collection<Status> openStatuses);
