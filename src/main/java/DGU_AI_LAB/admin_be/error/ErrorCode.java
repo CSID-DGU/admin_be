@@ -118,8 +118,6 @@ public enum ErrorCode {
     // 로그인한 사용자가 변경 폼에 적은 현재 비밀번호가 틀린 것이라 인증 실패(401)가 아니다. 401이면 화면이
     // 세션 만료로 보고 로그아웃시킨다.
     INVALID_PASSWORD(HttpStatus.BAD_REQUEST, "현재 비밀번호가 맞지 않아요."),
-    PASSWORD_CHANGE_SAME_AS_OLD(HttpStatus.BAD_REQUEST, "새 비밀번호가 현재 비밀번호와 같아요. 다르게 정해 주세요."),
-    TOO_MANY_PASSWORD_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "현재 비밀번호를 여러 번 틀렸어요. 15분 뒤에 다시 시도해 주세요."),
     UBUNTU_PASSWORD_REQUIRED(HttpStatus.BAD_REQUEST, "SSH 비밀번호를 준비하려면 다시 로그인해 주세요."),
     UBUNTU_PASSWORD_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "컨테이너에 반영하지 못해 비밀번호를 바꾸지 않았어요. 잠시 후 다시 시도해 주세요."),
 
