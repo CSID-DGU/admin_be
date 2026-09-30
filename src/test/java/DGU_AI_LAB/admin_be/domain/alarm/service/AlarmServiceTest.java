@@ -264,8 +264,8 @@ class AlarmServiceTest {
                     "이메일: 홍길동@dgu.ac.kr", "전화번호: 010-0000-0000", "서버 계정(ID): testuser",
                     "지금 사용 중인 컨테이너: 2개", "GPU: 3090ti (RTX 3090 24GB)", "dguailab/decs:260915",
                     "공유 그룹: vision-team", "추가 포트: 6006번 (TensorBoard)", "noVNC): 사용",
-                    "2026-12-17 ~ 2026-12-31 (총 14일)", "> 첫째 줄\n> 둘째 줄");
-            assertThat(message).doesNotContain("{");
+                    "2026-12-17 ~ 2026-12-31 (총 14일)", "*사용 목적*\n첫째 줄\n둘째 줄");
+            assertThat(message).doesNotContain("{").doesNotContain(":bell:");
         }
 
         @Test
@@ -276,7 +276,7 @@ class AlarmServiceTest {
 
             String message = render(request, List.of(), 0);
 
-            assertThat(message).contains("> &lt;!channel&gt; 모두 확인 &amp; 승인").doesNotContain("<!channel>");
+            assertThat(message).contains("&lt;!channel&gt; 모두 확인 &amp; 승인").doesNotContain("<!channel>");
         }
     }
 
@@ -569,7 +569,7 @@ class AlarmServiceTest {
 
             alarmService.sendGroupAddedEmail(changeRequest, "승인", List.of("teama", "teamb"));
 
-            verify(messageUtils).get("email.modification.approved.group.body", "이순신", "GROUP", "승인",
+            verify(messageUtils).get("email.modification.approved.group.body", "이순신", "공유 그룹 추가", "승인",
                     "- teama 경로\n- teamb 경로");
             ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
             verify(mailSender).send(captor.capture());
@@ -612,18 +612,18 @@ class AlarmServiceTest {
         }
 
         @Test
-        @DisplayName("변경 유형이 이메일 제목에 포함된다")
+        @DisplayName("변경 유형이 영어 코드가 아닌 한글 이름으로 이메일 제목에 들어간다")
         void sendModificationRejectedEmail_includesChangeTypeInSubject() {
             ChangeRequest changeRequest = mockChangeRequest("김철수", "kim@dgu.ac.kr", ChangeType.RESOURCE_GROUP);
-            when(messageUtils.get(eq("email.modification.rejected.subject"), eq("RESOURCE_GROUP")))
-                    .thenReturn("[DGU AILab] 서버 변경 요청 거절 안내 (RESOURCE_GROUP)");
+            when(messageUtils.get(eq("email.modification.rejected.subject"), eq("GPU 변경")))
+                    .thenReturn("[DGU AI LAB] GPU 변경 요청이 승인되지 않았어요");
             when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("본문");
 
             alarmService.sendModificationRejectedEmail(changeRequest, "리소스 그룹 변경 불가");
 
             ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
             verify(mailSender).send(captor.capture());
-            assertThat(captor.getValue().getSubject()).contains("RESOURCE_GROUP");
+            assertThat(captor.getValue().getSubject()).contains("GPU 변경");
         }
 
         @Test
