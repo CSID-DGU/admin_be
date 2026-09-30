@@ -26,6 +26,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -155,6 +157,14 @@ public class RequestCommandService {
         }
 
         // === 관리자 채널에 슬랙 알림 전송 ===
+        // 커밋 후에 보낸다: Redis 장애 시 직접 HTTP 전송으로 폴백하는데, 그게 User 행 잠금을 쥔 채
+        // 실행되면 같은 사용자의 승인·신청이 그만큼 막힌다. 롤백되면 존재하지 않는 신청을 알리지도 않는다.
+        runAfterCommit(() -> notifyNewRequest(req, portRequests, userId));
+
+        return SaveRequestResponseDTO.fromEntity(req);
+    }
+
+    private void notifyNewRequest(Request req, List<PortRequests> portRequests, Long userId) {
         try {
             log.info("새로운 사용 신청에 대한 슬랙 알림을 전송합니다. 요청 ID: {}", req.getRequestId());
             long activeContainers = requestRepository.countByUser_UserIdAndStatusIn(userId, Status.activeStatuses());
@@ -163,10 +173,18 @@ public class RequestCommandService {
             // 사용자는 신청을 성공적으로 생성했지만, 관리자에게 알림만 가지 않은 상황입니다.
             log.error("슬랙 알림 전송에 실패했습니다. (요청 ID: {}). 하지만 사용 신청은 정상적으로 처리되었습니다.", req.getRequestId(), e);
         }
-
-
-        return SaveRequestResponseDTO.fromEntity(req);
     }
 
-
+    private static void runAfterCommit(Runnable task) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            task.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                task.run();
+            }
+        });
+    }
 }

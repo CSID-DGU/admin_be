@@ -30,6 +30,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -91,6 +94,38 @@ class RequestCommandServiceTest {
     @Nested
     @DisplayName("createRequest")
     class CreateRequest {
+
+        @Test
+        @DisplayName("슬랙 알림은 트랜잭션 커밋 후에만 보낸다 — 사용자 행 잠금을 쥔 채 전송하지 않고, 롤백되면 보내지 않는다")
+        void createRequest_sendsSlackOnlyAfterCommit() {
+            User user = userWithUbuntuUsername("honggildong");
+            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
+            ContainerImage img = ContainerImage.builder()
+                    .imageName("cuda").imageVersion("11.8").cudaVersion("11.8").description("test").build();
+            Request savedReq = Request.builder()
+                    .expiresAt(LocalDateTime.now().plusDays(30)).usagePurpose("연구").formAnswers("{}")
+                    .user(user).resourceGroup(rg).containerImage(img).build();
+            when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
+            when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
+            when(containerImageRepository.findById(any())).thenReturn(Optional.of(img));
+            SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
+            when(dto.resourceGroupId()).thenReturn(1);
+            when(dto.imageId()).thenReturn(1L);
+            when(dto.toEntity(any(), any(), any())).thenReturn(savedReq);
+            when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
+
+            TransactionSynchronizationManager.initSynchronization();
+            try {
+                requestCommandService.createRequest(1L, dto);
+                verifyNoInteractions(alarmService);
+
+                TransactionSynchronizationManager.getSynchronizations()
+                        .forEach(TransactionSynchronization::afterCommit);
+                verify(alarmService).sendNewRequestNotification(eq(savedReq), any(), anyLong());
+            } finally {
+                TransactionSynchronizationManager.clearSynchronization();
+            }
+        }
 
         @Test
         @DisplayName("이미 살아있는 신청이 있어도 새 신청을 막지 않는다 — Pod 생성/상태조회가 requestId로 구분되므로 사용자당 여러 개 신청 가능")
