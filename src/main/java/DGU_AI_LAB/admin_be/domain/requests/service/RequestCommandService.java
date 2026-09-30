@@ -76,7 +76,8 @@ public class RequestCommandService {
      */
     @Transactional
     public void createSingleChangeRequest(Long userId, Long requestId, SingleChangeRequestDTO dto) {
-        Request originalRequest = requestRepository.findById(requestId)
+        // 행 잠금 조회: 같은 신청에 동시에 들어온 변경 요청이 아래 대기 중 중복 검사를 함께 통과하지 못하게 한다.
+        Request originalRequest = requestRepository.findByIdForUpdate(requestId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
         // 요청자가 원본 요청의 소유자인지 확인
@@ -87,6 +88,12 @@ public class RequestCommandService {
         // FULFILLED 상태에서만 변경 요청 가능
         if (originalRequest.getStatus() != Status.FULFILLED) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+        }
+
+        // 같은 종류는 한 번에 하나만 대기시킨다 — 무제한으로 쌓이면 관리자가 무엇을 승인해야 할지 알 수 없다.
+        if (changeRequestRepository.existsByRequest_RequestIdAndChangeTypeAndStatus(
+                requestId, dto.changeType(), Status.PENDING)) {
+            throw new BusinessException(ErrorCode.CHANGE_REQUEST_ALREADY_PENDING);
         }
 
         User requestedBy = originalRequest.getUser();

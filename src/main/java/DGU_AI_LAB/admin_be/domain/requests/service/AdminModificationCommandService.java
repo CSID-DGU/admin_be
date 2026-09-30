@@ -267,6 +267,11 @@ public class AdminModificationCommandService {
 
     private ExpiryChangeResult applyExpiresAtChange(Request originalRequest, String newValueJson) throws JsonProcessingException {
         LocalDateTime newExpiresAt = LocalDateTime.parse(objectMapper.readValue(newValueJson, String.class));
+        // 요청할 때 미래였어도 승인이 늦으면 이미 지났을 수 있다. 그대로 반영하면 다음 만료 정리에서
+        // 컨테이너가 바로 삭제된다 — 연장 요청이 삭제로 바뀌는 셈이라 승인하지 않는다.
+        if (!newExpiresAt.isAfter(LocalDateTime.now())) {
+            throw new BusinessException(ErrorCode.CHANGE_REQUEST_EXPIRES_AT_PASSED);
+        }
         LocalDateTime oldExpiresAt = originalRequest.getExpiresAt();
         originalRequest.updateExpiresAt(newExpiresAt);
         return new ExpiryChangeResult(oldExpiresAt, newExpiresAt);
