@@ -27,6 +27,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @Slf4j
 @Service
@@ -154,7 +155,7 @@ public class AdminUserService {
                     log.error("[deleteUser] userId={} 존재하지 않음", userId);
                     return new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND);
                 }));
-        requireNotLastActiveAdmin(user);
+        requireNotLastActiveAdminInNewTx(userId);
 
         withdrawWithCleanup(userId, user, "deleteUser", "notification.user.admin-delete");
     }
@@ -171,7 +172,7 @@ public class AdminUserService {
             log.info("[withdrawInactiveUser] userId={} 이미 비활성 상태라 건너뜁니다", userId);
             return;
         }
-        requireNotLastActiveAdmin(user);
+        requireNotLastActiveAdminInNewTx(userId);
         log.warn("[withdrawInactiveUser] userId={} 장기 미사용 탈퇴 시작", userId);
         withdrawWithCleanup(userId, user, "withdrawInactiveUser", "notification.user.soft-delete");
     }
@@ -184,6 +185,7 @@ public class AdminUserService {
         User withdrawn = tx.execute(status -> {
             User managed = userRepository.findById(userId)
                     .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
+            requireNotLastActiveAdmin(userId);
             managed.withdraw();
             return managed;
         });
@@ -254,7 +256,7 @@ public class AdminUserService {
                 log.warn("[deactivateUser] userId={} 이미 비활성화 상태", userId);
                 throw new ConflictException(ErrorCode.USER_ALREADY_INACTIVE);
             }
-            requireNotLastActiveAdmin(found);
+            requireNotLastActiveAdmin(userId);
             return found;
         });
 
@@ -266,6 +268,7 @@ public class AdminUserService {
         User deactivated = tx.execute(status -> {
             User managed = userRepository.findById(userId)
                     .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
+            requireNotLastActiveAdmin(userId);
             managed.deactivate();
             return managed;
         });
@@ -297,7 +300,7 @@ public class AdminUserService {
             throw new ConflictException(ErrorCode.USER_ALREADY_HAS_ROLE);
         }
         if (newRole != Role.ADMIN) {
-            requireNotLastActiveAdmin(user);
+            requireNotLastActiveAdmin(userId);
         }
 
         user.changeRole(newRole);
@@ -308,12 +311,25 @@ public class AdminUserService {
     /**
      * 활성 관리자가 한 명도 남지 않게 하는 변경을 막는다. 관리자가 없으면 관리 화면에 아무도 들어갈 수 없고,
      * 서버에서 DB를 직접 고쳐야만 되살릴 수 있다. 관리자 자신에 대한 요청과 장기 미사용 자동 탈퇴에도 똑같이 적용된다.
+     *
+     * <p>권한·활성 상태를 바꾸는 트랜잭션 안에서 불러야 한다 — 활성 관리자 행을 모두 잠그고 세므로, 동시에 두 관리자를
+     * 내리는 요청은 여기서 줄을 서고 뒤 요청은 앞 요청이 커밋한 결과를 보고 거부된다.
      */
-    private void requireNotLastActiveAdmin(User target) {
-        if (target.getRole() == Role.ADMIN && Boolean.TRUE.equals(target.getIsActive())
-                && userRepository.countByRoleAndIsActiveTrue(Role.ADMIN) <= 1) {
-            log.warn("[requireNotLastActiveAdmin] userId={} 마지막 활성 관리자라 거부", target.getUserId());
+    private void requireNotLastActiveAdmin(Long targetUserId) {
+        List<User> activeAdmins = userRepository.lockActiveUsersByRole(Role.ADMIN);
+        boolean targetIsActiveAdmin = activeAdmins.stream()
+                .anyMatch(admin -> Objects.equals(admin.getUserId(), targetUserId));
+        if (targetIsActiveAdmin && activeAdmins.size() <= 1) {
+            log.warn("[requireNotLastActiveAdmin] userId={} 마지막 활성 관리자라 거부", targetUserId);
             throw new ConflictException(ErrorCode.LAST_ACTIVE_ADMIN);
         }
+    }
+
+    /**
+     * 컨테이너 정리(HTTP 호출)를 시작하기 전에 미리 거부하려는 확인. 정리 뒤 실제로 상태를 바꾸는 트랜잭션에서
+     * requireNotLastActiveAdmin을 다시 부르므로, 그 사이 다른 관리자가 내려가도 관리자가 0명이 되지는 않는다.
+     */
+    private void requireNotLastActiveAdminInNewTx(Long targetUserId) {
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> requireNotLastActiveAdmin(targetUserId));
     }
 }

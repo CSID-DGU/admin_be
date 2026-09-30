@@ -31,7 +31,13 @@ public interface UserRepository extends JpaRepository<User,Long> {
 
     List<User> findAllByUbuntuAccountStatus(UbuntuAccountStatus ubuntuAccountStatus);
 
-    long countByRoleAndIsActiveTrue(Role role);
+    /**
+     * 이 권한의 활성 사용자 행을 모두 잠근다. "마지막 활성 관리자" 확인과 권한·활성 변경을 한 트랜잭션에서
+     * 이 잠금 뒤에 하면, 두 관리자를 동시에 내리는 요청이 직렬화되어 뒤 요청이 앞 요청의 결과를 보고 판단한다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT u FROM User u WHERE u.role = :role AND u.isActive = true")
+    List<User> lockActiveUsersByRole(@Param("role") Role role);
 
     /**
      * 우분투 계정(UID/GID) 배정 시점의 "확인 후 배정" 경합을 막기 위한 행 잠금 조회.

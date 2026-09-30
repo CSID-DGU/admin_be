@@ -31,6 +31,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.TransactionStatus;
 
 import java.util.ArrayList;
@@ -99,6 +100,7 @@ class AdminUserServiceTest {
         // 승인을 한 번이라도 받은 사용자는 웹 계정에 리눅스 계정(UID/GID)이 물려 있다.
         // 이 계정 회수는 요청 만료가 아니라 사용자 삭제/비활성화에서만 일어난다.
         mockUser.assignUbuntuAccount(20001L, 20001L);
+        ReflectionTestUtils.setField(mockUser, "userId", 1L);
         lenient().when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         // 계정 회수 단계는 User 행을 잠그고 수행한다.
         lenient().when(userRepository.findByIdForUpdate(any())).thenReturn(Optional.of(mockUser));
@@ -150,6 +152,13 @@ class AdminUserServiceTest {
         lenient().when(request.getRequestId()).thenReturn(requestId);
         lenient().when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
         return request;
+    }
+
+    private static User otherAdmin() {
+        User admin = User.builder().email("admin2@dgu.ac.kr").password("pw").name("관리자2").build();
+        admin.changeRole(Role.ADMIN);
+        ReflectionTestUtils.setField(admin, "userId", 2L);
+        return admin;
     }
 
     private void givenRequests(Request... requests) {
@@ -296,6 +305,34 @@ class AdminUserServiceTest {
 
             assertThat(mockUser.getIsActive()).isFalse();
         }
+
+        @Test
+        @DisplayName("마지막 활성 관리자는 탈퇴시키지 않고 아무것도 회수하지 않는다")
+        void rejectsLastActiveAdmin() {
+            mockUser.changeRole(Role.ADMIN);
+            when(userRepository.lockActiveUsersByRole(Role.ADMIN)).thenReturn(List.of(mockUser));
+
+            assertThatThrownBy(() -> adminUserService.deleteUser(1L))
+                    .isInstanceOf(ConflictException.class)
+                    .hasMessageContaining(ErrorCode.LAST_ACTIVE_ADMIN.getMessage());
+            assertThat(mockUser.getIsActive()).isTrue();
+            verifyNoInteractions(requestExpiryService);
+        }
+
+        @Test
+        @DisplayName("정리 중에 다른 관리자가 먼저 내려가 마지막이 되면 탈퇴시키지 않는다")
+        void rejectsWhenOtherAdminLeftDuringCleanup() {
+            mockUser.changeRole(Role.ADMIN);
+            when(userRepository.lockActiveUsersByRole(Role.ADMIN))
+                    .thenReturn(List.of(mockUser, otherAdmin()), List.of(mockUser));
+
+            assertThatThrownBy(() -> adminUserService.deleteUser(1L))
+                    .isInstanceOf(ConflictException.class)
+                    .hasMessageContaining(ErrorCode.LAST_ACTIVE_ADMIN.getMessage());
+            assertThat(mockUser.getIsActive()).isTrue();
+            assertThat(mockUser.getDeletedAt()).isNull();
+            verify(tokenService, never()).logout(any());
+        }
     }
 
     @Nested
@@ -427,13 +464,27 @@ class AdminUserServiceTest {
         @DisplayName("마지막 활성 관리자는 비활성화하지 않고 아무것도 회수하지 않는다")
         void rejectsLastActiveAdmin() {
             mockUser.changeRole(Role.ADMIN);
-            when(userRepository.countByRoleAndIsActiveTrue(Role.ADMIN)).thenReturn(1L);
+            when(userRepository.lockActiveUsersByRole(Role.ADMIN)).thenReturn(List.of(mockUser));
 
             assertThatThrownBy(() -> adminUserService.deactivateUser(1L))
                     .isInstanceOf(ConflictException.class)
                     .hasMessageContaining(ErrorCode.LAST_ACTIVE_ADMIN.getMessage());
             assertThat(mockUser.getIsActive()).isTrue();
             verifyNoInteractions(requestExpiryService);
+        }
+
+        @Test
+        @DisplayName("정리 중에 다른 관리자가 먼저 내려가 마지막이 되면 비활성화하지 않는다")
+        void rejectsWhenOtherAdminLeftDuringCleanup() {
+            mockUser.changeRole(Role.ADMIN);
+            when(userRepository.lockActiveUsersByRole(Role.ADMIN))
+                    .thenReturn(List.of(mockUser, otherAdmin()), List.of(mockUser));
+
+            assertThatThrownBy(() -> adminUserService.deactivateUser(1L))
+                    .isInstanceOf(ConflictException.class)
+                    .hasMessageContaining(ErrorCode.LAST_ACTIVE_ADMIN.getMessage());
+            assertThat(mockUser.getIsActive()).isTrue();
+            verify(tokenService, never()).logout(any());
         }
 
         @Test
@@ -525,7 +576,7 @@ class AdminUserServiceTest {
         void changeUserRole_rejectsDemotingLastActiveAdmin() {
             mockUser.changeRole(Role.ADMIN);
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
-            when(userRepository.countByRoleAndIsActiveTrue(Role.ADMIN)).thenReturn(1L);
+            when(userRepository.lockActiveUsersByRole(Role.ADMIN)).thenReturn(List.of(mockUser));
 
             assertThatThrownBy(() -> adminUserService.changeUserRole(1L, Role.USER))
                     .isInstanceOf(ConflictException.class)
@@ -538,7 +589,7 @@ class AdminUserServiceTest {
         void changeUserRole_allowsDemotingWhenOtherAdminsRemain() {
             mockUser.changeRole(Role.ADMIN);
             when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
-            when(userRepository.countByRoleAndIsActiveTrue(Role.ADMIN)).thenReturn(2L);
+            when(userRepository.lockActiveUsersByRole(Role.ADMIN)).thenReturn(List.of(mockUser, otherAdmin()));
 
             adminUserService.changeUserRole(1L, Role.USER);
 
