@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.time.Duration;
 import java.util.Map;
 
 /**
@@ -23,6 +24,12 @@ import java.util.Map;
 @Slf4j
 @Component
 public class ConfigServerJobClient implements JobClient {
+
+    /**
+     * 결과·단계 조회는 config-server DB 한 번 읽기라 금방 끝난다. 공용 클라이언트의 응답 제한(그룹 생성 같은 긴
+     * 동기 호출용)을 그대로 쓰면 config-server가 멈춘 동안 폴러가 신청 하나에 그만큼씩 스케줄러 스레드를 쥔다.
+     */
+    static final Duration READ_TIMEOUT = Duration.ofSeconds(10);
 
     private final WebClient webClient;
 
@@ -87,6 +94,7 @@ public class ConfigServerJobClient implements JobClient {
                             (status, body) -> new BusinessException("작업 단계 기록 조회 실패: " + body,
                                     ErrorCode.EXTERNAL_API_ERROR))
                     .bodyToMono(JobStepsResponseDTO.class)
+                    .timeout(READ_TIMEOUT)
                     .block();
 
             if (response == null || response.jobs() == null) {
@@ -112,6 +120,7 @@ public class ConfigServerJobClient implements JobClient {
                             (status, body) -> new BusinessException("작업 결과 조회 실패: " + body,
                                     ErrorCode.EXTERNAL_API_ERROR))
                     .bodyToMono(JobResultResponseDTO.class)
+                    .timeout(READ_TIMEOUT)
                     .block();
 
             if (response == null || response.phase() == null) {

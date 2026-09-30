@@ -20,8 +20,10 @@ public final class RuntimeDefaults {
                 "spring.mail.properties.mail.smtp.timeout", "10000",
                 "spring.mail.properties.mail.smtp.writetimeout", "10000",
                 // 결과 폴러·재조정·Slack 워커·승인 안내 메일이 모두 스케줄러 스레드에서 돈다. 기본값(1)이면 느린
-                // 외부 호출 하나가 나머지를 전부 멈춘다. 같은 신청을 동시에 만지는 경로는 행 잠금 + 상태 재확인을 거친다.
-                "spring.task.scheduling.pool.size", "4",
+                // 외부 호출 하나가 나머지를 전부 멈춘다. 예약 작업(@Scheduled)마다 스레드 하나씩 돌아가도록 개수에
+                // 맞춘다 — 모자라면 config-server가 멈춘 동안 폴러들이 스레드를 다 쥐어 그 장애를 알릴 Slack 워커까지
+                // 선다. 예약 작업을 늘리면 이 값도 늘린다. 같은 신청을 동시에 만지는 경로는 행 잠금 + 상태 재확인을 거친다.
+                "spring.task.scheduling.pool.size", "10",
                 // API 문서는 전체 경로와 요청 형식을 보여 준다. 운영에서는 끄고, 필요한 개발 환경만 설정 파일에서 켠다.
                 "springdoc.api-docs.enabled", "false",
                 "springdoc.swagger-ui.enabled", "false"
