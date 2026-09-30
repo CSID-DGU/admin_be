@@ -3,13 +3,14 @@ package DGU_AI_LAB.admin_be.domain.users.service;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.util.RedisWindowCounter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
 
 /**
  * 비밀번호 변경 폼의 "현재 웹 비밀번호" 확인. 로그인과 같은 규칙(15분 안에 5번 틀리면 잠금)을 둔다 —
@@ -25,6 +26,7 @@ public class CurrentPasswordVerifier {
 
     private final PasswordEncoder passwordEncoder;
     private final RedisTemplate<String, String> redisTemplate;
+    private final RedisWindowCounter windowCounter;
 
     public void verify(User user, String rawPassword) {
         String key = "PW_CONFIRM_FAIL:" + user.getUserId();
@@ -33,10 +35,7 @@ public class CurrentPasswordVerifier {
             throw new BusinessException(ErrorCode.TOO_MANY_PASSWORD_ATTEMPTS);
         }
         if (!passwordEncoder.matches(rawPassword, user.getPassword())) {
-            Long count = redisTemplate.opsForValue().increment(key);
-            if (count != null && count == 1L) {
-                redisTemplate.expire(key, LOCKOUT_SECONDS, TimeUnit.SECONDS);
-            }
+            long count = windowCounter.increment(key, Duration.ofSeconds(LOCKOUT_SECONDS));
             log.warn("[CurrentPasswordVerifier] userId={} 현재 비밀번호 불일치 ({}회)", user.getUserId(), count);
             throw new BusinessException(ErrorCode.INVALID_PASSWORD);
         }

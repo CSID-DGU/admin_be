@@ -2,8 +2,8 @@ package DGU_AI_LAB.admin_be.domain.groups.service;
 
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.util.RedisWindowCounter;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -20,15 +20,10 @@ public class GroupCreateThrottle {
     static final int MAX_CREATES_PER_WINDOW = 5;
     private static final String COUNT_PREFIX = "group:create-count:";
 
-    private final RedisTemplate<String, String> redisTemplate;
+    private final RedisWindowCounter windowCounter;
 
     public void acquire(Long userId) {
-        String key = COUNT_PREFIX + userId;
-        Long creates = redisTemplate.opsForValue().increment(key);
-        if (creates != null && creates == 1) {
-            redisTemplate.expire(key, WINDOW);
-        }
-        if (creates != null && creates > MAX_CREATES_PER_WINDOW) {
+        if (windowCounter.increment(COUNT_PREFIX + userId, WINDOW) > MAX_CREATES_PER_WINDOW) {
             throw new BusinessException(ErrorCode.TOO_MANY_GROUP_CREATIONS);
         }
     }

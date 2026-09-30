@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.users.service;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.util.RedisWindowCounter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,7 +16,7 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
@@ -39,6 +40,9 @@ class CurrentPasswordVerifierTest {
     @Mock
     private ValueOperations<String, String> ops;
 
+    @Mock
+    private RedisWindowCounter windowCounter;
+
     private User user;
 
     @BeforeEach
@@ -60,16 +64,15 @@ class CurrentPasswordVerifierTest {
     }
 
     @Test
-    @DisplayName("첫 실패는 횟수를 올리고 15분 만료를 건다")
-    void countsFailureWithExpiry() {
+    @DisplayName("실패는 15분 창으로 횟수를 센다")
+    void countsFailureInLockoutWindow() {
         when(passwordEncoder.matches("bad", "encoded")).thenReturn(false);
-        when(ops.increment(KEY)).thenReturn(1L);
 
         assertThatThrownBy(() -> verifier.verify(user, "bad"))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_PASSWORD);
-        verify(redisTemplate).expire(KEY, CurrentPasswordVerifier.LOCKOUT_SECONDS, TimeUnit.SECONDS);
+        verify(windowCounter).increment(KEY, Duration.ofSeconds(CurrentPasswordVerifier.LOCKOUT_SECONDS));
     }
 
     @Test

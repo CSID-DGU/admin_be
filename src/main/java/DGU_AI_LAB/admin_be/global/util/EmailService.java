@@ -14,6 +14,7 @@ import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -27,8 +28,10 @@ public class EmailService {
     private final MessageUtils messageUtils;
     private final EmailDomainPolicy emailDomainPolicy;
     private final EmailSendThrottle emailSendThrottle;
+    private final RedisWindowCounter windowCounter;
 
     private static final long AUTH_CODE_EXPIRE_SECONDS = 60 * 5; // 5분
+    private static final Duration AUTH_CODE_TTL = Duration.ofSeconds(AUTH_CODE_EXPIRE_SECONDS);
     private static final String EMAIL_VERIFY_PREFIX = "email:verify:";
     private static final String EMAIL_VERIFY_ATTEMPTS_PREFIX = "email:verify-attempts:";
     // 6자리 코드는 100만 가지뿐이라 시도 횟수를 막지 않으면 5분 안에 대입으로 뚫린다.
@@ -76,11 +79,7 @@ public class EmailService {
 
     private void recordFailedAttempt(String email, String codeKey) {
         String attemptsKey = EMAIL_VERIFY_ATTEMPTS_PREFIX + email;
-        Long attempts = redisTemplate.opsForValue().increment(attemptsKey);
-        if (attempts != null && attempts == 1) {
-            redisTemplate.expire(attemptsKey, AUTH_CODE_EXPIRE_SECONDS, TimeUnit.SECONDS);
-        }
-        if (attempts != null && attempts >= MAX_AUTH_CODE_ATTEMPTS) {
+        if (windowCounter.increment(attemptsKey, AUTH_CODE_TTL) >= MAX_AUTH_CODE_ATTEMPTS) {
             redisTemplate.delete(codeKey);
             redisTemplate.delete(attemptsKey);
             log.warn("이메일 인증 코드 입력 {}회 실패로 코드 폐기", MAX_AUTH_CODE_ATTEMPTS);

@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.global.util.RedisWindowCounter;
 import DGU_AI_LAB.admin_be.global.auth.EmailDomainPolicy;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
@@ -28,6 +29,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -66,6 +68,9 @@ class UserLoginServiceTest {
 
     @Mock
     private EmailDomainPolicy emailDomainPolicy;
+
+    @Mock
+    private RedisWindowCounter windowCounter;
 
     private User activeUser;
 
@@ -355,7 +360,7 @@ class UserLoginServiceTest {
 
             assertThatThrownBy(() -> userLoginService.login(dto))
                     .isInstanceOf(UnauthorizedException.class);
-            verify(valueOperations).increment("LOGIN_FAIL:notexist@dgu.ac.kr");
+            verify(windowCounter).increment(eq("LOGIN_FAIL:notexist@dgu.ac.kr"), any());
             // 있는 계정과 응답 시간이 같도록 없는 이메일에도 BCrypt 검사를 한 번 돌린다
             verify(passwordEncoder, times(1)).matches(eq("password"), any());
         }
@@ -404,7 +409,7 @@ class UserLoginServiceTest {
             assertThatThrownBy(() -> userLoginService.login(new UserLoginRequestDTO("inactive@dgu.ac.kr", "wrong")))
                     .isInstanceOf(UnauthorizedException.class)
                     .extracting("errorCode").isEqualTo(ErrorCode.INVALID_LOGIN_INFO);
-            verify(valueOperations).increment("LOGIN_FAIL:inactive@dgu.ac.kr");
+            verify(windowCounter).increment(eq("LOGIN_FAIL:inactive@dgu.ac.kr"), any());
         }
 
         @Test
@@ -419,7 +424,7 @@ class UserLoginServiceTest {
             assertThatThrownBy(() -> userLoginService.login(dto))
                     .isInstanceOf(UnauthorizedException.class);
             verify(passwordEncoder, times(1)).matches("wrongPw", "encodedPassword");
-            verify(valueOperations).increment("LOGIN_FAIL:test@dgu.ac.kr");
+            verify(windowCounter).increment(eq("LOGIN_FAIL:test@dgu.ac.kr"), any());
         }
 
         @Test
@@ -467,10 +472,9 @@ class UserLoginServiceTest {
         }
 
         @Test
-        @DisplayName("실패 카운터가 처음 1로 증가할 때만 TTL을 설정한다")
-        void login_setsExpireOnlyOnFirstFailure() {
+        @DisplayName("로그인 실패는 15분 창으로 횟수를 센다")
+        void login_countsFailureInLockoutWindow() {
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-            when(valueOperations.increment("LOGIN_FAIL:test@dgu.ac.kr")).thenReturn(1L);
             when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
             when(passwordEncoder.matches("wrongPw", "encodedPassword")).thenReturn(false);
 
@@ -478,22 +482,7 @@ class UserLoginServiceTest {
 
             assertThatThrownBy(() -> userLoginService.login(dto))
                     .isInstanceOf(UnauthorizedException.class);
-            verify(redisTemplate).expire(eq("LOGIN_FAIL:test@dgu.ac.kr"), eq(900L), eq(TimeUnit.SECONDS));
-        }
-
-        @Test
-        @DisplayName("실패 카운터가 이미 1보다 크게 증가하면 TTL을 다시 설정하지 않는다")
-        void login_doesNotResetExpire_onSubsequentFailures() {
-            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-            when(valueOperations.increment("LOGIN_FAIL:test@dgu.ac.kr")).thenReturn(2L);
-            when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
-            when(passwordEncoder.matches("wrongPw", "encodedPassword")).thenReturn(false);
-
-            UserLoginRequestDTO dto = new UserLoginRequestDTO("test@dgu.ac.kr", "wrongPw");
-
-            assertThatThrownBy(() -> userLoginService.login(dto))
-                    .isInstanceOf(UnauthorizedException.class);
-            verify(redisTemplate, never()).expire(anyString(), anyLong(), any(TimeUnit.class));
+            verify(windowCounter).increment("LOGIN_FAIL:test@dgu.ac.kr", Duration.ofMinutes(15));
         }
 
         @Test

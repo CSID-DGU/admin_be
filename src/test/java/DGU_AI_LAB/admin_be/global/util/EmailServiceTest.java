@@ -18,6 +18,8 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.mail.javamail.JavaMailSender;
 
+import java.time.Duration;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -53,6 +55,9 @@ class EmailServiceTest {
 
     @Mock
     private EmailSendThrottle emailSendThrottle;
+
+    @Mock
+    private RedisWindowCounter windowCounter;
 
     @BeforeEach
     void setUp() {
@@ -184,14 +189,14 @@ class EmailServiceTest {
 
             assertThatThrownBy(() -> emailService.confirmAuthCode("test@example.com", "000000"))
                     .isInstanceOf(BusinessException.class);
-            verify(valueOperations, never()).increment(anyString());
+            verify(windowCounter, never()).increment(anyString(), any());
         }
 
         @Test
         @DisplayName("틀린 입력이 한도에 닿으면 코드를 폐기하고 429 오류를 던진다")
         void confirmAuthCode_tooManyAttempts_discardsCode() {
             when(valueOperations.get("email:verify:test@example.com")).thenReturn("123456");
-            when(valueOperations.increment("email:verify-attempts:test@example.com")).thenReturn(5L);
+            when(windowCounter.increment(eq("email:verify-attempts:test@example.com"), any())).thenReturn(5L);
 
             assertThatThrownBy(() -> emailService.confirmAuthCode("test@example.com", "000000"))
                     .isInstanceOfSatisfying(BusinessException.class, e ->
@@ -200,15 +205,14 @@ class EmailServiceTest {
         }
 
         @Test
-        @DisplayName("첫 실패에서 시도 횟수 키에 만료 시간을 건다")
-        void confirmAuthCode_firstFailure_setsExpiry() {
+        @DisplayName("틀린 입력은 코드 유효 시간(5분) 창으로 시도 횟수를 센다")
+        void confirmAuthCode_failure_countsInCodeWindow() {
             when(valueOperations.get("email:verify:test@example.com")).thenReturn("123456");
-            when(valueOperations.increment("email:verify-attempts:test@example.com")).thenReturn(1L);
+            when(windowCounter.increment("email:verify-attempts:test@example.com", Duration.ofMinutes(5))).thenReturn(1L);
 
             assertThatThrownBy(() -> emailService.confirmAuthCode("test@example.com", "000000"))
                     .isInstanceOfSatisfying(BusinessException.class, e ->
                             assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_AUTH_CODE));
-            verify(redisTemplate).expire(eq("email:verify-attempts:test@example.com"), anyLong(), any());
             verify(redisTemplate, never()).delete("email:verify:test@example.com");
         }
     }

@@ -13,6 +13,7 @@ import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import DGU_AI_LAB.admin_be.global.auth.jwt.JwtProvider;
 import DGU_AI_LAB.admin_be.global.validation.ReservedLinuxNames;
 import DGU_AI_LAB.admin_be.global.util.LinuxPasswordHasher;
+import DGU_AI_LAB.admin_be.global.util.RedisWindowCounter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,6 +23,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
@@ -38,12 +40,13 @@ public class UserLoginService {
     private final JwtProvider jwtProvider;
     private final RedisTemplate<String, String> redisTemplate;
     private final EmailDomainPolicy emailDomainPolicy;
+    private final RedisWindowCounter windowCounter;
 
     @Value("${jwt.refresh-token-expire-time}")
     private long REFRESH_TOKEN_EXPIRE_TIME;
 
     private static final int MAX_LOGIN_ATTEMPTS = 5;
-    private static final long LOGIN_LOCKOUT_SECONDS = 900; // 15분
+    private static final Duration LOGIN_LOCKOUT_WINDOW = Duration.ofMinutes(15);
 
     /**
      * 없는 이메일에도 비밀번호 검사를 한 번 돌리기 위한 해시. 건너뛰면 응답이 BCrypt 한 번만큼 빨라져 가입된
@@ -185,10 +188,7 @@ public class UserLoginService {
     }
 
     private void recordFailedAttempt(String attemptKey) {
-        Long count = redisTemplate.opsForValue().increment(attemptKey);
-        if (count != null && count == 1L) {
-            redisTemplate.expire(attemptKey, LOGIN_LOCKOUT_SECONDS, TimeUnit.SECONDS);
-        }
+        windowCounter.increment(attemptKey, LOGIN_LOCKOUT_WINDOW);
     }
 
 }
