@@ -160,8 +160,8 @@ public class AdminUserService {
     }
 
     /**
-     * 장기 미접속 유저 탈퇴(수명주기 스케줄러). deleteUser와 같이 웹 계정을 탈퇴 처리하고 컨테이너·우분투 계정
-     * 회수를 시작하되, 안내 메일만 장기 미접속 안내로 보낸다. 그 사이 이미 비활성화된 유저는 건너뛴다.
+     * 장기 미사용 유저 탈퇴(수명주기 스케줄러). deleteUser와 같이 웹 계정을 탈퇴 처리하고 컨테이너·우분투 계정
+     * 회수를 시작하되, 안내 메일만 장기 미사용 안내로 보낸다. 그 사이 이미 비활성화된 유저는 건너뛴다.
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void withdrawInactiveUser(Long userId) {
@@ -172,7 +172,7 @@ public class AdminUserService {
             return;
         }
         requireNotLastActiveAdmin(user);
-        log.warn("[withdrawInactiveUser] userId={} 장기 미접속 탈퇴 시작", userId);
+        log.warn("[withdrawInactiveUser] userId={} 장기 미사용 탈퇴 시작", userId);
         withdrawWithCleanup(userId, user, "withdrawInactiveUser", "notification.user.soft-delete");
     }
 
@@ -307,7 +307,7 @@ public class AdminUserService {
 
     /**
      * 활성 관리자가 한 명도 남지 않게 하는 변경을 막는다. 관리자가 없으면 관리 화면에 아무도 들어갈 수 없고,
-     * 서버에서 DB를 직접 고쳐야만 되살릴 수 있다. 관리자 자신에 대한 요청과 장기 미접속 자동 탈퇴에도 똑같이 적용된다.
+     * 서버에서 DB를 직접 고쳐야만 되살릴 수 있다. 관리자 자신에 대한 요청과 장기 미사용 자동 탈퇴에도 똑같이 적용된다.
      */
     private void requireNotLastActiveAdmin(User target) {
         if (target.getRole() == Role.ADMIN && Boolean.TRUE.equals(target.getIsActive())

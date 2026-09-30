@@ -11,6 +11,7 @@ import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.domain.users.service.AdminUserService;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,6 +48,9 @@ class UserSchedulerServiceTest {
     @Autowired
     private MessageUtils messageUtils;
 
+    @Autowired
+    private EntityManager entityManager;
+
     @MockitoBean
     private AlarmService alarmService;
 
@@ -56,50 +60,46 @@ class UserSchedulerServiceTest {
 
 
     @Test
-    @DisplayName("유저 수명주기 통합 테스트: 알림(D-7, D-1), 탈퇴 위임, 활동 유저 보호")
+    @DisplayName("유저 수명주기 통합 테스트: 알림(D-7, D-1), 탈퇴 위임, 컨테이너 사용자·신규 가입자 보호")
     void userLifecycleScheduler_IntegrationTest() {
         // --- Given ---
         // 서비스와 같은 시간대로 잡는다. JVM 기본 시간대(CI는 UTC)로 잡으면 UTC 15시~24시에 서울 날짜와 하루 어긋나
         // 남은 일수가 달라진다.
         LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
 
-        // 1. [정상 유저]
+        // 1. [정상 유저] 막 가입
         User activeUser = createUser("active@test.com", "ActiveUser");
-        updateLastLogin(activeUser, now.minusDays(1));
 
-        // 2. [보호 유저]
+        // 2. [보호 유저] 가입은 오래됐지만 쓰고 있는 컨테이너가 있다
         User podUser = createUser("pod@test.com", "PodUser");
-        updateLastLogin(podUser, now.minusMonths(4));
+        setCreatedAt(podUser, now.minusYears(2));
         createRequestForUser(podUser, now.minusDays(1));
 
-        // 3. [경고 대상 D-7] (Login = Now + 7일 - 3개월 → deleteDate = Now + 7일, daysLeft = 7)
-        // plusDays 후 minusMonths 순서여야 달력 연산 오차 없이 정확히 7일이 남음
+        // 3. [경고 대상 D-7] 컨테이너를 쓴 적 없이 가입 = Now + 7일 - 1년 → deleteDate = Now + 7일
+        // plusDays 후 minusYears 순서여야 달력 연산 오차 없이 정확히 7일이 남음
         User d7User = createUser("d7@test.com", "D7User");
-        LocalDateTime d7LoginDate = now.plusDays(7).minusMonths(3);
-        updateLastLogin(d7User, d7LoginDate);
-
-        // D-7 예상 메시지 생성
-        LocalDateTime d7DeleteDate = d7LoginDate.plusMonths(3);
+        LocalDateTime d7Since = now.plusDays(7).minusYears(1);
+        setCreatedAt(d7User, d7Since);
         String d7Subject = messageUtils.get("notification.user.delete-warning.subject", "7");
         String d7Body = messageUtils.get("notification.user.delete-warning.body",
-                "D7User", "7", d7DeleteDate.toLocalDate().toString());
+                "D7User", "7", d7Since.plusMonths(12).toLocalDate().toString());
 
-
-        // 4. [경고 대상 D-1] (Login = Now - 3개월 + 1일)
+        // 4. [경고 대상 D-1]
         User d1User = createUser("d1@test.com", "D1User");
-        LocalDateTime d1LoginDate = now.minusMonths(3).plusDays(1);
-        updateLastLogin(d1User, d1LoginDate);
-
-        // D-1 예상 메시지 생성
-        LocalDateTime d1DeleteDate = d1LoginDate.plusMonths(3);
+        LocalDateTime d1Since = now.minusYears(1).plusDays(1);
+        setCreatedAt(d1User, d1Since);
         String d1Subject = messageUtils.get("notification.user.delete-warning.subject", "1");
         String d1Body = messageUtils.get("notification.user.delete-warning.body",
-                "D1User", "1", d1DeleteDate.toLocalDate().toString());
+                "D1User", "1", d1Since.plusMonths(12).toLocalDate().toString());
 
-
-        // 5. [탈퇴 대상]
+        // 5. [탈퇴 대상] 어제 로그인했어도 가입(컨테이너 사용 없음) 1년이 지났다
         User softTarget = createUser("soft@test.com", "SoftTarget");
-        updateLastLogin(softTarget, now.minusMonths(3).minusDays(1));
+        setCreatedAt(softTarget, now.minusYears(1).minusDays(1));
+        updateLastLogin(softTarget, now.minusDays(1));
+
+        // 가입 시각은 SQL로 바꿨으니 스케줄러가 DB 값을 다시 읽게 한다.
+        entityManager.flush();
+        entityManager.clear();
 
 
         // --- When ---
@@ -150,6 +150,14 @@ class UserSchedulerServiceTest {
                 .phone("010-0000-0000")
                 .department("CS")
                 .build());
+    }
+
+    /** created_at은 JPA로 수정할 수 없는 칸(updatable=false)이라 SQL로 바꾼다. */
+    private void setCreatedAt(User user, LocalDateTime time) {
+        entityManager.createNativeQuery("UPDATE users SET created_at = :t WHERE user_id = :id")
+                .setParameter("t", time)
+                .setParameter("id", user.getUserId())
+                .executeUpdate();
     }
 
     private void updateLastLogin(User user, LocalDateTime time) {
