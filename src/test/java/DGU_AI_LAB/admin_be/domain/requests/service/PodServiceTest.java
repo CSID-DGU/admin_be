@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -29,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -90,6 +92,47 @@ class PodServiceTest {
                     .isEqualTo(ErrorCode.POD_NOT_ORPHAN);
 
             verify(webClient, never()).delete();
+        }
+
+        @Test
+        @DisplayName("이름의 사용자에게 생성·이동 작업이 돌고 있으면 podName이 아직 없어도 삭제를 거부한다")
+        void deleteOrphanPod_ownerHasPodJob_rejectsWithoutDeleting() {
+            when(requestRepository.existsByPodName("ailab-my-user-1a2b3c4d")).thenReturn(false);
+            when(requestRepository.existsByUser_UbuntuUsernameAndStatusIn(
+                    "my-user", List.of(Status.PROCESSING, Status.MIGRATING))).thenReturn(true);
+
+            assertThatThrownBy(() -> podService.deleteOrphanPod("ailab-my-user-1a2b3c4d"))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_JOB_IN_PROGRESS);
+
+            verify(webClient, never()).delete();
+        }
+
+        @Test
+        @DisplayName("이름의 사용자에게 도는 작업이 없으면 삭제한다")
+        void deleteOrphanPod_ownerHasNoPodJob_deletesPod() {
+            when(requestRepository.existsByPodName("ailab-alice-1a2b3c4d")).thenReturn(false);
+            when(requestRepository.existsByUser_UbuntuUsernameAndStatusIn(eq("alice"), any())).thenReturn(false);
+            when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "ok")));
+
+            assertThatCode(() -> podService.deleteOrphanPod("ailab-alice-1a2b3c4d"))
+                    .doesNotThrowAnyException();
+
+            verify(webClient).delete();
+        }
+
+        @Test
+        @DisplayName("관리 규칙 이름이 아닌 Pod는 작업 확인 없이 삭제한다")
+        void deleteOrphanPod_unmanagedName_skipsJobCheck() {
+            when(requestRepository.existsByPodName("ailab-alice-manual")).thenReturn(false);
+            when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "ok")));
+
+            assertThatCode(() -> podService.deleteOrphanPod("ailab-alice-manual"))
+                    .doesNotThrowAnyException();
+
+            verify(requestRepository, never()).existsByUser_UbuntuUsernameAndStatusIn(anyString(), any());
+            verify(webClient).delete();
         }
     }
 
