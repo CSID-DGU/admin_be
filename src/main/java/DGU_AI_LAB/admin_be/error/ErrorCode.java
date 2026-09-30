@@ -187,6 +187,7 @@ public enum ErrorCode {
     INFRA_REQUEST_REJECTED(HttpStatus.UNPROCESSABLE_ENTITY, "인프라 서버가 요청을 거절했습니다."),
     POD_MIGRATION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 마이그레이션 API 요청에 실패했습니다."),
     POD_NOT_ORPHAN(HttpStatus.CONFLICT, "신청 이력이 있는 Pod입니다. 개별 삭제 대신 사용자/신청 관리 화면에서 정리해주세요."),
+    POD_JOB_IN_PROGRESS(HttpStatus.CONFLICT, "이 Pod의 사용자에게 컨테이너 생성·이동 작업이 진행 중입니다. 작업이 끝난 뒤 다시 확인해주세요."),
 
     /**
      * Message Template Error

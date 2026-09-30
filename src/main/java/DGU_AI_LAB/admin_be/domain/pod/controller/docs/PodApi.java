@@ -48,7 +48,7 @@ public interface PodApi {
     @Operation(summary = "고아 Pod 삭제", description = "DB에 대응하는 신청(Request) 기록이 없는 Pod를 k8s에서 직접 삭제합니다. " +
             "정상적으로 신청을 거쳐 생성된 Pod는 이 API로 지울 수 없습니다 — 사용자 삭제/신청 만료 등 정식 경로를 이용하세요.")
     @ApiResponse(responseCode = "200", description = "삭제 성공")
-    @ApiResponse(responseCode = "409", description = "신청 이력이 있는 Pod라 거부됨", content = @Content)
+    @ApiResponse(responseCode = "409", description = "신청 이력이 있거나, 이름의 사용자에게 생성·이동 작업이 진행 중이라 거부됨", content = @Content)
     @ApiResponse(responseCode = "502", description = "K8s/config-server 연동 오류", content = @Content)
     ResponseEntity<SuccessResponse<?>> deleteOrphanPod(
             @Parameter(description = "Pod 이름") String podName
