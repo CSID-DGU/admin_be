@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.domain.users.service.AdminUserService;
@@ -21,7 +22,6 @@ public class UserSchedulerService {
     private final UserLifecycleTransactionalService userLifecycleService;
     private final AdminUserService adminUserService;
 
-    private static final int INACTIVE_MONTHS = 3;
     // D-7 경고까지 포함하려면 (strict <) 기준일을 7+1=8일 앞당겨야 한다
     private static final int NOTIFICATION_LEAD_DAYS = 8;
 
@@ -37,8 +37,9 @@ public class UserSchedulerService {
     }
 
     private void processInactiveUsers(LocalDateTime now) {
-        LocalDateTime searchThreshold = now.plusDays(NOTIFICATION_LEAD_DAYS).minusMonths(INACTIVE_MONTHS);
-        List<User> inactiveCandidates = userRepository.findInactiveUsers(searchThreshold);
+        LocalDateTime searchThreshold = now.plusDays(NOTIFICATION_LEAD_DAYS)
+                .minusMonths(UserLifecycleTransactionalService.INACTIVE_MONTHS);
+        List<User> inactiveCandidates = userRepository.findInactiveUsers(searchThreshold, Status.openStatuses());
 
         for (User user : inactiveCandidates) {
             try {

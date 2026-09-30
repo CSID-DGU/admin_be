@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.repository;
 
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.UbuntuAccountStatus;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -64,21 +66,15 @@ public interface UserRepository extends JpaRepository<User,Long> {
     int recordLogin(@Param("userId") Long userId, @Param("loggedInAt") LocalDateTime loggedInAt);
 
     /**
-     * [자동 탈퇴 대상 조회 쿼리]
-     * 조건:
-     * 1. Active 상태인 일반 사용자 (관리자는 미접속으로 탈퇴시키면 운영할 사람이 사라지므로 제외)
-     * 2. (현재 - 마지막 로그인) > 3개월
-     * 3. (현재 - 가장 최근 만료된 Pod 날짜) > 3개월 (Pod 사용 기록이 없으면 로그인 날짜만 봄)
-     * * 주의: COALESCE를 사용하여 Pod 기록이 없으면 아주 먼 과거(1900년)로 취급해 조건 통과시킴
+     * 장기 미접속 판정 후보. 마지막 접속(없으면 가입 시각)이 기준일보다 이르고, 끝나지 않은 신청(컨테이너 포함)이
+     * 하나도 없는 활성 일반 사용자다. 관리자는 미접속으로 비활성화하면 운영할 사람이 사라지므로 뺀다.
+     * 마지막 컨테이너가 사라진 시각까지 따진 최종 판정은 UserLifecycleTransactionalService가 한 곳에서 한다.
      */
     @Query("SELECT u FROM User u " +
-            "LEFT JOIN u.requests r " +
             "WHERE u.isActive = true " +
             "  AND u.role <> DGU_AI_LAB.admin_be.domain.users.entity.Role.ADMIN " +
-            "GROUP BY u " +
-            "HAVING " +
-            "  (u.lastLoginAt IS NULL OR u.lastLoginAt < :thresholdDate) " +
-            "  AND " +
-            "  (MAX(r.expiresAt) IS NULL OR MAX(r.expiresAt) < :thresholdDate)")
-    List<User> findInactiveUsers(@Param("thresholdDate") LocalDateTime thresholdDate);
+            "  AND COALESCE(u.lastLoginAt, u.createdAt) < :thresholdDate " +
+            "  AND NOT EXISTS (SELECT r FROM Request r WHERE r.user = u AND r.status IN :openStatuses)")
+    List<User> findInactiveUsers(@Param("thresholdDate") LocalDateTime thresholdDate,
+                                 @Param("openStatuses") Collection<Status> openStatuses);
 }
