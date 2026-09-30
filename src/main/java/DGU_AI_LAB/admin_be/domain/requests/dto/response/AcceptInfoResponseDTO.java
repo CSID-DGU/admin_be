@@ -48,6 +48,8 @@ public record AcceptInfoResponseDTO(
             String node_name,
             @Schema(description = "GPU 수", example = "2")
             int num_gpu,
+            @Schema(description = "이 노드에서 컨테이너에 넣을 GPU 종류. 노드의 같은 종류 GPU가 모두 들어간다", example = "[\"RTX A5000\"]")
+            List<String> gpu_models,
             @Schema(description = "CPU 제한 (k8s 포맷)", example = "4000m")
             String cpu_limit,
             @Schema(description = "메모리 제한 (k8s 포맷)", example = "8192Mi")
@@ -84,6 +86,7 @@ public record AcceptInfoResponseDTO(
                 .map(node -> GpuNodeDTO.builder()
                         .node_name(node.getNodeId())
                         .num_gpu(node.getNumberGpu())
+                        .gpu_models(node.getGpuModels())
                         .cpu_limit(node.getCpuCoreCount() * 1000 + "m")
                         .memory_limit(node.getMemorySizeGB() * 1024 + "Mi")
                         .build())

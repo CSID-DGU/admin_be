@@ -118,8 +118,6 @@ public enum ErrorCode {
     // 로그인한 사용자가 변경 폼에 적은 현재 비밀번호가 틀린 것이라 인증 실패(401)가 아니다. 401이면 화면이
     // 세션 만료로 보고 로그아웃시킨다.
     INVALID_PASSWORD(HttpStatus.BAD_REQUEST, "현재 비밀번호가 맞지 않아요."),
-    PASSWORD_CHANGE_SAME_AS_OLD(HttpStatus.BAD_REQUEST, "새 비밀번호가 현재 비밀번호와 같아요. 다르게 정해 주세요."),
-    TOO_MANY_PASSWORD_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "현재 비밀번호를 여러 번 틀렸어요. 15분 뒤에 다시 시도해 주세요."),
     UBUNTU_PASSWORD_REQUIRED(HttpStatus.BAD_REQUEST, "SSH 비밀번호를 준비하려면 다시 로그인해 주세요."),
     UBUNTU_PASSWORD_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "컨테이너에 반영하지 못해 비밀번호를 바꾸지 않았어요. 잠시 후 다시 시도해 주세요."),
 
@@ -165,6 +163,8 @@ public enum ErrorCode {
     INVALID_REQUEST_STATUS(HttpStatus.CONFLICT, "이미 처리된 신청입니다."),
     //FORBIDDEN_REQUEST(HttpStatus.BAD_REQUEST, "본인의 신청만 변경 신청할 수 있습니다."),
     UNSUPPORTED_CHANGE_TYPE(HttpStatus.BAD_REQUEST, "지원되지 않는 요청 타입(enum)입니다."),
+    CHANGE_REQUEST_ALREADY_PENDING(HttpStatus.CONFLICT, "같은 종류의 변경 요청이 이미 대기 중입니다. 처리된 뒤 다시 요청해주세요."),
+    CHANGE_REQUEST_EXPIRES_AT_PASSED(HttpStatus.CONFLICT, "요청한 만료 일시가 이미 지났습니다. 거절하고 새로 요청받아 주세요."),
     REQUEST_MIGRATION_IN_PROGRESS(HttpStatus.CONFLICT, "마이그레이션이 진행 중인 요청이 있어 삭제할 수 없습니다."),
     PROVISION_JOB_IN_PROGRESS(HttpStatus.CONFLICT, "컨테이너 생성 작업이 아직 끝나지 않아 거절할 수 없습니다. 작업이 끝난 뒤 다시 시도해주세요."),
     USER_APPROVAL_ALREADY_IN_PROGRESS(HttpStatus.CONFLICT, "같은 사용자의 다른 신청이 처리 중(PROCESSING)입니다. 그 신청이 완료된 뒤 다시 승인하고, 처리 중에 멈춰 있다면 관리자가 먼저 정리해주세요."),
@@ -187,6 +187,7 @@ public enum ErrorCode {
     INFRA_REQUEST_REJECTED(HttpStatus.UNPROCESSABLE_ENTITY, "인프라 서버가 요청을 거절했습니다."),
     POD_MIGRATION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 마이그레이션 API 요청에 실패했습니다."),
     POD_NOT_ORPHAN(HttpStatus.CONFLICT, "신청 이력이 있는 Pod입니다. 개별 삭제 대신 사용자/신청 관리 화면에서 정리해주세요."),
+    POD_JOB_IN_PROGRESS(HttpStatus.CONFLICT, "이 Pod의 사용자에게 컨테이너 생성·이동 작업이 진행 중입니다. 작업이 끝난 뒤 다시 확인해주세요."),
 
     /**
      * Message Template Error

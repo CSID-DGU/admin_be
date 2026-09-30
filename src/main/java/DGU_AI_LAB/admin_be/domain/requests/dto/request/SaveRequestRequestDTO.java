@@ -34,10 +34,10 @@ public record SaveRequestRequestDTO(
         @Positive(message = "이미지 ID는 양수여야 합니다.")
         Long imageId,
 
-        // requests.usage_purpose가 1000자다.
-        @Schema(description = "사용 목적", example = "딥러닝 모델 학습")
+        // 승인자가 이 글만 보고 판단하므로 50자 이상을 요구한다. 상한은 requests.usage_purpose 컬럼(1000자)이다.
+        @Schema(description = "사용 목적 (50~1000자)", example = "졸업 프로젝트로 PyTorch를 사용해 의료 영상(흉부 X-ray) 분류 모델을 학습하려고 합니다. 데이터는 약 2만 장이고, 한 번 학습에 GPU 1장으로 6시간 정도 걸릴 것으로 예상합니다.")
         @NotBlank(message = "사용 목적은 필수입니다.")
-        @Size(max = 1000, message = "사용 목적은 1000자 이하여야 합니다.")
+        @Size(min = 50, max = 1000, message = "사용 목적은 50자 이상 1000자 이하로 적어 주세요.")
         String usagePurpose,
 
         @Schema(description = "폼 응답", example = "{\"question\": \"answer\"}")
@@ -61,6 +61,8 @@ public record SaveRequestRequestDTO(
         @Schema(description = "noVNC GUI 활성화 여부", example = "false")
         Boolean enableVnc
 ) {
+    static final int MAX_FORM_ANSWERS_JSON_LENGTH = 10_000;
+
     public Request toEntity(
             User user,
             ResourceGroup resourceGroup,
@@ -71,6 +73,10 @@ public record SaveRequestRequestDTO(
             formAnswersJson = new ObjectMapper().writeValueAsString(formAnswers);
         } catch (JsonProcessingException e) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+        // 항목 수(@Size)만으로는 값 하나의 길이를 막지 못한다. 신청마다 DB에 그대로 쌓이므로 전체 크기로 제한한다.
+        if (formAnswersJson.length() > MAX_FORM_ANSWERS_JSON_LENGTH) {
+            throw new BusinessException("폼 응답이 너무 깁니다.", ErrorCode.INVALID_INPUT_VALUE);
         }
 
         Request req = Request.builder()

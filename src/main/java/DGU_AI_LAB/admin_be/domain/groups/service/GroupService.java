@@ -126,6 +126,7 @@ public class GroupService {
         } catch (Exception e) {
             log.error("[createGroup] 외부 API 응답 파싱 또는 통신 오류 발생 — " +
                     "외부 시스템에 그룹이 생성되었을 수 있습니다. 수동 확인이 필요합니다. groupName={}", dto.groupName(), e);
+            alertUnknownInfraGroup(dto.groupName(), e.getClass().getSimpleName());
             throw new BusinessException(ErrorCode.GROUP_CREATION_FAILED);
         }
 
@@ -329,6 +330,17 @@ public class GroupService {
     }
 
     record AddUserGroupsRequest(List<String> groups) {}
+
+    // 타임아웃·응답 유실처럼 요청은 갔는데 결과를 못 받은 경우 — 인프라에 그룹이 생겼는지 알 수 없다.
+    private void alertUnknownInfraGroup(String groupName, String cause) {
+        try {
+            alarmService.sendSlackAlert(String.format(
+                    "[createGroup] 인프라 그룹 생성 결과를 받지 못함 - 그룹이 생성됐는지 수동 확인 필요: groupName=%s, cause=%s",
+                    groupName, cause), null);
+        } catch (Exception ignored) {
+            // 알림 발송 실패가 원래 예외 전파를 막으면 안 된다.
+        }
+    }
 
     private void alertOrphanedInfraGroup(String groupName, Long gid, String cause) {
         try {

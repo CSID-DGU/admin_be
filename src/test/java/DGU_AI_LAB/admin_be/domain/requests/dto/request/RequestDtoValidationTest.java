@@ -2,8 +2,10 @@ package DGU_AI_LAB.admin_be.domain.requests.dto.request;
 
 import DGU_AI_LAB.admin_be.domain.groups.dto.request.CreateGroupRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.EmailVerifyRequestDTO;
-import DGU_AI_LAB.admin_be.domain.users.dto.request.PasswordUpdateRequestDTO;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.AdminPasswordResetRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuUsernameRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -21,6 +23,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 요청 경계 검증. DB 컬럼 길이·리눅스 계정 규칙·쿠버네티스 이름 규칙을 넘는 값이 서비스와 DB,
@@ -57,7 +60,7 @@ class RequestDtoValidationTest {
             return SaveRequestRequestDTO.builder()
                     .resourceGroupId(1)
                     .imageId(1L)
-                    .usagePurpose("딥러닝 모델 학습")
+                    .usagePurpose("가".repeat(50))
                     .formAnswers(Map.of("q", "a"))
                     .expiresAt(LocalDateTime.now().plusDays(30))
                     .ubuntuGids(Set.of(20004L))
@@ -82,6 +85,13 @@ class RequestDtoValidationTest {
         }
 
         @Test
+        @DisplayName("사용 목적이 50자보다 짧으면 거절한다")
+        void usagePurpose_under50_isRejected() {
+            assertThat(violatedPaths(valid().usagePurpose("가".repeat(49)).build())).contains("usagePurpose");
+            assertThat(violatedPaths(valid().usagePurpose("가".repeat(50)).build())).doesNotContain("usagePurpose");
+        }
+
+        @Test
         @DisplayName("사용 목적이 컬럼 길이 1000자를 넘으면 거절한다")
         void usagePurpose_over1000_isRejected() {
             assertThat(violatedPaths(valid().usagePurpose("a".repeat(1001)).build())).contains("usagePurpose");
@@ -102,34 +112,17 @@ class RequestDtoValidationTest {
             assertThat(violatedPaths(valid().resourceGroupId(0).imageId(-3L).build()))
                     .contains("resourceGroupId", "imageId");
         }
-    }
-
-    @Nested
-    @DisplayName("변경 요청")
-    class ModifyRequest {
 
         @Test
-        @DisplayName("변경 항목이 하나도 없으면 거절한다 — 서비스는 아무것도 만들지 않고 성공으로 끝나기 때문")
-        void noChange_isRejected() {
-            ModifyRequestDTO dto = new ModifyRequestDTO("사유", null, Set.of(), null, null);
+        @DisplayName("폼 응답은 항목 수와 별개로 전체 크기가 한도를 넘으면 저장하지 않는다")
+        void formAnswers_overTotalLength_isRejectedOnSave() {
+            String big = "a".repeat(SaveRequestRequestDTO.MAX_FORM_ANSWERS_JSON_LENGTH);
+            SaveRequestRequestDTO dto = valid().formAnswers(Map.of("q", big)).build();
 
-            assertThat(violatedPaths(dto)).contains("anyChangeRequested");
-        }
-
-        @Test
-        @DisplayName("변경 항목이 하나라도 있으면 통과한다")
-        void oneChange_isAccepted() {
-            ModifyRequestDTO dto = new ModifyRequestDTO("사유", LocalDateTime.now().plusDays(10), null, null, null);
-
-            assertThat(validator.validate(dto)).isEmpty();
-        }
-
-        @Test
-        @DisplayName("과거 만료 일시와 1000자를 넘는 사유는 거절한다")
-        void pastExpiryAndLongReason_areRejected() {
-            ModifyRequestDTO dto = new ModifyRequestDTO("a".repeat(1001), LocalDateTime.now().minusDays(1), null, null, null);
-
-            assertThat(violatedPaths(dto)).contains("reason", "requestedExpiresAt");
+            assertThatThrownBy(() -> dto.toEntity(null, null, null))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
         }
     }
 
@@ -195,9 +188,9 @@ class RequestDtoValidationTest {
         @Test
         @DisplayName("새 비밀번호는 8~72자")
         void newPassword_bounds() {
-            assertThat(violatedPaths(new PasswordUpdateRequestDTO("current", "1234567"))).contains("newPassword");
-            assertThat(violatedPaths(new PasswordUpdateRequestDTO("current", "a".repeat(73)))).contains("newPassword");
-            assertThat(violatedPaths(new PasswordUpdateRequestDTO("current", "12345678"))).isEmpty();
+            assertThat(violatedPaths(new AdminPasswordResetRequestDTO("1234567"))).contains("newPassword");
+            assertThat(violatedPaths(new AdminPasswordResetRequestDTO("a".repeat(73)))).contains("newPassword");
+            assertThat(violatedPaths(new AdminPasswordResetRequestDTO("12345678"))).isEmpty();
         }
 
         @Test

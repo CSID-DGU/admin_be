@@ -1,10 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
-import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
-import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
-import DGU_AI_LAB.admin_be.domain.users.dto.request.PasswordUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PhoneUpdateRequestDTO;
+import DGU_AI_LAB.admin_be.global.validation.PhoneNumbers;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuUsernameRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.MyInfoResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
@@ -13,12 +11,10 @@ import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
-import DGU_AI_LAB.admin_be.global.util.LinuxPasswordHasher;
 import DGU_AI_LAB.admin_be.global.validation.ReservedLinuxNames;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,10 +27,6 @@ public class UserService {
     private final UserRepository userRepository;
     private final GroupRepository groupRepository;
     private final ReservedLinuxNames reservedLinuxNames;
-    private final PasswordEncoder passwordEncoder;
-    private final CurrentPasswordVerifier currentPasswordVerifier;
-    private final RequestRepository requestRepository;
-    private final UbuntuPasswordSyncClient ubuntuPasswordSyncClient;
 
     /**
      * 유저 단일 조회
@@ -57,44 +49,6 @@ public class UserService {
     }
 
     /**
-     * 사용자 비밀번호 변경. 웹 비밀번호가 곧 SSH(Ubuntu) 비밀번호라 둘을 함께 바꾼다.
-     *
-     * <p>사용자 행을 잠근 채 config-server에 먼저 반영하고(리눅스 계정이 있을 때 — 떠 있는 컨테이너 포함), 성공해야
-     * DB의 두 해시를 바꾼다. 반영이 실패하면 예외로 롤백돼 웹 비밀번호도 그대로라 둘이 어긋나지 않는다 — 컨테이너
-     * 일부가 이미 바뀌었어도 다시 요청하면 맞춰진다. 잠금 범위는 그 사용자 한 명이다.
-     */
-    public UserResponseDTO updatePassword(Long userId, PasswordUpdateRequestDTO request) {
-        log.info("[updatePassword] userId={} 비밀번호 변경 시도", userId);
-
-        User user = userRepository.findByIdForUpdate(userId)
-                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
-
-        currentPasswordVerifier.verify(user, request.currentPassword());
-
-        if (passwordEncoder.matches(request.newPassword(), user.getPassword())) {
-            log.warn("[updatePassword] userId={} 새 비밀번호가 현재 비밀번호와 동일", userId);
-            throw new BusinessException(ErrorCode.PASSWORD_CHANGE_SAME_AS_OLD);
-        }
-
-        // 생성 작업은 승인 때 읽은 해시로 계정을 만든다. 그 사이 바꾸면 DB만 새 해시가 되고 실제 계정은
-        // 옛 비밀번호로 남는다. 승인도 이 사용자 행을 잠그고 해시를 읽으므로 이 확인과 겹치지 않는다.
-        if (requestRepository.existsByUser_UserIdAndStatus(userId, Status.PROCESSING)) {
-            throw new BusinessException(ErrorCode.UBUNTU_PASSWORD_CHANGE_WHILE_PROVISIONING);
-        }
-
-        String sshPasswordHash = LinuxPasswordHasher.sha512Crypt(request.newPassword());
-        // 리눅스 계정이 아직 없으면(첫 승인 전, 또는 회수 뒤) 바꿀 컨테이너도 없다. 해시만 두면 다음 승인이
-        // 이 값으로 계정을 만든다.
-        if (user.hasUbuntuAccount()) {
-            ubuntuPasswordSyncClient.apply(user.getUbuntuUsername(), sshPasswordHash);
-        }
-        user.updatePassword(passwordEncoder.encode(request.newPassword()));
-        user.changeUbuntuPasswordHash(sshPasswordHash);
-        log.info("[updatePassword] userId={} 비밀번호 변경 완료(SSH 포함)", userId);
-        return UserResponseDTO.fromEntity(user);
-    }
-
-    /**
      * 사용자 연락처 변경
      */
     public UserResponseDTO updatePhone(Long userId, PhoneUpdateRequestDTO request) {
@@ -102,7 +56,7 @@ public class UserService {
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
-        user.updatePhone(request.newPhone());
+        user.updatePhone(PhoneNumbers.normalize(request.newPhone()));
         log.info("[updatePhone] userId={} 연락처 변경 완료", userId);
         return UserResponseDTO.fromEntity(user);
     }

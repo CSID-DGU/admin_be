@@ -80,6 +80,24 @@ class UserRegisterRequestDTOTest {
     }
 
     @Test
+    @DisplayName("name에 콜론·제어 문자·줄바꿈이 있으면 거절한다 — 계정 원장(passwd)에 다른 줄을 끼워 넣는 경로다")
+    void name_withLedgerBreakingCharacters_isRejected() {
+        for (String name : new String[]{
+                "홍길동:/root", "홍길동\npwn::0:0::/root:/bin/bash", "홍길동\rpwn",
+                "홍길동 pwn", "홍길동 pwn", "홍길동\u0085pwn", "홍길동\tpwn", "홍길동\u0000"}) {
+            assertThat(violatedFields(registerWithName(name))).as(name).contains("name");
+        }
+    }
+
+    @Test
+    @DisplayName("한글·영문·공백·하이픈·아포스트로피가 섞인 보통 이름은 통과한다")
+    void name_ordinary_isAccepted() {
+        for (String name : new String[]{"이소은", "Hong Gil-dong", "O'Brien", "李小龍", "Anne-Marie Kim"}) {
+            assertThat(violatedFields(registerWithName(name))).as(name).doesNotContain("name");
+        }
+    }
+
+    @Test
     @DisplayName("department가 100자를 넘으면 위반이 발생한다")
     void department_over100_isRejected() {
         UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
@@ -151,11 +169,23 @@ class UserRegisterRequestDTOTest {
     }
 
     @Test
-    @DisplayName("phone은 연락처 변경과 같은 형식이어야 한다")
-    void phone_mustMatchFormat() {
-        assertThat(violatedFields(new UserRegisterRequestDTO(
-                "user@dgu.ac.kr", "strongPassword123!", "이소은", "컴퓨터공학과", "202312345", "01012345678", "sochoi")))
-                .contains("phone");
+    @DisplayName("phone은 하이픈이 없어도 받고, 저장할 때 010-1234-5678 모양으로 맞춘다")
+    void phone_acceptsDigitsOnly_andNormalizes() {
+        UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+                "user@dgu.ac.kr", "strongPassword123!", "이소은", "컴퓨터공학과", "202312345", "01012345678", "sochoi");
+
+        assertThat(violatedFields(dto)).doesNotContain("phone");
+        assertThat(dto.toEntity("encoded").getPhone()).isEqualTo("010-1234-5678");
+    }
+
+    @Test
+    @DisplayName("phone에 숫자가 아닌 글자나 모자란 자리가 있으면 거절한다")
+    void phone_rejectsMalformed() {
+        for (String phone : new String[]{"010-12-5678", "전화번호", "1012345678", "010.1234.5678"}) {
+            assertThat(violatedFields(new UserRegisterRequestDTO(
+                    "user@dgu.ac.kr", "strongPassword123!", "이소은", "컴퓨터공학과", "202312345", phone, "sochoi")))
+                    .as(phone).contains("phone");
+        }
     }
 
     @Test
@@ -221,6 +251,12 @@ class UserRegisterRequestDTOTest {
         return new UserRegisterRequestDTO(
                 "user@dgu.ac.kr", "strongPassword123!", "이소은",
                 "컴퓨터공학과", "202312345", "010-1234-5678", ubuntuUsername);
+    }
+
+    private UserRegisterRequestDTO registerWithName(String name) {
+        return new UserRegisterRequestDTO(
+                "user@dgu.ac.kr", "strongPassword123!", name,
+                "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi");
     }
 
     private Set<String> violatedFields(UserRegisterRequestDTO dto) {

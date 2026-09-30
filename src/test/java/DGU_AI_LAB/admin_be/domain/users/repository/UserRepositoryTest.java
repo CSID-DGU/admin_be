@@ -1,5 +1,10 @@
 package DGU_AI_LAB.admin_be.domain.users.repository;
 
+import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
+import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -98,17 +103,61 @@ class UserRepositoryTest {
     @DisplayName("findInactiveUsers")
     class FindInactiveUsers {
 
-        @Test
-        @DisplayName("마지막 로그인이 기준일 이전인 활성 유저를 조회한다")
-        void findInactiveUsers_returnsUsersInactiveBeforeThreshold() {
-            ReflectionTestUtils.setField(user1, "lastLoginAt", LocalDateTime.now().minusMonths(4));
-            userRepository.save(user1);
-            userRepository.flush();
+        private void setCreatedAt(User user, LocalDateTime time) {
+            entityManager.getEntityManager()
+                    .createNativeQuery("UPDATE users SET created_at = :t WHERE user_id = :id")
+                    .setParameter("t", time).setParameter("id", user.getUserId()).executeUpdate();
+            entityManager.clear();
+        }
 
-            LocalDateTime thresholdDate = LocalDateTime.now().minusMonths(3);
-            List<User> result = userRepository.findInactiveUsers(thresholdDate);
+        @Test
+        @DisplayName("가입 시각이 기준일 이전인 활성 유저를 조회한다 — 최근 로그인은 보지 않는다")
+        void findInactiveUsers_returnsUsersSignedUpBeforeThreshold() {
+            ReflectionTestUtils.setField(user1, "lastLoginAt", LocalDateTime.now().minusDays(1));
+            userRepository.saveAndFlush(user1);
+            setCreatedAt(user1, LocalDateTime.now().minusYears(2));
+
+            List<User> result = userRepository.findInactiveUsers(LocalDateTime.now().minusYears(1), Status.openStatuses());
 
             assertThat(result).extracting(User::getEmail).contains("active@dgu.ac.kr");
+        }
+
+        @Test
+        @DisplayName("관리자는 조회하지 않는다")
+        void findInactiveUsers_excludesAdmins() {
+            user1.changeRole(Role.ADMIN);
+            userRepository.saveAndFlush(user1);
+            setCreatedAt(user1, LocalDateTime.now().minusYears(2));
+
+            List<User> result = userRepository.findInactiveUsers(LocalDateTime.now().minusYears(1), Status.openStatuses());
+
+            assertThat(result).extracting(User::getEmail).doesNotContain("active@dgu.ac.kr");
+        }
+
+        @Test
+        @DisplayName("끝나지 않은 신청(컨테이너 포함)이 있으면 조회하지 않는다")
+        void findInactiveUsers_excludesUsersWithOpenRequests() {
+            ResourceGroup rg = entityManager.persist(ResourceGroup.builder()
+                    .resourceGroupName("3090").description("GPU").serverName("FARM").build());
+            ContainerImage image = entityManager.persist(ContainerImage.builder()
+                    .imageName("pytorch").imageVersion("2.1.0").cudaVersion("11.8").description("PyTorch").build());
+            entityManager.persist(Request.builder()
+                    .expiresAt(LocalDateTime.now().plusDays(30)).usagePurpose("연구").formAnswers("{}")
+                    .user(user1).resourceGroup(rg).containerImage(image).build());
+            entityManager.flush();
+            setCreatedAt(user1, LocalDateTime.now().minusYears(2));
+
+            List<User> result = userRepository.findInactiveUsers(LocalDateTime.now().minusYears(1), Status.openStatuses());
+
+            assertThat(result).extracting(User::getEmail).doesNotContain("active@dgu.ac.kr");
+        }
+
+        @Test
+        @DisplayName("최근 가입자는 조회하지 않는다")
+        void findInactiveUsers_excludesRecentSignups() {
+            List<User> result = userRepository.findInactiveUsers(LocalDateTime.now().minusYears(1), Status.openStatuses());
+
+            assertThat(result).extracting(User::getEmail).doesNotContain("active@dgu.ac.kr", "user2@dgu.ac.kr");
         }
     }
 

@@ -6,6 +6,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 @Entity
@@ -45,5 +46,12 @@ public class Node {
 
     public int getNumberGpu() {
         return gpus == null ? 0 : gpus.size();
+    }
+
+    public List<String> getGpuModels() {
+        if (gpus == null) {
+            return List.of();
+        }
+        return gpus.stream().map(Gpu::getGpuModel).distinct().sorted().toList();
     }
 }

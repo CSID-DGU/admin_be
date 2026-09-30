@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.repository;
 
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.UbuntuAccountStatus;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -29,7 +31,13 @@ public interface UserRepository extends JpaRepository<User,Long> {
 
     List<User> findAllByUbuntuAccountStatus(UbuntuAccountStatus ubuntuAccountStatus);
 
-    long countByRoleAndIsActiveTrue(Role role);
+    /**
+     * 이 권한의 활성 사용자 행을 모두 잠근다. "마지막 활성 관리자" 확인과 권한·활성 변경을 한 트랜잭션에서
+     * 이 잠금 뒤에 하면, 두 관리자를 동시에 내리는 요청이 직렬화되어 뒤 요청이 앞 요청의 결과를 보고 판단한다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT u FROM User u WHERE u.role = :role AND u.isActive = true")
+    List<User> lockActiveUsersByRole(@Param("role") Role role);
 
     /**
      * 우분투 계정(UID/GID) 배정 시점의 "확인 후 배정" 경합을 막기 위한 행 잠금 조회.
@@ -54,9 +62,8 @@ public interface UserRepository extends JpaRepository<User,Long> {
                                       @Param("currentPrefix") String currentPrefix);
 
     /**
-     * 로그인 시각을 기록한다. 로그인은 트랜잭션 없이 돌아 엔티티를 고쳐도 저장되지 않는다 — 이 칸이 가입 시각에
-     * 멈춰 있으면 매일 로그인하는 사용자도 장기 미접속 자동 탈퇴 대상이 된다. 엔티티를 통째로 저장하지 않고
-     * 이 칸 하나만 바꿔, 그 사이 끝난 비밀번호 변경 등을 옛 값으로 덮어쓰지 않는다.
+     * 로그인 시각을 기록한다. 로그인은 트랜잭션 없이 돌아 엔티티를 고쳐도 저장되지 않는다. 엔티티를 통째로 저장하지
+     * 않고 이 칸 하나만 바꿔, 그 사이 끝난 비밀번호 변경 등을 옛 값으로 덮어쓰지 않는다.
      */
     @Transactional
     @Modifying
@@ -64,20 +71,16 @@ public interface UserRepository extends JpaRepository<User,Long> {
     int recordLogin(@Param("userId") Long userId, @Param("loggedInAt") LocalDateTime loggedInAt);
 
     /**
-     * [자동 탈퇴 대상 조회 쿼리]
-     * 조건:
-     * 1. Active 상태인 유저
-     * 2. (현재 - 마지막 로그인) > 3개월
-     * 3. (현재 - 가장 최근 만료된 Pod 날짜) > 3개월 (Pod 사용 기록이 없으면 로그인 날짜만 봄)
-     * * 주의: COALESCE를 사용하여 Pod 기록이 없으면 아주 먼 과거(1900년)로 취급해 조건 통과시킴
+     * 장기 미사용 판정 후보. 가입 시각이 기준일보다 이르고, 끝나지 않은 신청(컨테이너 포함)이 하나도 없는 활성 일반
+     * 사용자다. 관리자는 비활성화하면 운영할 사람이 사라지므로 뺀다. 미사용 기준 시각은 가입 시각보다 이르지 않아
+     * 가입 시각으로 추려도 대상이 빠지지 않는다. 마지막 컨테이너가 끝난 시각까지 따진 최종 판정은
+     * UserLifecycleTransactionalService가 한 곳에서 한다.
      */
     @Query("SELECT u FROM User u " +
-            "LEFT JOIN u.requests r " +
             "WHERE u.isActive = true " +
-            "GROUP BY u " +
-            "HAVING " +
-            "  (u.lastLoginAt IS NULL OR u.lastLoginAt < :thresholdDate) " +
-            "  AND " +
-            "  (MAX(r.expiresAt) IS NULL OR MAX(r.expiresAt) < :thresholdDate)")
-    List<User> findInactiveUsers(@Param("thresholdDate") LocalDateTime thresholdDate);
+            "  AND u.role <> DGU_AI_LAB.admin_be.domain.users.entity.Role.ADMIN " +
+            "  AND u.createdAt < :thresholdDate " +
+            "  AND NOT EXISTS (SELECT r FROM Request r WHERE r.user = u AND r.status IN :openStatuses)")
+    List<User> findInactiveUsers(@Param("thresholdDate") LocalDateTime thresholdDate,
+                                 @Param("openStatuses") Collection<Status> openStatuses);
 }

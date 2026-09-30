@@ -3,13 +3,11 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
-import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.groups.service.GroupService;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
-import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectModificationDTO;
@@ -25,7 +23,6 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
-import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -35,6 +32,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -73,14 +72,11 @@ class AdminModificationCommandServiceTest {
     @Mock private AlarmService alarmService;
     @Mock private RequestRepository requestRepository;
     @Mock private UserRepository userRepository;
-    @Mock private ContainerImageRepository containerImageRepository;
-    @Mock private ResourceGroupRepository resourceGroupRepository;
     @Mock private ChangeRequestRepository changeRequestRepository;
     @Mock private GroupRepository groupRepository;
     @Mock private GroupService groupService;
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private JobClient jobClient;
-    @Mock private PortRequestService portRequestService;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
 
@@ -98,9 +94,8 @@ class AdminModificationCommandServiceTest {
 
         // @RequiredArgsConstructor 생성자 필드 선언 순서대로 주입
         service = new AdminModificationCommandService(
-                alarmService, requestRepository, userRepository, containerImageRepository,
-                resourceGroupRepository, changeRequestRepository,
-                groupRepository, groupService, portRequestService, new ObjectMapper(),
+                alarmService, requestRepository, userRepository, changeRequestRepository,
+                groupRepository, groupService, new ObjectMapper(),
                 transactionManager
         );
         // 공유 엔티티 기본 설정
@@ -261,14 +256,14 @@ class AdminModificationCommandServiceTest {
         @DisplayName("EXPIRES_AT 변경 요청 승인 시 이전 만료일 캡처 후 updateExpiresAt()가 호출된다")
         void approveModification_expiresAt_success() throws Exception {
             LocalDateTime oldExpiry = LocalDateTime.of(2026, 6, 30, 23, 59, 59);
-            LocalDateTime newExpiry = LocalDateTime.of(2027, 12, 31, 23, 59, 59);
+            LocalDateTime newExpiry = LocalDateTime.now().plusYears(1).withNano(0);
 
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             Request originalRequest = buildMockedRequestWithStatus(21L, Status.FULFILLED);
             when(originalRequest.getExpiresAt()).thenReturn(oldExpiry);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
             when(changeRequest.getChangeType()).thenReturn(ChangeType.EXPIRES_AT);
-            when(changeRequest.getNewValue()).thenReturn("\"2027-12-31T23:59:59\"");
+            when(changeRequest.getNewValue()).thenReturn("\"" + newExpiry + "\"");
             when(changeRequest.getRequest()).thenReturn(originalRequest);
             when(changeRequestRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
@@ -285,48 +280,28 @@ class AdminModificationCommandServiceTest {
             verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
         }
 
-        @Test
-        @DisplayName("RESOURCE_GROUP 변경 요청 승인 시 originalRequest.updateResourceGroup()이 호출된다")
-        void approveModification_resourceGroup_success() throws Exception {
+        @ParameterizedTest
+        @EnumSource(value = ChangeType.class, names = {"RESOURCE_GROUP", "CONTAINER_IMAGE", "PORT"})
+        @DisplayName("DB만 바뀌고 Pod에 반영되지 않는 종류는 예전에 들어온 요청이라도 승인하지 않고 신청을 건드리지 않는다")
+        void approveModification_dbOnlyTypes_areUnsupported(ChangeType type) {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             Request originalRequest = buildMockedRequestWithStatus(22L, Status.FULFILLED);
-            ResourceGroup newRg = mock(ResourceGroup.class);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
-            when(changeRequest.getChangeType()).thenReturn(ChangeType.RESOURCE_GROUP);
+            when(changeRequest.getChangeType()).thenReturn(type);
             when(changeRequest.getNewValue()).thenReturn("2");
             when(changeRequest.getRequest()).thenReturn(originalRequest);
             when(changeRequestRepository.findByIdForUpdate(3L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
-            when(resourceGroupRepository.findById(2)).thenReturn(Optional.of(newRg));
 
-            ApproveModificationDTO dto = new ApproveModificationDTO(3L, "리소스 그룹 변경 승인");
-            service.approveModification(100L, dto);
+            assertThatThrownBy(() -> service.approveModification(100L, new ApproveModificationDTO(3L, "승인")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
 
-            verify(originalRequest).updateResourceGroup(newRg);
-            verify(changeRequest).approve(mockUser, "리소스 그룹 변경 승인");
-            verify(alarmService).sendModificationApprovedEmail(changeRequest, "리소스 그룹 변경 승인");
-        }
-
-        @Test
-        @DisplayName("CONTAINER_IMAGE 변경 요청 승인 시 originalRequest.updateContainerImage()가 호출된다")
-        void approveModification_containerImage_success() throws Exception {
-            ChangeRequest changeRequest = mock(ChangeRequest.class);
-            Request originalRequest = buildMockedRequestWithStatus(23L, Status.FULFILLED);
-            ContainerImage newImage = mock(ContainerImage.class);
-            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
-            when(changeRequest.getChangeType()).thenReturn(ChangeType.CONTAINER_IMAGE);
-            when(changeRequest.getNewValue()).thenReturn("5");
-            when(changeRequest.getRequest()).thenReturn(originalRequest);
-            when(changeRequestRepository.findByIdForUpdate(4L)).thenReturn(Optional.of(changeRequest));
-            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
-            when(containerImageRepository.findById(5L)).thenReturn(Optional.of(newImage));
-
-            ApproveModificationDTO dto = new ApproveModificationDTO(4L, "이미지 변경 승인");
-            service.approveModification(100L, dto);
-
-            verify(originalRequest).updateContainerImage(newImage);
-            verify(changeRequest).approve(mockUser, "이미지 변경 승인");
-            verify(alarmService).sendModificationApprovedEmail(changeRequest, "이미지 변경 승인");
+            verify(originalRequest, never()).updateResourceGroup(any());
+            verify(originalRequest, never()).updateContainerImage(any());
+            verify(changeRequest, never()).approve(any(), anyString());
+            verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
         }
 
         @Test
@@ -424,31 +399,48 @@ class AdminModificationCommandServiceTest {
         }
 
         @Test
-        @DisplayName("PORT 변경 요청 승인 시 요청된 각 포트에 대해 portRequestService.createPortRequest()가 호출된다")
-        void approveModification_port_success() throws Exception {
+        @DisplayName("GROUP 변경 승인 중 같은 변경 요청이 동시에 승인돼 이미 FULFILLED면 오탐 알림 없이 예외만 던진다")
+        void approveModification_group_concurrentApproval_throwsWithoutAlert() throws Exception {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
-            Request originalRequest = buildMockedRequestWithStatus(24L, Status.FULFILLED);
-            when(originalRequest.getResourceGroup()).thenReturn(mockRg);
-            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
-            when(changeRequest.getChangeType()).thenReturn(ChangeType.PORT);
-            when(changeRequest.getNewValue()).thenReturn(
-                    "[{\"internalPort\":3000,\"usagePurpose\":\"웹 서버\"},{\"internalPort\":6006,\"usagePurpose\":\"텐서보드\"}]");
+            Request originalRequest = buildMockedRequestWithStatus(28L, Status.FULFILLED);
+            Group newGroup = mock(Group.class);
+            when(newGroup.getUbuntuGid()).thenReturn(44L);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING, Status.FULFILLED);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.GROUP);
+            when(changeRequest.getNewValue()).thenReturn("[44]");
             when(changeRequest.getRequest()).thenReturn(originalRequest);
-            when(changeRequestRepository.findByIdForUpdate(8L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(11L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+            when(groupRepository.findByUbuntuGid(44L)).thenReturn(Optional.of(newGroup));
+
+            assertThatThrownBy(() -> service.approveModification(100L, new ApproveModificationDTO(11L, "승인")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+
+            verify(changeRequest, never()).approve(any(), any());
+            verify(alarmService, never()).sendAdminSlackNotification(any(), any());
+        }
+
+        @Test
+        @DisplayName("요청한 만료 일시가 승인 시점에 이미 지났으면 반영하지 않는다 — 반영하면 연장이 즉시 삭제로 바뀐다")
+        void approveModification_expiresAtAlreadyPassed_throwsAndDoesNotApply() {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            Request originalRequest = buildMockedRequestWithStatus(27L, Status.FULFILLED);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.EXPIRES_AT);
+            when(changeRequest.getNewValue()).thenReturn("\"" + LocalDateTime.now().minusDays(1).withNano(0) + "\"");
+            when(changeRequest.getRequest()).thenReturn(originalRequest);
+            when(changeRequestRepository.findByIdForUpdate(16L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
 
-            ApproveModificationDTO dto = new ApproveModificationDTO(8L, "포트 추가 승인");
-            service.approveModification(100L, dto);
+            assertThatThrownBy(() -> service.approveModification(100L, new ApproveModificationDTO(16L, "승인")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.CHANGE_REQUEST_EXPIRES_AT_PASSED);
 
-            ArgumentCaptor<Integer> portCaptor = ArgumentCaptor.forClass(Integer.class);
-            ArgumentCaptor<String> purposeCaptor = ArgumentCaptor.forClass(String.class);
-            verify(portRequestService, times(2)).createPortRequest(
-                    eq(originalRequest), eq(mockRg), portCaptor.capture(), purposeCaptor.capture());
-
-            assertThat(portCaptor.getAllValues()).containsExactly(3000, 6006);
-            assertThat(purposeCaptor.getAllValues()).containsExactly("웹 서버", "텐서보드");
-            verify(changeRequest).approve(mockUser, "포트 추가 승인");
-            verify(alarmService).sendModificationApprovedEmail(changeRequest, "포트 추가 승인");
+            verify(originalRequest, never()).updateExpiresAt(any());
+            verify(changeRequest, never()).approve(any(), any());
         }
 
         @Test

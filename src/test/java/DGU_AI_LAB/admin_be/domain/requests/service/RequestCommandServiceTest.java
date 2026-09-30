@@ -5,9 +5,10 @@ import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
-import DGU_AI_LAB.admin_be.domain.requests.dto.request.ModifyRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.SingleChangeRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
@@ -28,6 +29,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 import java.util.Optional;
@@ -90,6 +94,38 @@ class RequestCommandServiceTest {
     @Nested
     @DisplayName("createRequest")
     class CreateRequest {
+
+        @Test
+        @DisplayName("슬랙 알림은 트랜잭션 커밋 후에만 보낸다 — 사용자 행 잠금을 쥔 채 전송하지 않고, 롤백되면 보내지 않는다")
+        void createRequest_sendsSlackOnlyAfterCommit() {
+            User user = userWithUbuntuUsername("honggildong");
+            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
+            ContainerImage img = ContainerImage.builder()
+                    .imageName("cuda").imageVersion("11.8").cudaVersion("11.8").description("test").build();
+            Request savedReq = Request.builder()
+                    .expiresAt(LocalDateTime.now().plusDays(30)).usagePurpose("연구").formAnswers("{}")
+                    .user(user).resourceGroup(rg).containerImage(img).build();
+            when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
+            when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
+            when(containerImageRepository.findById(any())).thenReturn(Optional.of(img));
+            SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
+            when(dto.resourceGroupId()).thenReturn(1);
+            when(dto.imageId()).thenReturn(1L);
+            when(dto.toEntity(any(), any(), any())).thenReturn(savedReq);
+            when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
+
+            TransactionSynchronizationManager.initSynchronization();
+            try {
+                requestCommandService.createRequest(1L, dto);
+                verifyNoInteractions(alarmService);
+
+                TransactionSynchronizationManager.getSynchronizations()
+                        .forEach(TransactionSynchronization::afterCommit);
+                verify(alarmService).sendNewRequestNotification(eq(savedReq), any(), anyLong());
+            } finally {
+                TransactionSynchronizationManager.clearSynchronization();
+            }
+        }
 
         @Test
         @DisplayName("이미 살아있는 신청이 있어도 새 신청을 막지 않는다 — Pod 생성/상태조회가 requestId로 구분되므로 사용자당 여러 개 신청 가능")
@@ -173,70 +209,73 @@ class RequestCommandServiceTest {
     }
 
     @Nested
-    @DisplayName("createModificationRequest")
-    class CreateModificationRequest {
+    @DisplayName("createSingleChangeRequest")
+    class CreateSingleChangeRequest {
 
         @Test
         @DisplayName("존재하지 않는 requestId로 변경 요청하면 BusinessException을 던진다")
-        void createModificationRequest_throwsException_whenRequestNotFound() {
-            when(requestRepository.findById(99L)).thenReturn(Optional.empty());
+        void createSingleChangeRequest_throwsException_whenRequestNotFound() {
+            when(requestRepository.findByIdForUpdate(99L)).thenReturn(Optional.empty());
 
-            ModifyRequestDTO dto = mock(ModifyRequestDTO.class);
+            SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005]", "사유");
 
-            assertThatThrownBy(() -> requestCommandService.createModificationRequest(1L, 99L, dto))
+            assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(1L, 99L, dto))
                     .isInstanceOf(BusinessException.class);
         }
 
         @Test
         @DisplayName("요청 소유자가 아닌 유저가 변경 요청하면 BusinessException을 던진다")
-        void createModificationRequest_throwsException_whenNotOwner() {
+        void createSingleChangeRequest_throwsException_whenNotOwner() {
             User owner = mock(User.class);
             when(owner.getUserId()).thenReturn(1L);
 
             Request request = mock(Request.class);
             when(request.getUser()).thenReturn(owner);
-            when(requestRepository.findById(10L)).thenReturn(Optional.of(request));
+            when(requestRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(request));
 
-            ModifyRequestDTO dto = mock(ModifyRequestDTO.class);
+            SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005]", "사유");
 
             // userId=2 로 요청 → 소유자 userId=1 과 불일치
-            assertThatThrownBy(() -> requestCommandService.createModificationRequest(2L, 10L, dto))
+            assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(2L, 10L, dto))
                     .isInstanceOf(BusinessException.class);
         }
 
         @Test
         @DisplayName("FULFILLED 상태가 아닌 요청에 변경 요청하면 BusinessException을 던진다")
-        void createModificationRequest_throwsException_whenStatusIsNotFulfilled() {
+        void createSingleChangeRequest_throwsException_whenStatusIsNotFulfilled() {
             User owner = mock(User.class);
             when(owner.getUserId()).thenReturn(1L);
 
             Request request = mock(Request.class);
             when(request.getUser()).thenReturn(owner);
             when(request.getStatus()).thenReturn(Status.PENDING);
-            when(requestRepository.findById(11L)).thenReturn(Optional.of(request));
+            when(requestRepository.findByIdForUpdate(11L)).thenReturn(Optional.of(request));
 
-            ModifyRequestDTO dto = mock(ModifyRequestDTO.class);
+            SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005]", "사유");
 
-            assertThatThrownBy(() -> requestCommandService.createModificationRequest(1L, 11L, dto))
+            assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(1L, 11L, dto))
                     .isInstanceOf(BusinessException.class);
         }
 
         @Test
-        @DisplayName("소유자를 DB에서 찾을 수 없으면 BusinessException을 던진다")
-        void createModificationRequest_throwsException_whenUserNotFound() {
+        @DisplayName("같은 신청에 같은 종류의 변경 요청이 이미 대기 중이면 새로 받지 않는다")
+        void createSingleChangeRequest_throwsConflict_whenSameTypeAlreadyPending() {
             User owner = mock(User.class);
             when(owner.getUserId()).thenReturn(1L);
-
             Request request = mock(Request.class);
             when(request.getUser()).thenReturn(owner);
             when(request.getStatus()).thenReturn(Status.FULFILLED);
-            when(requestRepository.findById(12L)).thenReturn(Optional.of(request));
+            when(requestRepository.findByIdForUpdate(12L)).thenReturn(Optional.of(request));
+            when(changeRequestRepository.existsByRequest_RequestIdAndChangeTypeAndStatus(12L, ChangeType.GROUP, Status.PENDING))
+                    .thenReturn(true);
 
-            // dto stubs 불필요 - userRepository.findById 에서 이미 예외 발생
-            ModifyRequestDTO dto = mock(ModifyRequestDTO.class);
+            SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005]", "사유");
 
-            assertThatThrownBy(() -> requestCommandService.createModificationRequest(1L, 12L, dto))
-                    .isInstanceOf(BusinessException.class);
+            assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(1L, 12L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.CHANGE_REQUEST_ALREADY_PENDING);
+            verify(changeRequestRepository, never()).save(any());
         }
     }
 
