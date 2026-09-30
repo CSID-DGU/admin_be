@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
@@ -189,6 +190,18 @@ class UserLifecycleTransactionalServiceTest {
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
             assertThat(lifecycleService.processInactiveUser(1L, LocalDateTime.of(2026, 1, 10, 9, 0))).isFalse();
+            verifyNoInteractions(alarmService);
+        }
+
+        @Test
+        @DisplayName("관리자는 오래 접속하지 않아도 경고·탈퇴 대상이 아니다")
+        void admin_isNeverWithdrawn() {
+            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
+            User user = buildUserWithLastLogin(now.minusYears(1));
+            user.changeRole(Role.ADMIN);
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+            assertThat(lifecycleService.processInactiveUser(1L, now)).isFalse();
             verifyNoInteractions(alarmService);
         }
 

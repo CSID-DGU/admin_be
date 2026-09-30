@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -26,6 +27,7 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     boolean existsByUser_UbuntuUsernameAndUser_UserId(String ubuntuUsername, Long userId);
     boolean existsByPodName(String podName);
     boolean existsByUser_UserIdAndStatus(Long userId, Status status);
+    long countByUser_UserIdAndStatusIn(Long userId, Collection<Status> statuses);
     List<Request> findAllByStatusIn(List<Status> statuses);
     List<Request> findAllByUser_UserIdAndStatusIn(Long userId, List<Status> statuses);
 

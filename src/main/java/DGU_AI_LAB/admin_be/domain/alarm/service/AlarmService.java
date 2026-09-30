@@ -1,13 +1,17 @@
 package DGU_AI_LAB.admin_be.domain.alarm.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.SlackText;
 import DGU_AI_LAB.admin_be.domain.alarm.dto.SlackMessageDto;
 import DGU_AI_LAB.admin_be.domain.pod.PodPortUtils;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.stream.Collectors;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
+import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
@@ -137,18 +141,63 @@ public class AlarmService {
     /**
      * 신청이 들어오면 서버별 관리 교수님 채널에 승인 판단에 필요한 정보를 전부 담아 보낸다.
      * 이 채널에서 교수님이 직접 보고 승인 여부를 판단하므로(관리자 페이지를 거치지 않을 수 있다),
-     * 신청자 신원·연락처·사용 목적·희망 기간까지 한 메시지 안에 다 있어야 한다.
+     * 신청자 신원·연락처·신청 자원·사용 목적·기간까지 한 메시지 안에 다 있어야 한다.
+     * {0}~{9}의 뜻은 예전 양식과 같게 둔다 — 관리자가 DB(message_templates)에 고쳐 둔 양식도 그대로 쓰이게 하기 위해서다.
+     * 숫자는 문자열로 넘긴다 — MessageFormat에 숫자형을 주면 1,234처럼 콤마가 붙는다.
      */
-    public void sendNewRequestNotification(Request request) {
+    public void sendNewRequestNotification(Request request, List<PortRequests> portRequests, long activeContainerCount) {
         User user = request.getUser();
         var resourceGroup = request.getResourceGroup();
+        var image = request.getContainerImage();
         String serverName = resourceGroup.getServerName();
+        LocalDate appliedOn = request.getCreatedAt() != null
+                ? request.getCreatedAt().toLocalDate()
+                : LocalDate.now(ZoneId.of("Asia/Seoul"));
+        LocalDate expiresOn = request.getExpiresAt().toLocalDate();
+
         String message = messageUtils.get("notification.admin.new-request",
-                user.getName(), user.getStudentId(), user.getDepartment(), user.getEmail(), user.getPhone(),
-                request.getUbuntuUsername(), resourceGroup.getResourceGroupName(), serverName,
-                request.getUsagePurpose(), request.getExpiresAt().toLocalDate());
+                SlackText.escape(user.getName()),                          // {0}
+                SlackText.escape(user.getStudentId()),                     // {1}
+                SlackText.escape(user.getDepartment()),                    // {2}
+                SlackText.escape(user.getEmail()),                         // {3}
+                SlackText.escape(user.getPhone()),                         // {4}
+                request.getUbuntuUsername(),                               // {5}
+                SlackText.escape(resourceGroup.getResourceGroupName()),    // {6}
+                serverName,                                                // {7}
+                SlackText.quote(request.getUsagePurpose()),                // {8}
+                expiresOn.toString(),                                      // {9}
+                String.valueOf(request.getRequestId()),                    // {10}
+                describe(resourceGroup.getDescription()),                  // {11}
+                image == null ? "-" : SlackText.escape(image.getImageName() + ":" + image.getImageVersion()), // {12}
+                formatGroups(request),                                     // {13}
+                formatPortRequests(portRequests),                          // {14}
+                request.isEnableVnc() ? "사용" : "사용 안 함",               // {15}
+                appliedOn.toString(),                                      // {16}
+                String.valueOf(ChronoUnit.DAYS.between(appliedOn, expiresOn)), // {17}
+                String.valueOf(activeContainerCount));                     // {18}
 
         sendSlackAlert(message, getAdminWebhookUrl(serverName));
+    }
+
+    private static String describe(String description) {
+        return description == null || description.isBlank() ? "" : " (" + SlackText.escape(description) + ")";
+    }
+
+    private static String formatGroups(Request request) {
+        String groups = request.getRequestGroups().stream()
+                .map(rg -> rg.getGroup().getGroupName())
+                .sorted()
+                .collect(Collectors.joining(", "));
+        return groups.isEmpty() ? "없음" : SlackText.escape(groups);
+    }
+
+    private static String formatPortRequests(List<PortRequests> portRequests) {
+        if (portRequests == null || portRequests.isEmpty()) {
+            return "없음";
+        }
+        return portRequests.stream()
+                .map(p -> p.getInternalPort() + "번 (" + SlackText.escape(p.getUsagePurpose()) + ")")
+                .collect(Collectors.joining(", "));
     }
 
     /**

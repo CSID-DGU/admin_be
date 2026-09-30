@@ -2,6 +2,10 @@ package DGU_AI_LAB.admin_be.domain.alarm.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.dto.SlackMessageDto;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
+import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
+import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
+import DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup;
+import org.springframework.context.support.ResourceBundleMessageSource;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
@@ -34,6 +38,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -179,7 +184,7 @@ class AlarmServiceTest {
             Request request = mockRequest("홍길동", "FARM");
             when(messageUtils.get(anyString(), any(), any())).thenReturn("새 신청");
 
-            alarmService.sendNewRequestNotification(request);
+            alarmService.sendNewRequestNotification(request, List.of(), 0);
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
@@ -192,7 +197,7 @@ class AlarmServiceTest {
             Request request = mockRequest("이순신", "LAB");
             when(messageUtils.get(anyString(), any(), any())).thenReturn("새 신청");
 
-            alarmService.sendNewRequestNotification(request);
+            alarmService.sendNewRequestNotification(request, List.of(), 0);
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
@@ -205,11 +210,73 @@ class AlarmServiceTest {
             Request request = mockRequest("김철수", "UNKNOWN_SERVER");
             when(messageUtils.get(anyString(), any(), any())).thenReturn("새 신청");
 
-            alarmService.sendNewRequestNotification(request);
+            alarmService.sendNewRequestNotification(request, List.of(), 0);
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
             assertThat(captor.getValue().getWebhookUrl()).isEqualTo(ERROR_WEBHOOK);
+        }
+    }
+
+    @Nested
+    @DisplayName("sendNewRequestNotification — 승인 판단용 전체 정보")
+    class SendNewRequestNotificationContent {
+
+        private String render(Request request, List<PortRequests> ports, long activeContainers) {
+            ResourceBundleMessageSource source = new ResourceBundleMessageSource();
+            source.setBasename("messages");
+            source.setDefaultEncoding("UTF-8");
+            ReflectionTestUtils.setField(alarmService, "messageUtils", new MessageUtils(source));
+
+            alarmService.sendNewRequestNotification(request, ports, activeContainers);
+
+            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
+            verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
+            return captor.getValue().getMessage();
+        }
+
+        @Test
+        @DisplayName("신청자·자원·그룹·포트·기간·사용 목적을 모두 담는다")
+        void includesEverythingKnownAboutTheRequest() {
+            Request request = mockRequest("홍길동", "FARM");
+            when(request.getRequestId()).thenReturn(1234L);
+            when(request.getCreatedAt()).thenReturn(java.time.LocalDateTime.of(2026, 12, 17, 10, 0));
+            when(request.getUsagePurpose()).thenReturn("첫째 줄\n둘째 줄");
+            when(request.isEnableVnc()).thenReturn(true);
+            when(request.getResourceGroup().getDescription()).thenReturn("RTX 3090 24GB");
+            ContainerImage image = mock(ContainerImage.class);
+            when(image.getImageName()).thenReturn("dguailab/decs");
+            when(image.getImageVersion()).thenReturn("260915");
+            when(request.getContainerImage()).thenReturn(image);
+            Group group = mock(Group.class);
+            when(group.getGroupName()).thenReturn("vision-team");
+            RequestGroup requestGroup = mock(RequestGroup.class);
+            when(requestGroup.getGroup()).thenReturn(group);
+            when(request.getRequestGroups()).thenReturn(Set.of(requestGroup));
+            PortRequests port = mock(PortRequests.class);
+            when(port.getInternalPort()).thenReturn(6006);
+            when(port.getUsagePurpose()).thenReturn("TensorBoard");
+
+            String message = render(request, List.of(port), 2);
+
+            assertThat(message).contains(
+                    "신청 번호 #1234", "이름: 홍길동", "학번: 20260000", "학과: 컴퓨터공학과",
+                    "이메일: 홍길동@dgu.ac.kr", "전화번호: 010-0000-0000", "서버 계정(ID): testuser",
+                    "지금 사용 중인 컨테이너: 2개", "GPU: 3090ti (RTX 3090 24GB)", "dguailab/decs:260915",
+                    "공유 그룹: vision-team", "추가 포트: 6006번 (TensorBoard)", "noVNC): 사용",
+                    "2026-12-17 ~ 2026-12-31 (총 14일)", "> 첫째 줄\n> 둘째 줄");
+            assertThat(message).doesNotContain("{");
+        }
+
+        @Test
+        @DisplayName("사용자가 적은 글의 <, >, &는 Slack 호출·링크로 바뀌지 않게 이스케이프한다")
+        void escapesSlackControlCharacters() {
+            Request request = mockRequest("홍길동", "FARM");
+            when(request.getUsagePurpose()).thenReturn("<!channel> 모두 확인 & 승인");
+
+            String message = render(request, List.of(), 0);
+
+            assertThat(message).contains("> &lt;!channel&gt; 모두 확인 &amp; 승인").doesNotContain("<!channel>");
         }
     }
 
