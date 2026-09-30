@@ -2,7 +2,7 @@ package DGU_AI_LAB.admin_be.domain.requests.dto.request;
 
 import DGU_AI_LAB.admin_be.domain.groups.dto.request.CreateGroupRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.EmailVerifyRequestDTO;
-import DGU_AI_LAB.admin_be.domain.users.dto.request.PasswordUpdateRequestDTO;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.AdminPasswordResetRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuUsernameRegisterRequestDTO;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
@@ -173,9 +173,9 @@ class RequestDtoValidationTest {
         @Test
         @DisplayName("새 비밀번호는 8~72자")
         void newPassword_bounds() {
-            assertThat(violatedPaths(new PasswordUpdateRequestDTO("current", "1234567"))).contains("newPassword");
-            assertThat(violatedPaths(new PasswordUpdateRequestDTO("current", "a".repeat(73)))).contains("newPassword");
-            assertThat(violatedPaths(new PasswordUpdateRequestDTO("current", "12345678"))).isEmpty();
+            assertThat(violatedPaths(new AdminPasswordResetRequestDTO("1234567"))).contains("newPassword");
+            assertThat(violatedPaths(new AdminPasswordResetRequestDTO("a".repeat(73)))).contains("newPassword");
+            assertThat(violatedPaths(new AdminPasswordResetRequestDTO("12345678"))).isEmpty();
         }
 
         @Test

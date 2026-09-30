@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.users.controller.docs;
 
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserActivationRequestDTO;
 
+import DGU_AI_LAB.admin_be.domain.users.dto.request.AdminPasswordResetRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.ChangeRoleRequestDTO;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
 @Tag(name = "3. 관리자 유저 관리", description = "사용자 계정 조회 및 삭제 API")
@@ -87,5 +89,22 @@ public interface AdminUserApi {
     ResponseEntity<SuccessResponse<?>> changeUserRole(
             @PathVariable @Parameter(description = "사용자 ID") Long id,
             @RequestBody @Valid ChangeRoleRequestDTO dto
+    );
+
+    @Operation(
+            summary = "사용자 비밀번호 초기화",
+            description = "관리자가 사용자의 비밀번호를 새로 지정한다. 웹 비밀번호와 SSH(Ubuntu) 비밀번호가 함께 바뀌고, "
+                    + "리눅스 계정이 있으면 떠 있는 컨테이너에도 반영된다. 사용자의 기존 로그인 세션은 끊긴다. "
+                    + "새 비밀번호는 메일로 보내지 않으므로 관리자가 사용자에게 직접 전달한다."
+    )
+    @ApiResponse(responseCode = "200", description = "성공")
+    @ApiResponse(responseCode = "400", description = "비밀번호 형식 오류(8~72자)")
+    @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음")
+    @ApiResponse(responseCode = "409", description = "컨테이너 생성 중이라 지금은 바꿀 수 없음")
+    @ApiResponse(responseCode = "502", description = "컨테이너 반영 실패 (비밀번호는 바뀌지 않음, 다시 시도)")
+    @PutMapping("/{id}/password")
+    ResponseEntity<SuccessResponse<?>> resetPassword(
+            @PathVariable @Parameter(description = "사용자 ID") Long id,
+            @RequestBody @Valid AdminPasswordResetRequestDTO dto
     );
 }

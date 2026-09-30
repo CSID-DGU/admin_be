@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.users.controller;
 
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserSummaryDTO;
+import DGU_AI_LAB.admin_be.domain.users.service.AdminPasswordResetService;
 import DGU_AI_LAB.admin_be.domain.users.service.AdminUserService;
 import DGU_AI_LAB.admin_be.domain.users.service.UserService;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -42,6 +43,9 @@ class AdminUserControllerTest extends WebMvcTestSupport {
 
     @MockitoBean
     private DGU_AI_LAB.admin_be.domain.users.service.UserGroupService userGroupService;
+
+    @MockitoBean
+    private AdminPasswordResetService adminPasswordResetService;
 
     @Nested
     @DisplayName("GET /api/admin/users")
@@ -171,6 +175,24 @@ class AdminUserControllerTest extends WebMvcTestSupport {
     void activationRequiresActive() throws Exception {
         mockMvc.perform(patch("/api/admin/users/5").contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("PUT /api/admin/users/{id}/password는 새 비밀번호로 초기화한다")
+    void resetPassword() throws Exception {
+        mockMvc.perform(put("/api/admin/users/5/password").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newPassword\": \"newPassword1!\"}"))
+                .andExpect(status().isOk());
+        verify(adminPasswordResetService).resetPassword(5L, "newPassword1!");
+    }
+
+    @Test
+    @DisplayName("PUT /api/admin/users/{id}/password는 8자 미만이면 400이고 서비스를 부르지 않는다")
+    void resetPasswordRejectsShortPassword() throws Exception {
+        mockMvc.perform(put("/api/admin/users/5/password").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newPassword\": \"short\"}"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(adminPasswordResetService);
     }
 
     @Test

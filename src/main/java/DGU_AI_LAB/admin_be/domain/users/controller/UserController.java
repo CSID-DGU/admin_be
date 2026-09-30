@@ -1,7 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.controller;
 
 import DGU_AI_LAB.admin_be.domain.users.controller.docs.UserApi;
-import DGU_AI_LAB.admin_be.domain.users.dto.request.PasswordUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PhoneUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuUsernameRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
@@ -31,18 +30,6 @@ public class UserController implements UserApi {
             @AuthenticationPrincipal CustomUserDetails principal
     ) {
         return SuccessResponse.ok(userService.getMyInfo(principal.getUserId()));
-    }
-
-    /**
-     * 사용자 비밀번호 변경 API
-     * PATCH /api/users/me/password
-     */
-    @PatchMapping("/me/password")
-    public ResponseEntity<SuccessResponse<?>> updateUserPassword(@AuthenticationPrincipal CustomUserDetails principal,
-                                                                 @RequestBody @Valid PasswordUpdateRequestDTO request
-    ) {
-        UserResponseDTO updatedUser = userService.updatePassword(principal.getUserId(), request);
-        return SuccessResponse.ok(updatedUser);
     }
 
     /**
