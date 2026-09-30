@@ -184,6 +184,13 @@ public class AdminModificationCommandService {
                 Request originalRequest = requestRepository.findByIdForUpdate(originalRequestIdRef.get())
                         .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
+                if (changeRequest.getStatus() == Status.FULFILLED) {
+                    // 같은 변경 요청을 동시에 승인한 다른 요청이 먼저 커밋했다. 같은 그룹을 추가하는 멱등
+                    // 호출이라 AD·DB가 이미 일치하므로 사람이 볼 일이 없다 — 알림 없이 거절만 한다.
+                    log.info("[approveModification] 동시에 승인된 변경 요청이라 중복 처리를 건너뜀: changeRequestId={}",
+                            dto.changeRequestId());
+                    throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+                }
                 if (changeRequest.getStatus() != Status.PENDING || originalRequest.getStatus() != Status.FULFILLED) {
                     // AD 반영은 이미 끝났다. 자동 보상 삭제는 하지 않는다 — newGroups에는 신청 전부터
                     // 소속돼 있던 그룹도 섞일 수 있어 일괄 제거하면 기존 소속까지 끊긴다. 방치하면

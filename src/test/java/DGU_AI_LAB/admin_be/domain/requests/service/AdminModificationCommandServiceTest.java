@@ -399,6 +399,30 @@ class AdminModificationCommandServiceTest {
         }
 
         @Test
+        @DisplayName("GROUP 변경 승인 중 같은 변경 요청이 동시에 승인돼 이미 FULFILLED면 오탐 알림 없이 예외만 던진다")
+        void approveModification_group_concurrentApproval_throwsWithoutAlert() throws Exception {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            Request originalRequest = buildMockedRequestWithStatus(28L, Status.FULFILLED);
+            Group newGroup = mock(Group.class);
+            when(newGroup.getUbuntuGid()).thenReturn(44L);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING, Status.FULFILLED);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.GROUP);
+            when(changeRequest.getNewValue()).thenReturn("[44]");
+            when(changeRequest.getRequest()).thenReturn(originalRequest);
+            when(changeRequestRepository.findByIdForUpdate(11L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+            when(groupRepository.findByUbuntuGid(44L)).thenReturn(Optional.of(newGroup));
+
+            assertThatThrownBy(() -> service.approveModification(100L, new ApproveModificationDTO(11L, "승인")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+
+            verify(changeRequest, never()).approve(any(), any());
+            verify(alarmService, never()).sendAdminSlackNotification(any(), any());
+        }
+
+        @Test
         @DisplayName("변경 값 JSON 파싱 실패 시 INTERNAL_SERVER_ERROR로 감싸서 던지고 상태를 변경하지 않는다")
         void approveModification_invalidJson_wrapsAsInternalServerErrorAndDoesNotApply() throws Exception {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
