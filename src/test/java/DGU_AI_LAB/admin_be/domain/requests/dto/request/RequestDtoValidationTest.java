@@ -4,6 +4,8 @@ import DGU_AI_LAB.admin_be.domain.groups.dto.request.CreateGroupRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.EmailVerifyRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.AdminPasswordResetRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuUsernameRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -21,6 +23,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 요청 경계 검증. DB 컬럼 길이·리눅스 계정 규칙·쿠버네티스 이름 규칙을 넘는 값이 서비스와 DB,
@@ -108,6 +111,18 @@ class RequestDtoValidationTest {
         void ids_mustBePositive() {
             assertThat(violatedPaths(valid().resourceGroupId(0).imageId(-3L).build()))
                     .contains("resourceGroupId", "imageId");
+        }
+
+        @Test
+        @DisplayName("폼 응답은 항목 수와 별개로 전체 크기가 한도를 넘으면 저장하지 않는다")
+        void formAnswers_overTotalLength_isRejectedOnSave() {
+            String big = "a".repeat(SaveRequestRequestDTO.MAX_FORM_ANSWERS_JSON_LENGTH);
+            SaveRequestRequestDTO dto = valid().formAnswers(Map.of("q", big)).build();
+
+            assertThatThrownBy(() -> dto.toEntity(null, null, null))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
         }
     }
 

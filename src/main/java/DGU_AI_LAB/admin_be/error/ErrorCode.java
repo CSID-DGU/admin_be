@@ -163,6 +163,8 @@ public enum ErrorCode {
     INVALID_REQUEST_STATUS(HttpStatus.CONFLICT, "이미 처리된 신청입니다."),
     //FORBIDDEN_REQUEST(HttpStatus.BAD_REQUEST, "본인의 신청만 변경 신청할 수 있습니다."),
     UNSUPPORTED_CHANGE_TYPE(HttpStatus.BAD_REQUEST, "지원되지 않는 요청 타입(enum)입니다."),
+    CHANGE_REQUEST_ALREADY_PENDING(HttpStatus.CONFLICT, "같은 종류의 변경 요청이 이미 대기 중입니다. 처리된 뒤 다시 요청해주세요."),
+    CHANGE_REQUEST_EXPIRES_AT_PASSED(HttpStatus.CONFLICT, "요청한 만료 일시가 이미 지났습니다. 거절하고 새로 요청받아 주세요."),
     REQUEST_MIGRATION_IN_PROGRESS(HttpStatus.CONFLICT, "마이그레이션이 진행 중인 요청이 있어 삭제할 수 없습니다."),
     PROVISION_JOB_IN_PROGRESS(HttpStatus.CONFLICT, "컨테이너 생성 작업이 아직 끝나지 않아 거절할 수 없습니다. 작업이 끝난 뒤 다시 시도해주세요."),
     USER_APPROVAL_ALREADY_IN_PROGRESS(HttpStatus.CONFLICT, "같은 사용자의 다른 신청이 처리 중(PROCESSING)입니다. 그 신청이 완료된 뒤 다시 승인하고, 처리 중에 멈춰 있다면 관리자가 먼저 정리해주세요."),

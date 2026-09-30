@@ -215,7 +215,7 @@ class RequestCommandServiceTest {
         @Test
         @DisplayName("존재하지 않는 requestId로 변경 요청하면 BusinessException을 던진다")
         void createSingleChangeRequest_throwsException_whenRequestNotFound() {
-            when(requestRepository.findById(99L)).thenReturn(Optional.empty());
+            when(requestRepository.findByIdForUpdate(99L)).thenReturn(Optional.empty());
 
             SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005]", "사유");
 
@@ -231,7 +231,7 @@ class RequestCommandServiceTest {
 
             Request request = mock(Request.class);
             when(request.getUser()).thenReturn(owner);
-            when(requestRepository.findById(10L)).thenReturn(Optional.of(request));
+            when(requestRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(request));
 
             SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005]", "사유");
 
@@ -249,12 +249,33 @@ class RequestCommandServiceTest {
             Request request = mock(Request.class);
             when(request.getUser()).thenReturn(owner);
             when(request.getStatus()).thenReturn(Status.PENDING);
-            when(requestRepository.findById(11L)).thenReturn(Optional.of(request));
+            when(requestRepository.findByIdForUpdate(11L)).thenReturn(Optional.of(request));
 
             SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005]", "사유");
 
             assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(1L, 11L, dto))
                     .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("같은 신청에 같은 종류의 변경 요청이 이미 대기 중이면 새로 받지 않는다")
+        void createSingleChangeRequest_throwsConflict_whenSameTypeAlreadyPending() {
+            User owner = mock(User.class);
+            when(owner.getUserId()).thenReturn(1L);
+            Request request = mock(Request.class);
+            when(request.getUser()).thenReturn(owner);
+            when(request.getStatus()).thenReturn(Status.FULFILLED);
+            when(requestRepository.findByIdForUpdate(12L)).thenReturn(Optional.of(request));
+            when(changeRequestRepository.existsByRequest_RequestIdAndChangeTypeAndStatus(12L, ChangeType.GROUP, Status.PENDING))
+                    .thenReturn(true);
+
+            SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005]", "사유");
+
+            assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(1L, 12L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.CHANGE_REQUEST_ALREADY_PENDING);
+            verify(changeRequestRepository, never()).save(any());
         }
     }
 

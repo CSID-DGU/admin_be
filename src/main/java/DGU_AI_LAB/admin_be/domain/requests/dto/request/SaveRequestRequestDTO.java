@@ -61,6 +61,8 @@ public record SaveRequestRequestDTO(
         @Schema(description = "noVNC GUI 활성화 여부", example = "false")
         Boolean enableVnc
 ) {
+    static final int MAX_FORM_ANSWERS_JSON_LENGTH = 10_000;
+
     public Request toEntity(
             User user,
             ResourceGroup resourceGroup,
@@ -71,6 +73,10 @@ public record SaveRequestRequestDTO(
             formAnswersJson = new ObjectMapper().writeValueAsString(formAnswers);
         } catch (JsonProcessingException e) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+        // 항목 수(@Size)만으로는 값 하나의 길이를 막지 못한다. 신청마다 DB에 그대로 쌓이므로 전체 크기로 제한한다.
+        if (formAnswersJson.length() > MAX_FORM_ANSWERS_JSON_LENGTH) {
+            throw new BusinessException("폼 응답이 너무 깁니다.", ErrorCode.INVALID_INPUT_VALUE);
         }
 
         Request req = Request.builder()

@@ -256,14 +256,14 @@ class AdminModificationCommandServiceTest {
         @DisplayName("EXPIRES_AT 변경 요청 승인 시 이전 만료일 캡처 후 updateExpiresAt()가 호출된다")
         void approveModification_expiresAt_success() throws Exception {
             LocalDateTime oldExpiry = LocalDateTime.of(2026, 6, 30, 23, 59, 59);
-            LocalDateTime newExpiry = LocalDateTime.of(2027, 12, 31, 23, 59, 59);
+            LocalDateTime newExpiry = LocalDateTime.now().plusYears(1).withNano(0);
 
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             Request originalRequest = buildMockedRequestWithStatus(21L, Status.FULFILLED);
             when(originalRequest.getExpiresAt()).thenReturn(oldExpiry);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
             when(changeRequest.getChangeType()).thenReturn(ChangeType.EXPIRES_AT);
-            when(changeRequest.getNewValue()).thenReturn("\"2027-12-31T23:59:59\"");
+            when(changeRequest.getNewValue()).thenReturn("\"" + newExpiry + "\"");
             when(changeRequest.getRequest()).thenReturn(originalRequest);
             when(changeRequestRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
@@ -420,6 +420,27 @@ class AdminModificationCommandServiceTest {
 
             verify(changeRequest, never()).approve(any(), any());
             verify(alarmService, never()).sendAdminSlackNotification(any(), any());
+        }
+
+        @Test
+        @DisplayName("요청한 만료 일시가 승인 시점에 이미 지났으면 반영하지 않는다 — 반영하면 연장이 즉시 삭제로 바뀐다")
+        void approveModification_expiresAtAlreadyPassed_throwsAndDoesNotApply() {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            Request originalRequest = buildMockedRequestWithStatus(27L, Status.FULFILLED);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.EXPIRES_AT);
+            when(changeRequest.getNewValue()).thenReturn("\"" + LocalDateTime.now().minusDays(1).withNano(0) + "\"");
+            when(changeRequest.getRequest()).thenReturn(originalRequest);
+            when(changeRequestRepository.findByIdForUpdate(16L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+
+            assertThatThrownBy(() -> service.approveModification(100L, new ApproveModificationDTO(16L, "승인")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.CHANGE_REQUEST_EXPIRES_AT_PASSED);
+
+            verify(originalRequest, never()).updateExpiresAt(any());
+            verify(changeRequest, never()).approve(any(), any());
         }
 
         @Test

@@ -28,6 +28,7 @@ public record SingleChangeRequestDTO(
 
         @Schema(description = "새로운 값", example = "100")
         @NotBlank(message = "새로운 값은 필수입니다.")
+        @Size(max = 1000, message = "새로운 값은 1000자 이하여야 합니다.")
         String newValue,
 
         // change_request.reason이 1000자다.
