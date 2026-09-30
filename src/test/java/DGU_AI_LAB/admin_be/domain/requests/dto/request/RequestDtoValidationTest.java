@@ -112,35 +112,6 @@ class RequestDtoValidationTest {
     }
 
     @Nested
-    @DisplayName("변경 요청")
-    class ModifyRequest {
-
-        @Test
-        @DisplayName("변경 항목이 하나도 없으면 거절한다 — 서비스는 아무것도 만들지 않고 성공으로 끝나기 때문")
-        void noChange_isRejected() {
-            ModifyRequestDTO dto = new ModifyRequestDTO("사유", null, Set.of(), null, null);
-
-            assertThat(violatedPaths(dto)).contains("anyChangeRequested");
-        }
-
-        @Test
-        @DisplayName("변경 항목이 하나라도 있으면 통과한다")
-        void oneChange_isAccepted() {
-            ModifyRequestDTO dto = new ModifyRequestDTO("사유", LocalDateTime.now().plusDays(10), null, null, null);
-
-            assertThat(validator.validate(dto)).isEmpty();
-        }
-
-        @Test
-        @DisplayName("과거 만료 일시와 1000자를 넘는 사유는 거절한다")
-        void pastExpiryAndLongReason_areRejected() {
-            ModifyRequestDTO dto = new ModifyRequestDTO("a".repeat(1001), LocalDateTime.now().minusDays(1), null, null, null);
-
-            assertThat(violatedPaths(dto)).contains("reason", "requestedExpiresAt");
-        }
-    }
-
-    @Nested
     @DisplayName("관리자 코멘트 길이 (DB 컬럼 초과 시 500 방지)")
     class AdminComments {
 

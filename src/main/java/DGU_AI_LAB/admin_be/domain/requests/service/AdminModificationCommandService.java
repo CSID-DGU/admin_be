@@ -1,14 +1,10 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
-import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
-import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.groups.service.GroupService;
-import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
-import DGU_AI_LAB.admin_be.domain.requests.dto.request.PortRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
@@ -16,8 +12,6 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
-import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
-import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -55,12 +49,9 @@ public class AdminModificationCommandService {
 
     private final RequestRepository requestRepository;
     private final UserRepository userRepository;
-    private final ContainerImageRepository containerImageRepository;
-    private final ResourceGroupRepository resourceGroupRepository;
     private final ChangeRequestRepository changeRequestRepository;
     private final GroupRepository groupRepository;
     private final GroupService groupService;
-    private final PortRequestService portRequestService;
     private final ObjectMapper objectMapper;
     private final PlatformTransactionManager transactionManager;
 
@@ -91,7 +82,7 @@ public class AdminModificationCommandService {
      * 묶지 않는다 — 외부 호출 성공 후 트랜잭션이 롤백되면 DB는 되돌아가도 AD/원장은 반영된 채 남아,
      * NAS가 AD를 보고 판정하는 접근 권한만 DB 기록 없이 새는 상태가 되기 때문이다(admin_be#554).
      * 그래서 AdminRequestCommandService.approveRequest와 같은 3단계 패턴을 쓴다: ①잠금+검증+그룹 해석(트랜잭션) →
-     * ②외부 호출(트랜잭션 밖) → ③재검증+커밋(새 트랜잭션). 나머지 4개 ChangeType은 외부 호출이 없어
+     * ②외부 호출(트랜잭션 밖) → ③재검증+커밋(새 트랜잭션). EXPIRES_AT은 외부 호출이 없어
      * 단일 트랜잭션 그대로 처리한다.
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -110,7 +101,7 @@ public class AdminModificationCommandService {
 
         tx.executeWithoutResult(status -> {
             // 행 잠금 조회: 동시에 같은 변경 요청을 승인 시도하는 두 번째 트랜잭션은 첫 트랜잭션 커밋까지 대기하다가
-            // FULFILLED 상태를 보고 실패한다 (PORT 등 부수 효과의 중복 실행 방지)
+            // FULFILLED 상태를 보고 실패한다 (GROUP의 AD 반영 등 부수 효과의 중복 실행 방지)
             ChangeRequest changeRequest = changeRequestRepository.findByIdForUpdate(dto.changeRequestId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
@@ -261,13 +252,10 @@ public class AdminModificationCommandService {
 
     // GROUP은 config-server 외부 호출이 끼어 있어 이 맵을 거치지 않고 approveModification에서
     // 직접 분기한다(3단계 트랜잭션 분리, admin_be#554) — 여기 등록하면 죽은 코드가 된다.
+    // RESOURCE_GROUP·CONTAINER_IMAGE·PORT는 DB 값만 바꾸고 떠 있는 Pod에는 반영하지 못해 등록하지 않는다
+    // (SingleChangeRequestDTO.SUPPORTED_TYPES). 예전에 들어온 요청은 UNSUPPORTED_CHANGE_TYPE으로 막히고 거절만 할 수 있다.
     private Map<ChangeType, ChangeApplier> changeAppliers() {
-        return Map.of(
-                ChangeType.EXPIRES_AT, this::applyExpiresAtChange,
-                ChangeType.RESOURCE_GROUP, this::applyResourceGroupChange,
-                ChangeType.CONTAINER_IMAGE, this::applyContainerImageChange,
-                ChangeType.PORT, this::applyPortChange
-        );
+        return Map.of(ChangeType.EXPIRES_AT, this::applyExpiresAtChange);
     }
 
     private ExpiryChangeResult applyExpiresAtChange(Request originalRequest, String newValueJson) throws JsonProcessingException {
@@ -283,36 +271,6 @@ public class AdminModificationCommandService {
                 .map(gid -> groupRepository.findByUbuntuGid(gid)
                         .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)))
                 .collect(Collectors.toSet());
-    }
-
-    private ExpiryChangeResult applyResourceGroupChange(Request originalRequest, String newValueJson) throws JsonProcessingException {
-        Integer newResourceGroupId = objectMapper.readValue(newValueJson, Integer.class);
-        ResourceGroup newResourceGroup = resourceGroupRepository.findById(newResourceGroupId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        originalRequest.updateResourceGroup(newResourceGroup);
-        return null;
-    }
-
-    private ExpiryChangeResult applyContainerImageChange(Request originalRequest, String newValueJson) throws JsonProcessingException {
-        Long newImageId = objectMapper.readValue(newValueJson, Long.class);
-        ContainerImage newContainerImage = containerImageRepository.findById(newImageId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        originalRequest.updateContainerImage(newContainerImage);
-        return null;
-    }
-
-    private ExpiryChangeResult applyPortChange(Request originalRequest, String newValueJson) throws JsonProcessingException {
-        List<PortRequestDTO> newPorts = objectMapper.readValue(newValueJson,
-                objectMapper.getTypeFactory().constructCollectionType(List.class, PortRequestDTO.class));
-        for (PortRequestDTO portRequestDTO : newPorts) {
-            portRequestService.createPortRequest(
-                    originalRequest,
-                    originalRequest.getResourceGroup(),
-                    portRequestDTO.internalPort(),
-                    portRequestDTO.usagePurpose()
-            );
-        }
-        return null;
     }
 
     @FunctionalInterface
