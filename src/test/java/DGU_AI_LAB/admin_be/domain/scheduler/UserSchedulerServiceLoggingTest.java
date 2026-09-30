@@ -54,7 +54,7 @@ class UserSchedulerServiceLoggingTest {
                 .build();
         ReflectionTestUtils.setField(user, "userId", 42L);
 
-        when(userRepository.findInactiveUsers(any(LocalDateTime.class))).thenReturn(List.of(user));
+        when(userRepository.findInactiveUsers(any(LocalDateTime.class), any())).thenReturn(List.of(user));
         doThrow(new IllegalStateException("처리 실패"))
                 .when(userLifecycleService).processInactiveUser(anyLong(), any(LocalDateTime.class));
 

@@ -1,5 +1,9 @@
 package DGU_AI_LAB.admin_be.domain.users.repository;
 
+import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import org.junit.jupiter.api.BeforeEach;
@@ -107,7 +111,7 @@ class UserRepositoryTest {
             userRepository.flush();
 
             LocalDateTime thresholdDate = LocalDateTime.now().minusMonths(3);
-            List<User> result = userRepository.findInactiveUsers(thresholdDate);
+            List<User> result = userRepository.findInactiveUsers(thresholdDate, Status.openStatuses());
 
             assertThat(result).extracting(User::getEmail).contains("active@dgu.ac.kr");
         }
@@ -119,9 +123,36 @@ class UserRepositoryTest {
             user1.changeRole(Role.ADMIN);
             userRepository.saveAndFlush(user1);
 
-            List<User> result = userRepository.findInactiveUsers(LocalDateTime.now().minusMonths(3));
+            List<User> result = userRepository.findInactiveUsers(LocalDateTime.now().minusMonths(3), Status.openStatuses());
 
             assertThat(result).extracting(User::getEmail).doesNotContain("active@dgu.ac.kr");
+        }
+
+        @Test
+        @DisplayName("끝나지 않은 신청(컨테이너 포함)이 있으면 오래 접속하지 않아도 조회하지 않는다")
+        void findInactiveUsers_excludesUsersWithOpenRequests() {
+            ReflectionTestUtils.setField(user1, "lastLoginAt", LocalDateTime.now().minusMonths(4));
+            userRepository.saveAndFlush(user1);
+            ResourceGroup rg = entityManager.persist(ResourceGroup.builder()
+                    .resourceGroupName("3090").description("GPU").serverName("FARM").build());
+            ContainerImage image = entityManager.persist(ContainerImage.builder()
+                    .imageName("pytorch").imageVersion("2.1.0").cudaVersion("11.8").description("PyTorch").build());
+            entityManager.persist(Request.builder()
+                    .expiresAt(LocalDateTime.now().plusDays(30)).usagePurpose("연구").formAnswers("{}")
+                    .user(user1).resourceGroup(rg).containerImage(image).build());
+            entityManager.flush();
+
+            List<User> result = userRepository.findInactiveUsers(LocalDateTime.now().minusMonths(3), Status.openStatuses());
+
+            assertThat(result).extracting(User::getEmail).doesNotContain("active@dgu.ac.kr");
+        }
+
+        @Test
+        @DisplayName("로그인한 적이 없으면 가입 시각으로 판단한다")
+        void findInactiveUsers_usesCreatedAt_whenNeverLoggedIn() {
+            List<User> result = userRepository.findInactiveUsers(LocalDateTime.now().minusMonths(3), Status.openStatuses());
+
+            assertThat(result).extracting(User::getEmail).doesNotContain("active@dgu.ac.kr", "user2@dgu.ac.kr");
         }
     }
 

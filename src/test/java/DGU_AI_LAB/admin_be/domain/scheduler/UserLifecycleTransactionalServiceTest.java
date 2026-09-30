@@ -1,6 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
@@ -57,6 +59,14 @@ class UserLifecycleTransactionalServiceTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
         when(valueOps.setIfAbsent(anyString(), any(), any(Duration.class))).thenReturn(true);
         when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
+    }
+
+    private static Request request(Status status, LocalDateTime approvedAt, LocalDateTime updatedAt) {
+        Request request = mock(Request.class);
+        when(request.getStatus()).thenReturn(status);
+        when(request.getApprovedAt()).thenReturn(approvedAt);
+        when(request.getUpdatedAt()).thenReturn(updatedAt);
+        return request;
     }
 
     private User buildUserWithLastLogin(LocalDateTime lastLoginAt) {
@@ -191,6 +201,51 @@ class UserLifecycleTransactionalServiceTest {
 
             assertThat(lifecycleService.processInactiveUser(1L, LocalDateTime.of(2026, 1, 10, 9, 0))).isFalse();
             verifyNoInteractions(alarmService);
+        }
+
+        @Test
+        @DisplayName("끝나지 않은 신청(컨테이너 포함)이 있으면 오래 접속하지 않아도 대상이 아니다")
+        void userWithOpenRequest_isKept() {
+            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
+            User user = buildUserWithLastLogin(now.minusYears(1));
+            user.getRequests().add(request(Status.FULFILLED, now.minusYears(1), now.minusYears(1)));
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+            assertThat(lifecycleService.processInactiveUser(1L, now)).isFalse();
+            verifyNoInteractions(alarmService);
+        }
+
+        @Test
+        @DisplayName("마지막 컨테이너가 사라진 지 3개월이 안 됐으면 접속이 오래돼도 대상이 아니다")
+        void recentlyRemovedContainer_isKept() {
+            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
+            User user = buildUserWithLastLogin(now.minusYears(1));
+            user.getRequests().add(request(Status.DELETED, now.minusYears(1), now.minusMonths(2)));
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+            assertThat(lifecycleService.processInactiveUser(1L, now)).isFalse();
+        }
+
+        @Test
+        @DisplayName("컨테이너가 0개가 된 지와 마지막 접속이 모두 3개월을 넘으면 대상이다")
+        void bothOverThreeMonths_isWithdrawn() {
+            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
+            User user = buildUserWithLastLogin(now.minusMonths(5));
+            user.getRequests().add(request(Status.DELETED, now.minusMonths(8), now.minusMonths(3).minusDays(1)));
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+            assertThat(lifecycleService.processInactiveUser(1L, now)).isTrue();
+        }
+
+        @Test
+        @DisplayName("승인 전에 취소된 신청은 컨테이너가 없었으니 기준 시각에 넣지 않는다")
+        void cancelledBeforeApproval_isIgnored() {
+            LocalDateTime now = LocalDateTime.of(2026, 1, 10, 9, 0);
+            User user = buildUserWithLastLogin(now.minusMonths(4));
+            user.getRequests().add(request(Status.DELETED, null, now.minusDays(1)));
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+            assertThat(lifecycleService.processInactiveUser(1L, now)).isTrue();
         }
 
         @Test
