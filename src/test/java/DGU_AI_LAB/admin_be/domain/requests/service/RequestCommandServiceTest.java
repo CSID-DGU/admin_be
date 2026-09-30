@@ -5,9 +5,10 @@ import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
-import DGU_AI_LAB.admin_be.domain.requests.dto.request.ModifyRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.SingleChangeRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
@@ -173,23 +174,23 @@ class RequestCommandServiceTest {
     }
 
     @Nested
-    @DisplayName("createModificationRequest")
-    class CreateModificationRequest {
+    @DisplayName("createSingleChangeRequest")
+    class CreateSingleChangeRequest {
 
         @Test
         @DisplayName("존재하지 않는 requestId로 변경 요청하면 BusinessException을 던진다")
-        void createModificationRequest_throwsException_whenRequestNotFound() {
+        void createSingleChangeRequest_throwsException_whenRequestNotFound() {
             when(requestRepository.findById(99L)).thenReturn(Optional.empty());
 
-            ModifyRequestDTO dto = mock(ModifyRequestDTO.class);
+            SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005]", "사유");
 
-            assertThatThrownBy(() -> requestCommandService.createModificationRequest(1L, 99L, dto))
+            assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(1L, 99L, dto))
                     .isInstanceOf(BusinessException.class);
         }
 
         @Test
         @DisplayName("요청 소유자가 아닌 유저가 변경 요청하면 BusinessException을 던진다")
-        void createModificationRequest_throwsException_whenNotOwner() {
+        void createSingleChangeRequest_throwsException_whenNotOwner() {
             User owner = mock(User.class);
             when(owner.getUserId()).thenReturn(1L);
 
@@ -197,16 +198,16 @@ class RequestCommandServiceTest {
             when(request.getUser()).thenReturn(owner);
             when(requestRepository.findById(10L)).thenReturn(Optional.of(request));
 
-            ModifyRequestDTO dto = mock(ModifyRequestDTO.class);
+            SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005]", "사유");
 
             // userId=2 로 요청 → 소유자 userId=1 과 불일치
-            assertThatThrownBy(() -> requestCommandService.createModificationRequest(2L, 10L, dto))
+            assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(2L, 10L, dto))
                     .isInstanceOf(BusinessException.class);
         }
 
         @Test
         @DisplayName("FULFILLED 상태가 아닌 요청에 변경 요청하면 BusinessException을 던진다")
-        void createModificationRequest_throwsException_whenStatusIsNotFulfilled() {
+        void createSingleChangeRequest_throwsException_whenStatusIsNotFulfilled() {
             User owner = mock(User.class);
             when(owner.getUserId()).thenReturn(1L);
 
@@ -215,27 +216,9 @@ class RequestCommandServiceTest {
             when(request.getStatus()).thenReturn(Status.PENDING);
             when(requestRepository.findById(11L)).thenReturn(Optional.of(request));
 
-            ModifyRequestDTO dto = mock(ModifyRequestDTO.class);
+            SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005]", "사유");
 
-            assertThatThrownBy(() -> requestCommandService.createModificationRequest(1L, 11L, dto))
-                    .isInstanceOf(BusinessException.class);
-        }
-
-        @Test
-        @DisplayName("소유자를 DB에서 찾을 수 없으면 BusinessException을 던진다")
-        void createModificationRequest_throwsException_whenUserNotFound() {
-            User owner = mock(User.class);
-            when(owner.getUserId()).thenReturn(1L);
-
-            Request request = mock(Request.class);
-            when(request.getUser()).thenReturn(owner);
-            when(request.getStatus()).thenReturn(Status.FULFILLED);
-            when(requestRepository.findById(12L)).thenReturn(Optional.of(request));
-
-            // dto stubs 불필요 - userRepository.findById 에서 이미 예외 발생
-            ModifyRequestDTO dto = mock(ModifyRequestDTO.class);
-
-            assertThatThrownBy(() -> requestCommandService.createModificationRequest(1L, 12L, dto))
+            assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(1L, 11L, dto))
                     .isInstanceOf(BusinessException.class);
         }
     }

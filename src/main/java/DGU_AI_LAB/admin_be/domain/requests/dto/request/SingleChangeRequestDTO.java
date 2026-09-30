@@ -14,18 +14,15 @@ import jakarta.validation.constraints.Size;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.EnumSet;
 import java.util.Set;
 import java.util.stream.Collectors;
-import DGU_AI_LAB.admin_be.domain.requests.dto.response.PortMappingDTO;
-import DGU_AI_LAB.admin_be.domain.requests.dto.request.PortRequestDTO;
-import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 
 @Slf4j
 @Schema(description = "단일 변경 요청 DTO")
 public record SingleChangeRequestDTO(
 
-        @Schema(description = "변경 타입", example = "EXPIRES_AT")
+        @Schema(description = "변경 타입", example = "EXPIRES_AT", allowableValues = {"EXPIRES_AT", "GROUP"})
         @NotNull(message = "변경 타입은 필수입니다.")
         ChangeType changeType,
 
@@ -43,11 +40,17 @@ public record SingleChangeRequestDTO(
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /**
+     * 승인 시 실제 계정·컨테이너까지 반영되는 종류만 받는다. RESOURCE_GROUP·CONTAINER_IMAGE·PORT는
+     * 승인해도 DB 값만 바뀌고 떠 있는 Pod는 그대로라 DB와 실제가 어긋난다 — 받지 않는다.
+     */
+    public static final Set<ChangeType> SUPPORTED_TYPES = EnumSet.of(ChangeType.EXPIRES_AT, ChangeType.GROUP);
+
+    /**
      * 기존 Request에서 oldValue를 추출하고 ChangeRequest 엔티티 생성
      */
-    public static ChangeRequest toEntity(SingleChangeRequestDTO dto, Request originalRequest, User requestedBy, ObjectMapper objectMapper, PortRequestService portRequestService) {
+    public static ChangeRequest toEntity(SingleChangeRequestDTO dto, Request originalRequest, User requestedBy, ObjectMapper objectMapper) {
         try {
-            String oldValue = extractOldValue(originalRequest, dto.changeType(), objectMapper, portRequestService);
+            String oldValue = extractOldValue(originalRequest, dto.changeType(), objectMapper);
 
             // new_value는 MySQL json 컬럼이고 승인 로직은 readValue(String.class)로 읽는다.
             // EXPIRES_AT의 생 날짜 문자열은 유효한 JSON이 아니므로 저장 직전에 JSON 인코딩한다. (#367)
@@ -75,7 +78,7 @@ public record SingleChangeRequestDTO(
     /**
      * 변경 타입에 따라 기존 값을 추출
      */
-    private static String extractOldValue(Request originalRequest, ChangeType changeType, ObjectMapper objectMapper, PortRequestService portRequestService) {
+    private static String extractOldValue(Request originalRequest, ChangeType changeType, ObjectMapper objectMapper) {
         try {
             return switch (changeType) {
                 case EXPIRES_AT -> objectMapper.writeValueAsString(originalRequest.getExpiresAt());
@@ -87,19 +90,10 @@ public record SingleChangeRequestDTO(
                             .collect(Collectors.toSet());
                     yield objectMapper.writeValueAsString(oldGroupIds);
                 }
-                case RESOURCE_GROUP -> objectMapper.writeValueAsString(originalRequest.getResourceGroup().getRsgroupId());
-                case CONTAINER_IMAGE -> objectMapper.writeValueAsString(originalRequest.getContainerImage().getImageId());
-                case PORT -> {
-                    // Get existing port requests for this request
-                    List<PortMappingDTO> existingPorts = originalRequest.getRequestId() != null
-                        ? portRequestService.getPortRequestsByRequestId(originalRequest.getRequestId())
-                            .stream()
-                            .map(PortMappingDTO::fromEntity)
-                            .collect(Collectors.toList())
-                        : List.of();
-                    yield objectMapper.writeValueAsString(existingPorts);
-                }
+                default -> throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
             };
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Failed to extract old value for change type {}: {}", changeType, e.getMessage());
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
@@ -109,9 +103,9 @@ public record SingleChangeRequestDTO(
     /**
      * DTO 내부에서 자체적으로 유효성을 검증하고 데이터베이스 존재 여부까지 확인하는 팩토리 메서드
      */
-    public static ChangeRequest createValidatedChangeRequest(SingleChangeRequestDTO dto, Request originalRequest, User requestedBy, ObjectMapper objectMapper, PortRequestService portRequestService) {
+    public static ChangeRequest createValidatedChangeRequest(SingleChangeRequestDTO dto, Request originalRequest, User requestedBy, ObjectMapper objectMapper) {
         dto.validateAndCheckExistence(originalRequest);
-        return toEntity(dto, originalRequest, requestedBy, objectMapper, portRequestService);
+        return toEntity(dto, originalRequest, requestedBy, objectMapper);
     }
 
     /**
@@ -129,6 +123,10 @@ public record SingleChangeRequestDTO(
     private void validateBasicFormat() {
         if (changeType == null) {
             throw new BusinessException("변경 타입은 필수입니다.", ErrorCode.INVALID_INPUT_VALUE);
+        }
+
+        if (!SUPPORTED_TYPES.contains(changeType)) {
+            throw new BusinessException("기간 연장(EXPIRES_AT)과 그룹 추가(GROUP)만 변경 요청할 수 있습니다.", ErrorCode.UNSUPPORTED_CHANGE_TYPE);
         }
 
         if (newValue == null || newValue.trim().isEmpty()) {
@@ -159,32 +157,7 @@ public record SingleChangeRequestDTO(
                         throw new BusinessException("그룹 ID 목록은 비어있을 수 없습니다.", ErrorCode.INVALID_INPUT_VALUE);
                     }
                 }
-                case RESOURCE_GROUP -> {
-                    Integer resourceGroupId = Integer.parseInt(newValue.trim());
-                    if (resourceGroupId <= 0) {
-                        throw new BusinessException("리소스 그룹 ID는 양수여야 합니다.", ErrorCode.INVALID_INPUT_VALUE);
-                    }
-                }
-                case CONTAINER_IMAGE -> {
-                    Long imageId = Long.parseLong(newValue.trim());
-                    if (imageId <= 0) {
-                        throw new BusinessException("컨테이너 이미지 ID는 양수여야 합니다.", ErrorCode.INVALID_INPUT_VALUE);
-                    }
-                }
-                case PORT -> {
-                    List<PortRequestDTO> portRequests = OBJECT_MAPPER.readValue(newValue,
-                        OBJECT_MAPPER.getTypeFactory().constructCollectionType(List.class, PortRequestDTO.class));
-
-                    // Validate each port request
-                    for (PortRequestDTO portRequest : portRequests) {
-                        if (portRequest.internalPort() == null || portRequest.internalPort() < 1 || portRequest.internalPort() > 65535) {
-                            throw new BusinessException("내부 포트는 1-65535 범위여야 합니다.", ErrorCode.INVALID_INPUT_VALUE);
-                        }
-                        if (portRequest.usagePurpose() == null || portRequest.usagePurpose().trim().isEmpty()) {
-                            throw new BusinessException("포트 사용 목적은 필수입니다.", ErrorCode.INVALID_INPUT_VALUE);
-                        }
-                    }
-                }
+                default -> throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
             }
         } catch (BusinessException e) {
             throw e;

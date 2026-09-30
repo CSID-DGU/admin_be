@@ -10,6 +10,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import java.time.LocalDateTime;
 
@@ -26,7 +28,7 @@ class SingleChangeRequestDTOTest {
         SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[]", "reason");
 
         assertThatThrownBy(() ->
-                SingleChangeRequestDTO.createValidatedChangeRequest(dto, null, null, null, null))
+                SingleChangeRequestDTO.createValidatedChangeRequest(dto, null, null, null))
                 .isInstanceOf(BusinessException.class);
     }
 
@@ -36,18 +38,22 @@ class SingleChangeRequestDTOTest {
         SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "not-json", "reason");
 
         assertThatThrownBy(() ->
-                SingleChangeRequestDTO.createValidatedChangeRequest(dto, null, null, null, null))
+                SingleChangeRequestDTO.createValidatedChangeRequest(dto, null, null, null))
                 .isInstanceOf(BusinessException.class);
     }
 
-    @Test
-    @DisplayName("PORT 타입에 잘못된 JSON을 전달하면 BusinessException을 던진다")
-    void createValidatedChangeRequest_port_invalidJson_throws() {
-        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.PORT, "not-json", "reason");
+    @ParameterizedTest
+    @EnumSource(value = ChangeType.class, names = {"RESOURCE_GROUP", "CONTAINER_IMAGE", "PORT"})
+    @DisplayName("승인해도 떠 있는 Pod에 반영되지 않는 종류는 값이 올바라도 UNSUPPORTED_CHANGE_TYPE으로 거절한다")
+    void createValidatedChangeRequest_rejectsTypesThatOnlyChangeDb(ChangeType type) {
+        String validValue = type == ChangeType.PORT ? "[{\"internalPort\":8080,\"usagePurpose\":\"web\"}]" : "2";
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(type, validValue, "reason");
 
         assertThatThrownBy(() ->
-                SingleChangeRequestDTO.createValidatedChangeRequest(dto, null, null, null, null))
-                .isInstanceOf(BusinessException.class);
+                SingleChangeRequestDTO.createValidatedChangeRequest(dto, Request.builder().build(), null, new ObjectMapper()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
     }
 
     @Test
@@ -65,7 +71,7 @@ class SingleChangeRequestDTOTest {
                 ChangeType.EXPIRES_AT, newExpiresAt.toString(), "reason");
 
         ChangeRequest changeRequest = SingleChangeRequestDTO.createValidatedChangeRequest(
-                dto, originalRequest, null, objectMapper, null);
+                dto, originalRequest, null, objectMapper);
 
         // MySQL json 컬럼 제약 — 저장 값은 따옴표 포함 유효 JSON이어야 한다
         assertThat(changeRequest.getNewValue()).isEqualTo("\"" + newExpiresAt + "\"");
@@ -86,7 +92,7 @@ class SingleChangeRequestDTOTest {
         SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005,1006]", "reason");
 
         ChangeRequest changeRequest = SingleChangeRequestDTO.createValidatedChangeRequest(
-                dto, originalRequest, null, objectMapper, null);
+                dto, originalRequest, null, objectMapper);
 
         assertThat(changeRequest.getNewValue()).isEqualTo("[1005,1006]");
     }
@@ -102,7 +108,7 @@ class SingleChangeRequestDTOTest {
                 ChangeType.EXPIRES_AT, LocalDateTime.now().minusDays(1).withNano(0).toString(), "reason");
 
         assertThatThrownBy(() -> SingleChangeRequestDTO.createValidatedChangeRequest(
-                dto, originalRequest, null, objectMapper, null))
+                dto, originalRequest, null, objectMapper))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
@@ -120,7 +126,7 @@ class SingleChangeRequestDTOTest {
                 ChangeType.EXPIRES_AT, LocalDateTime.now().minusSeconds(1).withNano(0).toString(), "reason");
 
         assertThatThrownBy(() -> SingleChangeRequestDTO.createValidatedChangeRequest(
-                dto, originalRequest, null, objectMapper, null))
+                dto, originalRequest, null, objectMapper))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
@@ -143,7 +149,7 @@ class SingleChangeRequestDTOTest {
                 .thenThrow(new BusinessException("입력값 문제", ErrorCode.INVALID_INPUT_VALUE));
 
         assertThatThrownBy(() ->
-                SingleChangeRequestDTO.toEntity(dto, originalRequest, null, objectMapper, null))
+                SingleChangeRequestDTO.toEntity(dto, originalRequest, null, objectMapper))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
