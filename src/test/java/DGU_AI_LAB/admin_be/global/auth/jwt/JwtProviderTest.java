@@ -1,7 +1,6 @@
 package DGU_AI_LAB.admin_be.global.auth.jwt;
 
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
-import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
@@ -12,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.security.Key;
-import java.util.Base64;
 import java.util.Date;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -60,78 +58,6 @@ class JwtProviderTest {
                 .setExpiration(new Date(now.getTime() + ACCESS_TTL))
                 .signWith(key, SignatureAlgorithm.HS256)
                 .compact();
-    }
-
-    // ───────────────────────────────────────────────────────────────
-    // getSubjectFromExpiredToken
-    // ───────────────────────────────────────────────────────────────
-    @Nested
-    @DisplayName("getSubjectFromExpiredToken")
-    class GetSubjectFromExpiredToken {
-
-        @Test
-        @DisplayName("유효한 토큰이면 서명 검증 후 userId를 반환한다")
-        void returnsUserId_fromValidToken() {
-            String token = jwtProvider.getIssueToken(42L, true);
-
-            Long userId = jwtProvider.getSubjectFromExpiredToken(token);
-
-            assertThat(userId).isEqualTo(42L);
-        }
-
-        @Test
-        @DisplayName("만료된 토큰이어도 서명이 유효하면 userId를 반환한다")
-        void returnsUserId_fromExpiredButValidToken() {
-            String expiredToken = buildExpiredToken(99L);
-
-            Long userId = jwtProvider.getSubjectFromExpiredToken(expiredToken);
-
-            assertThat(userId).isEqualTo(99L);
-        }
-
-        @Test
-        @DisplayName("서명이 다른 위조 토큰이면 예외를 던진다")
-        void throwsException_whenSignatureIsInvalid() {
-            String forgedToken = buildTokenWithDifferentKey(1L);
-
-            assertThatThrownBy(() -> jwtProvider.getSubjectFromExpiredToken(forgedToken))
-                    .isNotInstanceOf(ExpiredJwtException.class);
-        }
-
-        @Test
-        @DisplayName("형식이 잘못된 토큰이면 예외를 던진다")
-        void throwsException_whenTokenIsMalformed() {
-            assertThatThrownBy(() -> jwtProvider.getSubjectFromExpiredToken("not.a.valid.token"))
-                    .isNotInstanceOf(NullPointerException.class);
-        }
-
-        @Test
-        @DisplayName("점(.)이 없는 토큰이면 예외를 던진다")
-        void throwsException_whenTokenHasNoParts() {
-            assertThatThrownBy(() -> jwtProvider.getSubjectFromExpiredToken("invalidtoken"))
-                    .isInstanceOf(Exception.class);
-        }
-
-        @Test
-        @DisplayName("빈 문자열 토큰이면 예외를 던진다")
-        void throwsException_whenTokenIsEmpty() {
-            assertThatThrownBy(() -> jwtProvider.getSubjectFromExpiredToken(""))
-                    .isInstanceOf(Exception.class);
-        }
-
-        @Test
-        @DisplayName("payload의 sub만 바꾼 위조 토큰은 서명 불일치로 예외를 던진다")
-        void throwsException_whenPayloadIsManipulated() {
-            String realToken = jwtProvider.getIssueToken(1L, true);
-            String[] parts = realToken.split("\\.");
-            // payload의 sub를 999로 변조 (재인코딩, 서명은 그대로)
-            String fakePayload = Base64.getUrlEncoder().withoutPadding()
-                    .encodeToString("{\"sub\":\"999\",\"iat\":0,\"exp\":9999999999}".getBytes());
-            String forgedToken = parts[0] + "." + fakePayload + "." + parts[2];
-
-            assertThatThrownBy(() -> jwtProvider.getSubjectFromExpiredToken(forgedToken))
-                    .isInstanceOf(Exception.class);
-        }
     }
 
     // ───────────────────────────────────────────────────────────────
@@ -198,17 +124,6 @@ class JwtProviderTest {
 
             assertThatThrownBy(() -> jwtProvider.validateAccessToken(untyped))
                     .isInstanceOf(UnauthorizedException.class);
-        }
-
-        @Test
-        @DisplayName("액세스 토큰은 리프레시 토큰 검증을 통과하지 못한다")
-        void throwsUnauthorized_whenAccessTokenIsUsedAsRefreshToken() {
-            String accessToken = jwtProvider.getIssueToken(1L, true);
-
-            assertThatThrownBy(() -> jwtProvider.validateRefreshToken(accessToken))
-                    .isInstanceOf(UnauthorizedException.class);
-            assertThatCode(() -> jwtProvider.validateRefreshToken(jwtProvider.getIssueToken(1L, false)))
-                    .doesNotThrowAnyException();
         }
     }
 

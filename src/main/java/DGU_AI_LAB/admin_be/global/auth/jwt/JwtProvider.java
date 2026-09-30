@@ -60,26 +60,6 @@ public class JwtProvider {
         parseAccessToken(accessToken);
     }
 
-    public void validateRefreshToken(String refreshToken) {
-        Claims claims;
-        try {
-            claims = getJwtParser().parseClaimsJws(refreshToken).getBody();
-        } catch (ExpiredJwtException e) {
-            throw new UnauthorizedException(ErrorCode.EXPIRED_REFRESH_TOKEN);
-        } catch (Exception e) {
-            throw new UnauthorizedException(ErrorCode.INVALID_REFRESH_TOKEN_VALUE);
-        }
-        if (!REFRESH.equals(claims.get(TOKEN_TYPE_CLAIM, String.class))) {
-            throw new UnauthorizedException(ErrorCode.INVALID_REFRESH_TOKEN_VALUE);
-        }
-    }
-
-    public void equalsRefreshToken(String providedRefreshToken, String storedRefreshToken) {
-        if (!providedRefreshToken.equals(storedRefreshToken)) {
-            throw new UnauthorizedException(ErrorCode.NOT_MATCH_REFRESH_TOKEN);
-        }
-    }
-
     public Long getSubject(String token) {
         return Long.valueOf(getJwtParser().parseClaimsJws(token)
                 .getBody()
@@ -108,23 +88,4 @@ public class JwtProvider {
     private Key getSigningKey() {
         return signingKey;
     }
-
-
-    /**
-     * 만료된 accessToken에서 서명 검증 후 userId(subject)를 추출한다.
-     *
-     * parseClaimsJws()는 만료 여부와 무관하게 서명을 항상 검증한다.
-     * 토큰이 만료된 경우 ExpiredJwtException에서 claims를 꺼내 subject를 반환하고,
-     * 서명이 유효하지 않거나 토큰 형식이 깨진 경우에는 예외가 그대로 전파된다.
-     */
-    public Long getSubjectFromExpiredToken(String accessToken) {
-        try {
-            return Long.valueOf(
-                    getJwtParser().parseClaimsJws(accessToken).getBody().getSubject()
-            );
-        } catch (ExpiredJwtException e) {
-            return Long.valueOf(e.getClaims().getSubject());
-        }
-    }
-
 }
