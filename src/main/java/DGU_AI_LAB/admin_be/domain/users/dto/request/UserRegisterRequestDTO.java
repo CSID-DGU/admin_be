@@ -8,6 +8,7 @@ import DGU_AI_LAB.admin_be.global.validation.UbuntuUsername;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 @Schema(description = "회원가입 요청 DTO")
@@ -25,8 +26,11 @@ public record UserRegisterRequestDTO(
         @MaxUtf8Bytes(value = 72, message = "비밀번호가 너무 깁니다. 한글은 한 글자가 3바이트라 24자까지 쓸 수 있습니다.")
         String password,
 
-        @Schema(description = "사용자 이름", example = "이소은")
+        // 이름은 승인 때 리눅스 계정 원장(passwd)의 한 칸(gecos)이 된다. 칸 구분자(:)나 줄바꿈이 섞이면
+        // 원장에 다른 계정 줄을 끼워 넣을 수 있어 받지 않는다(config-server도 같은 규칙으로 거절한다).
+        @Schema(description = "사용자 이름 (콜론·제어 문자·줄바꿈 불가)", example = "이소은")
         @NotBlank @Size(max = 100)
+        @Pattern(regexp = "^[^:\\p{Cc}\\p{Zl}\\p{Zp}]*$", message = "이름에는 콜론(:)이나 줄바꿈 같은 특수 문자를 쓸 수 없습니다.")
         String name,
 
         @Schema(description = "학과", example = "컴퓨터공학과")
