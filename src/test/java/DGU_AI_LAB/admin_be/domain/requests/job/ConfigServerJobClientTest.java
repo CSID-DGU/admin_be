@@ -21,9 +21,12 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
+import reactor.test.scheduler.VirtualTimeScheduler;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -124,6 +127,36 @@ class ConfigServerJobClientTest {
         assertThatThrownBy(() -> service.getSteps(JobResults.KIND_PROVISION, 41L))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EXTERNAL_API_ERROR);
+    }
+
+    @Test
+    @DisplayName("작업 결과 조회는 config-server가 응답하지 않으면 공용 응답 제한보다 짧게 끊고 외부 API 오류로 실패시킨다")
+    void resultReadTimesOut() throws Exception {
+        VirtualTimeScheduler clock = VirtualTimeScheduler.getOrSet();
+        try {
+            when(responseSpec.bodyToMono(JobResultResponseDTO.class)).thenReturn(Mono.never());
+
+            CompletableFuture<Throwable> call = CompletableFuture.supplyAsync(() -> {
+                try {
+                    service.getResult(JobResults.KIND_PROVISION, 41L);
+                    return null;
+                } catch (Throwable t) {
+                    return t;
+                }
+            });
+            // 구독이 걸린 뒤에 시간을 돌려야 timeout 예약이 가상 시계에 올라간다.
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (!call.isDone() && clock.getScheduledTaskCount() == 0 && System.nanoTime() < deadline) {
+                Thread.onSpinWait();
+            }
+            clock.advanceTimeBy(ConfigServerJobClient.READ_TIMEOUT);
+
+            assertThat(call.get(5, TimeUnit.SECONDS))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EXTERNAL_API_ERROR);
+        } finally {
+            VirtualTimeScheduler.reset();
+        }
     }
 
     @Nested
