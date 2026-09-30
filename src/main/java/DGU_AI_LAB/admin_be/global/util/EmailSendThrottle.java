@@ -25,17 +25,14 @@ public class EmailSendThrottle {
     private static final String COUNT_PREFIX = "email:send-count:";
 
     private final RedisTemplate<String, String> redisTemplate;
+    private final RedisWindowCounter windowCounter;
 
     public void acquire(String email) {
         String key = email.toLowerCase(Locale.ROOT);
         if (!Boolean.TRUE.equals(redisTemplate.opsForValue().setIfAbsent(COOLDOWN_PREFIX + key, "1", COOLDOWN))) {
             throw new BusinessException(ErrorCode.TOO_MANY_EMAIL_SENDS);
         }
-        Long sends = redisTemplate.opsForValue().increment(COUNT_PREFIX + key);
-        if (sends != null && sends == 1) {
-            redisTemplate.expire(COUNT_PREFIX + key, WINDOW);
-        }
-        if (sends != null && sends > MAX_SENDS_PER_WINDOW) {
+        if (windowCounter.increment(COUNT_PREFIX + key, WINDOW) > MAX_SENDS_PER_WINDOW) {
             throw new BusinessException(ErrorCode.TOO_MANY_EMAIL_SENDS);
         }
     }

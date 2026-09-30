@@ -13,6 +13,7 @@ import org.springframework.data.redis.core.ValueOperations;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -30,6 +31,9 @@ class EmailSendThrottleTest {
     @Mock
     private ValueOperations<String, String> valueOperations;
 
+    @Mock
+    private RedisWindowCounter windowCounter;
+
     @BeforeEach
     void setUp() {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
@@ -41,24 +45,24 @@ class EmailSendThrottleTest {
         when(valueOperations.setIfAbsent("email:send-cooldown:a@dgu.ac.kr", "1", EmailSendThrottle.COOLDOWN)).thenReturn(false);
 
         assertThatThrownBy(() -> throttle.acquire("A@dgu.ac.kr")).isInstanceOf(BusinessException.class);
-        verify(valueOperations, never()).increment(anyString());
+        verify(windowCounter, never()).increment(anyString(), any());
     }
 
     @Test
-    @DisplayName("첫 발송은 한 시간 창을 열고 통과한다")
-    void firstSendOpensWindow() {
+    @DisplayName("한 시간 창으로 발송 횟수를 세고 한도까지는 통과한다")
+    void countsSendInHourlyWindow() {
         when(valueOperations.setIfAbsent("email:send-cooldown:a@dgu.ac.kr", "1", EmailSendThrottle.COOLDOWN)).thenReturn(true);
-        when(valueOperations.increment("email:send-count:a@dgu.ac.kr")).thenReturn(1L);
+        when(windowCounter.increment("email:send-count:a@dgu.ac.kr", EmailSendThrottle.WINDOW))
+                .thenReturn((long) EmailSendThrottle.MAX_SENDS_PER_WINDOW);
 
         assertThatCode(() -> throttle.acquire("a@dgu.ac.kr")).doesNotThrowAnyException();
-        verify(redisTemplate).expire("email:send-count:a@dgu.ac.kr", EmailSendThrottle.WINDOW);
     }
 
     @Test
     @DisplayName("한 시간에 허용한 횟수를 넘으면 거절한다")
     void rejectsOverHourlyLimit() {
         when(valueOperations.setIfAbsent("email:send-cooldown:a@dgu.ac.kr", "1", EmailSendThrottle.COOLDOWN)).thenReturn(true);
-        when(valueOperations.increment("email:send-count:a@dgu.ac.kr"))
+        when(windowCounter.increment("email:send-count:a@dgu.ac.kr", EmailSendThrottle.WINDOW))
                 .thenReturn((long) EmailSendThrottle.MAX_SENDS_PER_WINDOW + 1);
 
         assertThatThrownBy(() -> throttle.acquire("a@dgu.ac.kr")).isInstanceOf(BusinessException.class);
