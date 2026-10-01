@@ -136,22 +136,24 @@ public class RequestCommandService {
             throw new BusinessException(ErrorCode.UBUNTU_PASSWORD_REQUIRED);
         }
 
-        // 입력이 잘못돼 거절된 요청은 하루 한도에서 빼려고 검증 뒤에 센다.
+        Set<Group> groups = Set.of();
+        if (dto.ubuntuGids() != null && !dto.ubuntuGids().isEmpty()) {
+            groups = new java.util.HashSet<>(groupRepository.findAllByUbuntuGidIn(dto.ubuntuGids()));
+
+            if (groups.size() != dto.ubuntuGids().size()) {
+                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+            }
+        }
+
+        // 입력이 잘못돼 거절된 요청은 하루 한도에서 빼려고 모든 검증 뒤에 센다. Redis 카운터는 트랜잭션과 함께
+        // 되돌아가지 않으므로, 이 아래에는 입력 때문에 실패하는 검증을 두지 않는다.
         requestCreateThrottle.acquire(userId);
 
         // addGroup()/포트 신청이 requestId를 요구하므로 여기서 즉시 flush해 ID를 확보한다.
         Request req = requestRepository.saveAndFlush(dto.toEntity(user, rg, img));
 
-        if (dto.ubuntuGids() != null && !dto.ubuntuGids().isEmpty()) {
-            Set<Group> found = new java.util.HashSet<>(groupRepository.findAllByUbuntuGidIn(dto.ubuntuGids()));
-
-            if (found.size() != dto.ubuntuGids().size()) {
-                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
-            }
-
-            for (Group g : found) {
-                req.addGroup(g);
-            }
+        for (Group g : groups) {
+            req.addGroup(g);
         }
 
         // === 포트 추가 신청 ===

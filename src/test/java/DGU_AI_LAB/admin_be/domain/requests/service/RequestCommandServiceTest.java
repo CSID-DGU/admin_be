@@ -35,6 +35,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -321,9 +322,7 @@ class RequestCommandServiceTest {
             SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
             when(dto.resourceGroupId()).thenReturn(1);
             when(dto.imageId()).thenReturn(1L);
-            when(dto.toEntity(any(), any(), any())).thenReturn(savedReq);
-            when(requestRepository.saveAndFlush(any())).thenReturn(savedReq);
-            // GID 2개 요청했지만 0개만 발견 → 예외 발생 (portRequests 도달 전)
+            // GID 2개 요청했지만 0개만 발견 → 예외 발생 (저장 전)
             when(dto.ubuntuGids()).thenReturn(java.util.Set.of(1001L, 1002L));
             when(groupRepository.findAllByUbuntuGidIn(any())).thenReturn(List.of());
 
@@ -404,6 +403,22 @@ class RequestCommandServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.UBUNTU_PASSWORD_REQUIRED);
+            verify(requestRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(requestCreateThrottle);
+        }
+
+        @Test
+        @DisplayName("없는 그룹을 고른 신청은 하루 한도에 세지 않는다")
+        void createRequest_unknownGroup_doesNotCountTowardDailyLimit() {
+            User user = userWithUbuntuUsername("honggildong");
+            SaveRequestRequestDTO dto = stubbedCreate(user);
+            when(dto.ubuntuGids()).thenReturn(Set.of(987654L));
+            when(groupRepository.findAllByUbuntuGidIn(any())).thenReturn(List.of());
+
+            assertThatThrownBy(() -> requestCommandService.createRequest(1L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
             verify(requestRepository, never()).saveAndFlush(any());
             verifyNoInteractions(requestCreateThrottle);
         }
