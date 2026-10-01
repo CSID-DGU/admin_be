@@ -29,13 +29,14 @@ public class SelfPasswordResetService {
     private final UserRepository userRepository;
     private final EmailSendThrottle emailSendThrottle;
     private final EmailService emailService;
+    private final PasswordResetCodeMailer codeMailer;
     private final PasswordEncoder passwordEncoder;
     private final PasswordResetService passwordResetService;
     private final PasswordResetNotifier notifier;
 
     /**
      * 가입된 활성 계정이면 인증 코드를 보낸다. 가입 여부가 응답으로 드러나지 않게, 대상이 아니어도 조용히 끝내고
-     * 발송 횟수는 가입 여부와 무관하게 센다.
+     * 발송 횟수는 가입 여부와 무관하게 센다. 메일은 응답과 따로 보내 응답 시간과 발송 실패로도 드러나지 않게 한다.
      */
     public void requestCode(String email) {
         String address = normalize(email);
@@ -46,8 +47,8 @@ public class SelfPasswordResetService {
             log.info("[passwordReset] 가입되지 않았거나 비활성인 주소라 코드를 보내지 않음");
             return;
         }
-        emailService.sendPasswordResetCode(address, user.get().getEmail());
-        log.info("[passwordReset] userId={} 재설정 코드 발송", user.get().getUserId());
+        codeMailer.sendLater(address, user.get().getEmail());
+        log.info("[passwordReset] userId={} 재설정 코드 발송 맡김", user.get().getUserId());
     }
 
     public void submit(String email, String code, String newPassword) {
