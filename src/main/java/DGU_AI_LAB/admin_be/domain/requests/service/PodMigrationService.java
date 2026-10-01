@@ -4,6 +4,8 @@ import DGU_AI_LAB.admin_be.global.alert.AlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
+import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
@@ -25,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -42,6 +45,7 @@ public class PodMigrationService {
 
     private final RequestRepository requestRepository;
     private final PodExternalPortRepository podExternalPortRepository;
+    private final NodeRepository nodeRepository;
     private final JobClient jobClient;
     private final PlatformTransactionManager transactionManager;
     private final AlarmService alarmService;
@@ -96,6 +100,7 @@ public class PodMigrationService {
         new TransactionTemplate(transactionManager).execute(status -> {
             Request req = requestRepository.findByIdForUpdate(requestId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+            rejectNodesOutsideResourceGroup(req, dto.nodes());
             req.beginMigration();
             usernameRef[0] = req.getUbuntuUsername();
             podNameRef[0] = req.getPodName();
@@ -111,6 +116,29 @@ public class PodMigrationService {
             return null;
         });
         log.info("마이그레이션 작업 등록: requestId={}, username={}, pod={}", requestId, usernameRef[0], podNameRef[0]);
+    }
+
+    /**
+     * 후보 노드는 신청의 리소스 그룹 안에서만 받는다. 다른 그룹 노드에는 신청한 GPU가 없어서, 그리로 옮기면
+     * 새 Pod가 GPU 확인에서 실패하고 신청이 MIGRATING에 남는다. Pod를 만들기 전에 여기서 거절한다.
+     */
+    private void rejectNodesOutsideResourceGroup(Request req, List<String> nodes) {
+        Set<String> allowed = nodeRepository.findAllByResourceGroup(req.getResourceGroup()).stream()
+                .map(Node::getNodeId)
+                .map(PodMigrationService::normalizeNodeName)
+                .collect(Collectors.toSet());
+        List<String> outside = nodes.stream()
+                .filter(node -> !allowed.contains(normalizeNodeName(node)))
+                .toList();
+        if (!outside.isEmpty()) {
+            throw new BusinessException(
+                    "신청한 리소스 그룹에 속하지 않은 노드로는 옮길 수 없습니다: " + String.join(", ", outside),
+                    ErrorCode.MIGRATION_NODE_OUTSIDE_RESOURCE_GROUP);
+        }
+    }
+
+    private static String normalizeNodeName(String name) {
+        return name.trim().toLowerCase(Locale.ROOT);
     }
 
     /**
