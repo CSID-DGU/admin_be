@@ -49,6 +49,7 @@ public class RequestCommandService {
     private final ChangeRequestRepository changeRequestRepository;
     private final PortRequestService portRequestService;
     private final AlarmService alarmService;
+    private final RequestCreateThrottle requestCreateThrottle;
 
     /**
      * 사용자가 자신의 대기 중(PENDING) 또는 거절된(DENIED) 신청을 취소한다.
@@ -134,6 +135,9 @@ public class RequestCommandService {
         if (!user.hasUbuntuPassword()) {
             throw new BusinessException(ErrorCode.UBUNTU_PASSWORD_REQUIRED);
         }
+
+        // 입력이 잘못돼 거절된 요청은 하루 한도에서 빼려고 검증 뒤에 센다.
+        requestCreateThrottle.acquire(userId);
 
         // addGroup()/포트 신청이 requestId를 요구하므로 여기서 즉시 flush해 ID를 확보한다.
         Request req = requestRepository.saveAndFlush(dto.toEntity(user, rg, img));

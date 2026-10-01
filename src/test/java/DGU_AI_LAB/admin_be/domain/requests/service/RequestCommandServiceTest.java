@@ -74,6 +74,9 @@ class RequestCommandServiceTest {
     @Mock
     private AlarmService alarmService;
 
+    @Mock
+    private RequestCreateThrottle requestCreateThrottle;
+
     /** 가입 시 우분투 계정명이 정해진 사용자 — 신청은 이 값을 그대로 복사해 쓴다. */
     /** 가입(또는 로그인) 때 웹 비밀번호로 SSH 비밀번호 해시가 채워진 사용자. */
     private static User userWithUbuntuUsername(String ubuntuUsername) {
@@ -401,6 +404,21 @@ class RequestCommandServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.UBUNTU_PASSWORD_REQUIRED);
+            verify(requestRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(requestCreateThrottle);
+        }
+
+        @Test
+        @DisplayName("하루 신청 한도를 넘으면 저장하지 않고 429로 거절한다")
+        void createRequest_overDailyLimit_isRejected() {
+            User user = userWithUbuntuUsername("honggildong");
+            SaveRequestRequestDTO dto = stubbedCreate(user);
+            doThrow(new BusinessException(ErrorCode.TOO_MANY_CONTAINER_REQUESTS)).when(requestCreateThrottle).acquire(1L);
+
+            assertThatThrownBy(() -> requestCommandService.createRequest(1L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.TOO_MANY_CONTAINER_REQUESTS);
             verify(requestRepository, never()).saveAndFlush(any());
         }
     }
