@@ -35,6 +35,7 @@ class SelfPasswordResetServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private EmailSendThrottle emailSendThrottle;
     @Mock private EmailService emailService;
+    @Mock private PasswordResetCodeMailer codeMailer;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private PasswordResetService passwordResetService;
     @Mock private PasswordResetNotifier notifier;
@@ -67,7 +68,9 @@ class SelfPasswordResetServiceTest {
         service.requestCode(" Test@DGU.ac.kr ");
 
         verify(emailSendThrottle).acquire("test@dgu.ac.kr");
-        verify(emailService).sendPasswordResetCode("test@dgu.ac.kr", "Test@dgu.ac.kr");
+        verify(codeMailer).sendLater("test@dgu.ac.kr", "Test@dgu.ac.kr");
+        // 요청 안에서 보내면 가입된 주소만 응답이 늦어져 가입 여부가 드러난다.
+        verifyNoInteractions(emailService);
     }
 
     @Test
@@ -78,7 +81,7 @@ class SelfPasswordResetServiceTest {
         assertThatCode(() -> service.requestCode("nobody@dgu.ac.kr")).doesNotThrowAnyException();
 
         verify(emailSendThrottle).acquire("nobody@dgu.ac.kr");
-        verifyNoInteractions(emailService);
+        verifyNoInteractions(emailService, codeMailer);
     }
 
     @Test
@@ -89,7 +92,7 @@ class SelfPasswordResetServiceTest {
 
         service.requestCode("test@dgu.ac.kr");
 
-        verifyNoInteractions(emailService);
+        verifyNoInteractions(emailService, codeMailer);
     }
 
     @Test
@@ -99,7 +102,7 @@ class SelfPasswordResetServiceTest {
 
         assertThatThrownBy(() -> service.requestCode("test@dgu.ac.kr")).isInstanceOf(BusinessException.class);
 
-        verifyNoInteractions(userRepository, emailService);
+        verifyNoInteractions(userRepository, emailService, codeMailer);
     }
 
     @Test
