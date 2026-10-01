@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.job;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.PasswordChangeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ProvisionRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
@@ -18,7 +19,7 @@ import java.time.Duration;
 import java.util.Map;
 
 /**
- * config-server의 작업 API(POST /operations/{provision|migrate|revoke}, GET /operations/{kind}/{신청번호}[/steps])로
+ * config-server의 작업 API(POST /operations/{provision|migrate|revoke|password}, GET /operations/{kind}/{신청번호}[/steps])로
  * {@link JobClient}를 구현한다.
  */
 @Slf4j
@@ -50,6 +51,11 @@ public class ConfigServerJobClient implements JobClient {
     @Override
     public Long registerRevoke(RevokeRegisterRequestDTO body, ErrorCode failureCode) {
         return register("/operations/revoke", body, body.requestId(), failureCode);
+    }
+
+    @Override
+    public Long registerPasswordChange(PasswordChangeRegisterRequestDTO body) {
+        return register("/operations/password", body, body.requestId(), ErrorCode.UBUNTU_PASSWORD_CHANGE_FAILED);
     }
 
     private Long register(String uri, Object body, Long requestId, ErrorCode failureCode) {

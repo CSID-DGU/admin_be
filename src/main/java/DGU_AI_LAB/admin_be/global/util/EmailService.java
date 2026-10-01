@@ -94,6 +94,11 @@ public class EmailService {
                 messageUtils.get("email.password-changed.body"));
     }
 
+    public void sendPasswordResetDeniedNotice(String to) {
+        sendEmail(to, messageUtils.get("email.password-reset-denied.subject"),
+                messageUtils.get("email.password-reset-denied.body"));
+    }
+
     private String issueCode(CodePurpose purpose, String key) {
         String authCode = createRandomCode();
         redisTemplate.opsForValue().set(purpose.codePrefix + key, authCode, AUTH_CODE_EXPIRE_SECONDS, TimeUnit.SECONDS);

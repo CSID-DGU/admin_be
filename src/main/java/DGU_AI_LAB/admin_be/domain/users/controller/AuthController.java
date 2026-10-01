@@ -13,7 +13,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -45,20 +44,20 @@ public class AuthController implements AuthApi {
     }
 
     /**
-     * 비밀번호 재설정 요청 — 가입된 메일이면 인증번호를 보낸다. 가입 여부와 무관하게 200.
+     * 비밀번호 재설정 인증번호 발송 — 가입된 메일이면 인증번호를 보낸다. 가입 여부와 무관하게 200.
      */
-    @PostMapping("/password-resets")
-    public ResponseEntity<Void> requestPasswordReset(@RequestBody @Valid EmailSendRequestDTO request) {
+    @PostMapping("/password-reset-codes")
+    public ResponseEntity<Void> sendPasswordResetCode(@RequestBody @Valid EmailSendRequestDTO request) {
         selfPasswordResetService.requestCode(request.email());
         return ResponseEntity.ok().build();
     }
 
     /**
-     * 메일로 받은 인증번호로 비밀번호 교체
+     * 비밀번호 재설정 신청 — 메일로 받은 인증번호와 새 비밀번호를 낸다. 관리자가 승인해야 적용된다.
      */
-    @PutMapping("/password")
-    public ResponseEntity<Void> resetPassword(@RequestBody @Valid PasswordResetRequestDTO request) {
-        selfPasswordResetService.reset(request.email(), request.code(), request.newPassword());
-        return ResponseEntity.noContent().build();
+    @PostMapping("/password-resets")
+    public ResponseEntity<Void> requestPasswordReset(@RequestBody @Valid PasswordResetRequestDTO request) {
+        selfPasswordResetService.submit(request.email(), request.code(), request.newPassword());
+        return ResponseEntity.accepted().build();
     }
 }

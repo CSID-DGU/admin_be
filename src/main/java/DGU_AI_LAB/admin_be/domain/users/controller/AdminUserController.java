@@ -5,7 +5,7 @@ import DGU_AI_LAB.admin_be.domain.users.dto.request.UserActivationRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.controller.docs.AdminUserApi;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.AdminPasswordResetRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.ChangeRoleRequestDTO;
-import DGU_AI_LAB.admin_be.domain.users.service.PasswordResetService;
+import DGU_AI_LAB.admin_be.domain.users.service.AdminPasswordResetService;
 import DGU_AI_LAB.admin_be.domain.users.service.AdminUserService;
 import DGU_AI_LAB.admin_be.domain.users.service.UserGroupService;
 import DGU_AI_LAB.admin_be.domain.users.service.UserService;
@@ -13,6 +13,7 @@ import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -23,7 +24,7 @@ public class AdminUserController implements AdminUserApi {
     private final AdminUserService adminUserService;
     private final UserService userService;
     private final UserGroupService userGroupService;
-    private final PasswordResetService passwordResetService;
+    private final AdminPasswordResetService adminPasswordResetService;
 
     @GetMapping("/{id}")
     public ResponseEntity<SuccessResponse<?>> getUser(@PathVariable Long id) {
@@ -73,7 +74,9 @@ public class AdminUserController implements AdminUserApi {
     }
 
     @PutMapping("/{id}/password")
-    public ResponseEntity<SuccessResponse<?>> resetPassword(@PathVariable Long id, @RequestBody @Valid AdminPasswordResetRequestDTO dto) {
-        return SuccessResponse.ok(passwordResetService.resetPassword(id, dto.newPassword()));
+    public ResponseEntity<SuccessResponse<?>> resetPassword(@AuthenticationPrincipal(expression = "userId") Long adminId,
+                                                            @PathVariable Long id,
+                                                            @RequestBody @Valid AdminPasswordResetRequestDTO dto) {
+        return SuccessResponse.accepted(adminPasswordResetService.reset(id, dto.newPassword(), adminId));
     }
 }

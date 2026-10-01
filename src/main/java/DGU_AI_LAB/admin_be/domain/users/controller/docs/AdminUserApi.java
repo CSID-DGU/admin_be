@@ -93,17 +93,20 @@ public interface AdminUserApi {
 
     @Operation(
             summary = "사용자 비밀번호 초기화",
-            description = "관리자가 사용자의 비밀번호를 새로 지정한다. 웹 비밀번호와 SSH(Ubuntu) 비밀번호가 함께 바뀌고, "
-                    + "리눅스 계정이 있으면 떠 있는 컨테이너에도 반영된다. 사용자의 기존 로그인 세션은 끊긴다. "
-                    + "새 비밀번호는 메일로 보내지 않으므로 관리자가 사용자에게 직접 전달한다."
+            description = "관리자가 사용자의 비밀번호를 새로 지정한다. 재설정 신청을 대신 내고 바로 승인하는 것과 같다 — "
+                    + "리눅스 계정이 있으면 컨테이너에 반영하는 작업을 등록하고 돌아오며(status=PROCESSING), 작업이 성공하면 "
+                    + "웹 비밀번호와 SSH(Ubuntu) 비밀번호가 함께 바뀌고 사용자의 기존 로그인 세션이 끊긴다. 리눅스 계정이 없으면 "
+                    + "바로 적용된다(status=APPLIED). 새 비밀번호는 메일로 보내지 않으므로 관리자가 사용자에게 직접 전달한다."
     )
-    @ApiResponse(responseCode = "200", description = "성공")
+    @ApiResponse(responseCode = "202", description = "접수 — 반영 중(PROCESSING)이거나 바로 적용됨(APPLIED)")
     @ApiResponse(responseCode = "400", description = "비밀번호 형식 오류(8~72자)")
     @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음")
-    @ApiResponse(responseCode = "409", description = "컨테이너 생성 중이라 지금은 바꿀 수 없음")
-    @ApiResponse(responseCode = "502", description = "컨테이너 반영 실패 (비밀번호는 바뀌지 않음, 다시 시도)")
+    @ApiResponse(responseCode = "409", description = "앞선 재설정을 반영하는 중이거나 컨테이너 생성 중이라 지금은 바꿀 수 없음 "
+            + "(컨테이너 생성 중이면 신청은 승인 대기로 남음, 생성이 끝난 뒤 재설정 신청 목록에서 승인)")
+    @ApiResponse(responseCode = "502", description = "작업 등록 실패 (신청은 승인 대기로 남음, 재설정 신청 목록에서 다시 승인)")
     @PutMapping("/{id}/password")
     ResponseEntity<SuccessResponse<?>> resetPassword(
+            @Parameter(hidden = true) Long adminId,
             @PathVariable @Parameter(description = "사용자 ID") Long id,
             @RequestBody @Valid AdminPasswordResetRequestDTO dto
     );

@@ -29,6 +29,9 @@ import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.domain.users.entity.PasswordResetRequest;
+import DGU_AI_LAB.admin_be.domain.users.entity.PasswordResetStatus;
+import DGU_AI_LAB.admin_be.domain.users.repository.PasswordResetRequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -75,6 +78,7 @@ class AdminRequestCommandServiceTest {
     @Mock private AlarmService alarmService;
     @Mock private RequestRepository requestRepository;
     @Mock private UserRepository userRepository;
+    @Mock private PasswordResetRequestRepository passwordResetRequestRepository;
     @Mock private ContainerImageRepository containerImageRepository;
     @Mock private ResourceGroupRepository resourceGroupRepository;
     @Mock private ChangeRequestRepository changeRequestRepository;
@@ -100,7 +104,8 @@ class AdminRequestCommandServiceTest {
 
         // @RequiredArgsConstructor 생성자 필드 선언 순서대로 주입
         service = new AdminRequestCommandService(
-                alarmService, requestRepository, userRepository, containerImageRepository,
+                alarmService, requestRepository, userRepository, passwordResetRequestRepository,
+                containerImageRepository,
                 resourceGroupRepository, podExternalPortRepository, jobClient,
                 transactionManager, new InMemoryAlertDeduplicator()
         );
@@ -497,6 +502,20 @@ class AdminRequestCommandServiceTest {
             assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_ACCOUNT_RELEASING);
+            verify(jobClient, never()).registerProvision(any());
+        }
+
+        @Test
+        @DisplayName("비밀번호 교체 작업이 도는 중인 사용자는 승인을 거절한다 — 새 컨테이너만 옛 비밀번호로 만들어진다")
+        void rejectsWhilePasswordResetInProgress() {
+            Long requestId = 207L;
+            buildMockedRequest(requestId);
+            when(passwordResetRequestRepository.findAllByUserIdAndStatusForShare(100L, PasswordResetStatus.PROCESSING))
+                    .thenReturn(List.of(mock(PasswordResetRequest.class)));
+
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PASSWORD_RESET_IN_PROGRESS);
             verify(jobClient, never()).registerProvision(any());
         }
 

@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.job;
 
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.PasswordChangeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ProvisionRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.UserCreationRequestDTO;
@@ -93,6 +94,33 @@ class ConfigServerJobClientTest {
 
         verify(postUriSpec).uri("/operations/revoke");
         verify(postBodySpec).bodyValue(body);
+    }
+
+    @Test
+    @DisplayName("비밀번호 교체 작업은 /operations/password로 해시만 실어 등록하고 작업 번호를 돌려준다")
+    void registersPasswordChange() {
+        PasswordChangeRegisterRequestDTO body = new PasswordChangeRegisterRequestDTO(12L, "exp-np-001", "$6$salt$hash");
+        when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "accepted", "job_id", 3618)));
+
+        assertThat(service.registerPasswordChange(body)).isEqualTo(3618L);
+
+        verify(postUriSpec).uri("/operations/password");
+        verify(postBodySpec).bodyValue(body);
+        JsonNode json = objectMapper.valueToTree(body);
+        assertThat(json.get("request_id").asLong()).isEqualTo(12L);
+        assertThat(json.get("username").asText()).isEqualTo("exp-np-001");
+        assertThat(json.get("passwd_hash").asText()).isEqualTo("$6$salt$hash");
+        assertThat(body.toString()).doesNotContain("$6$salt$hash");
+    }
+
+    @Test
+    @DisplayName("비밀번호 교체 결과는 재설정 신청 번호로 조회한다")
+    void getsPasswordChangeResult() {
+        JobResultResponseDTO expected = new JobResultResponseDTO("12", "password", 3618L, "SUCCESS", null, null, null);
+        when(responseSpec.bodyToMono(JobResultResponseDTO.class)).thenReturn(Mono.just(expected));
+
+        assertThat(service.getResult(JobResults.KIND_PASSWORD, 12L)).isEqualTo(expected);
+        verify(getUriSpec).uri("/operations/password/12");
     }
 
     @Test

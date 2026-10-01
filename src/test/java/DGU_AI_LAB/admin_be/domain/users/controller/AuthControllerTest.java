@@ -23,7 +23,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(
@@ -144,13 +143,13 @@ class AuthControllerTest extends WebMvcTestSupport {
     }
 
     @Nested
-    @DisplayName("POST /api/auth/password-resets")
-    class RequestPasswordReset {
+    @DisplayName("POST /api/auth/password-reset-codes")
+    class SendPasswordResetCode {
 
         @Test
         @DisplayName("이메일을 보내면 200을 반환하고 코드 발송을 요청한다")
-        void requestPasswordReset_returns200() throws Exception {
-            mockMvc.perform(post("/api/auth/password-resets")
+        void sendPasswordResetCode_returns200() throws Exception {
+            mockMvc.perform(post("/api/auth/password-reset-codes")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"email\":\"test@dgu.ac.kr\"}"))
                     .andExpect(status().isOk());
@@ -160,8 +159,8 @@ class AuthControllerTest extends WebMvcTestSupport {
 
         @Test
         @DisplayName("이메일 형식이 잘못되면 400을 반환한다")
-        void requestPasswordReset_returns400_whenEmailInvalid() throws Exception {
-            mockMvc.perform(post("/api/auth/password-resets")
+        void sendPasswordResetCode_returns400_whenEmailInvalid() throws Exception {
+            mockMvc.perform(post("/api/auth/password-reset-codes")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"email\":\"invalid\"}"))
                     .andExpect(status().isBadRequest());
@@ -171,24 +170,24 @@ class AuthControllerTest extends WebMvcTestSupport {
     }
 
     @Nested
-    @DisplayName("PUT /api/auth/password")
-    class ResetPassword {
+    @DisplayName("POST /api/auth/password-resets")
+    class RequestPasswordReset {
 
         @Test
-        @DisplayName("인증번호와 새 비밀번호를 보내면 204를 반환한다")
-        void resetPassword_returns204() throws Exception {
-            mockMvc.perform(put("/api/auth/password")
+        @DisplayName("인증번호와 새 비밀번호를 보내면 신청만 접수하고 202를 반환한다")
+        void requestPasswordReset_returns202() throws Exception {
+            mockMvc.perform(post("/api/auth/password-resets")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"email\":\"test@dgu.ac.kr\",\"code\":\"123456\",\"newPassword\":\"newPassword1!\"}"))
-                    .andExpect(status().isNoContent());
+                    .andExpect(status().isAccepted());
 
-            verify(selfPasswordResetService).reset("test@dgu.ac.kr", "123456", "newPassword1!");
+            verify(selfPasswordResetService).submit("test@dgu.ac.kr", "123456", "newPassword1!");
         }
 
         @Test
         @DisplayName("새 비밀번호가 8자보다 짧으면 400을 반환한다")
-        void resetPassword_returns400_whenPasswordTooShort() throws Exception {
-            mockMvc.perform(put("/api/auth/password")
+        void requestPasswordReset_returns400_whenPasswordTooShort() throws Exception {
+            mockMvc.perform(post("/api/auth/password-resets")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"email\":\"test@dgu.ac.kr\",\"code\":\"123456\",\"newPassword\":\"short\"}"))
                     .andExpect(status().isBadRequest());
@@ -198,14 +197,26 @@ class AuthControllerTest extends WebMvcTestSupport {
 
         @Test
         @DisplayName("인증번호가 틀리면 서비스 오류대로 400을 반환한다")
-        void resetPassword_returns400_whenCodeInvalid() throws Exception {
+        void requestPasswordReset_returns400_whenCodeInvalid() throws Exception {
             doThrow(new BusinessException(ErrorCode.INVALID_AUTH_CODE))
-                    .when(selfPasswordResetService).reset(any(), any(), any());
+                    .when(selfPasswordResetService).submit(any(), any(), any());
 
-            mockMvc.perform(put("/api/auth/password")
+            mockMvc.perform(post("/api/auth/password-resets")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"email\":\"test@dgu.ac.kr\",\"code\":\"000000\",\"newPassword\":\"newPassword1!\"}"))
                     .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("앞선 신청을 반영하는 중이면 409를 반환한다")
+        void requestPasswordReset_returns409_whileProcessing() throws Exception {
+            doThrow(new BusinessException(ErrorCode.PASSWORD_RESET_IN_PROGRESS))
+                    .when(selfPasswordResetService).submit(any(), any(), any());
+
+            mockMvc.perform(post("/api/auth/password-resets")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"test@dgu.ac.kr\",\"code\":\"123456\",\"newPassword\":\"newPassword1!\"}"))
+                    .andExpect(status().isConflict());
         }
     }
 }

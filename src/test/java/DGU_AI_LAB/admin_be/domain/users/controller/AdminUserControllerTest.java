@@ -2,7 +2,7 @@ package DGU_AI_LAB.admin_be.domain.users.controller;
 
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserSummaryDTO;
-import DGU_AI_LAB.admin_be.domain.users.service.PasswordResetService;
+import DGU_AI_LAB.admin_be.domain.users.service.AdminPasswordResetService;
 import DGU_AI_LAB.admin_be.domain.users.service.AdminUserService;
 import DGU_AI_LAB.admin_be.domain.users.service.UserService;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -45,7 +45,7 @@ class AdminUserControllerTest extends WebMvcTestSupport {
     private DGU_AI_LAB.admin_be.domain.users.service.UserGroupService userGroupService;
 
     @MockitoBean
-    private PasswordResetService passwordResetService;
+    private AdminPasswordResetService adminPasswordResetService;
 
     @Nested
     @DisplayName("GET /api/admin/users")
@@ -178,12 +178,12 @@ class AdminUserControllerTest extends WebMvcTestSupport {
     }
 
     @Test
-    @DisplayName("PUT /api/admin/users/{id}/password는 새 비밀번호로 초기화한다")
+    @DisplayName("PUT /api/admin/users/{id}/password는 재설정을 접수하고 202로 답한다")
     void resetPassword() throws Exception {
         mockMvc.perform(put("/api/admin/users/5/password").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"newPassword\": \"newPassword1!\"}"))
-                .andExpect(status().isOk());
-        verify(passwordResetService).resetPassword(5L, "newPassword1!");
+                .andExpect(status().isAccepted());
+        verify(adminPasswordResetService).reset(5L, "newPassword1!", null);
     }
 
     @Test
@@ -192,7 +192,7 @@ class AdminUserControllerTest extends WebMvcTestSupport {
         mockMvc.perform(put("/api/admin/users/5/password").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"newPassword\": \"short\"}"))
                 .andExpect(status().isBadRequest());
-        verifyNoInteractions(passwordResetService);
+        verifyNoInteractions(adminPasswordResetService);
     }
 
     @Test

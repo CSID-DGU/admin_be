@@ -278,5 +278,18 @@ class EmailServiceTest {
                             assertThat(e.getErrorCode()).isEqualTo(ErrorCode.TOO_MANY_AUTH_CODE_ATTEMPTS));
             verify(redisTemplate).delete("email:password-reset:test@dgu.ac.kr");
         }
+    
+        @Test
+        @DisplayName("거절 알림은 코드 없이 안내 문구만 보낸다")
+        void sendPasswordResetDeniedNotice_sendsNotice() throws Exception {
+            when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+            when(messageUtils.get("email.password-reset-denied.subject")).thenReturn("거절");
+            when(messageUtils.get("email.password-reset-denied.body")).thenReturn("본문");
+
+            emailService.sendPasswordResetDeniedNotice("test@dgu.ac.kr");
+
+            verify(mimeMessage).setSubject("거절", "UTF-8");
+            verifyNoInteractions(valueOperations);
+        }
     }
 }
