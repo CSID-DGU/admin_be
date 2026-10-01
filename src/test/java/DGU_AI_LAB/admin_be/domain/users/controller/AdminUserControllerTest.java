@@ -215,18 +215,24 @@ class AdminUserControllerTest extends WebMvcTestSupport {
     }
 
     @Test
-    @DisplayName("DELETE /api/admin/users/{id}/groups/{groupId}는 계정을 그룹에서 뺀다")
+    @DisplayName("DELETE /api/admin/users/{id}/groups/{groupId}는 제거 작업을 등록하고 202와 진행 상태를 돌려준다")
     void removeUserFromGroup() throws Exception {
+        when(userGroupService.removeUserFromGroup(org.mockito.ArgumentMatchers.eq(5L), org.mockito.ArgumentMatchers.eq(3L),
+                org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupOperationResponseDTO(
+                        7L, "REMOVE", "PROCESSING", "teamx", null, null));
         mockMvc.perform(delete("/api/admin/users/5/groups/3").contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk());
-        org.mockito.Mockito.verify(userGroupService).removeUserFromGroup(5L, 3L);
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.operationId").value(7))
+                .andExpect(jsonPath("$.data.status").value("PROCESSING"));
     }
 
     @Test
     @DisplayName("DELETE /api/admin/users/{id}/groups/{groupId}가 기본 그룹이면 409다")
     void removePrimaryGroupIsConflict() throws Exception {
-        org.mockito.Mockito.doThrow(new DGU_AI_LAB.admin_be.error.exception.BusinessException(ErrorCode.PRIMARY_GROUP_REMOVAL))
-                .when(userGroupService).removeUserFromGroup(5L, 3L);
+        when(userGroupService.removeUserFromGroup(org.mockito.ArgumentMatchers.eq(5L), org.mockito.ArgumentMatchers.eq(3L),
+                org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new DGU_AI_LAB.admin_be.error.exception.BusinessException(ErrorCode.PRIMARY_GROUP_REMOVAL));
         mockMvc.perform(delete("/api/admin/users/5/groups/3").contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isConflict());
     }

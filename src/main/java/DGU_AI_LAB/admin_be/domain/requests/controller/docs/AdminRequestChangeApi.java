@@ -20,7 +20,9 @@ public interface AdminRequestChangeApi {
     @ApiResponse(responseCode = "200", description = "성공")
     ResponseEntity<SuccessResponse<?>> getAllChangeRequests();
 
-    @Operation(summary = "변경 요청 승인", description = "PENDING 상태의 변경 요청을 승인하고 원본 신청의 설정을 업데이트합니다.")
+    @Operation(summary = "변경 요청 승인", description = "PENDING 상태의 변경 요청을 승인하고 원본 신청의 설정을 업데이트합니다. "
+            + "공유 그룹 추가(GROUP)는 반영 작업을 등록하고 변경 요청을 PROCESSING으로 둔 채 돌아옵니다 — 작업이 성공하면 "
+            + "FULFILLED가 되고, 실패하면 PENDING으로 돌아와 다시 승인할 수 있습니다.")
     @ApiResponse(responseCode = "200", description = "성공")
     @ApiResponse(responseCode = "400", description = "PENDING 상태가 아닌 변경 요청",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))

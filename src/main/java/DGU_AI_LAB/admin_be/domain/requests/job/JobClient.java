@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.job;
 
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.GroupChangeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.PasswordChangeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ProvisionRegisterRequestDTO;
@@ -53,11 +54,21 @@ public interface JobClient {
     Long registerPasswordChange(PasswordChangeRegisterRequestDTO body);
 
     /**
+     * 공용 그룹 작업(생성·멤버 추가·제거)을 등록한다. 실행기는 AD·계정 원장·팀 디렉터리·떠 있는 컨테이너를 차례로
+     * 맞추고, 이미 맞춰진 조각은 그대로 두므로 실패한 작업은 다시 등록하면 이어서 끝난다.
+     *
+     * @return 등록된 작업 번호. 응답에 없으면 null
+     * @throws BusinessException 이름 충돌·없는 계정이나 그룹처럼 요청 내용 때문에 거절됐거나(각각의 오류 코드),
+     *                           같은 번호의 작업이 아직 끝나지 않았거나(409, GROUP_OPERATION_IN_PROGRESS) 등록이 실패한 경우
+     */
+    Long registerGroupChange(GroupChangeRegisterRequestDTO body);
+
+    /**
      * 작업 결과를 조회한다. 등록 이력이 없으면 phase가 {@link JobResults#PHASE_NONE}으로 온다.
      *
      * @param kind      {@link JobResults#KIND_PROVISION}·{@link JobResults#KIND_REVOKE}·{@link JobResults#KIND_MIGRATE}·
-     *                  {@link JobResults#KIND_PASSWORD}
-     * @param requestId 신청 번호. 비밀번호 교체는 비밀번호 재설정 신청 번호
+     *                  {@link JobResults#KIND_PASSWORD}·{@link JobResults#KIND_GROUP}
+     * @param requestId 신청 번호. 비밀번호 교체는 비밀번호 재설정 신청 번호, 그룹 작업은 그룹 작업 번호
      */
     JobResultResponseDTO getResult(String kind, Long requestId);
 

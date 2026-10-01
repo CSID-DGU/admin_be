@@ -70,6 +70,29 @@ public class ChangeRequest extends BaseTimeEntity {
         this.reviewedAt = LocalDateTime.now();
     }
 
+    /**
+     * 승인했지만 반영이 작업으로 도는 중이다(공유 그룹 추가). 작업이 성공해야 {@link #completeProcessing()}으로
+     * 승인이 끝난다. 검토자와 메모는 지금 남겨, 끝났을 때 안내에 쓴다.
+     */
+    public void startProcessing(User admin, String comment) {
+        this.status = Status.PROCESSING;
+        this.reviewedBy = admin;
+        this.adminComment = comment;
+        this.reviewedAt = LocalDateTime.now();
+    }
+
+    public void completeProcessing() {
+        this.status = Status.FULFILLED;
+    }
+
+    /** 반영 작업이 실패했다. 다시 승인하거나 거절할 수 있게 승인 전으로 되돌린다. */
+    public void returnToPending() {
+        this.status = Status.PENDING;
+        this.reviewedBy = null;
+        this.adminComment = null;
+        this.reviewedAt = null;
+    }
+
     public void deny(User admin, String comment) {
         this.status = Status.DENIED;
         this.reviewedBy = admin;

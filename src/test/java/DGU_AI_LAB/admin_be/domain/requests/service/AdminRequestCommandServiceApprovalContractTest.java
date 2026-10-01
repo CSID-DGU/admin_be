@@ -138,8 +138,6 @@ class AdminRequestCommandServiceApprovalContractTest {
         order.verify(request).prepareAsyncApproval(mockImage, mockRg, "승인합니다");
         order.verify(jobClient).registerProvision(any(ProvisionRegisterRequestDTO.class));
 
-        // 계정을 새로 만드는 경로에서는 생성 작업이 그룹까지 함께 넣으므로 여기서 더하지 않는다.
-        verify(groupService, never()).addUserToGroups(anyString(), anyList());
     }
 
     @Test
@@ -186,8 +184,6 @@ class AdminRequestCommandServiceApprovalContractTest {
         order.verify(jobClient).registerProvision(captor.capture());
         assertThat(captor.getValue().account()).isNull();
 
-        // config-server의 provision 제어기가 Pod 생성 후 그룹을 추가하므로 로컬에서는 호출하지 않는다.
-        verify(groupService, never()).addUserToGroups(anyString(), anyList());
     }
 
     @Test

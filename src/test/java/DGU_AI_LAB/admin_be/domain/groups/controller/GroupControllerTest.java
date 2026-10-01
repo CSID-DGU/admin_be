@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.groups.controller;
 
 import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupResponseDTO;
+import DGU_AI_LAB.admin_be.domain.groups.service.GroupOperationService;
 import DGU_AI_LAB.admin_be.domain.groups.service.GroupService;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -36,6 +37,9 @@ class GroupControllerTest extends WebMvcTestSupport {
 
     @MockitoBean
     private GroupService groupService;
+
+    @MockitoBean
+    private GroupOperationService groupOperationService;
 
     @Nested
     @DisplayName("GET /api/groups")
