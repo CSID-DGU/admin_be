@@ -184,6 +184,10 @@ public class GroupOperationService {
     /**
      * 작업이 성공하지 못했다(실패·결과 불명·기록 없음). 이미 맞춰진 조각은 그대로 남지만 같은 요청을 다시 내면
      * 이어서 끝나므로, 그룹 추가는 변경 요청을 승인 대기로 되돌려 다시 승인하거나 거절할 수 있게 한다.
+     *
+     * <p>되돌린 변경 요청을 거절해도 AD 에 먼저 들어간 멤버십은 빠지지 않는다. 자동으로 빼지 않는 이유는 요청한
+     * 그룹에 신청 전부터 속해 있던 그룹이 섞일 수 있어서다 — 일괄 제거하면 기존 소속까지 끊긴다. 그래서 알림에
+     * 그 사실을 적어 관리자가 그룹 제거로 정리하게 한다.
      */
     public void fail(Long operationId, String errorCode) {
         FailureNotice notice = inTransaction(() -> {
@@ -307,8 +311,9 @@ public class GroupOperationService {
     private void notifyAddFailed(FailureNotice notice, String errorCode) {
         try {
             alarmService.sendAdminSlackNotification(notice.serverName(), String.format(
-                    "[그룹 추가] 반영하지 못해 변경 요청을 승인 대기로 되돌렸습니다 - 다시 승인하면 이어서 반영됩니다: "
-                            + "changeRequestId=%d, username=%s, error=%s",
+                    "[그룹 추가] 반영하지 못해 변경 요청을 승인 대기로 되돌렸습니다 - 다시 승인하면 이어서 반영됩니다. "
+                            + "AD에는 이미 반영됐을 수 있고 거절해도 되돌려지지 않으니, 거절한다면 사용자 그룹 관리에서 "
+                            + "해당 그룹을 제거해 주세요: changeRequestId=%d, username=%s, error=%s",
                     notice.changeRequestId(), notice.username(), errorCode));
         } catch (Exception ignored) {
         }
