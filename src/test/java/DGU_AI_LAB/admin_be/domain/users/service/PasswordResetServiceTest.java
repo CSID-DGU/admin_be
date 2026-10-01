@@ -343,6 +343,65 @@ class PasswordResetServiceTest {
     }
 
     @Nested
+    @DisplayName("비활성 사용자")
+    class InactiveUser {
+
+        @Test
+        @DisplayName("비활성 사용자에게는 신청을 만들지 않는다")
+        void submitIsRejected() {
+            user.deactivate();
+
+            assertThatThrownBy(() -> service.submit(USER_ID, NEW))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_ALREADY_INACTIVE);
+            verify(resetRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("신청 뒤 비활성화된 사용자의 신청은 승인하지 못한다 — 비밀번호는 그대로다")
+        void approveIsRejected() {
+            PasswordResetRequest reset = pendingReset();
+            user.deactivate();
+
+            assertThatThrownBy(() -> service.approve(RESET_ID, ADMIN_ID))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_ALREADY_INACTIVE);
+            assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.PENDING);
+            assertUserUnchanged();
+        }
+
+        @Test
+        @DisplayName("비활성화 때 승인 대기 신청을 검토자 없이 닫고 새 비밀번호를 지운다")
+        void closesPending() {
+            PasswordResetRequest reset = pendingReset();
+            when(resetRepository.findAllByUserIdAndStatusForShare(USER_ID, PasswordResetStatus.PENDING))
+                    .thenReturn(List.of(reset));
+
+            service.closePendingOf(USER_ID);
+
+            assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.DENIED);
+            assertThat(reset.getReviewedBy()).isNull();
+            assertThat(reset.getPasswordHash()).isNull();
+            assertThat(reset.getUbuntuPasswordHash()).isNull();
+            verifyNoInteractions(notifier);
+        }
+
+        @Test
+        @DisplayName("반영하는 사이 비활성화됐으면 작업 실패 때 승인 대기로 남기지 않고 닫는다")
+        void failedJobClosesInsteadOfReturning() {
+            withAccount();
+            PasswordResetRequest reset = processingReset();
+            user.deactivate();
+
+            Optional<PasswordResetSummaryDTO> returned = service.returnToPending(RESET_ID);
+
+            assertThat(returned).isPresent();
+            assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.DENIED);
+            assertThat(reset.getUbuntuPasswordHash()).isNull();
+        }
+    }
+
+    @Nested
     @DisplayName("returnToPending")
     class ReturnToPending {
 

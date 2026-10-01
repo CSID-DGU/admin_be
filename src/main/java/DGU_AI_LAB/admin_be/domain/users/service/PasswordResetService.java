@@ -70,6 +70,7 @@ public class PasswordResetService {
     public Submission submit(Long userId, PasswordHashes hashes) {
         return inTransaction(() -> {
             User user = lockUser(userId);
+            requireActive(user);
             Optional<PasswordResetRequest> open =
                     resetRepository.findAllByUser_UserIdAndStatusIn(userId, OPEN).stream().findFirst();
             if (open.isPresent()) {
@@ -95,6 +96,7 @@ public class PasswordResetService {
             User user = lockUser(userId);
             PasswordResetRequest reset = lockReset(resetId);
             reset.ensurePending();
+            requireActive(user);
             // 생성 작업은 승인 때 읽은 해시로 계정을 만든다. 그 사이 바꾸면 DB만 새 해시가 되고 새 컨테이너는
             // 옛 비밀번호로 남는다. 승인도 이 사용자 행을 잠그고 해시를 읽으므로 이 확인과 겹치지 않는다.
             if (requestRepository.existsByUser_UserIdAndStatus(userId, Status.PROCESSING)) {
@@ -165,8 +167,29 @@ public class PasswordResetService {
                 return Optional.empty();
             }
             reset.returnToPending();
+            if (!reset.getUser().getIsActive()) {
+                // 반영하는 사이 비활성화된 사용자다. 다시 승인할 수 없으므로 승인 대기로 남기지 않는다.
+                reset.closeWithoutReview();
+            }
             return Optional.of(PasswordResetSummaryDTO.fromEntity(reset));
         });
+    }
+
+    /**
+     * 비활성화·탈퇴된 사용자의 승인 대기 신청을 닫는다. 남겨 두면 관리자 목록에 계속 보이고, 승인하면 쓸 수 없는
+     * 계정의 비밀번호가 바뀐다. 반영 중인 신청은 작업 결과가 나올 때 정리된다({@link #returnToPending}).
+     */
+    public void closePendingOf(Long userId) {
+        int closed = inTransaction(() -> {
+            lockUser(userId);
+            List<PasswordResetRequest> pending =
+                    resetRepository.findAllByUserIdAndStatusForShare(userId, PasswordResetStatus.PENDING);
+            pending.forEach(PasswordResetRequest::closeWithoutReview);
+            return pending.size();
+        });
+        if (closed > 0) {
+            log.info("[passwordReset] userId={} 비활성화로 승인 대기 신청 {}건을 닫음", userId, closed);
+        }
     }
 
     /** 관리자가 처리할 신청(승인 대기·반영 중)을 최근 순으로 돌려준다. */
@@ -192,6 +215,12 @@ public class PasswordResetService {
             log.warn("[passwordReset] 로그인 실패 횟수 삭제 실패", e);
         }
         notifier.applied(email);
+    }
+
+    private static void requireActive(User user) {
+        if (!user.getIsActive()) {
+            throw new BusinessException(ErrorCode.USER_ALREADY_INACTIVE);
+        }
     }
 
     private Long userIdOf(Long resetId) {
