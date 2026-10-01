@@ -170,6 +170,7 @@ public enum ErrorCode {
     CHANGE_REQUEST_ALREADY_PENDING(HttpStatus.CONFLICT, "같은 종류의 변경 요청이 이미 대기 중입니다. 처리된 뒤 다시 요청해주세요."),
     CHANGE_REQUEST_EXPIRES_AT_PASSED(HttpStatus.CONFLICT, "요청한 만료 일시가 이미 지났습니다. 거절하고 새로 요청받아 주세요."),
     REQUEST_MIGRATION_IN_PROGRESS(HttpStatus.CONFLICT, "마이그레이션이 진행 중인 요청이 있어 삭제할 수 없습니다."),
+    MIGRATION_NODE_OUTSIDE_RESOURCE_GROUP(HttpStatus.BAD_REQUEST, "신청한 리소스 그룹에 속하지 않은 노드로는 옮길 수 없습니다."),
     PROVISION_JOB_IN_PROGRESS(HttpStatus.CONFLICT, "컨테이너 생성 작업이 아직 끝나지 않아 거절할 수 없습니다. 작업이 끝난 뒤 다시 시도해주세요."),
     USER_APPROVAL_ALREADY_IN_PROGRESS(HttpStatus.CONFLICT, "같은 사용자의 다른 신청이 처리 중(PROCESSING)입니다. 그 신청이 완료된 뒤 다시 승인하고, 처리 중에 멈춰 있다면 관리자가 먼저 정리해주세요."),
     USER_REQUEST_CLEANUP_PARTIALLY_FAILED(HttpStatus.BAD_GATEWAY, "일부 컨테이너/계정 정리에 실패했습니다. 관리자에게 알림이 전송되었으니 확인 후 다시 시도해주세요."),

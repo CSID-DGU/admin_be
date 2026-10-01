@@ -4,6 +4,8 @@ import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
+import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
@@ -47,6 +49,7 @@ class PodMigrationServiceTest {
 
     @Mock private RequestRepository requestRepository;
     @Mock private PodExternalPortRepository podExternalPortRepository;
+    @Mock private NodeRepository nodeRepository;
     @Mock private JobClient jobClient;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
@@ -61,13 +64,18 @@ class PodMigrationServiceTest {
     void setUp() {
         when(request.getJobId()).thenReturn(10L); // result()의 작업 번호와 같다
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
-        service = new PodMigrationService(requestRepository, podExternalPortRepository, jobClient, transactionManager, alarmService,
+        service = new PodMigrationService(requestRepository, podExternalPortRepository, nodeRepository, jobClient, transactionManager, alarmService,
                 new InMemoryAlertDeduplicator());
+        when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of(node("FARM2"), node("FARM7")));
         when(request.getUbuntuUsername()).thenReturn("testuser");
         when(request.getPodName()).thenReturn("ailab-testuser-old");
         when(requestRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(request));
         when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
+    }
+
+    private Node node(String nodeId) {
+        return Node.builder().nodeId(nodeId).resourceGroup(resourceGroup).memorySizeGB(64).cpuCoreCount(16).build();
     }
 
     private PodExternalPort port(String purpose, int internalPort, int externalPort) {
@@ -148,6 +156,17 @@ class PodMigrationServiceTest {
         verify(jobClient).registerMigrate(captor.capture());
         assertThat(captor.getValue()).isEqualTo(new MigrateRegisterRequestDTO(1L, "ailab-testuser-old", "testuser",
                 List.of("farm2", "farm7"), null, true));
+    }
+
+    @Test
+    @DisplayName("신청의 리소스 그룹 밖 노드가 후보에 있으면 상태를 바꾸지 않고 거절한다")
+    void startRejectsNodeOutsideResourceGroup() {
+        assertThatThrownBy(() -> service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2", "farm1"), null, true)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("farm1")
+                .extracting("errorCode").isEqualTo(ErrorCode.MIGRATION_NODE_OUTSIDE_RESOURCE_GROUP);
+        verify(request, never()).beginMigration();
+        verifyNoInteractions(jobClient);
     }
 
     @Test
