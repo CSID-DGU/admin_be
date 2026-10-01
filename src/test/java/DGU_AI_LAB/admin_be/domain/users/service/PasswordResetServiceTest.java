@@ -363,6 +363,19 @@ class PasswordResetServiceTest {
         }
 
         @Test
+        @DisplayName("승인과 같은 순서(사용자 → 신청)로 잠근다")
+        void locksUserBeforeReset() {
+            withAccount();
+            processingReset();
+
+            service.returnToPending(RESET_ID);
+
+            InOrder order = inOrder(userRepository, resetRepository);
+            order.verify(userRepository).findByIdForUpdate(USER_ID);
+            order.verify(resetRepository).findByIdForUpdate(RESET_ID);
+        }
+
+        @Test
         @DisplayName("반영 중이 아니면 건드리지 않는다")
         void ignoresOtherStates() {
             PasswordResetRequest reset = pendingReset();
@@ -389,6 +402,18 @@ class PasswordResetServiceTest {
             assertThat(reset.getReviewedBy()).isSameAs(admin);
             assertUserUnchanged();
             verify(notifier).denied("test@dgu.ac.kr");
+        }
+
+        @Test
+        @DisplayName("승인과 같은 순서(사용자 → 신청)로 잠가 동시에 눌러도 교착이 나지 않는다")
+        void locksUserBeforeReset() {
+            pendingReset();
+
+            service.deny(RESET_ID, ADMIN_ID);
+
+            InOrder order = inOrder(userRepository, resetRepository);
+            order.verify(userRepository).findByIdForUpdate(USER_ID);
+            order.verify(resetRepository).findByIdForUpdate(RESET_ID);
         }
 
         @Test

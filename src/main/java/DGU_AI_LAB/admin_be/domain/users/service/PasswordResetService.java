@@ -35,6 +35,9 @@ import java.util.function.Supplier;
  * <p>사용자 행 잠금으로 트랜잭션을 시작한다. 컨테이너 승인도 같은 행을 잠그고 SSH 해시를 읽으므로, 한 사용자에게
  * 비밀번호 교체 작업과 컨테이너 생성 작업이 함께 돌지 않는다 — 겹치면 새 컨테이너만 옛 비밀번호로 만들어진다.
  * 잠금이 트랜잭션의 첫 읽기여야 그 뒤의 확인이 잠금을 얻은 시점의 상태를 본다(먼저 읽으면 그때의 스냅샷으로 본다).
+ *
+ * <p>신청 행만 바꾸는 거절·되돌리기도 사용자 행부터 잠근다. 신청 행을 고치면 DB가 외래 키 확인으로 사용자 행을
+ * 잠그므로, 신청 행부터 잠그면 승인(사용자 → 신청)과 잠금 순서가 반대가 돼 동시에 눌렀을 때 교착으로 500이 난다.
  */
 @Slf4j
 @Service
@@ -116,7 +119,9 @@ public class PasswordResetService {
     }
 
     public PasswordResetSummaryDTO deny(Long resetId, Long adminId) {
+        Long userId = userIdOf(resetId);
         PasswordResetSummaryDTO denied = inTransaction(() -> {
+            lockUser(userId);
             PasswordResetRequest reset = lockReset(resetId);
             reset.deny(userRepository.getReferenceById(adminId));
             return PasswordResetSummaryDTO.fromEntity(reset);
@@ -152,7 +157,9 @@ public class PasswordResetService {
      * @return 되돌린 신청. 이미 다른 상태면 빈 값
      */
     public Optional<PasswordResetSummaryDTO> returnToPending(Long resetId) {
+        Long userId = userIdOf(resetId);
         return inTransaction(() -> {
+            lockUser(userId);
             PasswordResetRequest reset = lockReset(resetId);
             if (reset.getStatus() != PasswordResetStatus.PROCESSING) {
                 return Optional.empty();
