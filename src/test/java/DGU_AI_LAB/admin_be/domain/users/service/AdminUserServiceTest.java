@@ -78,6 +78,9 @@ class AdminUserServiceTest {
     private TokenService tokenService;
 
     @Mock
+    private PasswordResetService passwordResetService;
+
+    @Mock
     private PlatformTransactionManager transactionManager;
 
     @Mock
@@ -441,6 +444,18 @@ class AdminUserServiceTest {
             assertThat(mockUser.getDeletedAt()).isNull();
             verify(requestExpiryService).startContainerRevoke(fulfilled.getRequestId());
             verify(tokenService).logout(1L);
+            verify(passwordResetService).closePendingOf(1L);
+        }
+
+        @Test
+        @DisplayName("승인 대기 중인 비밀번호 재설정 신청을 닫지 못해도 비활성화는 끝난다")
+        void deactivatesEvenWhenClosingPasswordResetsFails() {
+            givenRequests();
+            doThrow(new IllegalStateException("db")).when(passwordResetService).closePendingOf(1L);
+
+            UserSummaryDTO result = adminUserService.deactivateUser(1L);
+
+            assertThat(result.isActive()).isFalse();
         }
 
         @Test

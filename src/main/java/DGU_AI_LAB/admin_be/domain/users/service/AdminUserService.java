@@ -42,6 +42,7 @@ public class AdminUserService {
     private final AlarmService alarmService;
     private final MessageUtils messageUtils;
     private final TokenService tokenService;
+    private final PasswordResetService passwordResetService;
     private final PlatformTransactionManager transactionManager;
 
     /**
@@ -177,6 +178,15 @@ public class AdminUserService {
         withdrawWithCleanup(userId, user, "withdrawInactiveUser", "notification.user.soft-delete");
     }
 
+    /** 비활성화는 이미 끝났으므로 실패해도 되돌리지 않는다 — 남은 신청은 승인이 거절한다. */
+    private void closePendingPasswordResets(Long userId, String logPrefix) {
+        try {
+            passwordResetService.closePendingOf(userId);
+        } catch (RuntimeException e) {
+            log.warn("[{}] userId={} 승인 대기 중인 비밀번호 재설정 신청을 닫지 못함", logPrefix, userId, e);
+        }
+    }
+
     private void withdrawWithCleanup(Long userId, User user, String logPrefix, String noticeKey) {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
 
@@ -191,6 +201,7 @@ public class AdminUserService {
         });
         // 남아있는 리프레시 토큰으로 액세스 토큰을 계속 재발급받지 못하도록 함께 폐기한다.
         tokenService.logout(userId);
+        closePendingPasswordResets(userId, logPrefix);
         log.info("[{}] userId={} 논리적 삭제 완료 (isActive=false)", logPrefix, userId);
 
         try {
@@ -273,6 +284,7 @@ public class AdminUserService {
             return managed;
         });
         tokenService.logout(userId);
+        closePendingPasswordResets(userId, "deactivateUser");
         log.info("[deactivateUser] userId={} 비활성화 완료 (컨테이너 정리 포함)", userId);
 
         try {

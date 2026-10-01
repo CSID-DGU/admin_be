@@ -114,6 +114,13 @@ public class PasswordResetRequest extends BaseTimeEntity {
         clearPassword();
     }
 
+    /** 신청자가 비활성화·탈퇴돼 검토 없이 닫는다. 검토자가 없는 DENIED로 남는다. */
+    public void closeWithoutReview() {
+        ensurePending();
+        this.status = PasswordResetStatus.DENIED;
+        clearPassword();
+    }
+
     public PasswordHashes hashes() {
         return new PasswordHashes(passwordHash, ubuntuPasswordHash);
     }
