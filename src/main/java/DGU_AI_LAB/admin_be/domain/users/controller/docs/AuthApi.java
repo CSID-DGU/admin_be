@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.users.controller.docs;
 
+import DGU_AI_LAB.admin_be.domain.users.dto.request.EmailSendRequestDTO;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.PasswordResetRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
@@ -30,4 +32,22 @@ public interface AuthApi {
     @ApiResponse(responseCode = "401", description = "이메일 미존재, 비밀번호 불일치 또는 비활성화된 계정",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     ResponseEntity<UserTokenResponseDTO> login(UserLoginRequestDTO request);
+
+    @Operation(summary = "비밀번호 재설정 요청", description = "가입된 이메일이면 재설정 인증번호를 보냅니다(제한시간 5분). 가입 여부가 드러나지 않게 가입되지 않은 이메일에도 200을 반환합니다.")
+    @ApiResponse(responseCode = "200", description = "요청 접수 — 가입된 이메일이면 인증번호 발송")
+    @ApiResponse(responseCode = "429", description = "같은 이메일로 너무 자주 요청",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    ResponseEntity<Void> requestPasswordReset(EmailSendRequestDTO request);
+
+    @Operation(summary = "비밀번호 재설정", description = "메일로 받은 인증번호로 비밀번호를 새로 정합니다. 웹 비밀번호와 SSH 비밀번호가 함께 바뀌고 기존 로그인은 끊깁니다. 인증번호는 한 번만 쓸 수 있어, 실패하면 다시 받아야 합니다.")
+    @ApiResponse(responseCode = "204", description = "비밀번호 변경 완료")
+    @ApiResponse(responseCode = "400", description = "인증번호 불일치·만료 또는 비밀번호 형식 오류",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "409", description = "컨테이너 생성 중이라 지금은 바꿀 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "429", description = "인증번호 입력 횟수 초과",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "502", description = "컨테이너에 반영하지 못해 바꾸지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    ResponseEntity<Void> resetPassword(PasswordResetRequestDTO request);
 }

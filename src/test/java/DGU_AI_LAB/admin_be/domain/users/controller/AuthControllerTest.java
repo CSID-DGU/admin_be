@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.users.controller;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
+import DGU_AI_LAB.admin_be.domain.users.service.SelfPasswordResetService;
 import DGU_AI_LAB.admin_be.domain.users.service.UserLoginService;
 import DGU_AI_LAB.admin_be.domain.users.service.UserService;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -22,6 +23,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(
@@ -41,6 +43,9 @@ class AuthControllerTest extends WebMvcTestSupport {
 
     @MockitoBean
     private UserService userService;
+
+    @MockitoBean
+    private SelfPasswordResetService selfPasswordResetService;
 
     @Nested
     @DisplayName("POST /api/auth/register")
@@ -135,6 +140,72 @@ class AuthControllerTest extends WebMvcTestSupport {
                             .content(objectMapper.writeValueAsString(dto)))
                     .andExpect(status().isTooManyRequests())
                     .andExpect(jsonPath("$.message").value(ErrorCode.TOO_MANY_LOGIN_ATTEMPTS.getMessage()));
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/auth/password-resets")
+    class RequestPasswordReset {
+
+        @Test
+        @DisplayName("이메일을 보내면 200을 반환하고 코드 발송을 요청한다")
+        void requestPasswordReset_returns200() throws Exception {
+            mockMvc.perform(post("/api/auth/password-resets")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"test@dgu.ac.kr\"}"))
+                    .andExpect(status().isOk());
+
+            verify(selfPasswordResetService).requestCode("test@dgu.ac.kr");
+        }
+
+        @Test
+        @DisplayName("이메일 형식이 잘못되면 400을 반환한다")
+        void requestPasswordReset_returns400_whenEmailInvalid() throws Exception {
+            mockMvc.perform(post("/api/auth/password-resets")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"invalid\"}"))
+                    .andExpect(status().isBadRequest());
+
+            verifyNoInteractions(selfPasswordResetService);
+        }
+    }
+
+    @Nested
+    @DisplayName("PUT /api/auth/password")
+    class ResetPassword {
+
+        @Test
+        @DisplayName("인증번호와 새 비밀번호를 보내면 204를 반환한다")
+        void resetPassword_returns204() throws Exception {
+            mockMvc.perform(put("/api/auth/password")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"test@dgu.ac.kr\",\"code\":\"123456\",\"newPassword\":\"newPassword1!\"}"))
+                    .andExpect(status().isNoContent());
+
+            verify(selfPasswordResetService).reset("test@dgu.ac.kr", "123456", "newPassword1!");
+        }
+
+        @Test
+        @DisplayName("새 비밀번호가 8자보다 짧으면 400을 반환한다")
+        void resetPassword_returns400_whenPasswordTooShort() throws Exception {
+            mockMvc.perform(put("/api/auth/password")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"test@dgu.ac.kr\",\"code\":\"123456\",\"newPassword\":\"short\"}"))
+                    .andExpect(status().isBadRequest());
+
+            verifyNoInteractions(selfPasswordResetService);
+        }
+
+        @Test
+        @DisplayName("인증번호가 틀리면 서비스 오류대로 400을 반환한다")
+        void resetPassword_returns400_whenCodeInvalid() throws Exception {
+            doThrow(new BusinessException(ErrorCode.INVALID_AUTH_CODE))
+                    .when(selfPasswordResetService).reset(any(), any(), any());
+
+            mockMvc.perform(put("/api/auth/password")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"test@dgu.ac.kr\",\"code\":\"000000\",\"newPassword\":\"newPassword1!\"}"))
+                    .andExpect(status().isBadRequest());
         }
     }
 }

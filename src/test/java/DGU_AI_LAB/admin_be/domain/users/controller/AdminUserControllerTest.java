@@ -2,7 +2,7 @@ package DGU_AI_LAB.admin_be.domain.users.controller;
 
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserSummaryDTO;
-import DGU_AI_LAB.admin_be.domain.users.service.AdminPasswordResetService;
+import DGU_AI_LAB.admin_be.domain.users.service.PasswordResetService;
 import DGU_AI_LAB.admin_be.domain.users.service.AdminUserService;
 import DGU_AI_LAB.admin_be.domain.users.service.UserService;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -45,7 +45,7 @@ class AdminUserControllerTest extends WebMvcTestSupport {
     private DGU_AI_LAB.admin_be.domain.users.service.UserGroupService userGroupService;
 
     @MockitoBean
-    private AdminPasswordResetService adminPasswordResetService;
+    private PasswordResetService passwordResetService;
 
     @Nested
     @DisplayName("GET /api/admin/users")
@@ -183,7 +183,7 @@ class AdminUserControllerTest extends WebMvcTestSupport {
         mockMvc.perform(put("/api/admin/users/5/password").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"newPassword\": \"newPassword1!\"}"))
                 .andExpect(status().isOk());
-        verify(adminPasswordResetService).resetPassword(5L, "newPassword1!");
+        verify(passwordResetService).resetPassword(5L, "newPassword1!");
     }
 
     @Test
@@ -192,7 +192,7 @@ class AdminUserControllerTest extends WebMvcTestSupport {
         mockMvc.perform(put("/api/admin/users/5/password").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"newPassword\": \"short\"}"))
                 .andExpect(status().isBadRequest());
-        verifyNoInteractions(adminPasswordResetService);
+        verifyNoInteractions(passwordResetService);
     }
 
     @Test

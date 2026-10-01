@@ -165,6 +165,7 @@ class EmailServiceTest {
         @DisplayName("올바른 인증 코드 입력 시 email:verify: prefix 키가 삭제되고 VERIFIED: 키가 저장된다")
         void confirmAuthCode_success_usesEmailVerifyPrefixForDelete() {
             when(valueOperations.get("email:verify:test@example.com")).thenReturn("123456");
+            when(redisTemplate.delete("email:verify:test@example.com")).thenReturn(true);
 
             assertThatCode(() -> emailService.confirmAuthCode("test@example.com", "123456"))
                     .doesNotThrowAnyException();
@@ -214,6 +215,68 @@ class EmailServiceTest {
                     .isInstanceOfSatisfying(BusinessException.class, e ->
                             assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_AUTH_CODE));
             verify(redisTemplate, never()).delete("email:verify:test@example.com");
+        }
+    }
+
+    @Nested
+    @DisplayName("비밀번호 재설정 코드")
+    class PasswordResetCode {
+
+        @Test
+        @DisplayName("가입 인증과 다른 키에 코드를 저장하고, 받는 주소로 같은 코드를 보낸다")
+        void sendPasswordResetCode_usesOwnPrefix() {
+            when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+            when(messageUtils.get("email.password-reset.subject")).thenReturn("재설정");
+            when(messageUtils.get(eq("email.password-reset.body"), any())).thenReturn("본문");
+
+            emailService.sendPasswordResetCode("test@dgu.ac.kr", "Test@dgu.ac.kr");
+
+            ArgumentCaptor<String> code = ArgumentCaptor.forClass(String.class);
+            verify(valueOperations).set(eq("email:password-reset:test@dgu.ac.kr"), code.capture(), anyLong(), any());
+            verify(messageUtils).get("email.password-reset.body", code.getValue());
+            verify(redisTemplate).delete("email:password-reset-attempts:test@dgu.ac.kr");
+        }
+
+        @Test
+        @DisplayName("맞는 코드는 지우면서 통과한다")
+        void consumePasswordResetCode_success_deletesCode() {
+            when(valueOperations.get("email:password-reset:test@dgu.ac.kr")).thenReturn("123456");
+            when(redisTemplate.delete("email:password-reset:test@dgu.ac.kr")).thenReturn(true);
+
+            assertThatCode(() -> emailService.consumePasswordResetCode("test@dgu.ac.kr", "123456"))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("같은 코드로 동시에 들어와 다른 요청이 먼저 지웠으면 거절한다")
+        void consumePasswordResetCode_alreadyConsumed_isRejected() {
+            when(valueOperations.get("email:password-reset:test@dgu.ac.kr")).thenReturn("123456");
+            when(redisTemplate.delete("email:password-reset:test@dgu.ac.kr")).thenReturn(false);
+
+            assertThatThrownBy(() -> emailService.consumePasswordResetCode("test@dgu.ac.kr", "123456"))
+                    .isInstanceOfSatisfying(BusinessException.class, e ->
+                            assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_AUTH_CODE));
+        }
+
+        @Test
+        @DisplayName("가입 인증 코드로는 통과하지 못한다")
+        void consumePasswordResetCode_signupCode_isRejected() {
+            lenient().when(valueOperations.get("email:verify:test@dgu.ac.kr")).thenReturn("123456");
+
+            assertThatThrownBy(() -> emailService.consumePasswordResetCode("test@dgu.ac.kr", "123456"))
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("틀린 입력이 한도에 닿으면 코드를 폐기하고 429 오류를 던진다")
+        void consumePasswordResetCode_tooManyAttempts_discardsCode() {
+            when(valueOperations.get("email:password-reset:test@dgu.ac.kr")).thenReturn("123456");
+            when(windowCounter.increment(eq("email:password-reset-attempts:test@dgu.ac.kr"), any())).thenReturn(5L);
+
+            assertThatThrownBy(() -> emailService.consumePasswordResetCode("test@dgu.ac.kr", "000000"))
+                    .isInstanceOfSatisfying(BusinessException.class, e ->
+                            assertThat(e.getErrorCode()).isEqualTo(ErrorCode.TOO_MANY_AUTH_CODE_ATTEMPTS));
+            verify(redisTemplate).delete("email:password-reset:test@dgu.ac.kr");
         }
     }
 }

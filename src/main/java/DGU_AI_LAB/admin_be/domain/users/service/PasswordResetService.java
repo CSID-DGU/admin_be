@@ -16,17 +16,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 관리자가 사용자 비밀번호를 새로 지정한다. 사용자가 직접 바꾸는 기능은 두지 않으므로, 비밀번호가 새거나 잊었을 때
- * 쓰는 유일한 경로다. 웹 비밀번호가 곧 SSH(Ubuntu) 비밀번호라 둘을 함께 바꾼다.
+ * 사용자 비밀번호를 새로 지정한다. 관리자 초기화와 메일 인증을 거친 본인 재설정이 함께 쓴다.
+ * 웹 비밀번호가 곧 SSH(Ubuntu) 비밀번호라 둘을 함께 바꾼다.
  *
  * <p>사용자 행을 잠근 채 config-server에 먼저 반영하고(리눅스 계정이 있을 때 — 떠 있는 컨테이너 포함), 성공해야 DB의 두
  * 해시를 바꾼다. 반영이 실패하면 롤백돼 둘이 어긋나지 않는다 — 컨테이너 일부가 이미 바뀌었어도 다시 요청하면 맞춰진다.
- * 관리자만 부르므로 같은 사용자에 대한 요청이 겹칠 일이 드물어 잠금을 기다리게 둔다.
+ * 잠금을 기다리는 요청은 DB 연결을 하나씩 쥐므로, 부르는 쪽이 같은 사용자에 대한 동시 요청을 드물게 유지해야 한다
+ * (관리자 전용이거나, 일회용 인증 코드를 소모한 요청만 들어온다).
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class AdminPasswordResetService {
+public class PasswordResetService {
 
     private final UserRepository userRepository;
     private final RequestRepository requestRepository;
@@ -36,7 +37,7 @@ public class AdminPasswordResetService {
 
     @Transactional
     public UserSummaryDTO resetPassword(Long userId, String newPassword) {
-        log.info("[resetPassword] userId={} 관리자 비밀번호 초기화 시도", userId);
+        log.info("[resetPassword] userId={} 비밀번호 재설정 시도", userId);
 
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
@@ -57,7 +58,7 @@ public class AdminPasswordResetService {
         user.changeUbuntuPasswordHash(sshPasswordHash);
         // 새거나 잊은 비밀번호로 이미 들어와 있는 세션을 끊는다(리프레시 토큰 삭제).
         tokenService.logout(userId);
-        log.info("[resetPassword] userId={} 관리자 비밀번호 초기화 완료(SSH 포함)", userId);
+        log.info("[resetPassword] userId={} 비밀번호 재설정 완료(SSH 포함)", userId);
         return UserSummaryDTO.fromEntity(user);
     }
 }

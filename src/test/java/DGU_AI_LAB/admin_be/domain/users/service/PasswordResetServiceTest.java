@@ -28,14 +28,14 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class AdminPasswordResetServiceTest {
+class PasswordResetServiceTest {
 
     @Mock private UserRepository userRepository;
     @Mock private RequestRepository requestRepository;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private UbuntuPasswordSyncClient ubuntuPasswordSyncClient;
     @Mock private TokenService tokenService;
-    @InjectMocks private AdminPasswordResetService service;
+    @InjectMocks private PasswordResetService service;
 
     private User user;
 

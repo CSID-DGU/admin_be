@@ -5,7 +5,7 @@ import DGU_AI_LAB.admin_be.domain.users.dto.request.UserActivationRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.controller.docs.AdminUserApi;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.AdminPasswordResetRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.ChangeRoleRequestDTO;
-import DGU_AI_LAB.admin_be.domain.users.service.AdminPasswordResetService;
+import DGU_AI_LAB.admin_be.domain.users.service.PasswordResetService;
 import DGU_AI_LAB.admin_be.domain.users.service.AdminUserService;
 import DGU_AI_LAB.admin_be.domain.users.service.UserGroupService;
 import DGU_AI_LAB.admin_be.domain.users.service.UserService;
@@ -23,7 +23,7 @@ public class AdminUserController implements AdminUserApi {
     private final AdminUserService adminUserService;
     private final UserService userService;
     private final UserGroupService userGroupService;
-    private final AdminPasswordResetService adminPasswordResetService;
+    private final PasswordResetService passwordResetService;
 
     @GetMapping("/{id}")
     public ResponseEntity<SuccessResponse<?>> getUser(@PathVariable Long id) {
@@ -74,6 +74,6 @@ public class AdminUserController implements AdminUserApi {
 
     @PutMapping("/{id}/password")
     public ResponseEntity<SuccessResponse<?>> resetPassword(@PathVariable Long id, @RequestBody @Valid AdminPasswordResetRequestDTO dto) {
-        return SuccessResponse.ok(adminPasswordResetService.resetPassword(id, dto.newPassword()));
+        return SuccessResponse.ok(passwordResetService.resetPassword(id, dto.newPassword()));
     }
 }
