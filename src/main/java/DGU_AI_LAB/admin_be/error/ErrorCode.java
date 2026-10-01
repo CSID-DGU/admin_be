@@ -120,6 +120,9 @@ public enum ErrorCode {
     INVALID_PASSWORD(HttpStatus.BAD_REQUEST, "현재 비밀번호가 맞지 않아요."),
     UBUNTU_PASSWORD_REQUIRED(HttpStatus.BAD_REQUEST, "SSH 비밀번호를 준비하려면 다시 로그인해 주세요."),
     UBUNTU_PASSWORD_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "컨테이너에 반영하지 못해 비밀번호를 바꾸지 않았어요. 잠시 후 다시 시도해 주세요."),
+    PASSWORD_RESET_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "비밀번호 재설정 신청을 찾을 수 없어요."),
+    PASSWORD_RESET_IN_PROGRESS(HttpStatus.CONFLICT, "새 비밀번호를 컨테이너에 반영하는 중이에요. 끝난 뒤 다시 시도해 주세요."),
+    PASSWORD_RESET_ALREADY_CLOSED(HttpStatus.CONFLICT, "이미 적용됐거나 거절된 재설정 신청이에요."),
 
     /**
      * Group Error

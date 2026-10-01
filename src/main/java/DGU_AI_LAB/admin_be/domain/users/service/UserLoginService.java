@@ -120,7 +120,7 @@ public class UserLoginService {
     public UserTokenResponseDTO login(UserLoginRequestDTO request) {
         // DB는 이메일 대소문자를 구분하지 않아(utf8mb4_0900_ai_ci) 표기만 바꿔도 같은 계정으로 로그인된다.
         // 잠금 키도 같은 기준으로 세야 대소문자 조합마다 5회씩 새로 받아 잠금을 피하지 못한다.
-        String attemptKey = "LOGIN_FAIL:" + request.email().trim().toLowerCase(Locale.ROOT);
+        String attemptKey = loginAttemptKey(request.email());
         if (isLockedOut(attemptKey)) {
             throw new BusinessException(ErrorCode.TOO_MANY_LOGIN_ATTEMPTS);
         }
@@ -179,6 +179,15 @@ public class UserLoginService {
             userNotFoundEncodedPassword = encoded;
         }
         return encoded;
+    }
+
+    /** 메일 인증으로 본인이 확인돼 비밀번호를 새로 정했으면, 그 전에 쌓인 실패 횟수로 계속 막지 않는다. */
+    public void clearFailedAttempts(String email) {
+        redisTemplate.delete(loginAttemptKey(email));
+    }
+
+    private static String loginAttemptKey(String email) {
+        return "LOGIN_FAIL:" + email.trim().toLowerCase(Locale.ROOT);
     }
 
     /** 이메일당 15분 내 5회 실패 시 잠금 — 브루트포스 방지 */

@@ -13,6 +13,7 @@ import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -73,7 +74,9 @@ public class AdminUserController implements AdminUserApi {
     }
 
     @PutMapping("/{id}/password")
-    public ResponseEntity<SuccessResponse<?>> resetPassword(@PathVariable Long id, @RequestBody @Valid AdminPasswordResetRequestDTO dto) {
-        return SuccessResponse.ok(adminPasswordResetService.resetPassword(id, dto.newPassword()));
+    public ResponseEntity<SuccessResponse<?>> resetPassword(@AuthenticationPrincipal(expression = "userId") Long adminId,
+                                                            @PathVariable Long id,
+                                                            @RequestBody @Valid AdminPasswordResetRequestDTO dto) {
+        return SuccessResponse.accepted(adminPasswordResetService.reset(id, dto.newPassword(), adminId));
     }
 }

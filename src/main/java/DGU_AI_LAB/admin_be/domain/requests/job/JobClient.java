@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.job;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.PasswordChangeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ProvisionRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
@@ -43,9 +44,20 @@ public interface JobClient {
     Long registerRevoke(RevokeRegisterRequestDTO body, ErrorCode failureCode);
 
     /**
+     * 로그인 비밀번호 교체 작업을 등록한다. 실행기는 계정 원장·계정 Secret·떠 있는 컨테이너를 같은 해시로 바꾸고,
+     * 중간에 실패하면 옛 해시로 되돌린 뒤 작업을 실패로 끝낸다.
+     *
+     * @return 등록된 작업 번호. 응답에 없으면 null
+     * @throws BusinessException 같은 재설정 신청의 작업이 아직 끝나지 않았거나(409, INVALID_REQUEST_STATUS) 등록이 실패한 경우
+     */
+    Long registerPasswordChange(PasswordChangeRegisterRequestDTO body);
+
+    /**
      * 작업 결과를 조회한다. 등록 이력이 없으면 phase가 {@link JobResults#PHASE_NONE}으로 온다.
      *
-     * @param kind {@link JobResults#KIND_PROVISION}·{@link JobResults#KIND_REVOKE}·{@link JobResults#KIND_MIGRATE}
+     * @param kind      {@link JobResults#KIND_PROVISION}·{@link JobResults#KIND_REVOKE}·{@link JobResults#KIND_MIGRATE}·
+     *                  {@link JobResults#KIND_PASSWORD}
+     * @param requestId 신청 번호. 비밀번호 교체는 비밀번호 재설정 신청 번호
      */
     JobResultResponseDTO getResult(String kind, Long requestId);
 

@@ -21,7 +21,9 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
+import DGU_AI_LAB.admin_be.domain.users.entity.PasswordResetStatus;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.domain.users.repository.PasswordResetRequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -46,6 +48,7 @@ public class AdminRequestCommandService {
 
     private final RequestRepository requestRepository;
     private final UserRepository userRepository;
+    private final PasswordResetRequestRepository passwordResetRequestRepository;
     private final ContainerImageRepository containerImageRepository;
     private final ResourceGroupRepository resourceGroupRepository;
     private final PodExternalPortRepository podExternalPortRepository;
@@ -128,13 +131,18 @@ public class AdminRequestCommandService {
             List<UserCreationRequestDTO.SupplementaryGroup> supplementaryGroups = req.getRequestGroups().stream()
                     .map(rg -> new UserCreationRequestDTO.SupplementaryGroup(rg.getGroup().getGroupName(), rg.getGroup().getUbuntuGid()))
                     .toList();
-            // 비밀번호 변경과 같은 사용자 행 잠금으로 직렬화한다 — 잠금 없이 읽으면 변경 직전의 옛 해시로
-            // 계정이 만들어질 수 있다(비밀번호 변경은 PROCESSING 신청이 있으면 거절한다).
+            // 비밀번호 재설정 승인과 같은 사용자 행 잠금으로 직렬화한다 — 잠금 없이 읽으면 교체 직전의 옛 해시로
+            // 계정이 만들어질 수 있다(재설정 승인은 PROCESSING 신청이 있으면 거절한다).
             User owner = userRepository.findByIdForUpdate(req.getUser().getUserId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
             // 계정 회수가 도는 중이면 새 컨테이너가 곧 지워질 계정을 쓰게 된다. 회수가 끝난 뒤 승인하면 되살린다.
             if (owner.isReleasingUbuntuAccount()) {
                 throw new BusinessException(ErrorCode.UBUNTU_ACCOUNT_RELEASING);
+            }
+            // 비밀번호 교체 작업이 도는 중이면 이 컨테이너만 옛 비밀번호로 만들어진다. 교체가 끝난 뒤 승인한다.
+            if (!passwordResetRequestRepository.findAllByUserIdAndStatusForShare(
+                    owner.getUserId(), PasswordResetStatus.PROCESSING).isEmpty()) {
+                throw new BusinessException(ErrorCode.PASSWORD_RESET_IN_PROGRESS);
             }
             creationDtoRef[0] = new UserCreationRequestDTO(
                     dto.requestId(),

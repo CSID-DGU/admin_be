@@ -178,12 +178,12 @@ class AdminUserControllerTest extends WebMvcTestSupport {
     }
 
     @Test
-    @DisplayName("PUT /api/admin/users/{id}/password는 새 비밀번호로 초기화한다")
+    @DisplayName("PUT /api/admin/users/{id}/password는 재설정을 접수하고 202로 답한다")
     void resetPassword() throws Exception {
         mockMvc.perform(put("/api/admin/users/5/password").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"newPassword\": \"newPassword1!\"}"))
-                .andExpect(status().isOk());
-        verify(adminPasswordResetService).resetPassword(5L, "newPassword1!");
+                .andExpect(status().isAccepted());
+        verify(adminPasswordResetService).reset(5L, "newPassword1!", null);
     }
 
     @Test

@@ -1,9 +1,12 @@
 package DGU_AI_LAB.admin_be.domain.users.controller;
 
 import DGU_AI_LAB.admin_be.domain.users.controller.docs.AuthApi;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.EmailSendRequestDTO;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.PasswordResetRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
+import DGU_AI_LAB.admin_be.domain.users.service.SelfPasswordResetService;
 import DGU_AI_LAB.admin_be.domain.users.service.UserLoginService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController implements AuthApi {
 
     private final UserLoginService userLoginService;
+    private final SelfPasswordResetService selfPasswordResetService;
 
     /**
      * 3) 회원가입
@@ -37,5 +41,23 @@ public class AuthController implements AuthApi {
     @PostMapping("/login")
     public ResponseEntity<UserTokenResponseDTO> login(@RequestBody @Valid UserLoginRequestDTO request) {
         return ResponseEntity.ok(userLoginService.login(request));
+    }
+
+    /**
+     * 비밀번호 재설정 인증번호 발송 — 가입된 메일이면 인증번호를 보낸다. 가입 여부와 무관하게 200.
+     */
+    @PostMapping("/password-reset-codes")
+    public ResponseEntity<Void> sendPasswordResetCode(@RequestBody @Valid EmailSendRequestDTO request) {
+        selfPasswordResetService.requestCode(request.email());
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * 비밀번호 재설정 신청 — 메일로 받은 인증번호와 새 비밀번호를 낸다. 관리자가 승인해야 적용된다.
+     */
+    @PostMapping("/password-resets")
+    public ResponseEntity<Void> requestPasswordReset(@RequestBody @Valid PasswordResetRequestDTO request) {
+        selfPasswordResetService.submit(request.email(), request.code(), request.newPassword());
+        return ResponseEntity.accepted().build();
     }
 }

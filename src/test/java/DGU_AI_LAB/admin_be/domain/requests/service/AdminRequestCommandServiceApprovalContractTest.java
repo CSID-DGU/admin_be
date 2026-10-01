@@ -18,6 +18,7 @@ import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.domain.users.repository.PasswordResetRequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -67,6 +68,7 @@ class AdminRequestCommandServiceApprovalContractTest {
     @Mock private AlarmService alarmService;
     @Mock private RequestRepository requestRepository;
     @Mock private UserRepository userRepository;
+    @Mock private PasswordResetRequestRepository passwordResetRequestRepository;
     @Mock private ContainerImageRepository containerImageRepository;
     @Mock private ResourceGroupRepository resourceGroupRepository;
     @Mock private ChangeRequestRepository changeRequestRepository;
@@ -89,7 +91,8 @@ class AdminRequestCommandServiceApprovalContractTest {
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
 
         service = new AdminRequestCommandService(
-                alarmService, requestRepository, userRepository, containerImageRepository,
+                alarmService, requestRepository, userRepository, passwordResetRequestRepository,
+                containerImageRepository,
                 resourceGroupRepository, podExternalPortRepository, jobClient,
                 transactionManager, new InMemoryAlertDeduplicator()
         );

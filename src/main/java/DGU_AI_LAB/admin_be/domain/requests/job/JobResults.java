@@ -47,6 +47,8 @@ public final class JobResults {
     public static final String KIND_PROVISION = "provision";
     public static final String KIND_REVOKE = "revoke";
     public static final String KIND_MIGRATE = "migrate";
+    /** 로그인 비밀번호 교체. 신청 번호 자리에 비밀번호 재설정 신청 번호를 쓴다. */
+    public static final String KIND_PASSWORD = "password";
 
     /**
      * 작업 번호가 아직 없는 신청을 기다리는 시간. 등록은 몇 초면 끝나므로, 이보다 오래 번호가 없으면 등록 뒤 기록

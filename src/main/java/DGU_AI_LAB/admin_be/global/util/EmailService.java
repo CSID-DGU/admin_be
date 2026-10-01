@@ -32,12 +32,24 @@ public class EmailService {
 
     private static final long AUTH_CODE_EXPIRE_SECONDS = 60 * 5; // 5분
     private static final Duration AUTH_CODE_TTL = Duration.ofSeconds(AUTH_CODE_EXPIRE_SECONDS);
-    private static final String EMAIL_VERIFY_PREFIX = "email:verify:";
-    private static final String EMAIL_VERIFY_ATTEMPTS_PREFIX = "email:verify-attempts:";
     // 6자리 코드는 100만 가지뿐이라 시도 횟수를 막지 않으면 5분 안에 대입으로 뚫린다.
     // 한 코드당 이 횟수만큼 틀리면 코드를 폐기해 새로 받게 한다.
     private static final int MAX_AUTH_CODE_ATTEMPTS = 5;
     private static final SecureRandom RANDOM = new SecureRandom();
+
+    /** 인증 코드의 용도. 용도마다 Redis 키가 달라 가입용 코드로 비밀번호를 재설정하지 못한다. */
+    private enum CodePurpose {
+        SIGNUP("email:verify:", "email:verify-attempts:"),
+        PASSWORD_RESET("email:password-reset:", "email:password-reset-attempts:");
+
+        private final String codePrefix;
+        private final String attemptsPrefix;
+
+        CodePurpose(String codePrefix, String attemptsPrefix) {
+            this.codePrefix = codePrefix;
+            this.attemptsPrefix = attemptsPrefix;
+        }
+    }
 
     public void sendEmailVerificationCode(String email) {
         emailDomainPolicy.requireAllowed(email);
@@ -49,11 +61,7 @@ public class EmailService {
         }
         emailSendThrottle.acquire(email);
 
-        String authCode = createRandomCode();
-        String redisKey = EMAIL_VERIFY_PREFIX + email;
-
-        redisTemplate.opsForValue().set(redisKey, authCode, AUTH_CODE_EXPIRE_SECONDS, TimeUnit.SECONDS);
-        redisTemplate.delete(EMAIL_VERIFY_ATTEMPTS_PREFIX + email);
+        String authCode = issueCode(CodePurpose.SIGNUP, email);
         log.info("이메일 인증번호 저장 완료");
 
         sendEmail(email, messageUtils.get("email.verify.subject"),
@@ -61,24 +69,62 @@ public class EmailService {
     }
 
     public void confirmAuthCode(String email, String code) {
-        String redisKey = EMAIL_VERIFY_PREFIX + email;
+        consumeCode(CodePurpose.SIGNUP, email, code);
+        redisTemplate.opsForValue().set("VERIFIED:" + email, "true", 10, TimeUnit.MINUTES); // 인증 상태 저장
+        log.info("이메일 [{}] 인증 성공. VERIFIED:{} 키 저장 완료", email, email);
+    }
+
+    /**
+     * 비밀번호 재설정 코드를 만들어 보낸다. 발송 횟수 제한과 가입 여부 확인은 부르는 쪽이 한다.
+     * codeKey는 코드를 묶어 둘 주소 표기(대소문자를 맞춘 것), to는 실제 받는 주소다.
+     */
+    public void sendPasswordResetCode(String codeKey, String to) {
+        String authCode = issueCode(CodePurpose.PASSWORD_RESET, codeKey);
+        sendEmail(to, messageUtils.get("email.password-reset.subject"),
+                messageUtils.get("email.password-reset.body", authCode));
+    }
+
+    /** 비밀번호 재설정 코드를 확인하고 없앤다. 맞는 코드는 한 번만 통과한다. */
+    public void consumePasswordResetCode(String codeKey, String code) {
+        consumeCode(CodePurpose.PASSWORD_RESET, codeKey, code);
+    }
+
+    public void sendPasswordChangedNotice(String to) {
+        sendEmail(to, messageUtils.get("email.password-changed.subject"),
+                messageUtils.get("email.password-changed.body"));
+    }
+
+    public void sendPasswordResetDeniedNotice(String to) {
+        sendEmail(to, messageUtils.get("email.password-reset-denied.subject"),
+                messageUtils.get("email.password-reset-denied.body"));
+    }
+
+    private String issueCode(CodePurpose purpose, String key) {
+        String authCode = createRandomCode();
+        redisTemplate.opsForValue().set(purpose.codePrefix + key, authCode, AUTH_CODE_EXPIRE_SECONDS, TimeUnit.SECONDS);
+        redisTemplate.delete(purpose.attemptsPrefix + key);
+        return authCode;
+    }
+
+    private void consumeCode(CodePurpose purpose, String key, String code) {
+        String redisKey = purpose.codePrefix + key;
         String stored = redisTemplate.opsForValue().get(redisKey);
         if (stored == null) {
             throw new BusinessException(ErrorCode.INVALID_AUTH_CODE);
         }
         if (!code.equals(stored)) {
-            recordFailedAttempt(email, redisKey);
+            recordFailedAttempt(purpose, key, redisKey);
             throw new BusinessException(ErrorCode.INVALID_AUTH_CODE);
         }
-
-        redisTemplate.delete(redisKey); // 인증번호 제거
-        redisTemplate.delete(EMAIL_VERIFY_ATTEMPTS_PREFIX + email);
-        redisTemplate.opsForValue().set("VERIFIED:" + email, "true", 10, TimeUnit.MINUTES); // 인증 상태 저장
-        log.info("이메일 [{}] 인증 성공. VERIFIED:{} 키 저장 완료", email, email);
+        // 같은 코드로 동시에 들어온 요청 중 실제로 키를 지운 하나만 통과시킨다.
+        if (!Boolean.TRUE.equals(redisTemplate.delete(redisKey))) {
+            throw new BusinessException(ErrorCode.INVALID_AUTH_CODE);
+        }
+        redisTemplate.delete(purpose.attemptsPrefix + key);
     }
 
-    private void recordFailedAttempt(String email, String codeKey) {
-        String attemptsKey = EMAIL_VERIFY_ATTEMPTS_PREFIX + email;
+    private void recordFailedAttempt(CodePurpose purpose, String key, String codeKey) {
+        String attemptsKey = purpose.attemptsPrefix + key;
         if (windowCounter.increment(attemptsKey, AUTH_CODE_TTL) >= MAX_AUTH_CODE_ATTEMPTS) {
             redisTemplate.delete(codeKey);
             redisTemplate.delete(attemptsKey);
