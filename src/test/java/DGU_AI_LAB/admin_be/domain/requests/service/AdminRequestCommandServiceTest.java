@@ -536,9 +536,6 @@ class AdminRequestCommandServiceTest {
             verify(jobClient).registerProvision(captor.capture());
             assertThat(captor.getValue().account()).isNull();
             assertThat(captor.getValue().supplementaryGroups()).isEmpty();
-            // 계정을 새로 만들 때는 작업이 그룹까지 넣지만, 재사용 계정은 config-server의
-            // provision 제어기가 Pod 생성 후 그룹을 추가하므로 로컬에서는 호출하지 않는다.
-            verify(groupService, never()).addUserToGroups(anyString(), anyList());
         }
 
         @Test

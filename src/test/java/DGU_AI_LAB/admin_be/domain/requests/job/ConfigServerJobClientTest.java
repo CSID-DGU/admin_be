@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.job;
 
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.GroupChangeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.PasswordChangeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ProvisionRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
@@ -15,11 +16,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import reactor.test.scheduler.VirtualTimeScheduler;
@@ -111,6 +115,51 @@ class ConfigServerJobClientTest {
         assertThat(json.get("username").asText()).isEqualTo("exp-np-001");
         assertThat(json.get("passwd_hash").asText()).isEqualTo("$6$salt$hash");
         assertThat(body.toString()).doesNotContain("$6$salt$hash");
+    }
+
+    @Test
+    @DisplayName("그룹 작업은 /operations/group으로 op에 맞는 값만 실어 등록하고 작업 번호를 돌려준다")
+    void registersGroupChange() {
+        GroupChangeRegisterRequestDTO body = GroupChangeRegisterRequestDTO.add(7L, "exp-np-001", List.of("teamx"));
+        when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "accepted", "job_id", 3620)));
+
+        assertThat(service.registerGroupChange(body)).isEqualTo(3620L);
+
+        verify(postUriSpec).uri("/operations/group");
+        JsonNode json = objectMapper.valueToTree(body);
+        assertThat(json.get("request_id").asLong()).isEqualTo(7L);
+        assertThat(json.get("op").asText()).isEqualTo("add");
+        assertThat(json.get("groups").get(0).asText()).isEqualTo("teamx");
+        // 다른 op 의 값은 싣지 않는다.
+        assertThat(json.has("name")).isFalse();
+        assertThat(json.has("members")).isFalse();
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "400,INVALID_GROUP_MEMBER,INVALID_GROUP_MEMBER",
+            "404,USER_NOT_FOUND,INVALID_GROUP_MEMBER",
+            "400,GROUP_NAME_CONFLICTS_USER,GROUP_NAME_CONFLICTS_USER",
+            "409,GROUP_NAME_RESERVED,RESERVED_GROUP_NAME",
+            "404,GROUP_NOT_FOUND,GROUP_NOT_FOUND",
+            "409,PRIMARY_GROUP,PRIMARY_GROUP_REMOVAL",
+            "409,JOB_ALREADY_REGISTERED,GROUP_OPERATION_IN_PROGRESS",
+            "400,SOMETHING_ELSE,INFRA_REQUEST_REJECTED",
+            "503,JOB_STORE_UNAVAILABLE,GROUP_CHANGE_FAILED",
+    })
+    @DisplayName("그룹 작업 등록 거절은 본문의 error 코드로 갈라 알린다 — 문구가 바뀌어도 판정이 유지된다")
+    void mapsGroupRegistrationRejections(int status, String infraCode, ErrorCode expected) {
+        String body = "{\"error\": \"" + infraCode + "\", \"detail\": \"문구는 바뀔 수 있다\"}";
+
+        assertThat(ConfigServerJobClient.groupRegistrationError(HttpStatusCode.valueOf(status), body).getErrorCode())
+                .isEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("본문이 비어도 터지지 않는다 — 502 응답에 본문이 없는 경우가 있다")
+    void emptyGroupRegistrationBodyIsHandled() {
+        assertThat(ConfigServerJobClient.groupRegistrationError(HttpStatusCode.valueOf(502), null).getErrorCode())
+                .isEqualTo(ErrorCode.GROUP_CHANGE_FAILED);
     }
 
     @Test

@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -66,16 +67,19 @@ public interface AdminUserApi {
     ResponseEntity<SuccessResponse<?>> getUserGroups(@PathVariable @Parameter(description = "사용자 ID") Long id);
 
     @Operation(summary = "사용자를 공용 그룹에서 제거",
-            description = "AD에서 멤버십을 빼고, 떠 있는 컨테이너에 반영한 뒤 DB를 맞춥니다. 이미 빠져 있어도 성공입니다. "
+            description = "AD·떠 있는 컨테이너에서 멤버십을 빼는 작업을 등록합니다. DB는 그 작업이 성공한 뒤에 맞춰지므로, "
+                    + "응답의 operationId로 GET /api/groups/operations/{operationId}를 조회해 완료를 확인합니다. "
+                    + "리눅스 계정명이 없는 사용자는 작업 없이 바로 끝납니다(status=APPLIED). "
                     + "팀 디렉터리와 그 안의 파일은 그대로 둡니다.")
-    @ApiResponse(responseCode = "200", description = "성공")
+    @ApiResponse(responseCode = "202", description = "작업 등록됨(또는 바로 적용됨)")
     @ApiResponse(responseCode = "404", description = "사용자 또는 그룹이 없음")
-    @ApiResponse(responseCode = "409", description = "계정의 기본 그룹")
-    @ApiResponse(responseCode = "502", description = "AD 반영 실패")
+    @ApiResponse(responseCode = "409", description = "계정의 기본 그룹, 같은 제거 작업이 진행 중")
+    @ApiResponse(responseCode = "502", description = "작업 등록 실패")
     @DeleteMapping("/{id}/groups/{groupId}")
     ResponseEntity<SuccessResponse<?>> removeUserFromGroup(
             @PathVariable @Parameter(description = "사용자 ID") Long id,
-            @PathVariable @Parameter(description = "그룹 ID") Long groupId
+            @PathVariable @Parameter(description = "그룹 ID") Long groupId,
+            @AuthenticationPrincipal(expression = "userId") @Parameter(hidden = true) Long adminId
     );
 
     @Operation(

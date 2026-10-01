@@ -4,8 +4,7 @@ import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
-import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
-import DGU_AI_LAB.admin_be.domain.groups.service.GroupService;
+import DGU_AI_LAB.admin_be.domain.groups.service.GroupOperationService;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
@@ -73,8 +72,7 @@ class AdminModificationCommandServiceTest {
     @Mock private RequestRepository requestRepository;
     @Mock private UserRepository userRepository;
     @Mock private ChangeRequestRepository changeRequestRepository;
-    @Mock private GroupRepository groupRepository;
-    @Mock private GroupService groupService;
+    @Mock private GroupOperationService groupOperationService;
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private JobClient jobClient;
     @Mock private PlatformTransactionManager transactionManager;
@@ -95,8 +93,7 @@ class AdminModificationCommandServiceTest {
         // @RequiredArgsConstructor 생성자 필드 선언 순서대로 주입
         service = new AdminModificationCommandService(
                 alarmService, requestRepository, userRepository, changeRequestRepository,
-                groupRepository, groupService, new ObjectMapper(),
-                transactionManager
+                groupOperationService, new ObjectMapper()
         );
         // 공유 엔티티 기본 설정
         when(mockUser.getName()).thenReturn("테스트유저");
@@ -305,121 +302,46 @@ class AdminModificationCommandServiceTest {
         }
 
         @Test
-        @DisplayName("GROUP 변경 요청 승인 시 originalRequest가 아니라 그 소유 계정(User)에 addGroupIfAbsent()가 호출된다")
-        void approveModification_group_success() throws Exception {
+        @DisplayName("GROUP 변경 요청 승인은 반영 작업 등록으로 넘기고, 승인 완료·안내 메일은 작업이 끝난 뒤로 미룬다")
+        void approveModification_group_registersJobInsteadOfApplying() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             Request originalRequest = buildMockedRequestWithStatus(25L, Status.FULFILLED);
-            Group newGroup = mock(Group.class);
-            when(newGroup.getUbuntuGid()).thenReturn(42L);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
             when(changeRequest.getChangeType()).thenReturn(ChangeType.GROUP);
-            when(changeRequest.getNewValue()).thenReturn("[42]");
             when(changeRequest.getRequest()).thenReturn(originalRequest);
             when(changeRequestRepository.findByIdForUpdate(9L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
-            when(groupRepository.findByUbuntuGid(42L)).thenReturn(Optional.of(newGroup));
 
-            ApproveModificationDTO dto = new ApproveModificationDTO(9L, "그룹 변경 승인");
-            service.approveModification(100L, dto);
+            service.approveModification(100L, new ApproveModificationDTO(9L, "그룹 변경 승인"));
 
-            // 계정 단위로 누적된다 — originalRequest.addGroup()은 더 이상 이 경로에서 안 쓰인다.
-            verify(originalRequest, never()).addGroup(any());
-            verify(mockUser).addGroupIfAbsent(newGroup);
-            verify(changeRequest).approve(mockUser, "그룹 변경 승인");
-            // 그룹 승인은 팀 디렉터리 경로를 담은 전용 안내로 보낸다.
-            verify(alarmService).sendGroupAddedEmail(eq(changeRequest), eq("그룹 변경 승인"), anyList());
+            verify(groupOperationService).startAdd(changeRequest, originalRequest, mockUser, "그룹 변경 승인");
+            // 작업이 성공하기 전에는 승인된 것이 아니다 — DB 기록과 안내는 GroupOperationService.complete 가 한다.
+            verify(changeRequest, never()).approve(any(), any());
+            verify(mockUser, never()).addGroupIfAbsent(any());
+            verify(alarmService, never()).sendGroupAddedEmail(any(), any(), anyList());
             verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
-            // AD 반영 직후 NAS GSS 온디맨드 flush를 트리거한다(admin_infra-proposed#161).
-            verify(groupService).triggerNasGssFlush("testuser");
         }
 
         @Test
-        @DisplayName("GROUP 변경 승인 중 addUserToGroups가 실패하면 DB에 반영되지 않고 예외가 그대로 전파된다(admin_be#554)")
-        void approveModification_group_externalCallFails_doesNotMutateDb() throws Exception {
+        @DisplayName("GROUP 변경 승인 중 작업 등록이 실패하면 예외가 그대로 전파되고 승인 처리는 하지 않는다")
+        void approveModification_group_registrationFailurePropagates() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             Request originalRequest = buildMockedRequestWithStatus(27L, Status.FULFILLED);
-            Group newGroup = mock(Group.class);
-            when(newGroup.getUbuntuGid()).thenReturn(43L);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
             when(changeRequest.getChangeType()).thenReturn(ChangeType.GROUP);
-            when(changeRequest.getNewValue()).thenReturn("[43]");
             when(changeRequest.getRequest()).thenReturn(originalRequest);
-            when(changeRequestRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(changeRequest));
+            when(changeRequestRepository.findByIdForUpdate(16L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
-            when(groupRepository.findByUbuntuGid(43L)).thenReturn(Optional.of(newGroup));
-            doThrow(new BusinessException(ErrorCode.AD_GROUP_SYNC_FAILED))
-                    .when(groupService).addUserToGroups(anyString(), any());
+            doThrow(new BusinessException(ErrorCode.GROUP_CHANGE_FAILED))
+                    .when(groupOperationService).startAdd(any(), any(), any(), any());
 
-            ApproveModificationDTO dto = new ApproveModificationDTO(10L, "그룹 변경 승인");
-
-            assertThatThrownBy(() -> service.approveModification(100L, dto))
+            assertThatThrownBy(() -> service.approveModification(100L, new ApproveModificationDTO(16L, "승인")))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.AD_GROUP_SYNC_FAILED);
-
-            // 외부 호출이 실패한 시점엔 1단계 트랜잭션이 이미 커밋 없이 끝난 뒤라 DB엔 아무 변경도 없어야 한다.
-            verify(mockUser, never()).addGroupIfAbsent(any());
-            verify(changeRequest, never()).approve(any(), any());
-            verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
-            // AD 반영 자체가 실패했으니 NAS flush를 트리거할 이유가 없다.
-            verify(groupService, never()).triggerNasGssFlush(any());
-        }
-
-        @Test
-        @DisplayName("GROUP 변경 승인 중 AD 반영 후 상태가 바뀌면 DB엔 반영하지 않고 관리자에게 알린 뒤 예외를 던진다(admin_be#554)")
-        void approveModification_group_statusChangedAfterExternalCall_alertsAndThrows() throws Exception {
-            ChangeRequest changeRequest = mock(ChangeRequest.class);
-            Request originalRequest = buildMockedRequestWithStatus(28L, Status.FULFILLED);
-            Group newGroup = mock(Group.class);
-            when(newGroup.getUbuntuGid()).thenReturn(44L);
-            // 1단계(사전 검증)에서는 PENDING, 3단계(외부 호출 완료 후 재검증)에서는 그 사이 다른 관리자가
-            // 거절해 DENIED로 바뀐 상황을 시뮬레이션한다.
-            when(changeRequest.getStatus()).thenReturn(Status.PENDING, Status.DENIED);
-            when(changeRequest.getChangeType()).thenReturn(ChangeType.GROUP);
-            when(changeRequest.getNewValue()).thenReturn("[44]");
-            when(changeRequest.getRequest()).thenReturn(originalRequest);
-            when(changeRequestRepository.findByIdForUpdate(11L)).thenReturn(Optional.of(changeRequest));
-            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
-            when(groupRepository.findByUbuntuGid(44L)).thenReturn(Optional.of(newGroup));
-
-            ApproveModificationDTO dto = new ApproveModificationDTO(11L, "그룹 변경 승인");
-
-            assertThatThrownBy(() -> service.approveModification(100L, dto))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
-
-            // AD 반영은 이미 끝났다 — 되돌릴 방법이 없으니(candidate 2 API 부재) DB는 그대로 두고 알림만 보낸다.
-            verify(groupService).addUserToGroups(eq("testuser"), any());
-            verify(mockUser, never()).addGroupIfAbsent(any());
-            verify(changeRequest, never()).approve(any(), any());
-            verify(alarmService).sendAdminSlackNotification(any(), contains("AD 그룹 반영은 완료됐으나"));
-            // AD는 이미 바뀌었으니 우리 DB 커밋 성공 여부와 무관하게 NAS flush는 그대로 트리거해야 한다.
-            verify(groupService).triggerNasGssFlush("testuser");
-        }
-
-        @Test
-        @DisplayName("GROUP 변경 승인 중 같은 변경 요청이 동시에 승인돼 이미 FULFILLED면 오탐 알림 없이 예외만 던진다")
-        void approveModification_group_concurrentApproval_throwsWithoutAlert() throws Exception {
-            ChangeRequest changeRequest = mock(ChangeRequest.class);
-            Request originalRequest = buildMockedRequestWithStatus(28L, Status.FULFILLED);
-            Group newGroup = mock(Group.class);
-            when(newGroup.getUbuntuGid()).thenReturn(44L);
-            when(changeRequest.getStatus()).thenReturn(Status.PENDING, Status.FULFILLED);
-            when(changeRequest.getChangeType()).thenReturn(ChangeType.GROUP);
-            when(changeRequest.getNewValue()).thenReturn("[44]");
-            when(changeRequest.getRequest()).thenReturn(originalRequest);
-            when(changeRequestRepository.findByIdForUpdate(11L)).thenReturn(Optional.of(changeRequest));
-            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
-            when(groupRepository.findByUbuntuGid(44L)).thenReturn(Optional.of(newGroup));
-
-            assertThatThrownBy(() -> service.approveModification(100L, new ApproveModificationDTO(11L, "승인")))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+                    .isEqualTo(ErrorCode.GROUP_CHANGE_FAILED);
 
             verify(changeRequest, never()).approve(any(), any());
-            verify(alarmService, never()).sendAdminSlackNotification(any(), any());
+            verify(alarmService, never()).sendGroupAddedEmail(any(), any(), anyList());
         }
 
         @Test

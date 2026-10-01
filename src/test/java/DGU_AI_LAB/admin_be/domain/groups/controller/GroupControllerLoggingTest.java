@@ -1,8 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.groups.controller;
 
 import DGU_AI_LAB.admin_be.domain.groups.dto.request.CreateGroupRequestDTO;
-import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupResponseDTO;
-import DGU_AI_LAB.admin_be.domain.groups.service.GroupService;
+import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupOperationResponseDTO;
+import DGU_AI_LAB.admin_be.domain.groups.service.GroupOperationService;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
 import DGU_AI_LAB.admin_be.support.LogCaptor;
@@ -30,7 +30,7 @@ class GroupControllerLoggingTest {
     private GroupController groupController;
 
     @Mock
-    private GroupService groupService;
+    private GroupOperationService groupOperationService;
 
     @Test
     @DisplayName("그룹 생성 요청 로그에 ubuntuUsername이 남지 않고 groupName만 남는다")
@@ -47,8 +47,8 @@ class GroupControllerLoggingTest {
                 .build();
         CustomUserDetails principal = new CustomUserDetails(user, null);
 
-        when(groupService.createGroup(any(CreateGroupRequestDTO.class), nullable(Long.class)))
-                .thenReturn(new GroupResponseDTO(1L, 5000L, "ai-lab-team"));
+        when(groupOperationService.requestCreate(any(CreateGroupRequestDTO.class), nullable(Long.class)))
+                .thenReturn(new GroupOperationResponseDTO(7L, "CREATE", "PROCESSING", "ai-lab-team", null, null));
 
         try (LogCaptor logCaptor = LogCaptor.forClass(GroupController.class)) {
             groupController.createGroup(dto, principal);

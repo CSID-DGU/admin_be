@@ -63,9 +63,9 @@ public class AdminUserController implements AdminUserApi {
     }
 
     @DeleteMapping("/{id}/groups/{groupId}")
-    public ResponseEntity<SuccessResponse<?>> removeUserFromGroup(@PathVariable Long id, @PathVariable Long groupId) {
-        userGroupService.removeUserFromGroup(id, groupId);
-        return SuccessResponse.ok(null);
+    public ResponseEntity<SuccessResponse<?>> removeUserFromGroup(@PathVariable Long id, @PathVariable Long groupId,
+                                                                  @AuthenticationPrincipal(expression = "userId") Long adminId) {
+        return SuccessResponse.accepted(userGroupService.removeUserFromGroup(id, groupId, adminId));
     }
 
     @PatchMapping("/{id}/role")
