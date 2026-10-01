@@ -96,6 +96,7 @@ public enum ErrorCode {
     TOO_MANY_AUTH_CODE_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "인증 코드 입력 횟수를 초과했습니다. 인증 코드를 다시 받아주세요."),
     TOO_MANY_EMAIL_SENDS(HttpStatus.TOO_MANY_REQUESTS, "인증 메일을 너무 자주 요청했어요. 잠시 후 다시 시도해 주세요."),
     TOO_MANY_GROUP_CREATIONS(HttpStatus.TOO_MANY_REQUESTS, "그룹은 하루에 5개까지 만들 수 있어요. 내일 다시 시도해 주세요."),
+    TOO_MANY_CONTAINER_REQUESTS(HttpStatus.TOO_MANY_REQUESTS, "컨테이너 신청은 하루에 5건까지 할 수 있어요. 내일 다시 시도해 주세요."),
     EMAIL_DOMAIN_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "학교 이메일(@dgu.ac.kr, @dongguk.edu)로만 가입할 수 있어요."),
     GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "지정된 그룹을 찾을 수 없습니다."),
     UID_ALLOCATION_FAILED(HttpStatus.BAD_GATEWAY, "외부 API 응답에서 UID/GID를 확인할 수 없습니다."),
