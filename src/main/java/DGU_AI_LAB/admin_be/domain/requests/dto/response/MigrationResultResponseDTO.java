@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.dto.response;
 
+import java.util.List;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
@@ -15,13 +17,16 @@ public record MigrationResultResponseDTO(
         String toNode,
         String podName,
         @Schema(description = "기존 Pod 정리에 실패했으면 failed") String oldPodCleanup,
-        String updatedAt
+        String updatedAt,
+        @Schema(description = "진행 중(START)인 작업에서 이미 끝난 단계 이름. 끝난 작업이면 비어 있다")
+        List<String> completedSteps
 ) {
-    public static MigrationResultResponseDTO from(JobResultResponseDTO job) {
+    public static MigrationResultResponseDTO from(JobResultResponseDTO job, List<String> completedSteps) {
         JobResultResponseDTO.Result r = job.result();
         return new MigrationResultResponseDTO(job.phase(), job.errorCode(),
                 r == null ? null : r.status(), r == null ? null : r.reason(),
                 r == null ? null : r.fromNode(), r == null ? null : r.toNode(),
-                r == null ? null : r.podName(), r == null ? null : r.oldPodCleanup(), job.updatedAt());
+                r == null ? null : r.podName(), r == null ? null : r.oldPodCleanup(), job.updatedAt(),
+                completedSteps);
     }
 }
