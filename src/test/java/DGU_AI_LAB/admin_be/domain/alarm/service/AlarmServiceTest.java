@@ -21,6 +21,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -278,6 +281,33 @@ class AlarmServiceTest {
                     "공유 그룹: vision-team", "추가 포트: 6006번 (TensorBoard)", "noVNC): 사용",
                     "2026-12-17 ~ 2026-12-31 (총 14일)", "*사용 목적*\n첫째 줄\n둘째 줄");
             assertThat(message).doesNotContain("{").doesNotContain(":bell:");
+        }
+
+        @Test
+        @DisplayName("폼 응답에 적은 팀 프로젝트 정보를 담고, Slack 제어 문자는 이스케이프한다")
+        void includesTeamInfoFromFormAnswers() {
+            Request request = mockRequest("홍길동", "FARM");
+            when(request.getFormAnswers()).thenReturn(
+                    "{\"purpose\":\"연구\",\"teamInfo\":\"vision-team / 홍길동, 김철수 <!here>\"}");
+
+            String message = render(request, List.of(), 0);
+
+            assertThat(message)
+                    .contains("팀 프로젝트 정보(그룹·팀원): vision-team / 홍길동, 김철수 &lt;!here&gt;")
+                    .doesNotContain("<!here>");
+        }
+
+        @ParameterizedTest
+        @NullSource
+        @ValueSource(strings = {"", "{}", "{\"purpose\":\"연구\"}", "{\"teamInfo\":\"  \"}", "{\"teamInfo\":null}", "not json"})
+        @DisplayName("팀 프로젝트 정보를 적지 않았거나 폼 응답을 읽을 수 없으면 없음으로 적는다")
+        void teamInfo_isNone_whenAbsentOrUnreadable(String formAnswers) {
+            Request request = mockRequest("홍길동", "FARM");
+            when(request.getFormAnswers()).thenReturn(formAnswers);
+
+            String message = render(request, List.of(), 0);
+
+            assertThat(message).contains("팀 프로젝트 정보(그룹·팀원): 없음");
         }
 
         @Test
