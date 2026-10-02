@@ -166,6 +166,21 @@ class PendingGroupServiceIntegrationTest {
         assertThat(requestGroupRows(requestId)).isEqualTo(2);
     }
 
+    @Test
+    @DisplayName("신청 목록의 고른 그룹을 한 번에 읽는다 — 신청마다 그룹이 맞게 붙는다")
+    void requestedGroupsAreLoadedInOneQuery() {
+        Long vision = group("vision", null);
+        Long created = group("ailab", 70001L);
+        Long first = request(vision, created);
+        Long second = request(vision);
+        Long none = request();
+
+        var rows = tx.execute(status -> requestGroupRepository.findAllWithGroupByRequestIds(List.of(first, second, none))
+                .stream().map(rg -> rg.getRequest().getRequestId() + ":" + rg.getGroup().getGroupId()).sorted().toList());
+
+        assertThat(rows).containsExactlyInAnyOrder(first + ":" + vision, first + ":" + created, second + ":" + vision);
+    }
+
     @Nested
     @DisplayName("고른 신청이 모두 끝나면 승인 대기 그룹을 지운다")
     class DeleteAbandoned {

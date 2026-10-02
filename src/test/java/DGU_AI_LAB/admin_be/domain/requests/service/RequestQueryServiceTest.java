@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.portRequests.repository.PortRequestRepository;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
@@ -7,8 +8,10 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
+import DGU_AI_LAB.admin_be.domain.requests.repository.RequestGroupRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -19,6 +22,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 
@@ -47,6 +51,9 @@ class RequestQueryServiceTest {
 
     @Mock
     private PodExternalPortRepository podExternalPortRepository;
+
+    @Mock
+    private RequestGroupRepository requestGroupRepository;
 
     @Nested
     @DisplayName("getRequestsByUserId")
@@ -86,6 +93,34 @@ class RequestQueryServiceTest {
             assertThat(result.get(0).podExternalPorts().get(0).internalPort()).isEqualTo(8888);
             assertThat(result.get(0).podExternalPorts().get(0).externalPort()).isEqualTo(30888);
             assertThat(result.get(0).podExternalPorts().get(0).usagePurpose()).isEqualTo("jupyter");
+        }
+
+        @Test
+        @DisplayName("이 신청이 고른 공유 그룹을 함께 돌려준다 — 새 그룹(gid 없음)은 pending, 목록 전체를 한 번에 읽는다")
+        void getRequestsByUserId_returnsRequestedGroups() {
+            Request request = mockRequest(1L);
+            Group pending = Group.builder().groupName("vision-lab").build();
+            ReflectionTestUtils.setField(pending, "groupId", 4L);
+            Group created = Group.builder().groupName("ailab").ubuntuGid(70001L).build();
+            ReflectionTestUtils.setField(created, "groupId", 3L);
+            RequestGroup rgPending = mock(RequestGroup.class);
+            when(rgPending.getRequest()).thenReturn(request);
+            when(rgPending.getGroup()).thenReturn(pending);
+            RequestGroup rgCreated = mock(RequestGroup.class);
+            when(rgCreated.getRequest()).thenReturn(request);
+            when(rgCreated.getGroup()).thenReturn(created);
+
+            when(userRepository.existsById(1L)).thenReturn(true);
+            when(requestRepository.findAllByUser_UserId(1L)).thenReturn(List.of(request));
+            when(requestGroupRepository.findAllWithGroupByRequestIds(List.of(1L))).thenReturn(List.of(rgPending, rgCreated));
+
+            List<SaveRequestResponseDTO> result = requestQueryService.getRequestsByUserId(1L);
+
+            assertThat(result.get(0).requestedGroups()).containsExactly(
+                    new SaveRequestResponseDTO.RequestedGroupDTO(3L, "ailab", 70001L, false),
+                    new SaveRequestResponseDTO.RequestedGroupDTO(4L, "vision-lab", null, true));
+            verify(requestGroupRepository, times(1)).findAllWithGroupByRequestIds(anyList());
+            verify(request, never()).getRequestGroups();
         }
 
         @Test

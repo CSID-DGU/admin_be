@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.repository.PortRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
@@ -9,8 +10,10 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.response.PortMappingDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
+import DGU_AI_LAB.admin_be.domain.requests.repository.RequestGroupRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -35,6 +38,7 @@ public class RequestQueryService {
     private final UserRepository userRepository;
     private final PortRequestRepository portRequestRepository;
     private final PodExternalPortRepository podExternalPortRepository;
+    private final RequestGroupRepository requestGroupRepository;
 
     /** 내 신청 목록 */
     public List<SaveRequestResponseDTO> getRequestsByUserId(Long userId) {
@@ -64,11 +68,19 @@ public class RequestQueryService {
                                 Collectors.mapping(PodExternalPortResponseDTO::fromEntity, Collectors.toList())
                         ));
 
+        Map<Long, List<Group>> groupsByRequest =
+                requestGroupRepository.findAllWithGroupByRequestIds(ids).stream()
+                        .collect(Collectors.groupingBy(
+                                rg -> rg.getRequest().getRequestId(),
+                                Collectors.mapping(RequestGroup::getGroup, Collectors.toList())
+                        ));
+
         return requests.stream()
                 .map(r -> SaveRequestResponseDTO.fromEntityWithPorts(
                         r,
                         portMappingsByRequest.getOrDefault(r.getRequestId(), List.of()),
-                        podPortsByRequest.getOrDefault(r.getRequestId(), List.of())
+                        podPortsByRequest.getOrDefault(r.getRequestId(), List.of()),
+                        groupsByRequest.getOrDefault(r.getRequestId(), List.of())
                 ))
                 .toList();
     }

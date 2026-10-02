@@ -13,6 +13,9 @@ import lombok.Builder;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
+import DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup;
+import java.util.Comparator;
 
 @Schema(description = "서버 신청 상세 응답 DTO")
 @Builder
@@ -37,8 +40,10 @@ public record SaveRequestResponseDTO(
         Long ubuntuUid,
         @Schema(description = "Ubuntu primary GID", example = "2001", nullable = true)
         Long ubuntuGid,
-        @Schema(description = "Ubuntu GID 목록", example = "[1005, 1006]")
+        @Schema(description = "Ubuntu GID 목록 — 계정에 이미 들어가 있는 그룹(이 신청이 고른 그룹이 아니다)", example = "[1005, 1006]")
         List<Long> ubuntuGids,
+        @Schema(description = "이 신청이 고른 공유 그룹. 새 그룹(pending)은 승인되면 만들어진다")
+        List<RequestedGroupDTO> requestedGroups,
         @Schema(description = "사용 목적", example = "딥러닝 모델 학습")
         String usagePurpose,
         @Schema(description = "폼 응답 (JSON)", example = "{\"question\": \"answer\"}")
@@ -80,6 +85,22 @@ public record SaveRequestResponseDTO(
                     .description(resourceGroup.getDescription())
                     .serverName(resourceGroup.getServerName())
                     .build();
+        }
+    }
+
+    @Schema(description = "신청이 고른 공유 그룹")
+    public record RequestedGroupDTO(
+            @Schema(description = "그룹 ID", example = "4")
+            Long groupId,
+            @Schema(description = "그룹명", example = "vision-lab")
+            String groupName,
+            @Schema(description = "Ubuntu GID. 아직 만들어지지 않은 새 그룹이면 null", example = "70001", nullable = true)
+            Long ubuntuGid,
+            @Schema(description = "아직 만들어지지 않은 새 그룹(이 신청이 승인되면 만들어진다)인지", example = "true")
+            boolean pending
+    ) {
+        public static RequestedGroupDTO fromEntity(Group group) {
+            return new RequestedGroupDTO(group.getGroupId(), group.getGroupName(), group.getUbuntuGid(), group.isPending());
         }
     }
 
@@ -127,6 +148,17 @@ public record SaveRequestResponseDTO(
             List<PortMappingDTO> portMappings,
             List<PodExternalPortResponseDTO> podExternalPorts
     ) {
+        return fromEntityWithPorts(request, portMappings, podExternalPorts,
+                request.getRequestGroups().stream().map(RequestGroup::getGroup).toList());
+    }
+
+    /** 목록 조회처럼 신청마다 그룹을 따로 읽지 않도록, 미리 모아 둔 그룹을 받는다. */
+    public static SaveRequestResponseDTO fromEntityWithPorts(
+            Request request,
+            List<PortMappingDTO> portMappings,
+            List<PodExternalPortResponseDTO> podExternalPorts,
+            List<Group> requestedGroups
+    ) {
         if (request.getResourceGroup() == null) {
             throw new BusinessException(ErrorCode.RESOURCE_GROUP_NOT_FOUND);
         }
@@ -153,6 +185,10 @@ public record SaveRequestResponseDTO(
                                 .map(ug -> ug.getGroup().getUbuntuGid())
                                 .toList()
                 )
+                .requestedGroups(requestedGroups.stream()
+                        .map(RequestedGroupDTO::fromEntity)
+                        .sorted(Comparator.comparing(RequestedGroupDTO::groupName))
+                        .toList())
                 .usagePurpose(request.getUsagePurpose())
                 .formAnswers(request.getFormAnswers())
                 .expiresAt(request.getExpiresAt())

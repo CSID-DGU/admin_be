@@ -15,6 +15,10 @@ import java.util.List;
 public interface RequestGroupRepository extends JpaRepository<RequestGroup, RequestGroupId> {
     List<RequestGroup> findAllByRequest_RequestId(Long requestId);
 
+    /** 신청 목록의 고른 그룹을 한 번에 읽는다(신청마다 따로 읽지 않게). */
+    @Query("SELECT rg FROM RequestGroup rg JOIN FETCH rg.group WHERE rg.request.requestId IN :requestIds")
+    List<RequestGroup> findAllWithGroupByRequestIds(@Param("requestIds") Collection<Long> requestIds);
+
     /**
      * 이 그룹들을 고른 신청과 그 상태를 잠그며 읽는다. 잠그는 조회는 트랜잭션이 시작될 때의 스냅숏이 아니라
      * 지금 커밋된 행을 읽으므로, 그룹 행을 잠근 뒤에 부르면 다른 트랜잭션이 막 커밋한 신청까지 빠짐없이 본다.
