@@ -35,6 +35,10 @@ public class ServerProfileRegistry {
                 throw new IllegalStateException("app.servers." + name + ".admin-channel이 가리키는 "
                         + WEBHOOK_PREFIX + server.adminChannel() + " 설정이 없다");
             }
+            if (!environment.containsProperty(WEBHOOK_PREFIX + server.requestChannelOrAdmin())) {
+                throw new IllegalStateException("app.servers." + name + ".request-channel이 가리키는 "
+                        + WEBHOOK_PREFIX + server.requestChannelOrAdmin() + " 설정이 없다");
+            }
         });
     }
 
@@ -44,6 +48,11 @@ public class ServerProfileRegistry {
 
     public Optional<String> adminWebhookUrl(String serverName) {
         return find(serverName).map(server -> environment.getProperty(WEBHOOK_PREFIX + server.adminChannel()));
+    }
+
+    /** 새 사용 신청서를 보낼 채널. 서버에 request-channel이 없으면 관리 채널과 같다. */
+    public Optional<String> requestWebhookUrl(String serverName) {
+        return find(serverName).map(server -> environment.getProperty(WEBHOOK_PREFIX + server.requestChannelOrAdmin()));
     }
 
     /**

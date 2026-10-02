@@ -75,16 +75,18 @@ class AlarmServiceTest {
     private static final String ERROR_WEBHOOK = "https://hooks.slack.com/error";
     private static final String FARM_WEBHOOK = "https://hooks.slack.com/farm";
     private static final String LAB_WEBHOOK = "https://hooks.slack.com/lab";
+    private static final String FARM_REQUEST_WEBHOOK = "https://hooks.slack.com/farm-request";
 
     @Spy
     private ServerProfileRegistry serverProfileRegistry = new ServerProfileRegistry(
             new ServerProfileProperties(Map.of(
-                    "FARM", new ServerProfileProperties.Server("farm.example.org", "farm-admin",
+                    "FARM", new ServerProfileProperties.Server("farm.example.org", "farm-admin", "farm-request",
                             new ServerProfileProperties.PortForwarding(30000, 9300, 98)),
-                    "LAB", new ServerProfileProperties.Server("lab.example.org", "lab-admin", null))),
+                    "LAB", new ServerProfileProperties.Server("lab.example.org", "lab-admin", null, null))),
             new MockEnvironment()
                     .withProperty("slack-webhook-url.farm-admin", FARM_WEBHOOK)
-                    .withProperty("slack-webhook-url.lab-admin", LAB_WEBHOOK));
+                    .withProperty("slack-webhook-url.lab-admin", LAB_WEBHOOK)
+                    .withProperty("slack-webhook-url.farm-request", FARM_REQUEST_WEBHOOK));
 
     @BeforeEach
     void setUp() {
@@ -179,8 +181,8 @@ class AlarmServiceTest {
     class SendNewRequestNotification {
 
         @Test
-        @DisplayName("FARM 서버 신청은 farm 관리자 채널로 적재된다")
-        void sendNewRequestNotification_routesToFarmWebhook_forFarmServer() {
+        @DisplayName("신청서 채널을 따로 둔 서버(FARM)의 신청은 그 채널로 적재된다")
+        void sendNewRequestNotification_routesToRequestChannel_whenServerHasOne() {
             Request request = mockRequest("홍길동", "FARM");
             when(messageUtils.get(anyString(), any(), any())).thenReturn("새 신청");
 
@@ -188,11 +190,21 @@ class AlarmServiceTest {
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
+            assertThat(captor.getValue().getWebhookUrl()).isEqualTo(FARM_REQUEST_WEBHOOK);
+        }
+
+        @Test
+        @DisplayName("신청서 채널에는 신청서만 간다 — 같은 서버의 다른 관리자 알림은 관리 채널로 간다")
+        void otherAdminNotifications_stayOnAdminChannel() {
+            alarmService.sendAdminSlackNotification("FARM", "만료 임박");
+
+            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
+            verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
             assertThat(captor.getValue().getWebhookUrl()).isEqualTo(FARM_WEBHOOK);
         }
 
         @Test
-        @DisplayName("LAB 서버 신청은 lab 관리자 채널로 적재된다")
+        @DisplayName("신청서 채널이 없는 서버(LAB)의 신청은 관리 채널로 적재된다")
         void sendNewRequestNotification_routesToLabWebhook_forLabServer() {
             Request request = mockRequest("이순신", "LAB");
             when(messageUtils.get(anyString(), any(), any())).thenReturn("새 신청");

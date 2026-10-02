@@ -19,13 +19,14 @@ import java.util.Map;
  *     FARM:
  *       public-host: 203.0.113.10
  *       admin-channel: farm-admin      # slack-webhook-url.farm-admin
+ *       request-channel: farm-request  # 생략하면 admin-channel. 새 사용 신청서만 따로 받을 채널
  *       port-forwarding:               # 생략하면 NodePort를 그대로 안내
  *         node-port-base: 30000
  *         public-port-base: 9300
  *         size: 98
  * </pre>
  *
- * <p>admin-channel은 webhook 주소가 아니라 {@code slack-webhook-url} 아래 키 이름이다. webhook은 비밀값이라
+ * <p>admin-channel·request-channel은 webhook 주소가 아니라 {@code slack-webhook-url} 아래 키 이름이다. webhook은 비밀값이라
  * 한곳에 모아 두고, 실험 스택처럼 알림을 막아야 하는 환경이 그 한곳만 덮어쓰면 되게 한다.
  */
 @Validated
@@ -34,7 +35,13 @@ public record ServerProfileProperties(@NotEmpty Map<String, @Valid Server> serve
 
     public record Server(@NotBlank String publicHost,
                          @NotBlank String adminChannel,
+                         String requestChannel,
                          @Valid PortForwarding portForwarding) {
+
+        /** 새 사용 신청서를 보낼 채널. 따로 두지 않았으면 관리 채널로 보낸다. */
+        public String requestChannelOrAdmin() {
+            return requestChannel == null || requestChannel.isBlank() ? adminChannel : requestChannel;
+        }
     }
 
     /**
