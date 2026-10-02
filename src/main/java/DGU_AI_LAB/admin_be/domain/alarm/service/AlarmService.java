@@ -17,6 +17,8 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.server.ServerProfileRegistry;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -47,6 +49,10 @@ public class AlarmService {
 
     @Value("${spring.mail.username}")
     private String from;
+
+    /** 신청 화면이 폼 응답에 팀 프로젝트 정보를 담는 키. */
+    private static final String FORM_ANSWER_TEAM_INFO = "teamInfo";
+    private static final ObjectMapper FORM_ANSWERS_MAPPER = new ObjectMapper();
 
     private final JavaMailSender mailSender;
     private final SlackApiService slackApiService;
@@ -174,7 +180,8 @@ public class AlarmService {
                 request.isEnableVnc() ? "사용" : "사용 안 함",               // {15}
                 appliedOn.toString(),                                      // {16}
                 String.valueOf(ChronoUnit.DAYS.between(appliedOn, expiresOn)), // {17}
-                String.valueOf(activeContainerCount));                     // {18}
+                String.valueOf(activeContainerCount),                      // {18}
+                formatTeamInfo(request));                                  // {19}
 
         // 신청서는 서버별 신청서 채널로 간다(따로 없으면 관리 채널). 그 채널에는 신청서 말고 다른 알림을 보내지 않는다.
         sendSlackAlert(message, serverProfileRegistry.requestWebhookUrl(serverName).orElse(errorLogWebhookUrl));
@@ -190,6 +197,23 @@ public class AlarmService {
                 .sorted()
                 .collect(Collectors.joining(", "));
         return groups.isEmpty() ? "없음" : SlackText.escape(groups);
+    }
+
+    /**
+     * 신청서 폼 응답(JSON)에서 팀 프로젝트 정보(그룹 이름·팀원 이름)를 꺼낸다.
+     * 승인자는 팀원이 모두 신청했는지 이 글로 확인한다. 적지 않았거나 읽을 수 없으면 "없음"이다.
+     */
+    private static String formatTeamInfo(Request request) {
+        String formAnswers = request.getFormAnswers();
+        if (formAnswers == null || formAnswers.isBlank()) {
+            return "없음";
+        }
+        try {
+            String teamInfo = FORM_ANSWERS_MAPPER.readTree(formAnswers).path(FORM_ANSWER_TEAM_INFO).asText("");
+            return teamInfo.isBlank() ? "없음" : SlackText.escape(teamInfo.strip());
+        } catch (JsonProcessingException e) {
+            return "없음";
+        }
     }
 
     private static String formatPortRequests(List<PortRequests> portRequests) {
