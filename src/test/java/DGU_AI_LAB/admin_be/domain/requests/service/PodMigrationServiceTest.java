@@ -11,6 +11,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RestartPodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobStepsResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigrationResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
@@ -459,6 +460,34 @@ class PodMigrationServiceTest {
 
         verify(request, never()).endMigration();
         verify(alarmService).sendSlackAlert(contains("확인 필요"), any());
+    }
+
+    @Test
+    @DisplayName("진행 중인 작업이면 그 작업에서 끝난 단계 이름을 함께 준다")
+    void latestMigrationCarriesCompletedStepsWhileRunning() {
+        when(requestRepository.existsById(1L)).thenReturn(true);
+        when(jobClient.getResult("migrate", 1L)).thenReturn(
+                new JobResultResponseDTO("1", "migrate", 9L, "START", null, null, null));
+        when(jobClient.getSteps("migrate", 1L)).thenReturn(new JobStepsResponseDTO("1", "migrate", List.of(
+                new JobStepsResponseDTO.Job(9L, null, null, "START", null, List.of(
+                        new JobStepsResponseDTO.Step(null, "SELECT_NODE", "SUCCESS", 1, null, null, null, null),
+                        new JobStepsResponseDTO.Step(null, "COMMIT_IMAGE", "SUCCESS", 1, null, null, null, null),
+                        new JobStepsResponseDTO.Step(null, "CREATE_POD_K8S", "FAIL", 1, null, null, null, null))),
+                new JobStepsResponseDTO.Job(8L, null, null, "SUCCESS", null, List.of(
+                        new JobStepsResponseDTO.Step(null, "DELETE_POD_K8S", "SUCCESS", 1, null, null, null, null))))));
+
+        assertThat(service.getLatestMigration(1L).completedSteps()).containsExactly("SELECT_NODE", "COMMIT_IMAGE");
+    }
+
+    @Test
+    @DisplayName("단계 기록을 읽지 못해도 결과 조회는 실패하지 않는다")
+    void latestMigrationSurvivesStepLookupFailure() {
+        when(requestRepository.existsById(1L)).thenReturn(true);
+        when(jobClient.getResult("migrate", 1L)).thenReturn(
+                new JobResultResponseDTO("1", "migrate", 9L, "START", null, null, null));
+        when(jobClient.getSteps("migrate", 1L)).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
+
+        assertThat(service.getLatestMigration(1L).completedSteps()).isEmpty();
     }
 
     @Test

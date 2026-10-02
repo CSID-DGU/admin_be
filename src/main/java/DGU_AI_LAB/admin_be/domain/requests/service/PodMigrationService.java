@@ -11,6 +11,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RestartPodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobStepsResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigrationResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
@@ -162,12 +163,38 @@ public class PodMigrationService {
                 requestId, body.username(), body.podName(), body.recreate());
     }
 
+    private MigrationResultResponseDTO latestMigrationOf(Long requestId) {
+        JobResultResponseDTO job = jobClient.getResult(JobResults.KIND_MIGRATE, requestId);
+        return MigrationResultResponseDTO.from(job, completedStepsOf(requestId, job));
+    }
+
+    /**
+     * 진행 중인 작업에서 이미 끝난 단계 이름. 화면이 지금 어느 단계인지 보여 주는 데만 쓰므로, 단계 기록을
+     * 읽지 못해도 결과 조회는 실패시키지 않는다.
+     */
+    private List<String> completedStepsOf(Long requestId, JobResultResponseDTO job) {
+        if (!JobResults.isRunning(job.phase()) || job.jobId() == null) {
+            return List.of();
+        }
+        try {
+            return jobClient.getSteps(JobResults.KIND_MIGRATE, requestId).jobs().stream()
+                    .filter(j -> job.jobId().equals(j.jobId()) && j.steps() != null)
+                    .flatMap(j -> j.steps().stream())
+                    .filter(s -> JobResults.PHASE_SUCCESS.equals(s.phase()) && s.action() != null)
+                    .map(JobStepsResponseDTO.Step::action)
+                    .distinct()
+                    .toList();
+        } catch (BusinessException e) {
+            return List.of();
+        }
+    }
+
     /** 본인 신청의 마지막 마이그레이션(재시작) 결과. */
     public MigrationResultResponseDTO getOwnLatestMigration(Long userId, Long requestId) {
         Request req = requestRepository.findById(requestId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
         requireOwner(req, userId);
-        return MigrationResultResponseDTO.from(jobClient.getResult(JobResults.KIND_MIGRATE, requestId));
+        return latestMigrationOf(requestId);
     }
 
     /**
@@ -317,7 +344,7 @@ public class PodMigrationService {
         if (!requestRepository.existsById(requestId)) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
-        return MigrationResultResponseDTO.from(jobClient.getResult(JobResults.KIND_MIGRATE, requestId));
+        return latestMigrationOf(requestId);
     }
 
     private void revertToFulfilled(Long requestId) {
