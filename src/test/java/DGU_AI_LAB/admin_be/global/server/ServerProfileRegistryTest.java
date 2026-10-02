@@ -20,7 +20,7 @@ class ServerProfileRegistryTest {
                 new MockEnvironment().withProperty("slack-webhook-url.farm-admin", FARM_WEBHOOK));
     }
 
-    private static final Server FARM = new Server("farm.example.org", "farm-admin",
+    private static final Server FARM = new Server("farm.example.org", "farm-admin", null,
             new PortForwarding(30000, 9300, 98));
 
     @Test
@@ -57,15 +57,38 @@ class ServerProfileRegistryTest {
     @Test
     @DisplayName("포워딩 구성이 없는 서버는 NodePort를 그대로 안내한다")
     void noForwardingKeepsNodePort() {
-        ServerProfileRegistry registry = registry(Map.of("FARM", new Server("farm.example.org", "farm-admin", null)));
+        ServerProfileRegistry registry = registry(Map.of("FARM", new Server("farm.example.org", "farm-admin", null, null)));
 
         assertThat(registry.publicPort("FARM", "30022")).isEqualTo("30022");
     }
 
     @Test
+    @DisplayName("request-channel이 없으면 신청서도 관리 채널로 가고, 있으면 신청서만 그 채널로 간다")
+    void requestChannelDefaultsToAdminChannel() {
+        assertThat(registry(Map.of("FARM", FARM)).requestWebhookUrl("farm")).contains(FARM_WEBHOOK);
+
+        ServerProfileRegistry split = new ServerProfileRegistry(
+                new ServerProfileProperties(Map.of("FARM", new Server("farm.example.org", "farm-admin", "farm-request", null))),
+                new MockEnvironment().withProperty("slack-webhook-url.farm-admin", FARM_WEBHOOK)
+                        .withProperty("slack-webhook-url.farm-request", "https://hooks.example/request"));
+        assertThat(split.requestWebhookUrl("FARM")).contains("https://hooks.example/request");
+        assertThat(split.adminWebhookUrl("FARM")).contains(FARM_WEBHOOK);
+    }
+
+    @Test
+    @DisplayName("request-channel이 가리키는 webhook 설정이 없으면 기동 단계에서 실패한다")
+    void missingRequestWebhookFailsFast() {
+        Map<String, Server> servers = Map.of("FARM", new Server("farm.example.org", "farm-admin", "farm-request", null));
+
+        assertThatThrownBy(() -> registry(servers))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("slack-webhook-url.farm-request");
+    }
+
+    @Test
     @DisplayName("admin-channel이 가리키는 webhook 설정이 없으면 기동 단계에서 실패한다")
     void missingWebhookFailsFast() {
-        Map<String, Server> servers = Map.of("LAB", new Server("lab.example.org", "lab-admin", null));
+        Map<String, Server> servers = Map.of("LAB", new Server("lab.example.org", "lab-admin", null, null));
 
         assertThatThrownBy(() -> registry(servers))
                 .isInstanceOf(IllegalStateException.class)

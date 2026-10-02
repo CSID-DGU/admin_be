@@ -176,7 +176,8 @@ public class AlarmService {
                 String.valueOf(ChronoUnit.DAYS.between(appliedOn, expiresOn)), // {17}
                 String.valueOf(activeContainerCount));                     // {18}
 
-        sendSlackAlert(message, getAdminWebhookUrl(serverName));
+        // 신청서는 서버별 신청서 채널로 간다(따로 없으면 관리 채널). 그 채널에는 신청서 말고 다른 알림을 보내지 않는다.
+        sendSlackAlert(message, serverProfileRegistry.requestWebhookUrl(serverName).orElse(errorLogWebhookUrl));
     }
 
     private static String describe(String description) {
