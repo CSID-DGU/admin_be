@@ -33,6 +33,17 @@ class SingleChangeRequestDTOTest {
     }
 
     @Test
+    @DisplayName("GROUP 타입에 gid 없는 그룹(아직 만들어지지 않은 새 그룹)이 섞이면 받을 때 거절한다 — 승인할 때에야 실패하지 않게")
+    void createValidatedChangeRequest_group_pendingGroup_throws() {
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005,null]", "reason");
+
+        assertThatThrownBy(() ->
+                SingleChangeRequestDTO.createValidatedChangeRequest(dto, null, null, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("아직 만들어지지 않은 그룹");
+    }
+
+    @Test
     @DisplayName("GROUP 타입에 잘못된 JSON을 전달하면 BusinessException을 던진다")
     void createValidatedChangeRequest_group_invalidJson_throws() {
         SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "not-json", "reason");

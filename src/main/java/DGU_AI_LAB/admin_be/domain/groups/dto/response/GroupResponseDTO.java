@@ -9,7 +9,8 @@ import lombok.Builder;
 public record GroupResponseDTO(
         @Schema(description = "그룹 ID", example = "3")
         Long groupId,
-        @Schema(description = "Ubuntu GID", example = "1005")
+        @Schema(description = "Ubuntu GID. 아직 만들어지지 않은 새 그룹(승인 대기 — 이 그룹을 고른 신청이 승인되면 생긴다)은 null",
+                example = "1005", nullable = true)
         Long ubuntuGid,
         @Schema(description = "그룹명", example = "admin-team")
         String groupName

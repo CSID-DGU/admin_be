@@ -3,7 +3,9 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
+import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
+import DGU_AI_LAB.admin_be.domain.groups.service.PendingGroupService;
 import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SingleChangeRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
@@ -30,6 +32,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -77,6 +80,9 @@ class RequestCommandServiceTest {
 
     @Mock
     private RequestCreateThrottle requestCreateThrottle;
+
+    @Mock
+    private PendingGroupService pendingGroupService;
 
     /** 가입 시 우분투 계정명이 정해진 사용자 — 신청은 이 값을 그대로 복사해 쓴다. */
     /** 가입(또는 로그인) 때 웹 비밀번호로 SSH 비밀번호 해시가 채워진 사용자. */
@@ -424,6 +430,59 @@ class RequestCommandServiceTest {
         }
 
         @Test
+        @DisplayName("groupIds로 고른 그룹(승인 대기 그룹 포함)을 잠그며 찾아 신청에 담는다")
+        void createRequest_byGroupIds_locksAndAttachesGroups() {
+            User user = userWithUbuntuUsername("honggildong");
+            SaveRequestRequestDTO dto = stubbedCreate(user);
+            Request savedReq = dto.toEntity(null, null, null);
+            ReflectionTestUtils.setField(savedReq, "requestId", 77L);
+            Group pending = Group.builder().groupName("vision-lab").build();
+            ReflectionTestUtils.setField(pending, "groupId", 3L);
+            Group created = Group.builder().groupName("ailab").ubuntuGid(2001L).build();
+            ReflectionTestUtils.setField(created, "groupId", 4L);
+            when(dto.groupIds()).thenReturn(Set.of(3L, 4L));
+            when(groupRepository.findAllByIdForUpdate(Set.of(3L, 4L))).thenReturn(List.of(pending, created));
+
+            requestCommandService.createRequest(1L, dto);
+
+            assertThat(savedReq.getRequestGroups()).extracting(rg -> rg.getGroup().getGroupName())
+                    .containsExactlyInAnyOrder("vision-lab", "ailab");
+            verify(groupRepository, never()).findAllByUbuntuGidIn(any());
+        }
+
+        @Test
+        @DisplayName("groupIds 중 없는 그룹(예: 그 사이 지워진 승인 대기 그룹)이 있으면 저장하지 않고 한도도 세지 않는다")
+        void createRequest_byGroupIds_unknownGroup_isRejected() {
+            User user = userWithUbuntuUsername("honggildong");
+            SaveRequestRequestDTO dto = stubbedCreate(user);
+            when(dto.groupIds()).thenReturn(Set.of(3L, 4L));
+            when(groupRepository.findAllByIdForUpdate(any())).thenReturn(List.of());
+
+            assertThatThrownBy(() -> requestCommandService.createRequest(1L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
+            verify(requestRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(requestCreateThrottle);
+        }
+
+        @Test
+        @DisplayName("groupIds와 ubuntuGids를 함께 보내면 어느 쪽을 믿을지 알 수 없어 400으로 거절한다")
+        void createRequest_bothGroupFields_isRejected() {
+            User user = userWithUbuntuUsername("honggildong");
+            SaveRequestRequestDTO dto = stubbedCreate(user);
+            when(dto.groupIds()).thenReturn(Set.of(3L));
+            when(dto.ubuntuGids()).thenReturn(Set.of(2001L));
+
+            assertThatThrownBy(() -> requestCommandService.createRequest(1L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+            verify(requestRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(requestCreateThrottle);
+        }
+
+        @Test
         @DisplayName("하루 신청 한도를 넘으면 저장하지 않고 429로 거절한다")
         void createRequest_overDailyLimit_isRejected() {
             User user = userWithUbuntuUsername("honggildong");
@@ -475,6 +534,7 @@ class RequestCommandServiceTest {
             assertThatThrownBy(() -> requestCommandService.cancelRequest(2L, 10L))
                     .isInstanceOf(BusinessException.class);
             assertThat(request.getStatus()).isEqualTo(Status.PENDING);
+            verifyNoInteractions(pendingGroupService);
         }
 
         @Test
@@ -486,6 +546,8 @@ class RequestCommandServiceTest {
             requestCommandService.cancelRequest(1L, 11L);
 
             assertThat(request.getStatus()).isEqualTo(Status.DELETED);
+            // 이 신청이 승인 대기 그룹을 고른 마지막 신청이면 그 그룹을 지운다.
+            verify(pendingGroupService).deleteAbandoned(request);
         }
 
         @Test

@@ -49,7 +49,8 @@ public record SaveRequestRequestDTO(
         @Future(message = "만료 일시는 미래여야 합니다.")
         LocalDateTime expiresAt,
 
-        @Schema(description = "Ubuntu GID 목록", example = "[1005, 1006]")
+        // 예전 화면이 보내는 값. 승인 대기 그룹(gid 없음)은 담을 수 없어 groupIds로 바꿨다. 둘 중 하나만 보낸다.
+        @Schema(description = "Ubuntu GID 목록 (예전 방식 — groupIds를 쓴다)", example = "[1005, 1006]", deprecated = true)
         @Size(max = 20, message = "그룹은 20개 이하로 선택해야 합니다.")
         Set<@NotNull(message = "그룹 GID는 비어 있을 수 없습니다.") @Positive(message = "그룹 GID는 양수여야 합니다.") Long> ubuntuGids,
 
@@ -59,7 +60,11 @@ public record SaveRequestRequestDTO(
         List<@NotNull(message = "포트 요청 항목은 비어 있을 수 없습니다.") @Valid PortRequestDTO> portRequests,
 
         @Schema(description = "noVNC GUI 활성화 여부", example = "false")
-        Boolean enableVnc
+        Boolean enableVnc,
+
+        @Schema(description = "고른 공유 그룹의 그룹 ID 목록(GET /api/groups의 groupId). 아직 만들어지지 않은 새 그룹도 고를 수 있다", example = "[3, 4]")
+        @Size(max = 20, message = "그룹은 20개 이하로 선택해야 합니다.")
+        Set<@NotNull(message = "그룹 ID는 비어 있을 수 없습니다.") @Positive(message = "그룹 ID는 양수여야 합니다.") Long> groupIds
 ) {
     static final int MAX_FORM_ANSWERS_JSON_LENGTH = 10_000;
 

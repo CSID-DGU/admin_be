@@ -35,15 +35,28 @@ public record JobResultResponseDTO(
             @JsonProperty("from_node") String fromNode,
             @JsonProperty("to_node") String toNode,
             @JsonProperty("old_pod_name") String oldPodName,
-            @JsonProperty("old_pod_cleanup") String oldPodCleanup
+            @JsonProperty("old_pod_cleanup") String oldPodCleanup,
+            // 생성 작업만: 계정에 넣은 보조 그룹과 그 gid. 승인 대기 그룹(gid 없이 보낸 그룹)은 작업이 발급한 gid 를
+            // 여기서 받아 채운다.
+            List<GroupResult> groups
     ) {
         /** 생성 작업 결과. */
         public Result(Long uid, Long gid, String podName, String node, List<CreatePodResponseDTO.PortInfo> ports) {
-            this(uid, gid, podName, node, ports, null, null, null, null, null, null);
+            this(uid, gid, podName, node, ports, null, null, null, null, null, null, null);
+        }
+
+        /** 그룹 결과가 없는 작업 결과(마이그레이션 등). */
+        public Result(Long uid, Long gid, String podName, String node, List<CreatePodResponseDTO.PortInfo> ports,
+                      String status, String reason, String fromNode, String toNode, String oldPodName,
+                      String oldPodCleanup) {
+            this(uid, gid, podName, node, ports, status, reason, fromNode, toNode, oldPodName, oldPodCleanup, null);
         }
 
         public boolean isMigrated() {
             return "migrated".equals(status);
         }
     }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record GroupResult(String name, Long gid) {}
 }

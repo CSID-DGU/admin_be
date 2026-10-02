@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.groups.service.PendingGroupService;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -39,6 +40,7 @@ public class AdminUserService {
     private final RequestRepository requestRepository;
     private final RequestExpiryService requestExpiryService;
     private final PodMigrationService podMigrationService;
+    private final PendingGroupService pendingGroupService;
     private final AlarmService alarmService;
     private final MessageUtils messageUtils;
     private final TokenService tokenService;
@@ -118,7 +120,11 @@ public class AdminUserService {
                 case PENDING, DENIED -> newTx.execute(status -> {
                     requestRepository.findByIdForUpdate(requestId)
                             .filter(r -> r.getStatus() == Status.PENDING || r.getStatus() == Status.DENIED)
-                            .ifPresent(Request::delete);
+                            .ifPresent(r -> {
+                                r.delete();
+                                // 이 신청이 승인 대기 그룹을 고른 마지막 신청이었다면 그 그룹도 지운다.
+                                pendingGroupService.deleteAbandoned(r);
+                            });
                     return null;
                 });
                 default -> {

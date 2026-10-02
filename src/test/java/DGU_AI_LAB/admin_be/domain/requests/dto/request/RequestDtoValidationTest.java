@@ -202,12 +202,11 @@ class RequestDtoValidationTest {
         }
 
         @Test
-        @DisplayName("그룹명은 리눅스 그룹 규칙(32자, 밑줄 허용), 추가할 기존 계정 이름은 밑줄을 허용한다")
+        @DisplayName("그룹명은 리눅스 그룹 규칙(32자, 밑줄 허용)")
         void group_rules() {
-            assertThat(violatedPaths(new CreateGroupRequestDTO("Developers", null))).contains("groupName");
-            assertThat(violatedPaths(new CreateGroupRequestDTO("a".repeat(33), null))).contains("groupName");
-            assertThat(violatedPaths(new CreateGroupRequestDTO("lab_members", "legacy_user"))).isEmpty();
-            assertThat(violatedPaths(new CreateGroupRequestDTO("lab", "Bad User"))).contains("ubuntuUsername");
+            assertThat(violatedPaths(new CreateGroupRequestDTO("Developers"))).contains("groupName");
+            assertThat(violatedPaths(new CreateGroupRequestDTO("a".repeat(33)))).contains("groupName");
+            assertThat(violatedPaths(new CreateGroupRequestDTO("lab_members"))).isEmpty();
         }
     }
 }

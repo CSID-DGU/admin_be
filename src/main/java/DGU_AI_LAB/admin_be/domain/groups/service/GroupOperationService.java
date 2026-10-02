@@ -1,7 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.groups.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
-import DGU_AI_LAB.admin_be.domain.groups.dto.request.CreateGroupRequestDTO;
 import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupOperationResponseDTO;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.entity.GroupOperation;
@@ -29,7 +28,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.util.StringUtils;
 
 import java.util.List;
 import java.util.Objects;
@@ -37,7 +35,11 @@ import java.util.Set;
 import java.util.function.Supplier;
 
 /**
- * 공용 그룹 작업(생성·멤버 추가·제거)의 진행을 맡는다: 등록 → config-server 작업 → 결과 반영.
+ * 공용 그룹 작업(멤버 추가·제거)의 진행을 맡는다: 등록 → config-server 작업 → 결과 반영.
+ *
+ * <p>그룹 생성은 더 이상 작업으로 등록하지 않는다 — DB 에 승인 대기 그룹으로 만들고({@link GroupService#createGroup}),
+ * 그 그룹을 고른 신청의 생성 작업이 인프라 그룹을 만든다. CREATE 결과를 반영하는 코드({@link #applyCreate})는 이
+ * 변경 전에 등록돼 아직 도는 작업을 끝까지 반영하려고 남겨 둔다. 그런 작업이 남지 않으면 지운다.
  *
  * <p>그룹은 AD·계정 원장·팀 디렉터리·떠 있는 컨테이너에 걸쳐 있다. 요청을 받으면 작업으로 등록만 하고 돌아오고,
  * 결과는 GroupOperationJobPoller 가 {@link #complete}·{@link #fail}로 반영한다. DB(groups·user_groups)는 작업이
@@ -63,7 +65,6 @@ public class GroupOperationService {
     private final RequestRepository requestRepository;
     private final ChangeRequestRepository changeRequestRepository;
     private final JobClient jobClient;
-    private final GroupCreateThrottle groupCreateThrottle;
     private final AlarmService alarmService;
     private final ObjectMapper objectMapper;
     private final PlatformTransactionManager transactionManager;
@@ -72,44 +73,6 @@ public class GroupOperationService {
     private record AddedNotice(ChangeRequest changeRequest, List<String> groupNames) {}
 
     private record FailureNotice(Long changeRequestId, String serverName, String username) {}
-
-    /**
-     * 그룹을 만드는 작업을 등록한다. 그룹 번호(gid)는 작업이 정하므로 groups 행은 작업이 성공한 뒤에 생긴다.
-     *
-     * @throws BusinessException 이름이 이미 쓰이거나(409), 같은 이름을 만드는 중이거나(409), 하루 한도를 넘은 경우(429)
-     */
-    public GroupOperationResponseDTO requestCreate(CreateGroupRequestDTO dto, Long userId) {
-        String member = StringUtils.hasText(dto.ubuntuUsername()) ? dto.ubuntuUsername() : null;
-        GroupOperationResponseDTO response = inTransaction(() -> {
-            if (member != null && !requestRepository.existsByUser_UbuntuUsernameAndUser_UserId(member, userId)) {
-                throw new BusinessException(ErrorCode.FORBIDDEN_REQUEST);
-            }
-            if (groupRepository.existsByGroupName(dto.groupName())) {
-                throw new BusinessException(ErrorCode.DUPLICATE_GROUP_NAME);
-            }
-            // config-server는 원장에 계정이 생긴 이름만 막는다 — 계정명만 등록하고 아직 승인 전인
-            // 사용자와 같은 이름의 그룹을 만들면 그 사용자의 계정 생성이 나중에 실패한다.
-            if (userRepository.existsByUbuntuUsername(dto.groupName())) {
-                throw new BusinessException(ErrorCode.GROUP_NAME_CONFLICTS_USER);
-            }
-            if (operationRepository.existsByKindAndGroupNameAndStatus(
-                    GroupOperationKind.CREATE, dto.groupName(), GroupOperationStatus.PROCESSING)) {
-                throw new BusinessException(ErrorCode.GROUP_OPERATION_IN_PROGRESS);
-            }
-            // 검증을 통과한 요청만 센다 — 이름 중복 같은 실패로 한도를 쓰지 않게 한다.
-            groupCreateThrottle.acquire(userId);
-
-            User requester = userRepository.findById(userId)
-                    .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
-            GroupOperation operation = operationRepository.save(GroupOperation.create(requester, dto.groupName(), member));
-            operation.registered(jobClient.registerGroupChange(GroupChangeRegisterRequestDTO.create(
-                    operation.getGroupOperationId(), requester.getUbuntuUsername(), dto.groupName(),
-                    member == null ? List.of() : List.of(member))));
-            return GroupOperationResponseDTO.of(operation, null);
-        });
-        log.info("[groupOperation] operationId={} 그룹 생성 등록: groupName={}", response.operationId(), dto.groupName());
-        return response;
-    }
 
     /**
      * 공유 그룹 추가 변경 요청을 승인해 작업으로 등록하고, 변경 요청을 반영 중(PROCESSING)으로 둔다.

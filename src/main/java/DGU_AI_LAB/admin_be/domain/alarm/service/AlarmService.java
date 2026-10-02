@@ -192,8 +192,11 @@ public class AlarmService {
     }
 
     private static String formatGroups(Request request) {
+        // 승인 대기 그룹은 이 신청을 승인할 때 인프라에 새로 만들어진다 — 승인자가 알 수 있게 표시한다.
         String groups = request.getRequestGroups().stream()
-                .map(rg -> rg.getGroup().getGroupName())
+                .map(rg -> rg.getGroup().isPending()
+                        ? rg.getGroup().getGroupName() + " (새 그룹 - 승인 시 생성)"
+                        : rg.getGroup().getGroupName())
                 .sorted()
                 .collect(Collectors.joining(", "));
         return groups.isEmpty() ? "없음" : SlackText.escape(groups);

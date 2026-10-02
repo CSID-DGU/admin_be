@@ -9,8 +9,8 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 
 /**
- * 사용자별 그룹 생성 횟수 제한. 그룹 생성은 로그인한 누구나 부를 수 있고 한 번마다 디렉터리에 그룹을 만들며,
- * 그룹 번호(GID)는 재사용하지 않아 영구히 소모된다. 막지 않으면 반복 호출로 그룹과 GID를 끝없이 쓰게 만들 수 있다.
+ * 사용자별 그룹 생성 횟수 제한. 그룹 생성은 로그인한 누구나 부를 수 있다. 만든 그룹은 승인 전까지 DB 에만 있어
+ * 인프라 자원이나 GID 를 쓰지 않지만, 모든 사용자의 신청 화면 목록에 보이므로 반복 호출로 목록을 채우지 못하게 막는다.
  */
 @Component
 @RequiredArgsConstructor
