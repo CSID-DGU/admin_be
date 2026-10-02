@@ -8,6 +8,7 @@ import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
 import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RestartPodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigrationResultResponseDTO;
@@ -29,11 +30,15 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 
 /**
- * Pod 노드 마이그레이션. config-server에 마이그레이션 작업을 등록하고 바로 돌아오며, 결과는
+ * Pod 노드 마이그레이션과 재시작. 재시작은 현재 노드에서 Pod를 다시 만드는 마이그레이션이라 같은 작업·상태(MIGRATING)·
+ * 결과 반영을 그대로 쓰고, 시작할 때 무엇을 확인하고 어떤 작업을 등록하는지만 다르다.
+ * config-server에 마이그레이션 작업을 등록하고 바로 돌아오며, 결과는
  * {@code MigrationJobPoller}가 조회해 {@link #completeMigrationJob}·{@link #failMigrationJob}으로 반영한다.
  * 생성·회수와 같은 작업 방식이라 화면 요청이 새 Pod 준비(수 분)를 기다리지 않는다.
  */
@@ -49,6 +54,7 @@ public class PodMigrationService {
     private final JobClient jobClient;
     private final PlatformTransactionManager transactionManager;
     private final AlarmService alarmService;
+    private final ContainerRestartThrottle restartThrottle;
 
     // 성공 결과를 받지 못해 반영을 멈춘 신청은 폴러가 매 바퀴 다시 부른다. 같은 알림이 반복되지 않게 한다.
     private final AlertDeduplicator alertDeduplicator;
@@ -89,25 +95,62 @@ public class PodMigrationService {
         }
     }
 
-    /**
-     * 신청을 MIGRATING으로 바꾸고 마이그레이션 작업을 등록한다. 행 잠금과 상태 전환을 같은 트랜잭션에서 커밋해야
-     * 동시에 들어온 두 번째 요청이 상태 검증에서 막힌다. 등록이 실패하면 FULFILLED로 되돌린다.
-     */
+    /** 관리자가 고른 후보 노드 중 하나로 옮긴다. */
     public void startMigration(Long requestId, MigratePodRequestDTO dto) {
+        start(requestId, req -> rejectNodesOutsideResourceGroup(req, dto.nodes()), req -> { },
+                req -> MigrateRegisterRequestDTO.move(requestId, req.getPodName(), req.getUbuntuUsername(),
+                        dto.nodes(), dto.minImprovementRatio(), dto.force()));
+    }
+
+    /** 관리자가 현재 노드에서 다시 만든다(GPU 목록 갱신 등). */
+    public void startRestart(Long requestId, RestartPodRequestDTO dto) {
+        start(requestId, req -> { }, req -> { }, req -> restartJob(req, dto));
+    }
+
+    /**
+     * 사용자가 본인 컨테이너를 다시 만든다. 남의 신청이면 상태를 드러내지 않도록 상태 전환보다 먼저 거절하고,
+     * 횟수는 실제로 시작할 수 있는 요청만 센다(상태 검증에 막힌 요청이 횟수를 쓰지 않게 전환 뒤에 센다).
+     */
+    public void startOwnRestart(Long userId, Long requestId, RestartPodRequestDTO dto) {
+        // start()는 먼저 끝난 작업 결과를 당겨 반영한다. 남의 신청에는 그것도 일어나지 않게 여기서 한 번 거른다
+        // (잠금 안에서 다시 확인한다).
+        requireOwner(requestRepository.findById(requestId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)), userId);
+        start(requestId, req -> requireOwner(req, userId), req -> restartThrottle.acquire(userId),
+                req -> restartJob(req, dto));
+    }
+
+    private static MigrateRegisterRequestDTO restartJob(Request req, RestartPodRequestDTO dto) {
+        return MigrateRegisterRequestDTO.restart(req.getRequestId(), req.getPodName(), req.getUbuntuUsername(),
+                dto == null || dto.keepsChanges());
+    }
+
+    private static void requireOwner(Request req, Long userId) {
+        if (!req.getUser().getUserId().equals(userId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN_REQUEST);
+        }
+    }
+
+    /**
+     * 신청을 MIGRATING으로 바꾸고 작업을 등록한다. 행 잠금과 상태 전환을 같은 트랜잭션에서 커밋해야
+     * 동시에 들어온 두 번째 요청이 상태 검증에서 막힌다. 등록이 실패하면 FULFILLED로 되돌린다.
+     *
+     * @param authorize 상태 전환 전에 거절할 조건
+     * @param admit     상태 전환 뒤에 거절할 조건(던지면 전환도 되돌아간다)
+     * @param job       등록할 작업 본문
+     */
+    private void start(Long requestId, Consumer<Request> authorize, Consumer<Request> admit,
+                       Function<Request, MigrateRegisterRequestDTO> job) {
         settleFinishedMigration(requestId);
-        final String[] usernameRef = {null};
-        final String[] podNameRef = {null};
-        new TransactionTemplate(transactionManager).execute(status -> {
+        MigrateRegisterRequestDTO body = new TransactionTemplate(transactionManager).execute(status -> {
             Request req = requestRepository.findByIdForUpdate(requestId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-            rejectNodesOutsideResourceGroup(req, dto.nodes());
+            authorize.accept(req);
             req.beginMigration();
-            usernameRef[0] = req.getUbuntuUsername();
-            podNameRef[0] = req.getPodName();
-            return null;
+            admit.accept(req);
+            return job.apply(req);
         });
-        Long jobId = registerMigration(new MigrateRegisterRequestDTO(
-                requestId, podNameRef[0], usernameRef[0], dto.nodes(), dto.minImprovementRatio(), dto.force()));
+        Long jobId = registerMigration(body);
         // 결과 폴러가 이 번호의 결과만 반영하게 남긴다. 그 사이 끝났거나 되돌려졌으면 건드리지 않는다.
         new TransactionTemplate(transactionManager).execute(status -> {
             requestRepository.findByIdForUpdate(requestId)
@@ -115,7 +158,16 @@ public class PodMigrationService {
                     .ifPresent(r -> r.recordJob(jobId));
             return null;
         });
-        log.info("마이그레이션 작업 등록: requestId={}, username={}, pod={}", requestId, usernameRef[0], podNameRef[0]);
+        log.info("마이그레이션 작업 등록: requestId={}, username={}, pod={}, recreate={}",
+                requestId, body.username(), body.podName(), body.recreate());
+    }
+
+    /** 본인 신청의 마지막 마이그레이션(재시작) 결과. */
+    public MigrationResultResponseDTO getOwnLatestMigration(Long userId, Long requestId) {
+        Request req = requestRepository.findById(requestId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        requireOwner(req, userId);
+        return MigrationResultResponseDTO.from(jobClient.getResult(JobResults.KIND_MIGRATE, requestId));
     }
 
     /**

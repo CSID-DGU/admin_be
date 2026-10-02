@@ -8,6 +8,7 @@ import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
 import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RestartPodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.CreatePodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.MigrationResultResponseDTO;
@@ -54,6 +55,7 @@ class PodMigrationServiceTest {
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
     @Mock private AlarmService alarmService;
+    @Mock private ContainerRestartThrottle restartThrottle;
     @Mock private Request request;
     @Mock private User user;
     @Mock private ResourceGroup resourceGroup;
@@ -65,10 +67,11 @@ class PodMigrationServiceTest {
         when(request.getJobId()).thenReturn(10L); // result()의 작업 번호와 같다
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         service = new PodMigrationService(requestRepository, podExternalPortRepository, nodeRepository, jobClient, transactionManager, alarmService,
-                new InMemoryAlertDeduplicator());
+                restartThrottle, new InMemoryAlertDeduplicator());
         when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of(node("FARM2"), node("FARM7")));
         when(request.getUbuntuUsername()).thenReturn("testuser");
         when(request.getPodName()).thenReturn("ailab-testuser-old");
+        when(request.getRequestId()).thenReturn(1L);
         when(requestRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(request));
         when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
@@ -154,8 +157,76 @@ class PodMigrationServiceTest {
         verify(request).beginMigration();
         ArgumentCaptor<MigrateRegisterRequestDTO> captor = ArgumentCaptor.forClass(MigrateRegisterRequestDTO.class);
         verify(jobClient).registerMigrate(captor.capture());
-        assertThat(captor.getValue()).isEqualTo(new MigrateRegisterRequestDTO(1L, "ailab-testuser-old", "testuser",
+        assertThat(captor.getValue()).isEqualTo(MigrateRegisterRequestDTO.move(1L, "ailab-testuser-old", "testuser",
                 List.of("farm2", "farm7"), null, true));
+    }
+
+    @Test
+    @DisplayName("관리자 재시작은 노드 목록 없이 현재 노드 재생성 작업을 등록하고 횟수를 세지 않는다")
+    void adminRestartRegistersRecreateJob() {
+        service.startRestart(1L, new RestartPodRequestDTO(false));
+
+        verify(request).beginMigration();
+        verify(jobClient).registerMigrate(MigrateRegisterRequestDTO.restart(1L, "ailab-testuser-old", "testuser", false));
+        verifyNoInteractions(restartThrottle, nodeRepository);
+    }
+
+    @Test
+    @DisplayName("본인 재시작은 본문이 없으면 변경분을 유지하는 재생성 작업을 등록한다")
+    void ownRestartKeepsChangesByDefault() {
+        when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
+        when(user.getUserId()).thenReturn(7L);
+
+        service.startOwnRestart(7L, 1L, null);
+
+        verify(restartThrottle).acquire(7L);
+        verify(jobClient).registerMigrate(MigrateRegisterRequestDTO.restart(1L, "ailab-testuser-old", "testuser", true));
+    }
+
+    @Test
+    @DisplayName("남의 신청은 상태를 바꾸기 전에 거절하고 횟수도 세지 않는다")
+    void ownRestartRejectsOtherUsersRequest() {
+        when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
+        when(user.getUserId()).thenReturn(7L);
+
+        assertThatThrownBy(() -> service.startOwnRestart(8L, 1L, null))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN_REQUEST);
+        verify(request, never()).beginMigration();
+        verify(requestRepository, never()).findByIdForUpdate(any());
+        verifyNoInteractions(restartThrottle, jobClient);
+    }
+
+    @Test
+    @DisplayName("재시작할 수 없는 상태면 횟수를 쓰지 않는다")
+    void ownRestartInWrongStatusDoesNotConsumeQuota() {
+        when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
+        when(user.getUserId()).thenReturn(7L);
+        doThrow(new BusinessException(ErrorCode.INVALID_REQUEST_STATUS)).when(request).beginMigration();
+
+        assertThatThrownBy(() -> service.startOwnRestart(7L, 1L, null)).isInstanceOf(BusinessException.class);
+        verifyNoInteractions(restartThrottle, jobClient);
+    }
+
+    @Test
+    @DisplayName("횟수를 넘기면 작업을 등록하지 않는다")
+    void ownRestartOverQuotaRegistersNothing() {
+        when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
+        when(user.getUserId()).thenReturn(7L);
+        doThrow(new BusinessException(ErrorCode.TOO_MANY_CONTAINER_RESTARTS)).when(restartThrottle).acquire(7L);
+
+        assertThatThrownBy(() -> service.startOwnRestart(7L, 1L, null)).isInstanceOf(BusinessException.class);
+        verifyNoInteractions(jobClient);
+    }
+
+    @Test
+    @DisplayName("남의 신청의 재시작 결과는 조회할 수 없다")
+    void ownLatestRejectsOtherUsersRequest() {
+        when(user.getUserId()).thenReturn(7L);
+        when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
+
+        assertThatThrownBy(() -> service.getOwnLatestMigration(8L, 1L)).isInstanceOf(BusinessException.class);
+        verifyNoInteractions(jobClient);
     }
 
     @Test

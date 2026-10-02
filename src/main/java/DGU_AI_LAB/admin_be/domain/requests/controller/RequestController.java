@@ -1,10 +1,12 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller;
 
 import DGU_AI_LAB.admin_be.domain.requests.controller.docs.RequestApi;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RestartPodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SingleChangeRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.service.PodMigrationService;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestCommandService;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestQueryService;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
@@ -24,6 +26,7 @@ public class RequestController implements RequestApi {
 
     private final RequestQueryService requestQueryService;
     private final RequestCommandService requestCommandService;
+    private final PodMigrationService podMigrationService;
 
     /**
      * 사용 신청 생성
@@ -57,6 +60,25 @@ public class RequestController implements RequestApi {
     ) {
         requestCommandService.createSingleChangeRequest(userId, requestId, dto);
         return SuccessResponse.created(null);
+    }
+
+    /**
+     * 나의 컨테이너 재시작. 작업만 등록하고 돌아온다 — 결과는 신청 상태와 마지막 재시작 결과로 확인한다.
+     */
+    @PostMapping("/{requestId}/restarts")
+    public ResponseEntity<SuccessResponse<?>> restartMyContainer(@AuthenticationPrincipal(expression = "userId") Long userId,
+                                                                  @PathVariable Long requestId,
+                                                                  @RequestBody(required = false) RestartPodRequestDTO dto
+    ) {
+        podMigrationService.startOwnRestart(userId, requestId, dto);
+        return SuccessResponse.accepted(null);
+    }
+
+    @GetMapping("/{requestId}/restarts/latest")
+    public ResponseEntity<SuccessResponse<?>> getMyLatestRestart(@AuthenticationPrincipal(expression = "userId") Long userId,
+                                                                  @PathVariable Long requestId
+    ) {
+        return SuccessResponse.ok(podMigrationService.getOwnLatestMigration(userId, requestId));
     }
 
     /**
