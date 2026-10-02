@@ -1,7 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.groups.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
-import DGU_AI_LAB.admin_be.domain.groups.dto.request.CreateGroupRequestDTO;
 import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupOperationResponseDTO;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.entity.GroupOperation;
@@ -68,7 +67,6 @@ class GroupOperationServiceTest {
     @Mock private RequestRepository requestRepository;
     @Mock private ChangeRequestRepository changeRequestRepository;
     @Mock private JobClient jobClient;
-    @Mock private GroupCreateThrottle groupCreateThrottle;
     @Mock private AlarmService alarmService;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
@@ -82,7 +80,7 @@ class GroupOperationServiceTest {
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         service = new GroupOperationService(operationRepository, groupRepository, userRepository, requestRepository,
-                changeRequestRepository, jobClient, groupCreateThrottle, alarmService, new ObjectMapper(),
+                changeRequestRepository, jobClient, alarmService, new ObjectMapper(),
                 transactionManager);
 
         user = user(USER_ID, "alice");
@@ -132,66 +130,10 @@ class GroupOperationServiceTest {
         return new JobResultResponseDTO.Result(null, gid, null, null, null);
     }
 
+    // 그룹 생성은 이제 DB 에만 한다(GroupServiceTest). 이 변경 전에 등록돼 아직 도는 생성 작업의 결과 반영만 남았다.
     @Nested
-    @DisplayName("그룹 생성")
+    @DisplayName("그룹 생성 — 이 변경 전에 등록된 작업의 결과 반영")
     class Create {
-
-        @Test
-        @DisplayName("작업으로 등록만 하고 그룹 행은 만들지 않는다 — gid 는 작업이 정한다")
-        void registersJobWithoutCreatingTheGroup() {
-            GroupOperationResponseDTO response = service.requestCreate(new CreateGroupRequestDTO("teamy", null), USER_ID);
-
-            assertThat(response.operationId()).isEqualTo(OPERATION_ID);
-            assertThat(response.status()).isEqualTo("PROCESSING");
-            assertThat(response.group()).isNull();
-            assertThat(registered()).isEqualTo(GroupChangeRegisterRequestDTO.create(OPERATION_ID, "alice", "teamy", List.of()));
-            verify(groupRepository, never()).save(any());
-        }
-
-        @Test
-        @DisplayName("계정명을 주면 그 계정을 멤버로 넣어 등록한다 — 본인 계정일 때만")
-        void memberMustBeTheRequestersAccount() {
-            when(requestRepository.existsByUser_UbuntuUsernameAndUser_UserId("alice", USER_ID)).thenReturn(true);
-
-            service.requestCreate(new CreateGroupRequestDTO("teamy", "alice"), USER_ID);
-            assertThat(registered().members()).containsExactly("alice");
-
-            assertThatThrownBy(() -> service.requestCreate(new CreateGroupRequestDTO("teamz", "bob"), USER_ID))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting("errorCode").isEqualTo(ErrorCode.FORBIDDEN_REQUEST);
-        }
-
-        @Test
-        @DisplayName("이미 있는 이름·계정명과 같은 이름·만드는 중인 이름은 등록하지 않고 한도도 쓰지 않는다")
-        void rejectedNamesAreNotRegistered() {
-            when(groupRepository.existsByGroupName("taken")).thenReturn(true);
-            when(userRepository.existsByUbuntuUsername("bob")).thenReturn(true);
-            when(operationRepository.existsByKindAndGroupNameAndStatus(
-                    GroupOperationKind.CREATE, "making", GroupOperationStatus.PROCESSING)).thenReturn(true);
-
-            assertRejected("taken", ErrorCode.DUPLICATE_GROUP_NAME);
-            assertRejected("bob", ErrorCode.GROUP_NAME_CONFLICTS_USER);
-            assertRejected("making", ErrorCode.GROUP_OPERATION_IN_PROGRESS);
-
-            verifyNoInteractions(groupCreateThrottle, jobClient);
-        }
-
-        private void assertRejected(String groupName, ErrorCode expected) {
-            assertThatThrownBy(() -> service.requestCreate(new CreateGroupRequestDTO(groupName, null), USER_ID))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting("errorCode").isEqualTo(expected);
-        }
-
-        @Test
-        @DisplayName("생성 한도를 넘으면 작업을 등록하지 않는다")
-        void throttledRequestIsNotRegistered() {
-            doThrow(new BusinessException(ErrorCode.TOO_MANY_GROUP_CREATIONS)).when(groupCreateThrottle).acquire(USER_ID);
-
-            assertThatThrownBy(() -> service.requestCreate(new CreateGroupRequestDTO("teamy", null), USER_ID))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting("errorCode").isEqualTo(ErrorCode.TOO_MANY_GROUP_CREATIONS);
-            verifyNoInteractions(jobClient);
-        }
 
         @Test
         @DisplayName("작업이 성공하면 결과의 gid 로 그룹을 저장한다")

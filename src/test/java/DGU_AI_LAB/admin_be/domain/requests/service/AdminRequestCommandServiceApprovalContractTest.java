@@ -6,6 +6,8 @@ import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
+import DGU_AI_LAB.admin_be.domain.groups.service.PendingGroupService;
+import DGU_AI_LAB.admin_be.domain.requests.repository.RequestGroupRepository;
 import DGU_AI_LAB.admin_be.domain.groups.service.GroupService;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
@@ -23,6 +25,7 @@ import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -73,6 +76,7 @@ class AdminRequestCommandServiceApprovalContractTest {
     @Mock private ResourceGroupRepository resourceGroupRepository;
     @Mock private ChangeRequestRepository changeRequestRepository;
     @Mock private GroupRepository groupRepository;
+    @Mock private RequestGroupRepository requestGroupRepository;
     @Mock private GroupService groupService;
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private JobClient jobClient;
@@ -94,6 +98,7 @@ class AdminRequestCommandServiceApprovalContractTest {
                 alarmService, requestRepository, userRepository, passwordResetRequestRepository,
                 containerImageRepository,
                 resourceGroupRepository, podExternalPortRepository, jobClient,
+                new PendingGroupService(groupRepository, requestGroupRepository, mock(EntityManager.class)),
                 transactionManager, new InMemoryAlertDeduplicator()
         );
 

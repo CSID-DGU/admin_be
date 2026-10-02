@@ -27,6 +27,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -143,6 +144,39 @@ class ConfigRequestServiceTest {
         // Then
         assertThat(result.groups()).extracting(AcceptInfoResponseDTO.GroupDTO::gid)
                 .containsExactly(2001L, 70002L);
+    }
+
+    @Test
+    @DisplayName("아직 만들어지지 않은 새 그룹(gid 없음) 여러 개는 하나로 합쳐지지 않고 각각 gid 없이 이름으로 간다")
+    void getAcceptInfo_sendsEachPendingGroupWithoutGid() {
+        String username = "testuser";
+        ResourceGroup resourceGroup = mock(ResourceGroup.class);
+        Group vision = Group.builder().groupName("vision-lab").build();
+        ReflectionTestUtils.setField(vision, "groupId", 3L);
+        Group nlp = Group.builder().groupName("nlp-lab").build();
+        ReflectionTestUtils.setField(nlp, "groupId", 5L);
+        RequestGroup askedVision = mock(RequestGroup.class);
+        when(askedVision.getGroup()).thenReturn(vision);
+        RequestGroup askedNlp = mock(RequestGroup.class);
+        when(askedNlp.getGroup()).thenReturn(nlp);
+
+        Request request = mock(Request.class);
+        when(request.getRequestId()).thenReturn(1L);
+        when(request.getContainerImage()).thenReturn(mock(ContainerImage.class));
+        User user = mockUserWithGroups();
+        when(request.getUser()).thenReturn(user);
+        when(request.getResourceGroup()).thenReturn(resourceGroup);
+        when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>(List.of(askedVision, askedNlp)));
+        when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
+                .thenReturn(List.of(request));
+        when(portRequestRepository.findByRequestRequestId(1L)).thenReturn(List.of());
+        when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of());
+
+        AcceptInfoResponseDTO result = service.getAcceptInfo(username);
+
+        assertThat(result.groups()).containsExactly(
+                new AcceptInfoResponseDTO.GroupDTO(null, "vision-lab"),
+                new AcceptInfoResponseDTO.GroupDTO(null, "nlp-lab"));
     }
 
     @Test

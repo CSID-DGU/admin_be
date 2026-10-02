@@ -24,17 +24,15 @@ public interface GroupApi {
     ResponseEntity<SuccessResponse<?>> getGroups();
 
     @Operation(
-            summary = "그룹 생성 작업 등록",
-            description = "그룹을 만드는 작업을 등록하고 작업 번호를 돌려줍니다. 그룹(GID 포함)은 작업이 끝나야 생기므로, " +
-                    "응답의 operationId로 GET /api/groups/operations/{operationId}를 조회해 완료를 확인합니다. " +
-                    "groupName은 필수이며, ubuntuUsername은 생략 가능합니다(생략 시 멤버 없는 그룹 생성)."
+            summary = "공유 그룹 만들기",
+            description = "그룹을 DB에만 만들고 바로 돌려줍니다(ubuntuGid는 null — 승인 대기 그룹). 다른 사용자도 목록에서 " +
+                    "바로 고를 수 있습니다. 인프라 그룹과 GID는 이 그룹을 고른 신청이 관리자 승인을 받아 컨테이너가 만들어질 때 " +
+                    "생기고, 그 그룹을 고른 신청이 모두 거절·취소되면 그룹도 지워집니다."
     )
-    @ApiResponse(responseCode = "202", description = "작업 등록됨")
+    @ApiResponse(responseCode = "201", description = "생성됨")
     @ApiResponse(responseCode = "400", description = "groupName 누락 또는 형식 오류, 계정 이름과 같은 그룹명")
-    @ApiResponse(responseCode = "403", description = "ubuntuUsername이 로그인 사용자와 불일치")
-    @ApiResponse(responseCode = "409", description = "동일한 그룹명 중복, 같은 이름을 만드는 작업이 진행 중")
+    @ApiResponse(responseCode = "409", description = "동일한 그룹명 중복, 시스템 예약 이름, 같은 이름을 만드는 작업이 진행 중")
     @ApiResponse(responseCode = "429", description = "하루 생성 한도 초과")
-    @ApiResponse(responseCode = "502", description = "작업 등록 실패")
     @PostMapping
     ResponseEntity<SuccessResponse<?>> createGroup(
             @RequestBody @Valid CreateGroupRequestDTO dto,

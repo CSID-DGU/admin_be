@@ -9,6 +9,7 @@ import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageReposi
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.groups.service.GroupService;
+import DGU_AI_LAB.admin_be.domain.groups.service.PendingGroupService;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
@@ -23,8 +24,10 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup;
+import DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroupId;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
+import DGU_AI_LAB.admin_be.domain.requests.repository.RequestGroupRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
@@ -36,6 +39,7 @@ import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -83,6 +87,7 @@ class AdminRequestCommandServiceTest {
     @Mock private ResourceGroupRepository resourceGroupRepository;
     @Mock private ChangeRequestRepository changeRequestRepository;
     @Mock private GroupRepository groupRepository;
+    @Mock private RequestGroupRepository requestGroupRepository;
     @Mock private GroupService groupService;
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private JobClient jobClient;
@@ -107,6 +112,7 @@ class AdminRequestCommandServiceTest {
                 alarmService, requestRepository, userRepository, passwordResetRequestRepository,
                 containerImageRepository,
                 resourceGroupRepository, podExternalPortRepository, jobClient,
+                new PendingGroupService(groupRepository, requestGroupRepository, mock(EntityManager.class)),
                 transactionManager, new InMemoryAlertDeduplicator()
         );
         // 공유 엔티티 기본 설정
@@ -780,6 +786,167 @@ class AdminRequestCommandServiceTest {
             verify(alarmService).sendAdminSlackNotification(any(), contains("결과가 불명"));
         }
     }
+    @Nested
+    @DisplayName("승인 대기 그룹(gid 없는 새 공유 그룹)")
+    class PendingGroups {
+
+        private Group pending;
+        private Group created;
+
+        @BeforeEach
+        void setUpGroups() {
+            pending = Group.builder().groupName("vision-lab").build();
+            ReflectionTestUtils.setField(pending, "groupId", 3L);
+            created = Group.builder().groupName("ailab").ubuntuGid(2001L).build();
+            ReflectionTestUtils.setField(created, "groupId", 4L);
+            when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
+            when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
+            when(jobClient.registerProvision(any())).thenReturn(9001L);
+        }
+
+        /** 생성 작업이 돌고 있는(PROCESSING) 신청. */
+        private Request processingRequest(Long requestId) {
+            Request request = mock(Request.class);
+            when(request.getRequestId()).thenReturn(requestId);
+            when(request.getStatus()).thenReturn(Status.PROCESSING);
+            when(request.getUser()).thenReturn(mockUser);
+            when(request.getResourceGroup()).thenReturn(mockRg);
+            when(request.getContainerImage()).thenReturn(mockImage);
+            when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
+            when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+            return request;
+        }
+
+        /** 신청이 고른 그룹 기록. 서비스는 그룹 번호를 기록의 키에서 꺼내 잠그며 다시 읽는다. */
+        private void choose(Request request, Long requestId, Group... groups) {
+            LinkedHashSet<RequestGroup> chosen = new LinkedHashSet<>();
+            for (Group g : groups) {
+                RequestGroup rg = mock(RequestGroup.class);
+                when(rg.getId()).thenReturn(new RequestGroupId(requestId, g.getGroupId()));
+                when(rg.getGroup()).thenReturn(g);
+                chosen.add(rg);
+            }
+            when(request.getRequestGroups()).thenReturn(chosen);
+            when(groupRepository.findAllByIdForUpdate(any())).thenReturn(List.of(groups));
+        }
+
+        @Test
+        @DisplayName("승인하면 승인 대기 그룹은 gid 없이 이름만, 만들어진 그룹은 gid 와 함께 생성 작업에 싣는다")
+        void approvalSendsPendingGroupsByNameOnly() throws Exception {
+            Long requestId = 301L;
+            Request request = buildMockedRequest(requestId);
+            choose(request, requestId, pending, created);
+
+            service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
+
+            ArgumentCaptor<ProvisionRegisterRequestDTO> captor = ArgumentCaptor.forClass(ProvisionRegisterRequestDTO.class);
+            verify(jobClient).registerProvision(captor.capture());
+            List<UserCreationRequestDTO.SupplementaryGroup> groups = captor.getValue().account().supplementaryGroups();
+            assertThat(groups).containsExactly(
+                    new UserCreationRequestDTO.SupplementaryGroup("vision-lab", null),
+                    new UserCreationRequestDTO.SupplementaryGroup("ailab", 2001L));
+            // gid 칸 자체를 빼고 보낸다 — config-server 가 "gid 없음 = 새로 만들 그룹"으로 읽는다.
+            String json = new ObjectMapper().writeValueAsString(captor.getValue());
+            assertThat(json).contains("{\"name\":\"vision-lab\"}").contains("{\"name\":\"ailab\",\"gid\":2001}");
+        }
+
+        @Test
+        @DisplayName("같은 승인 대기 그룹을 다른 신청이 만드는 중이면 승인을 막고 작업을 등록하지 않는다")
+        void approvalBlockedWhileAnotherRequestCreatesTheGroup() {
+            Long requestId = 302L;
+            Request request = buildMockedRequest(requestId);
+            choose(request, requestId, pending);
+            Request other = mock(Request.class);
+            when(other.getRequestId()).thenReturn(399L);
+            when(other.getStatus()).thenReturn(Status.PROCESSING);
+            RequestGroup othersChoice = mock(RequestGroup.class);
+            when(othersChoice.getRequest()).thenReturn(other);
+            when(requestGroupRepository.findAllByGroupIdsForUpdate(List.of(3L))).thenReturn(List.of(othersChoice));
+
+            assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PENDING_GROUP_IN_PROGRESS);
+            verify(jobClient, never()).registerProvision(any());
+            // 승인 시작(PROCESSING) 표시는 같은 트랜잭션이라 함께 롤백된다.
+            verify(transactionManager).rollback(transactionStatus);
+        }
+
+        @Test
+        @DisplayName("작업이 성공하면 결과의 gid 로 승인 대기 그룹을 채우고 승인을 확정한다")
+        void completionFillsGidAndCompletes() {
+            Long requestId = 303L;
+            Request request = processingRequest(requestId);
+            choose(request, requestId, pending, created);
+            when(groupRepository.findByUbuntuGid(70002L)).thenReturn(Optional.empty());
+
+            service.completeApprovalJob(requestId, new JobResultResponseDTO.Result(
+                    50001L, 50001L, "ailab-testuser-abcd", "farm2", List.of(),
+                    null, null, null, null, null, null,
+                    List.of(new JobResultResponseDTO.GroupResult("vision-lab", 70002L),
+                            new JobResultResponseDTO.GroupResult("ailab", 2001L))));
+
+            assertThat(pending.getUbuntuGid()).isEqualTo(70002L);
+            assertThat(created.getUbuntuGid()).isEqualTo(2001L);
+            verify(request).completeApproval();
+            verify(mockUser).addGroupIfAbsent(pending);
+            verify(mockUser).addGroupIfAbsent(created);
+        }
+
+        @Test
+        @DisplayName("결과에 승인 대기 그룹의 gid 가 없으면 확정하지 않고 롤백하며, 매 바퀴 다시 불려도 알림은 한 번만 보낸다")
+        void completionWithoutGidHaltsAndAlertsOnce() {
+            Long requestId = 304L;
+            Request request = processingRequest(requestId);
+            choose(request, requestId, pending);
+            // 예전 config-server 처럼 groups 를 돌려주지 않는 결과
+            JobResultResponseDTO.Result result = new JobResultResponseDTO.Result(
+                    50001L, 50001L, "ailab-testuser-abcd", "farm2", List.of());
+
+            service.completeApprovalJob(requestId, result);
+            service.completeApprovalJob(requestId, result);
+
+            assertThat(pending.getUbuntuGid()).isNull();
+            verify(request, never()).completeApproval();
+            verify(request, never()).assignPodInfo(any(), any());
+            verify(mockUser, never()).assignUbuntuAccount(any(), any());
+            verify(transactionStatus, times(2)).setRollbackOnly();
+            verify(alarmService, times(1)).sendAdminSlackNotification(any(), contains("vision-lab"));
+            verify(alarmService, never()).sendContainerCreatedEmail(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("결과의 gid 를 다른 그룹이 이미 쓰고 있으면 확정하지 않는다")
+        void completionWithConflictingGidHalts() {
+            Long requestId = 305L;
+            Request request = processingRequest(requestId);
+            choose(request, requestId, pending);
+            when(groupRepository.findByUbuntuGid(2001L)).thenReturn(Optional.of(created));
+
+            service.completeApprovalJob(requestId, new JobResultResponseDTO.Result(
+                    50001L, 50001L, "ailab-testuser-abcd", "farm2", List.of(),
+                    null, null, null, null, null, null,
+                    List.of(new JobResultResponseDTO.GroupResult("vision-lab", 2001L))));
+
+            assertThat(pending.getUbuntuGid()).isNull();
+            verify(request, never()).completeApproval();
+            verify(alarmService).sendAdminSlackNotification(any(), contains("ailab"));
+        }
+
+        @Test
+        @DisplayName("신청을 거절하면 이 신청이 고른 승인 대기 그룹을 정리한다 — 다른 신청이 고르고 있지 않으면 지운다")
+        void rejectionDeletesAbandonedPendingGroup() {
+            Request request = buildMockedRequestWithStatus(306L, Status.PENDING);
+            choose(request, 306L, pending, created);
+            when(requestGroupRepository.findAllByGroupIdsForUpdate(List.of(3L))).thenReturn(List.of());
+
+            service.rejectRequest(new RejectRequestDTO(306L, "반려"));
+
+            verify(request).reject("반려");
+            verify(groupRepository).deletePendingById(3L);
+            verify(groupRepository, never()).deletePendingById(4L);
+        }
+    }
+
     @Nested
     @DisplayName("같은 사용자 승인 직렬화 잠금")
     class ApprovalLockStripes {

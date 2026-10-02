@@ -5,6 +5,7 @@ import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
+import DGU_AI_LAB.admin_be.domain.groups.service.PendingGroupService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SingleChangeRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
@@ -50,6 +51,7 @@ public class RequestCommandService {
     private final PortRequestService portRequestService;
     private final AlarmService alarmService;
     private final RequestCreateThrottle requestCreateThrottle;
+    private final PendingGroupService pendingGroupService;
 
     /**
      * 사용자가 자신의 대기 중(PENDING) 또는 거절된(DENIED) 신청을 취소한다.
@@ -70,6 +72,8 @@ public class RequestCommandService {
         }
 
         request.delete();
+        // 이 신청이 승인 대기 그룹을 고른 마지막 신청이었다면 그 그룹도 지운다 — 인프라에는 아직 없다.
+        pendingGroupService.deleteAbandoned(request);
     }
 
     /**
@@ -105,6 +109,34 @@ public class RequestCommandService {
         changeRequestRepository.save(changeRequest);
     }
 
+    /**
+     * 신청서가 고른 그룹. groupIds(새 방식)는 승인 대기 그룹도 가리킬 수 있다 — 그 그룹을 고른 마지막 신청이
+     * 거절·취소되면 그룹이 지워지므로(PendingGroupService), 지우는 쪽과 엇갈리지 않게 그룹 행을 잠그고 읽는다.
+     * ubuntuGids(예전 방식)는 gid 가 있는 그룹만 가리키고, 그런 그룹은 지워지지 않는다.
+     */
+    private List<Group> findChosenGroups(SaveRequestRequestDTO dto) {
+        boolean byId = dto.groupIds() != null && !dto.groupIds().isEmpty();
+        boolean byGid = dto.ubuntuGids() != null && !dto.ubuntuGids().isEmpty();
+        if (byId && byGid) {
+            throw new BusinessException("groupIds와 ubuntuGids 중 하나만 보내 주세요.", ErrorCode.INVALID_INPUT_VALUE);
+        }
+        List<Group> groups;
+        int expected;
+        if (byId) {
+            groups = groupRepository.findAllByIdForUpdate(dto.groupIds());
+            expected = dto.groupIds().size();
+        } else if (byGid) {
+            groups = groupRepository.findAllByUbuntuGidIn(dto.ubuntuGids());
+            expected = dto.ubuntuGids().size();
+        } else {
+            return List.of();
+        }
+        if (groups.size() != expected) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        return groups;
+    }
+
     /** 신청 생성 */
     @Transactional
     public SaveRequestResponseDTO createRequest(Long userId, SaveRequestRequestDTO dto) {
@@ -136,14 +168,7 @@ public class RequestCommandService {
             throw new BusinessException(ErrorCode.UBUNTU_PASSWORD_REQUIRED);
         }
 
-        Set<Group> groups = Set.of();
-        if (dto.ubuntuGids() != null && !dto.ubuntuGids().isEmpty()) {
-            groups = new java.util.HashSet<>(groupRepository.findAllByUbuntuGidIn(dto.ubuntuGids()));
-
-            if (groups.size() != dto.ubuntuGids().size()) {
-                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
-            }
-        }
+        List<Group> groups = findChosenGroups(dto);
 
         // 입력이 잘못돼 거절된 요청은 하루 한도에서 빼려고 모든 검증 뒤에 센다. Redis 카운터는 트랜잭션과 함께
         // 되돌아가지 않으므로, 이 아래에는 입력 때문에 실패하는 검증을 두지 않는다.

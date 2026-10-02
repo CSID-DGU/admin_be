@@ -38,9 +38,9 @@ public class GroupController implements GroupApi {
     }
 
     /**
-     * 그룹을 만드는 작업을 등록하는 API
+     * 승인 대기 그룹을 만드는 API
      * POST /api/groups
-     * 그룹은 작업이 끝나야 생긴다 — 응답의 작업 번호로 GET /api/groups/operations/{operationId}를 조회한다.
+     * DB 에만 만든다(gid 없음). 인프라 그룹은 이 그룹을 고른 신청이 승인될 때 만들어진다.
      */
     @PostMapping
     public ResponseEntity<SuccessResponse<?>> createGroup(
@@ -48,7 +48,7 @@ public class GroupController implements GroupApi {
             @AuthenticationPrincipal CustomUserDetails principal
     ) {
         log.info("[createGroup] 새로운 그룹 생성 요청 접수: groupName={}", dto.groupName());
-        return SuccessResponse.accepted(groupOperationService.requestCreate(dto, principal.getUserId()));
+        return SuccessResponse.created(groupService.createGroup(dto, principal.getUserId()));
     }
 
     /**

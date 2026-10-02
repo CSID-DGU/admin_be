@@ -157,6 +157,11 @@ public record SingleChangeRequestDTO(
                     if (groupIds.isEmpty()) {
                         throw new BusinessException("그룹 ID 목록은 비어있을 수 없습니다.", ErrorCode.INVALID_INPUT_VALUE);
                     }
+                    // 아직 만들어지지 않은 새 그룹(gid 없음)은 여기서 고를 수 없다 — 새 신청으로만 만들어진다.
+                    // 받아 두면 관리자가 승인할 때에야 실패한다.
+                    if (groupIds.contains(null)) {
+                        throw new BusinessException("아직 만들어지지 않은 그룹은 추가할 수 없습니다.", ErrorCode.INVALID_INPUT_VALUE);
+                    }
                 }
                 default -> throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
             }

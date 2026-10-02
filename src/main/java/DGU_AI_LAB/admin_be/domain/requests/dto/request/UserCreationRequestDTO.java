@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.dto.request;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
@@ -28,6 +29,9 @@ public record UserCreationRequestDTO(
         @JsonProperty("expected_uid")
         Long expectedUid
 ) {
+    // gid 가 없으면 아직 만들어지지 않은 새 그룹(승인 대기)이다. 필드를 빼고 이름만 보내면 config-server 가 이 작업에서
+    // gid 를 발급해 그룹을 만들고, 결과(result.groups)로 돌려준다.
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record SupplementaryGroup(
             String name,
             Long gid

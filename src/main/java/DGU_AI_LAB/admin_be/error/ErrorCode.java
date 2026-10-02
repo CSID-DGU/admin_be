@@ -142,6 +142,8 @@ public enum ErrorCode {
     GROUP_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "그룹 작업을 등록하지 못했어요. 잠시 후 다시 시도해 주세요."),
     GROUP_OPERATION_IN_PROGRESS(HttpStatus.CONFLICT, "같은 그룹 작업을 반영하는 중이에요. 끝난 뒤 다시 시도해 주세요."),
     GROUP_OPERATION_NOT_FOUND(HttpStatus.NOT_FOUND, "그룹 작업을 찾을 수 없습니다."),
+    // 같은 새 그룹을 두 신청이 동시에 만들면 gid 가 두 번 발급된다. 앞 신청이 끝나면 그룹이 생겨 그대로 승인된다.
+    PENDING_GROUP_IN_PROGRESS(HttpStatus.CONFLICT, "같은 새 그룹을 만드는 다른 신청을 반영하는 중이에요. 끝난 뒤 다시 승인해 주세요."),
 
     /**
      * Approval Error

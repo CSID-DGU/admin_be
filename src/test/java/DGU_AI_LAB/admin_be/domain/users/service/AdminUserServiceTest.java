@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.groups.service.PendingGroupService;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -67,6 +68,9 @@ class AdminUserServiceTest {
 
     @Mock
     private PodMigrationService podMigrationService;
+
+    @Mock
+    private PendingGroupService pendingGroupService;
 
     @Mock
     private AlarmService alarmService;
@@ -231,6 +235,10 @@ class AdminUserServiceTest {
             verify(denied).delete();
             verify(expiring, never()).delete();
             verify(deleted, never()).delete();
+            // 논리 삭제한 신청이 승인 대기 그룹을 고른 마지막 신청이면 그 그룹을 지운다.
+            verify(pendingGroupService).deleteAbandoned(pending);
+            verify(pendingGroupService).deleteAbandoned(denied);
+            verify(pendingGroupService, times(2)).deleteAbandoned(any());
         }
 
         @Test

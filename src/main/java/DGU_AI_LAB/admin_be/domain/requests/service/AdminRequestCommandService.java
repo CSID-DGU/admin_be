@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
+import DGU_AI_LAB.admin_be.domain.groups.service.PendingGroupService;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
@@ -53,6 +54,7 @@ public class AdminRequestCommandService {
     private final ResourceGroupRepository resourceGroupRepository;
     private final PodExternalPortRepository podExternalPortRepository;
     private final JobClient jobClient;
+    private final PendingGroupService pendingGroupService;
     private final PlatformTransactionManager transactionManager;
 
     // 계정 존재 확인~생성~UID 커밋 구간을 userId별로 직렬화한다. 이 구간은 짧은 DB
@@ -128,9 +130,6 @@ public class AdminRequestCommandService {
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
             req.prepareAsyncApproval(image, resourceGroup, dto.adminComment());
 
-            List<UserCreationRequestDTO.SupplementaryGroup> supplementaryGroups = req.getRequestGroups().stream()
-                    .map(rg -> new UserCreationRequestDTO.SupplementaryGroup(rg.getGroup().getGroupName(), rg.getGroup().getUbuntuGid()))
-                    .toList();
             // 비밀번호 재설정 승인과 같은 사용자 행 잠금으로 직렬화한다 — 잠금 없이 읽으면 교체 직전의 옛 해시로
             // 계정이 만들어질 수 있다(재설정 승인은 PROCESSING 신청이 있으면 거절한다).
             User owner = userRepository.findByIdForUpdate(req.getUser().getUserId())
@@ -144,6 +143,12 @@ public class AdminRequestCommandService {
                     owner.getUserId(), PasswordResetStatus.PROCESSING).isEmpty()) {
                 throw new BusinessException(ErrorCode.PASSWORD_RESET_IN_PROGRESS);
             }
+            // 그룹은 신청·사용자 행 다음에 잠근다(교착 방지 순서). 승인 대기 그룹(gid 없음)은 이름만 보내고,
+            // config-server 가 이 작업에서 gid 를 발급해 만든다. 결과의 gid 는 completeApprovalJob 이 채운다.
+            List<UserCreationRequestDTO.SupplementaryGroup> supplementaryGroups = pendingGroupService.lockForApproval(req)
+                    .stream()
+                    .map(g -> new UserCreationRequestDTO.SupplementaryGroup(g.getGroupName(), g.getUbuntuGid()))
+                    .toList();
             creationDtoRef[0] = new UserCreationRequestDTO(
                     dto.requestId(),
                     req.getUbuntuUsername(),
@@ -302,6 +307,7 @@ public class AdminRequestCommandService {
         }
 
         final Request[] savedRequestRef = {null};
+        final String[] groupProblemRef = {null};
         new TransactionTemplate(transactionManager).execute(status -> {
             Request req = requestRepository.findByIdForUpdate(requestId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
@@ -313,6 +319,14 @@ public class AdminRequestCommandService {
             }
             User owner = userRepository.findByIdForUpdate(req.getUser().getUserId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+            // 승인 대기 그룹은 이 작업이 발급한 gid 로 채운다. 채울 수 없으면 확정하지 않는다 — gid 없는 그룹을
+            // 계정에 넣은 것으로 기록하면 이후 컨테이너 재생성·이동이 그 그룹을 빼고 만들어진다.
+            String groupProblem = pendingGroupService.assignFromResult(req, made.groups());
+            if (groupProblem != null) {
+                groupProblemRef[0] = groupProblem;
+                status.setRollbackOnly();
+                return null;
+            }
             if (!owner.hasUbuntuAccount() && made.uid() != null && made.gid() != null) {
                 // 작업이 계정을 새로 만들었거나 원장에 남은 계정을 이어받은 경우다. 이미 기록이 있으면
                 // 재사용 경로라 결과의 UID는 같은 값이다.
@@ -345,6 +359,17 @@ public class AdminRequestCommandService {
             return null;
         });
 
+        if (groupProblemRef[0] != null) {
+            // 신청은 PROCESSING 에 남고 폴러가 매 바퀴 다시 부르므로 알림은 작업마다 한 번만 보낸다.
+            if (alertDeduplicator.firstOccurrence("provision-pending-group:" + requestId + ":" + jobIdOf(requestId))) {
+                log.error("생성 작업 결과로 새 그룹의 gid 를 채우지 못해 신청에 반영하지 못함: requestId={}, {}",
+                        requestId, groupProblemRef[0]);
+                notifyApprovalFailure(String.format(
+                        "[승인 확인 필요] 생성 작업은 성공했으나 새 그룹의 gid를 채우지 못해 신청에 반영하지 못했습니다: requestId=%d, %s",
+                        requestId, groupProblemRef[0]), serverNameOf(requestId));
+            }
+            return;
+        }
         Request savedRequest = savedRequestRef[0];
         if (savedRequest == null) {
             return;
@@ -466,6 +491,8 @@ public class AdminRequestCommandService {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
             }
             request.reject(dto.adminComment());
+            // 이 신청이 승인 대기 그룹을 고른 마지막 신청이었다면 그 그룹도 지운다 — 인프라에는 아직 없다.
+            pendingGroupService.deleteAbandoned(request);
             // 응답은 트랜잭션 안에서 만든다(승인과 같은 이유). 메일이 쓰는 사용자·서버 정보도 이때 읽힌다.
             responseRef[0] = SaveRequestResponseDTO.fromEntity(request);
             rejectedRef[0] = request;
