@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller.docs;
 
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RestartPodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SingleChangeRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
@@ -56,6 +57,33 @@ public interface RequestApi {
     ResponseEntity<SuccessResponse<?>> cancelRequest(
             @Parameter(hidden = true) Long userId,
             @PathVariable @Parameter(description = "취소할 신청 ID") Long requestId
+    );
+
+    @Operation(summary = "내 컨테이너 재시작", description = "현재 노드에서 컨테이너를 다시 만드는 작업을 등록하고 바로 202로 돌아옵니다(신청은 MIGRATING). "
+            + "keepChanges(기본 true)면 설치한 패키지 등 컨테이너 변경분을 유지하고, false면 기본 이미지로 초기화합니다. "
+            + "홈 디렉터리는 유지되고 실행 중이던 프로세스는 이어지지 않습니다. 1시간에 5번까지 할 수 있습니다.")
+    @ApiResponse(responseCode = "202", description = "작업 등록됨")
+    @ApiResponse(responseCode = "403", description = "본인 소유의 신청이 아님",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "404", description = "신청을 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "409", description = "FULFILLED 상태가 아니거나 이미 진행 중",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "429", description = "재시작 횟수 초과",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    ResponseEntity<SuccessResponse<?>> restartMyContainer(
+            @Parameter(hidden = true) Long userId,
+            @Parameter(description = "재시작할 신청 ID") Long requestId,
+            RestartPodRequestDTO dto
+    );
+
+    @Operation(summary = "내 컨테이너의 마지막 재시작 결과", description = "마지막 재시작 작업의 phase와 결과를 조회합니다. 작업이 없으면 phase가 none입니다.")
+    @ApiResponse(responseCode = "200", description = "성공")
+    @ApiResponse(responseCode = "403", description = "본인 소유의 신청이 아님",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    ResponseEntity<SuccessResponse<?>> getMyLatestRestart(
+            @Parameter(hidden = true) Long userId,
+            @Parameter(description = "신청 ID") Long requestId
     );
 
     @Operation(summary = "서버 설정 단건 변경 요청 생성", description = "승인된 신청에 대해 볼륨 크기, 만료 기한 등 단일 항목 변경을 요청합니다.")

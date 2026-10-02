@@ -5,6 +5,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApprovalRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectionRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RestartPodRequestDTO;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 
@@ -89,6 +90,14 @@ public class AdminRequestController implements AdminRequestApi {
     public ResponseEntity<SuccessResponse<?>> startMigration(@PathVariable Long requestId,
                                                              @RequestBody @Valid MigratePodRequestDTO dto) {
         podMigrationService.startMigration(requestId, dto);
+        return SuccessResponse.accepted(null);
+    }
+
+    /** 현재 노드에서 컨테이너를 다시 만든다. 결과는 마지막 마이그레이션 결과로 확인한다. */
+    @PostMapping("/{requestId}/restarts")
+    public ResponseEntity<SuccessResponse<?>> startRestart(@PathVariable Long requestId,
+                                                           @RequestBody(required = false) RestartPodRequestDTO dto) {
+        podMigrationService.startRestart(requestId, dto);
         return SuccessResponse.accepted(null);
     }
 

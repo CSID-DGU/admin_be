@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.RestartPodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
 import DGU_AI_LAB.admin_be.error.dto.ErrorResponse;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
@@ -70,6 +71,15 @@ public interface AdminRequestApi {
     @ApiResponse(responseCode = "422", description = "config-server가 요청을 거절함", content = @Content)
     @ApiResponse(responseCode = "502", description = "config-server 작업 등록 실패", content = @Content)
     ResponseEntity<SuccessResponse<?>> startMigration(Long requestId, MigratePodRequestDTO dto);
+
+    @Operation(summary = "컨테이너 재시작", description = "현재 노드에서 컨테이너를 다시 만드는 작업을 등록하고 바로 202로 돌아옵니다(신청은 MIGRATING). "
+            + "새 컨테이너는 노드의 현재 GPU 목록을 받습니다. keepChanges(기본 true)면 설치한 패키지 등 컨테이너 변경분을 유지하고, "
+            + "false면 기본 이미지로 초기화합니다. 실행 중이던 프로세스는 이어지지 않습니다. 결과는 마지막 마이그레이션 결과로 확인합니다.")
+    @ApiResponse(responseCode = "202", description = "작업 등록됨")
+    @ApiResponse(responseCode = "404", description = "신청을 찾을 수 없음", content = @Content)
+    @ApiResponse(responseCode = "409", description = "FULFILLED 상태가 아니거나 이미 진행 중", content = @Content)
+    @ApiResponse(responseCode = "502", description = "config-server 작업 등록 실패", content = @Content)
+    ResponseEntity<SuccessResponse<?>> startRestart(Long requestId, RestartPodRequestDTO dto);
 
     @Operation(summary = "마지막 마이그레이션 결과", description = "신청의 마지막 마이그레이션 작업 phase와 결과(migrated/skipped, 노드, 기존 Pod 정리 여부)를 조회합니다.")
     @ApiResponse(responseCode = "200", description = "성공 — 작업이 없으면 phase가 none")
