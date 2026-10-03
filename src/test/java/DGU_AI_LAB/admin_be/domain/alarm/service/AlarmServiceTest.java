@@ -255,7 +255,7 @@ class AlarmServiceTest {
         void includesEverythingKnownAboutTheRequest() {
             Request request = mockRequest("홍길동", "FARM");
             when(request.getRequestId()).thenReturn(1234L);
-            when(request.getCreatedAt()).thenReturn(java.time.LocalDateTime.of(2026, 12, 17, 10, 0));
+            when(request.getCreatedAt()).thenReturn(java.time.LocalDateTime.of(2026, 12, 17, 10, 5));
             when(request.getUsagePurpose()).thenReturn("첫째 줄\n둘째 줄");
             when(request.isEnableVnc()).thenReturn(true);
             when(request.getResourceGroup().getDescription()).thenReturn("RTX 3090 24GB");
@@ -275,7 +275,7 @@ class AlarmServiceTest {
             String message = render(request, List.of(port), 2);
 
             assertThat(message).contains(
-                    "신청 번호 #1234", "이름: 홍길동", "학번: 20260000", "학과: 컴퓨터공학과",
+                    "2026-12-17 10:05 접수", "관리 번호 #1234", "이름: 홍길동", "학번: 20260000", "학과: 컴퓨터공학과",
                     "이메일: 홍길동@dgu.ac.kr", "전화번호: 010-0000-0000", "서버 계정(ID): testuser",
                     "지금 사용 중인 컨테이너: 2개", "GPU: 3090ti (RTX 3090 24GB)", "dguailab/decs:260915",
                     "공유 그룹: vision-team", "추가 포트: 6006번 (TensorBoard)", "noVNC): 사용",
