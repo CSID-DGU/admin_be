@@ -23,7 +23,7 @@ class MessagesPropertiesTest {
                 getClass().getClassLoader().getResourceAsStream("messages.properties"), StandardCharsets.UTF_8)) {
             messages.load(reader);
         }
-        Object[] args = IntStream.range(0, 20).mapToObj(i -> "ARG" + i).toArray();
+        Object[] args = IntStream.range(0, 21).mapToObj(i -> "ARG" + i).toArray();
 
         assertThat(messages).isNotEmpty();
         for (String key : messages.stringPropertyNames()) {
