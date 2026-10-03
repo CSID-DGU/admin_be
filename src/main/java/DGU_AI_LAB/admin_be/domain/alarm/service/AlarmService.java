@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.pod.PodPortUtils;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -52,6 +53,8 @@ public class AlarmService {
 
     /** 신청 화면이 폼 응답에 팀 프로젝트 정보를 담는 키. */
     private static final String FORM_ANSWER_TEAM_INFO = "teamInfo";
+    /** 신청서 알림에 적는 접수 시각 형식(년-월-일 시:분). */
+    private static final DateTimeFormatter RECEIVED_AT_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final ObjectMapper FORM_ANSWERS_MAPPER = new ObjectMapper();
 
     private final JavaMailSender mailSender;
@@ -148,7 +151,7 @@ public class AlarmService {
      * 신청이 들어오면 서버별 관리 교수님 채널에 승인 판단에 필요한 정보를 전부 담아 보낸다.
      * 이 채널에서 교수님이 직접 보고 승인 여부를 판단하므로(관리자 페이지를 거치지 않을 수 있다),
      * 신청자 신원·연락처·신청 자원·사용 목적·기간까지 한 메시지 안에 다 있어야 한다.
-     * {0}~{9}의 뜻은 예전 양식과 같게 둔다 — 관리자가 DB(message_templates)에 고쳐 둔 양식도 그대로 쓰이게 하기 위해서다.
+     * {0}~{20}의 뜻은 예전 양식과 같게 둔다 — 관리자가 DB(message_templates)에 고쳐 둔 양식도 그대로 쓰이게 하기 위해서다.
      * 숫자는 문자열로 넘긴다 — MessageFormat에 숫자형을 주면 1,234처럼 콤마가 붙는다.
      */
     public void sendNewRequestNotification(Request request, List<PortRequests> portRequests, long activeContainerCount) {
@@ -159,6 +162,9 @@ public class AlarmService {
         LocalDate appliedOn = request.getCreatedAt() != null
                 ? request.getCreatedAt().toLocalDate()
                 : LocalDate.now(ZoneId.of("Asia/Seoul"));
+        LocalDateTime receivedAt = request.getCreatedAt() != null
+                ? request.getCreatedAt()
+                : LocalDateTime.now(ZoneId.of("Asia/Seoul"));
         LocalDate expiresOn = request.getExpiresAt().toLocalDate();
 
         String message = messageUtils.get("notification.admin.new-request",
@@ -181,7 +187,8 @@ public class AlarmService {
                 appliedOn.toString(),                                      // {16}
                 String.valueOf(ChronoUnit.DAYS.between(appliedOn, expiresOn)), // {17}
                 String.valueOf(activeContainerCount),                      // {18}
-                formatTeamInfo(request));                                  // {19}
+                formatTeamInfo(request),                                   // {19}
+                RECEIVED_AT_FORMAT.format(receivedAt));                    // {20}
 
         // 신청서는 서버별 신청서 채널로 간다(따로 없으면 관리 채널). 그 채널에는 신청서 말고 다른 알림을 보내지 않는다.
         sendSlackAlert(message, serverProfileRegistry.requestWebhookUrl(serverName).orElse(errorLogWebhookUrl));
