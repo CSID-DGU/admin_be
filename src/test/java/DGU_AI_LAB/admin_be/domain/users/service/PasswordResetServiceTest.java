@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.users.service;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.PasswordChangeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobRegistrationUnconfirmedException;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.PasswordResetSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.PasswordHashes;
@@ -256,6 +257,26 @@ class PasswordResetServiceTest {
             assertThat(reset.getUbuntuPasswordHash()).isEqualTo("$6$new$hash");
             assertUserUnchanged();
             verify(transactionManager).rollback(any());
+        }
+
+        @Test
+        @DisplayName("등록 결과를 확인하지 못하면 작업 번호 없이 PROCESSING으로 둔다 — 작업이 돌고 있을 수 있어 폴러가 판단한다")
+        void unconfirmedRegistrationWaitsForPoller() {
+            withAccount();
+            PasswordResetRequest reset = pendingReset();
+            when(jobClient.registerPasswordChange(any())).thenThrow(new JobRegistrationUnconfirmedException(
+                    "응답 없음", ErrorCode.UBUNTU_PASSWORD_CHANGE_FAILED, new RuntimeException("read timeout")));
+
+            PasswordResetSummaryDTO result = service.approve(RESET_ID, ADMIN_ID);
+
+            assertThat(result.status()).isEqualTo("PROCESSING");
+            assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.PROCESSING);
+            assertThat(reset.getJobId()).isNull();
+            assertThat(reset.getReviewedBy()).isSameAs(admin);
+            assertThat(reset.getUbuntuPasswordHash()).isEqualTo("$6$new$hash");
+            assertUserUnchanged();
+            verify(transactionManager, never()).rollback(any());
+            verifyNoInteractions(notifier);
         }
 
         @Test

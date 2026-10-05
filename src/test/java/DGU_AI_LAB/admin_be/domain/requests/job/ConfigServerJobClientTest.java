@@ -278,7 +278,31 @@ class ConfigServerJobClientTest {
             assertThatThrownBy(() -> service.registerRevoke(
                     new RevokeRegisterRequestDTO(41L, "pod", null, null, false), ErrorCode.POD_DELETION_FAILED))
                     .isInstanceOf(BusinessException.class)
+                    .isNotInstanceOf(JobRegistrationUnconfirmedException.class)
                     .satisfies(e -> assertThat(JobResults.neverReachedServer(e)).isTrue());
+        }
+
+        @Test
+        @DisplayName("요청이 닿았을 수 있는데 답을 받지 못하면 결과 불명으로 올린다 — 작업이 등록돼 있을 수 있다")
+        void lostResponseIsUnconfirmed() {
+            when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.error(new RuntimeException("connection reset")));
+
+            assertThatThrownBy(() -> service.registerPasswordChange(
+                    new PasswordChangeRegisterRequestDTO(12L, "honggildong", "$6$new$hash")))
+                    .isInstanceOf(JobRegistrationUnconfirmedException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_PASSWORD_CHANGE_FAILED);
+        }
+
+        @Test
+        @DisplayName("실행기가 답으로 거절한 등록은 결과 불명이 아니다")
+        void rejectionIsNotUnconfirmed() {
+            when(responseSpec.bodyToMono(Map.class))
+                    .thenReturn(Mono.error(new BusinessException("이미 처리 중", ErrorCode.INVALID_REQUEST_STATUS)));
+
+            assertThatThrownBy(() -> service.registerPasswordChange(
+                    new PasswordChangeRegisterRequestDTO(12L, "honggildong", "$6$new$hash")))
+                    .isNotInstanceOf(JobRegistrationUnconfirmedException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REQUEST_STATUS);
         }
     }
 

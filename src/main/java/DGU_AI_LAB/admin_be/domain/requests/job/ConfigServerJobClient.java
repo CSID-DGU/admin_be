@@ -121,7 +121,10 @@ public class ConfigServerJobClient implements JobClient {
             throw e;
         } catch (Exception e) {
             log.error("작업 등록 중 예기치 않은 오류: {}, requestId: {}", uri, requestId, e);
-            throw new BusinessException("작업 등록 중 오류: " + e.getMessage(), failureCode, e);
+            if (JobResults.neverReachedServer(e)) {
+                throw new BusinessException("작업 등록 중 오류: " + e.getMessage(), failureCode, e);
+            }
+            throw new JobRegistrationUnconfirmedException("작업 등록 결과를 확인하지 못함: " + e.getMessage(), failureCode, e);
         }
         Long jobId = response != null && response.get("job_id") instanceof Number n ? n.longValue() : null;
         log.info("작업 등록 완료: {}, requestId: {}, jobId: {}", uri, requestId, jobId);
