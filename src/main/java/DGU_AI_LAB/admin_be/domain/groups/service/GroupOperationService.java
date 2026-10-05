@@ -41,7 +41,7 @@ import java.util.function.Supplier;
  * 그 그룹을 고른 신청의 생성 작업이 인프라 그룹을 만든다. CREATE 결과를 반영하는 코드({@link #applyCreate})는 이
  * 변경 전에 등록돼 아직 도는 작업을 끝까지 반영하려고 남겨 둔다. 그런 작업이 남지 않으면 지운다.
  *
- * <p>그룹은 AD·계정 원장·팀 디렉터리·떠 있는 컨테이너에 걸쳐 있다. 요청을 받으면 작업으로 등록만 하고 돌아오고,
+ * <p>그룹은 AD·계정 원장·떠 있는 컨테이너에 걸쳐 있다. 요청을 받으면 작업으로 등록만 하고 돌아오고,
  * 결과는 GroupOperationJobPoller 가 {@link #complete}·{@link #fail}로 반영한다. DB(groups·user_groups)는 작업이
  * 성공한 뒤에만 바꾼다 — 먼저 바꾸면 화면에는 반영됐다고 나오는데 실제 권한은 그대로다.
  *
@@ -91,7 +91,7 @@ public class GroupOperationService {
 
     /**
      * 계정을 공용 그룹에서 빼는 작업을 등록한다. 리눅스 계정명을 정한 적이 없는 사용자는 AD 에 반영된 멤버십이
-     * 없으므로 작업 없이 DB 만 정리한다. 팀 디렉터리와 그 안의 파일은 건드리지 않는다.
+     * 없으므로 작업 없이 DB 만 정리한다. 그 그룹과 공유된 폴더와 파일은 건드리지 않는다.
      */
     public GroupOperationResponseDTO requestRemove(Long userId, Long groupId, Long adminId) {
         GroupOperationResponseDTO response = inTransaction(() -> {

@@ -54,7 +54,7 @@ public interface JobClient {
     Long registerPasswordChange(PasswordChangeRegisterRequestDTO body);
 
     /**
-     * 공용 그룹 작업(생성·멤버 추가·제거)을 등록한다. 실행기는 AD·계정 원장·팀 디렉터리·떠 있는 컨테이너를 차례로
+     * 공용 그룹 작업(생성·멤버 추가·제거)을 등록한다. 실행기는 AD·계정 원장·떠 있는 컨테이너를 차례로
      * 맞추고, 이미 맞춰진 조각은 그대로 두므로 실패한 작업은 다시 등록하면 이어서 끝난다.
      *
      * @return 등록된 작업 번호. 응답에 없으면 null

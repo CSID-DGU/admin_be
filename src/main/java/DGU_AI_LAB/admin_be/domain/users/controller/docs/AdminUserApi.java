@@ -70,7 +70,7 @@ public interface AdminUserApi {
             description = "AD·떠 있는 컨테이너에서 멤버십을 빼는 작업을 등록합니다. DB는 그 작업이 성공한 뒤에 맞춰지므로, "
                     + "응답의 operationId로 GET /api/groups/operations/{operationId}를 조회해 완료를 확인합니다. "
                     + "리눅스 계정명이 없는 사용자는 작업 없이 바로 끝납니다(status=APPLIED). "
-                    + "팀 디렉터리와 그 안의 파일은 그대로 둡니다.")
+                    + "사용자가 그 그룹과 공유한 폴더와 파일은 그대로 둡니다.")
     @ApiResponse(responseCode = "202", description = "작업 등록됨(또는 바로 적용됨)")
     @ApiResponse(responseCode = "404", description = "사용자 또는 그룹이 없음")
     @ApiResponse(responseCode = "409", description = "계정의 기본 그룹, 같은 제거 작업이 진행 중")

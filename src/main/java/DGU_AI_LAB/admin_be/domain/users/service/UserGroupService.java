@@ -41,7 +41,7 @@ public class UserGroupService {
 
     /**
      * 계정을 공용 그룹에서 빼는 작업을 등록한다. 권한의 원천인 AD 를 먼저 바꾸고, 그 작업이 성공한 뒤에만 DB 를
-     * 맞춘다 — DB 가 AD 보다 앞서면 화면에는 빠졌다고 나오는데 실제로는 팀 디렉터리가 계속 열린다.
+     * 맞춘다 — DB 가 AD 보다 앞서면 화면에는 빠졌다고 나오는데 실제로는 그 그룹에 공유된 폴더가 계속 열린다.
      */
     public GroupOperationResponseDTO removeUserFromGroup(Long userId, Long groupId, Long adminId) {
         return groupOperationService.requestRemove(userId, groupId, adminId);
