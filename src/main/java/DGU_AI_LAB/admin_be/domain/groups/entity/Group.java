@@ -25,7 +25,7 @@ public class Group {
     @Column(name = "group_name", unique = true, nullable = false, length = 100)
     private String groupName;
 
-    // 비어 있으면 승인 대기 그룹이다 — "새로 만들기"로 DB 에만 있고 인프라(원장·AD·팀 폴더)에는 아직 없다.
+    // 비어 있으면 승인 대기 그룹이다 — "새로 만들기"로 DB 에만 있고 인프라(원장·AD)에는 아직 없다.
     // 이 그룹을 고른 신청의 생성 작업이 성공하면 config-server 가 발급한 gid 로 채운다(assignGid).
     @Column(name = "ubuntu_gid", unique = true)
     private Long ubuntuGid;

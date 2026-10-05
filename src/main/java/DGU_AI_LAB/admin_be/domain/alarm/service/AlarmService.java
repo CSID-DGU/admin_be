@@ -407,13 +407,13 @@ public class AlarmService {
     }
 
     /**
-     * 그룹 추가 승인 안내. 승인 메일만 받은 사용자도 팀과 파일을 나눌 자리를 바로 찾도록 그룹마다 팀 디렉터리
-     * 경로를 적는다. 경로 형식은 이미지·스토리지 구성에 달려 있어 messages.properties의 한 줄 양식으로 둔다.
+     * 그룹 추가 승인 안내. 승인 메일만 받은 사용자도 팀과 파일을 나눌 방법을 바로 알도록 그룹마다 홈 아래 폴더를
+     * 그 그룹과 공유하는 명령을 적는다. 명령 형식은 이미지 구성에 달려 있어 messages.properties의 한 줄 양식으로 둔다.
      */
     public void sendGroupAddedEmail(ChangeRequest changeRequest, String adminComment, List<String> groupNames) {
         User user = changeRequest.getRequestedBy();
         String changeType = changeRequest.getChangeType().label();
-        String teamDirs = groupNames.stream()
+        String shareCommands = groupNames.stream()
                 .map(name -> messageUtils.get("email.modification.approved.group.dir", name))
                 .collect(Collectors.joining("\n"));
 
@@ -422,7 +422,7 @@ public class AlarmService {
                 user.getName(),    // {0}
                 changeType,        // {1}
                 orNone(adminComment), // {2}
-                teamDirs);         // {3}
+                shareCommands);    // {3}
 
         sendMailAlert(user.getEmail(), subject, body);
         sendMonitoringLog(user.getName(), user.getEmail(), subject);

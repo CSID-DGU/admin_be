@@ -275,12 +275,12 @@ class AlarmServiceTest {
             String message = render(request, List.of(port), 2);
 
             assertThat(message).contains(
-                    "2026-12-17 10:05 접수", "관리 번호 #1234", "이름: 홍길동", "학번: 20260000", "학과: 컴퓨터공학과",
+                    "2026-12-17 10:05 접수", "이름: 홍길동", "학번: 20260000", "학과: 컴퓨터공학과",
                     "이메일: 홍길동@dgu.ac.kr", "전화번호: 010-0000-0000", "서버 계정(ID): testuser",
                     "지금 사용 중인 컨테이너: 2개", "GPU: 3090ti (RTX 3090 24GB)", "dguailab/decs:260915",
                     "공유 그룹: vision-team", "추가 포트: 6006번 (TensorBoard)", "noVNC): 사용",
                     "2026-12-17 ~ 2026-12-31 (총 14일)", "*사용 목적*\n첫째 줄\n둘째 줄");
-            assertThat(message).doesNotContain("{").doesNotContain(":bell:");
+            assertThat(message).doesNotContain("{").doesNotContain(":bell:").doesNotContain("관리 번호");
         }
 
         @Test
@@ -600,8 +600,8 @@ class AlarmServiceTest {
     class SendGroupAddedEmail {
 
         @Test
-        @DisplayName("그룹마다 팀 디렉터리 경로(~/shared 링크와 실제 위치)를 본문에 담아 사용자에게 보낸다")
-        void sendGroupAddedEmail_listsTeamDirectoryPerGroup() {
+        @DisplayName("그룹마다 홈 아래 폴더를 공유하는 명령을 본문에 담아 사용자에게 보낸다")
+        void sendGroupAddedEmail_listsShareCommandPerGroup() {
             ChangeRequest changeRequest = mockChangeRequest("이순신", "lee@dgu.ac.kr", ChangeType.GROUP);
             when(messageUtils.get(anyString(), any())).thenReturn("제목");
             when(messageUtils.get("email.modification.approved.group.dir", "teama")).thenReturn("- teama 경로");
@@ -617,6 +617,26 @@ class AlarmServiceTest {
             verify(mailSender).send(captor.capture());
             assertThat(captor.getValue().getTo()).containsExactly("lee@dgu.ac.kr");
             assertThat(captor.getValue().getText()).isEqualTo("본문");
+        }
+
+        @Test
+        @DisplayName("실제 문구: 공유 명령과 안내를 담고, 없어진 팀 디렉터리(/home/_g_, ~/shared)는 안내하지 않는다")
+        void sendGroupAddedEmail_rendersHomeFolderSharing() {
+            ResourceBundleMessageSource source = new ResourceBundleMessageSource();
+            source.setBasename("messages");
+            source.setDefaultEncoding("UTF-8");
+            ReflectionTestUtils.setField(alarmService, "messageUtils", new MessageUtils(source));
+            ChangeRequest changeRequest = mockChangeRequest("이순신", "lee@dgu.ac.kr", ChangeType.GROUP);
+
+            alarmService.sendGroupAddedEmail(changeRequest, "승인", List.of("teama", "teamb"));
+
+            ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+            verify(mailSender).send(captor.capture());
+            assertThat(captor.getValue().getText())
+                    .contains("- teama 그룹: group-dir-share ~/<폴더 이름> teama",
+                            "- teamb 그룹: group-dir-share ~/<폴더 이름> teamb",
+                            "/home/<내 아이디>/<폴더 이름>", "폴더 하나는 그룹 하나와만")
+                    .doesNotContain("_g_").doesNotContain("~/shared").doesNotContain("{");
         }
     }
 
