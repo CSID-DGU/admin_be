@@ -28,6 +28,7 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     boolean existsByPodName(String podName);
     boolean existsByUser_UbuntuUsernameAndStatusIn(String ubuntuUsername, Collection<Status> statuses);
     boolean existsByUser_UserIdAndStatus(Long userId, Status status);
+    boolean existsByUser_UserIdAndStatusIn(Long userId, Collection<Status> statuses);
     long countByUser_UserIdAndStatusIn(Long userId, Collection<Status> statuses);
     List<Request> findAllByStatusIn(List<Status> statuses);
     List<Request> findAllByUser_UserIdAndStatusIn(Long userId, List<Status> statuses);

@@ -38,6 +38,8 @@ public interface RequestApi {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "404", description = "리소스 그룹 또는 컨테이너 이미지를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "409", description = "승인 대기·처리 중인 신청이 이미 있음(CONTAINER_REQUEST_ALREADY_PENDING) — 기존 신청을 취소한 뒤 다시 신청",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "429", description = "하루 신청 한도(5건) 초과",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     ResponseEntity<SuccessResponse<?>> createRequest(

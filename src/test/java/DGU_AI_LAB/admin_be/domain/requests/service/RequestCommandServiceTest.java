@@ -138,8 +138,8 @@ class RequestCommandServiceTest {
         }
 
         @Test
-        @DisplayName("이미 살아있는 신청이 있어도 새 신청을 막지 않는다 — Pod 생성/상태조회가 requestId로 구분되므로 사용자당 여러 개 신청 가능")
-        void createRequest_succeeds_evenWhenUserAlreadyHasOpenRequest() {
+        @DisplayName("사용 중인 컨테이너가 있어도 새 신청을 막지 않는다 — 승인 대기·처리 중인 신청만 센다")
+        void createRequest_succeeds_evenWhenUserAlreadyHasActiveContainer() {
             User user = userWithUbuntuUsername("honggildong");
             ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
             ContainerImage img = ContainerImage.builder()
@@ -166,6 +166,27 @@ class RequestCommandServiceTest {
 
             assertThat(requestCommandService.createRequest(1L, dto).ubuntuUsername())
                     .isEqualTo("honggildong");
+            verify(requestRepository).existsByUser_UserIdAndStatusIn(1L, List.of(Status.PENDING, Status.PROCESSING));
+        }
+
+        @Test
+        @DisplayName("승인 대기·처리 중인 신청이 있으면 저장하지 않고 409로 거절하며 하루 한도에 세지 않는다")
+        void createRequest_rejected_whenUserHasRequestAwaitingDecision() {
+            User user = userWithUbuntuUsername("honggildong");
+            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
+            when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
+            when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
+            when(requestRepository.existsByUser_UserIdAndStatusIn(1L, List.of(Status.PENDING, Status.PROCESSING)))
+                    .thenReturn(true);
+            SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
+            when(dto.resourceGroupId()).thenReturn(1);
+
+            assertThatThrownBy(() -> requestCommandService.createRequest(1L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.CONTAINER_REQUEST_ALREADY_PENDING);
+            verify(requestRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(requestCreateThrottle);
         }
 
         @Test

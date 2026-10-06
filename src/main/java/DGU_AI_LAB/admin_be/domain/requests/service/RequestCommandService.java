@@ -53,6 +53,9 @@ public class RequestCommandService {
     private final RequestCreateThrottle requestCreateThrottle;
     private final PendingGroupService pendingGroupService;
 
+    /** 아직 승인·거절이 정해지지 않은 신청 상태. */
+    private static final List<Status> AWAITING_DECISION = List.of(Status.PENDING, Status.PROCESSING);
+
     /**
      * 사용자가 자신의 대기 중(PENDING) 또는 거절된(DENIED) 신청을 취소한다.
      * FULFILLED/MIGRATING 상태는 Request.delete()가 자체적으로 거부한다 — 실행 중인
@@ -154,10 +157,16 @@ public class RequestCommandService {
             throw new BusinessException(ErrorCode.UBUNTU_USERNAME_NOT_ASSIGNED);
         }
 
-        // 사용자당 신청 1개 제한은 없앴다 — Pod 생성/상태조회는 이제 requestId로 구분되므로
-        // 한 사용자가 컨테이너를 여러 개 동시에 가질 수 있다. (마이그레이션은 아직
-        // username 기준으로 "그 유저의 pod"를 찾으므로, 사용자가 Pod를 2개 이상 가진
-        // 상태에서 마이그레이션하면 대상이 모호해질 수 있는 게 알려진 제약이다.)
+        // 승인을 기다리는 신청은 사용자당 하나만 받는다 — 같은 신청이 여러 건 쌓이면 관리자가 무엇을 승인해야 할지
+        // 알 수 없다. 바꾸고 싶으면 기존 신청을 취소하고 다시 낸다. 처리 중(PROCESSING)도 막는다: 생성 작업이
+        // 실패하면 PENDING으로 돌아오므로, 그 사이에 받은 새 신청과 함께 대기가 두 건이 된다.
+        // 사용 중인 컨테이너는 세지 않는다 — Pod 생성/상태조회가 requestId로 구분되므로 한 사용자가 컨테이너를
+        // 여러 개 가질 수 있다. (마이그레이션은 아직 username 기준으로 "그 유저의 pod"를 찾으므로, 사용자가
+        // Pod를 2개 이상 가진 상태에서 마이그레이션하면 대상이 모호해질 수 있는 게 알려진 제약이다.)
+        // 위에서 User 행을 잠갔으므로 같은 사용자의 동시 신청 두 건이 이 검사를 함께 통과하지 못한다.
+        if (requestRepository.existsByUser_UserIdAndStatusIn(userId, AWAITING_DECISION)) {
+            throw new BusinessException(ErrorCode.CONTAINER_REQUEST_ALREADY_PENDING);
+        }
 
         ContainerImage img = containerImageRepository.findById(dto.imageId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
