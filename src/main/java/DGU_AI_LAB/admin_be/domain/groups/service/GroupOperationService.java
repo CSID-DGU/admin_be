@@ -21,6 +21,7 @@ import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
+import DGU_AI_LAB.admin_be.global.util.AfterCommit;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -261,13 +262,9 @@ public class GroupOperationService {
     }
 
     private void notifyAdded(AddedNotice notice) {
-        try {
-            ChangeRequest changeRequest = notice.changeRequest();
-            alarmService.sendGroupAddedEmail(changeRequest, changeRequest.getAdminComment(), notice.groupNames());
-        } catch (Exception e) {
-            log.warn("그룹 추가 승인 안내 메일 발송 실패: changeRequestId={}",
-                    notice.changeRequest().getChangeRequestId(), e);
-        }
+        ChangeRequest changeRequest = notice.changeRequest();
+        AfterCommit.run("그룹 추가 승인 안내 메일, changeRequestId " + changeRequest.getChangeRequestId(),
+                () -> alarmService.sendGroupAddedEmail(changeRequest, changeRequest.getAdminComment(), notice.groupNames()));
     }
 
     // 관리자가 실제로 보는 farm/lab 채널로 알린다. 알림 실패가 결과 반영을 막으면 안 된다.

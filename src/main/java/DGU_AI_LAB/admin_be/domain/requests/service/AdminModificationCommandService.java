@@ -14,6 +14,7 @@ import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.util.AfterCommit;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -23,7 +24,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Map;
-import java.util.function.Consumer;
 
 /**
  * 사용 중인 신청(FULFILLED)에 대한 변경 요청(ChangeRequest)의 승인·거절. 새 신청의 승인·거절은
@@ -58,11 +58,8 @@ public class AdminModificationCommandService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         changeRequest.deny(admin, dto.adminComment());
-        sendNotificationSafely(
-                () -> alarmService.sendModificationRejectedEmail(changeRequest, dto.adminComment()),
-                () -> {},
-                e -> log.warn("변경 요청 거절 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e)
-        );
+        AfterCommit.run("변경 요청 거절 메일, changeRequestId " + dto.changeRequestId(),
+                () -> alarmService.sendModificationRejectedEmail(changeRequest, dto.adminComment()));
     }
 
     /**
@@ -122,18 +119,17 @@ public class AdminModificationCommandService {
 
         changeRequest.approve(admin, dto.adminComment());
 
+        // 메일은 커밋 뒤에 보낸다 — 두 행을 잠근 채 보내지 않고, 롤백된 승인을 알리지 않는다.
         if (expiryChange != null) {
-            sendNotificationSafely(
-                    () -> alarmService.sendContainerExtendedEmail(originalRequest, expiryChange.oldExpiresAt(), expiryChange.newExpiresAt()),
-                    () -> log.info("사용자 '{}'에게 기간 연장 안내 메일을 발송했습니다.", originalRequest.getUser().getName()),
-                    e -> log.warn("기간 연장 안내 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e)
-            );
+            AfterCommit.run("기간 연장 안내 메일, changeRequestId " + dto.changeRequestId(), () -> {
+                alarmService.sendContainerExtendedEmail(originalRequest, expiryChange.oldExpiresAt(), expiryChange.newExpiresAt());
+                log.info("사용자 '{}'에게 기간 연장 안내 메일을 발송했습니다.", originalRequest.getUser().getName());
+            });
         } else {
-            sendNotificationSafely(
-                    () -> alarmService.sendModificationApprovedEmail(changeRequest, dto.adminComment()),
-                    () -> log.info("사용자 '{}'에게 변경 요청 승인 안내 메일을 발송했습니다.", originalRequest.getUser().getName()),
-                    e -> log.warn("변경 요청 승인 안내 메일 발송 실패: changeRequestId={}", dto.changeRequestId(), e)
-            );
+            AfterCommit.run("변경 요청 승인 안내 메일, changeRequestId " + dto.changeRequestId(), () -> {
+                alarmService.sendModificationApprovedEmail(changeRequest, dto.adminComment());
+                log.info("사용자 '{}'에게 변경 요청 승인 안내 메일을 발송했습니다.", originalRequest.getUser().getName());
+            });
         }
     }
 
@@ -168,14 +164,4 @@ public class AdminModificationCommandService {
     }
 
     private record ExpiryChangeResult(LocalDateTime oldExpiresAt, LocalDateTime newExpiresAt) {}
-
-    /** 알림 발송을 시도하고, 실패해도 예외를 전파하지 않는다 (알림은 부가 기능 — 실패해도 이미 반영된 상태 변경을 되돌리지 않는다). */
-    private void sendNotificationSafely(Runnable emailSend, Runnable onSuccess, Consumer<Exception> onFailure) {
-        try {
-            emailSend.run();
-            onSuccess.run();
-        } catch (Exception e) {
-            onFailure.accept(e);
-        }
-    }
 }

@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.global.util.AfterCommit;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -52,7 +53,11 @@ public class RequestNotificationService {
                         user.getName(), dayLabel, expireDate, serverName, request.getUbuntuUsername(),
                         homeRetentionNotice.beforeExpiry(request));
 
-                alarmService.sendAllAlerts(user.getName(), user.getEmail(), subject, message);
+                String name = user.getName();
+                String email = user.getEmail();
+                // 조회 트랜잭션이 끝난 뒤에 보낸다 — 대상이 많아도 전송하는 동안 DB 연결을 쥐고 있지 않는다.
+                AfterCommit.run("만료 " + dayLabel + " 전 알림, 요청 ID " + request.getRequestId(),
+                        () -> alarmService.sendAllAlerts(name, email, subject, message));
 
             } catch (Exception e) {
                 log.warn("{} 전 알림 실패: {}", dayLabel, e.getMessage());

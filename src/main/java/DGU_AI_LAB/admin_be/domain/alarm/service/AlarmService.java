@@ -359,32 +359,6 @@ public class AlarmService {
     }
 
     /**
-     * [관리자 수동 삭제 안내 메일] 관리자가 계정 삭제 시 사용자에게 발송.
-     */
-    public void sendContainerDeletedEmail(Request request) {
-        List<PodExternalPort> ports = podExternalPortRepository.findByRequestRequestId(request.getRequestId());
-        sendContainerDeletedEmail(request, ports);
-    }
-
-    public void sendContainerDeletedEmail(Request request, List<PodExternalPort> ports) {
-        User user = request.getUser();
-        String serverName = request.getResourceGroup().getServerName();
-        String podName = request.getPodName() != null ? request.getPodName() : "미배정";
-
-        String subject = messageUtils.get("email.container.deleted.subject", serverName);
-        String body = messageUtils.get("email.container.deleted.body",
-                user.getName(),                              // {0}
-                serverName,                                  // {1}
-                request.getUbuntuUsername(),                 // {2}
-                podName,                                     // {3}
-                PodPortUtils.formatPortSummary(ports),       // {4}
-                LocalDate.now().toString());                 // {5}
-
-        sendMailAlert(user.getEmail(), subject, body);
-        sendMonitoringLog(user.getName(), user.getEmail(), subject);
-    }
-
-    /**
      * [만료일 연장 승인 안내 메일] 관리자가 EXPIRES_AT 변경 요청 승인 시 사용자에게 발송.
      */
     public void sendContainerExtendedEmail(Request request, LocalDateTime oldExpiresAt, LocalDateTime newExpiresAt) {
