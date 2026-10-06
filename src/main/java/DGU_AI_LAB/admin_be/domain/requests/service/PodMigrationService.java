@@ -20,6 +20,7 @@ import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.util.AfterCommit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -362,12 +363,8 @@ public class PodMigrationService {
 
     /** 새 Pod에 다른 포트가 배정되면 사용자에게 새 접속 정보를 알린다. 메일 실패가 반영된 결과를 되돌리지 않는다. */
     private void notifyPortsChanged(Request request) {
-        try {
-            alarmService.sendContainerPortsChangedEmail(request);
-            log.info("마이그레이션 포트 변경 안내 메일 발송: requestId={}", request.getRequestId());
-        } catch (Exception e) {
-            log.warn("마이그레이션 포트 변경 안내 메일 발송 실패: requestId={}", request.getRequestId(), e);
-        }
+        AfterCommit.run("마이그레이션 포트 변경 안내 메일, 요청 ID " + request.getRequestId(),
+                () -> alarmService.sendContainerPortsChangedEmail(request));
     }
 
     private static Set<String> portKeys(List<PodExternalPort> ports) {

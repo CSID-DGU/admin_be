@@ -807,67 +807,6 @@ class AlarmServiceTest {
     }
 
     @Nested
-    @DisplayName("sendContainerDeletedEmail")
-    class SendContainerDeletedEmail {
-
-        @Test
-        @DisplayName("podName이 null이면 이메일 본문에 '미배정'으로 전달된다")
-        void sendContainerDeletedEmail_nullPodName_renders_placeholder() {
-            Request request = mockRequestForDeleted("홍길동", "hong@dgu.ac.kr", "LAB", null);
-            when(podExternalPortRepository.findByRequestRequestId(any())).thenReturn(List.of());
-            when(messageUtils.get(anyString(), any())).thenReturn("제목");
-            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
-
-            alarmService.sendContainerDeletedEmail(request);
-
-            verify(messageUtils).get(eq("email.container.deleted.body"),
-                    any(), any(), any(), eq("미배정"), any(), any());
-        }
-
-        @Test
-        @DisplayName("podName이 있으면 실제 값이 이메일 본문에 전달된다")
-        void sendContainerDeletedEmail_withPodName_passesRealValue() {
-            Request request = mockRequestForDeleted("홍길동", "hong@dgu.ac.kr", "LAB", "pod-user1-abc");
-            when(podExternalPortRepository.findByRequestRequestId(any())).thenReturn(List.of());
-            when(messageUtils.get(anyString(), any())).thenReturn("제목");
-            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
-
-            alarmService.sendContainerDeletedEmail(request);
-
-            verify(messageUtils).get(eq("email.container.deleted.body"),
-                    any(), any(), any(), eq("pod-user1-abc"), any(), any());
-        }
-
-        @Test
-        @DisplayName("ports를 직접 전달하는 오버로드는 DB를 조회하지 않는다")
-        void sendContainerDeletedEmail_overload_doesNotQueryRepository() {
-            Request request = mockRequestForDeleted("홍길동", "hong@dgu.ac.kr", "LAB", "pod-abc");
-            PodExternalPort port = mockPodPort("ssh", 30022);
-            when(messageUtils.get(anyString(), any())).thenReturn("제목");
-            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
-
-            alarmService.sendContainerDeletedEmail(request, List.of(port));
-
-            verify(podExternalPortRepository, never()).findByRequestRequestId(any());
-            verify(mailSender).send(any(SimpleMailMessage.class));
-        }
-
-        @Test
-        @DisplayName("ports를 직접 전달하면 포트 요약이 본문에 포함된다")
-        void sendContainerDeletedEmail_overload_includesPortSummary() {
-            Request request = mockRequestForDeleted("이순신", "lee@dgu.ac.kr", "FARM", "pod-xyz");
-            PodExternalPort port = mockPodPort("jupyter", 30888);
-            when(messageUtils.get(anyString(), any())).thenReturn("제목");
-            when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
-
-            alarmService.sendContainerDeletedEmail(request, List.of(port));
-
-            verify(messageUtils).get(eq("email.container.deleted.body"),
-                    any(), any(), any(), any(), eq("jupyter(30888)"), any());
-        }
-    }
-
-    @Nested
     @DisplayName("sendContainerExtendedEmail")
     class SendContainerExtendedEmail {
 

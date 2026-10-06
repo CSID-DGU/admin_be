@@ -16,6 +16,7 @@ import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.ConflictException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
+import DGU_AI_LAB.admin_be.global.util.AfterCommit;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -211,13 +212,11 @@ public class AdminUserService {
         closePendingPasswordResets(userId, logPrefix);
         log.info("[{}] userId={} 논리적 삭제 완료 (isActive=false)", logPrefix, userId);
 
-        try {
+        AfterCommit.run("계정 비활성화 안내(" + logPrefix + "), userId " + userId, () -> {
             String subject = messageUtils.get(noticeKey + ".subject");
             String body = messageUtils.get(noticeKey + ".body", withdrawn.getName());
             alarmService.sendAllAlerts(withdrawn.getName(), withdrawn.getEmail(), subject, body);
-        } catch (Exception e) {
-            log.warn("[{}] 계정 비활성화 안내 메일 발송 실패: userId={}", logPrefix, userId, e);
-        }
+        });
     }
 
     /**
@@ -297,13 +296,11 @@ public class AdminUserService {
         closePendingPasswordResets(userId, "deactivateUser");
         log.info("[deactivateUser] userId={} 비활성화 완료 (컨테이너 정리 포함)", userId);
 
-        try {
+        AfterCommit.run("계정 비활성화 안내(deactivateUser), userId " + userId, () -> {
             String subject = messageUtils.get("notification.user.admin-delete.subject");
             String body = messageUtils.get("notification.user.admin-delete.body", deactivated.getName());
             alarmService.sendAllAlerts(deactivated.getName(), deactivated.getEmail(), subject, body);
-        } catch (Exception e) {
-            log.warn("[deactivateUser] 계정 비활성화 안내 메일 발송 실패: userId={}", userId, e);
-        }
+        });
 
         return UserSummaryDTO.fromEntity(deactivated);
     }

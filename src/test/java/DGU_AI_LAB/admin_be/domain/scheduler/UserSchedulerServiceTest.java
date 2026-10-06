@@ -20,6 +20,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -113,6 +115,8 @@ class UserSchedulerServiceTest {
 
         // --- When ---
         userSchedulerService.runUserLifecycleScheduler();
+        // 경고는 커밋 뒤에 나간다. 테스트 트랜잭션은 커밋되지 않으므로 커밋 뒤 작업을 직접 실행한다.
+        TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
 
 
         // --- Then ---

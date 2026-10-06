@@ -28,6 +28,7 @@ import DGU_AI_LAB.admin_be.domain.users.repository.PasswordResetRequestRepositor
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.util.AfterCommit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -37,7 +38,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
-import java.util.function.Consumer;
 
 @Slf4j
 @Service
@@ -376,12 +376,8 @@ public class AdminRequestCommandService {
         }
         String sshPort = externalPortOf(made, "ssh");
         String jupyterPort = externalPortOf(made, "jupyter");
-        sendNotificationSafely(
-                () -> alarmService.sendContainerCreatedEmail(savedRequest, sshPort, jupyterPort),
-                () -> log.info("사용자 '{}'에게 컨테이너 배정 안내 메일을 발송했습니다.", savedRequest.getUser().getName()),
-                e -> log.warn("사용자 '{}'에게 배정 안내 메일 발송 실패. (RequestId: {})",
-                        savedRequest.getUser().getName(), savedRequest.getRequestId(), e)
-        );
+        AfterCommit.run("컨테이너 배정 안내 메일, 요청 ID " + requestId,
+                () -> alarmService.sendContainerCreatedEmail(savedRequest, sshPort, jupyterPort));
     }
 
     /**
@@ -403,6 +399,7 @@ public class AdminRequestCommandService {
      * 되돌리면 실제로는 만들어진 자원이 남은 채 신청만 PENDING이 되어, 재승인 때 중복 생성으로
      * 이어질 수 있다. 신청은 PROCESSING에 둔 채 관리자 점검 대상으로 남긴다.
      */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void reportUnknownApprovalJob(Long requestId, JobResultResponseDTO result) {
         notifyApprovalFailure(String.format(
                 "[승인 확인 필요] 생성 작업의 결과가 불명입니다. 자원이 남아 있는지 확인이 필요합니다: requestId=%d, error=%s",
@@ -414,6 +411,7 @@ public class AdminRequestCommandService {
      * 있으므로 되돌리지 않는다 — 되돌리면 재승인 때 컨테이너가 하나 더 만들어진다. 신청은 PROCESSING에 둔 채
      * 관리자가 원인을 확인하고 정리하도록 넘긴다.
      */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void reportDegradedApprovalJob(Long requestId, JobResultResponseDTO result) {
         notifyApprovalFailure(String.format(
                 "[승인 확인 필요] 생성 작업이 복구되지 않아 관리자 확인으로 넘어왔습니다. 만든 자원은 남아 있습니다: requestId=%d, jobId=%s",
@@ -427,6 +425,7 @@ public class AdminRequestCommandService {
      * 되풀이하므로, 신청 상태는 건드리지 않고(원인을 모르는 채 되돌리면 이미 만들어진 자원과 어긋난다)
      * 작업마다 한 번만 관리자에게 알린다. {@code JobResultPoller#onApplyFailed}가 호출한다.
      */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void reportApplyFailure(Long requestId, String detail) {
         notifyApprovalFailure(String.format(
                 "[승인 확인 필요] 생성 작업 결과를 신청에 반영하는 중 오류가 났습니다: requestId=%d, error=%s",
@@ -499,11 +498,8 @@ public class AdminRequestCommandService {
             return null;
         });
         Request rejected = rejectedRef[0];
-        sendNotificationSafely(
-                () -> alarmService.sendRequestRejectedEmail(rejected, dto.adminComment()),
-                () -> {},
-                e -> log.warn("거절 안내 메일 발송 실패: requestId={}", requestId, e)
-        );
+        AfterCommit.run("거절 안내 메일, 요청 ID " + requestId,
+                () -> alarmService.sendRequestRejectedEmail(rejected, dto.adminComment()));
         return responseRef[0];
     }
 
@@ -525,16 +521,6 @@ public class AdminRequestCommandService {
                 && job.result() != null && job.result().podName() != null;
         if (running || successPending) {
             throw new BusinessException(ErrorCode.PROVISION_JOB_IN_PROGRESS);
-        }
-    }
-
-    /** 알림 발송을 시도하고, 실패해도 예외를 전파하지 않는다 (알림은 부가 기능 — 실패해도 이미 반영된 상태 변경을 되돌리지 않는다). */
-    private void sendNotificationSafely(Runnable emailSend, Runnable onSuccess, Consumer<Exception> onFailure) {
-        try {
-            emailSend.run();
-            onSuccess.run();
-        } catch (Exception e) {
-            onFailure.accept(e);
         }
     }
 
@@ -567,6 +553,7 @@ public class AdminRequestCommandService {
     // 상태 확인 없이 덮어쓰면 ①에서 다른 관리자의 거절 결정을 지우고, ②를 그대로 두면 신청이 재승인도
     // 거절도 못 하는 PROCESSING에 갇힌다. 그래서 락 + 상태 재확인을 거친다. 작업 등록 실패, 작업 실패
     // (작업 결과 폴러), 작업 없이 오래 멈춘 신청(RequestSchedulerService 재조정)에서 쓴다.
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void revertToPendingIfStillProcessing(Long requestId, String serverName) {
         try {
             new TransactionTemplate(transactionManager).execute(status -> {
