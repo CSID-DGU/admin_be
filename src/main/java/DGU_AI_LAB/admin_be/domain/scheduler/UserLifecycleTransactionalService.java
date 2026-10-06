@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
+import DGU_AI_LAB.admin_be.domain.users.service.InactivityNoticeStore;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -73,7 +74,12 @@ public class UserLifecycleTransactionalService {
         long daysLeft = ChronoUnit.DAYS.between(today, deleteDate);
 
         if (daysLeft == 7 || daysLeft == 3 || daysLeft == 1) {
-            noticeStore.save(userId, deleteDate, today);
+            boolean recorded = noticeStore.save(userId, deleteDate, today);
+            if (!recorded && !ruleDate.isAfter(today)) {
+                // 유예는 기록된 예정일로만 센다. 기록 없이 경고하면 내일 또 새 유예로 경고가 나가고 비활성화는 오지 않는다.
+                log.warn("유저({}) 유예 예정일을 기록하지 못해 경고를 보내지 않고 다음 회차에 다시 봅니다", userId);
+                return false;
+            }
             sendWarningAlert(user, daysLeft, deleteDate, today.toString());
         }
         return daysLeft <= 0;

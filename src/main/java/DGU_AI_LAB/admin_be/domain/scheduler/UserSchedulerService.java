@@ -21,7 +21,6 @@ public class UserSchedulerService {
     private final UserRepository userRepository;
     private final UserLifecycleTransactionalService userLifecycleService;
     private final AdminUserService adminUserService;
-    private final InactivityNoticeStore noticeStore;
 
     // D-7 경고까지 포함하려면 (strict <) 기준일을 7+1=8일 앞당겨야 한다
     private static final int NOTIFICATION_LEAD_DAYS = 8;
@@ -49,7 +48,6 @@ public class UserSchedulerService {
                     // 관리자 탈퇴와 같은 경로로 컨테이너·우분투 계정 회수까지 시작한다. 진행 중인 신청이 있어
                     // 거부되면 다음 날 다시 시도된다.
                     adminUserService.withdrawInactiveUser(user.getUserId());
-                    noticeStore.forget(user.getUserId());
                 }
             } catch (Exception e) {
                 log.error("유저({}) 수명주기 처리 중 오류: {}", user.getUserId(), e.getMessage());

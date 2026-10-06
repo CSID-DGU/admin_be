@@ -10,6 +10,7 @@ import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupReposit
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.domain.users.service.AdminUserService;
+import DGU_AI_LAB.admin_be.domain.users.service.InactivityNoticeStore;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.DisplayName;
@@ -140,7 +141,6 @@ class UserSchedulerServiceTest {
 
         // 5. [탈퇴 대상]만 탈퇴 경로로 넘긴다
         verify(adminUserService).withdrawInactiveUser(softTarget.getUserId());
-        verify(noticeStore).forget(softTarget.getUserId());
         verify(adminUserService, never()).withdrawInactiveUser(activeUser.getUserId());
         verify(adminUserService, never()).withdrawInactiveUser(podUser.getUserId());
         verify(adminUserService, never()).withdrawInactiveUser(d7User.getUserId());
