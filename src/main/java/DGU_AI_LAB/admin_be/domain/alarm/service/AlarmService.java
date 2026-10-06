@@ -380,6 +380,32 @@ public class AlarmService {
         sendMonitoringLog(user.getName(), user.getEmail(), subject);
     }
 
+    /**
+     * 신청자에게 접수됐음을 알린다. 접수 여부를 알 길이 없으면 같은 신청을 다시 낸다.
+     * 관리자 쪽에는 같은 신청이 신청서 채널로 이미 가므로 알림 기록은 따로 남기지 않는다.
+     */
+    public void sendRequestReceivedEmail(Request request) {
+        User user = request.getUser();
+        var resourceGroup = request.getResourceGroup();
+        var image = request.getContainerImage();
+        String serverName = resourceGroup.getServerName();
+        LocalDateTime receivedAt = request.getCreatedAt() != null
+                ? request.getCreatedAt()
+                : LocalDateTime.now(ZoneId.of("Asia/Seoul"));
+
+        String subject = messageUtils.get("email.request.received.subject", serverName);
+        String body = messageUtils.get("email.request.received.body",
+                user.getName(),                                            // {0}
+                String.valueOf(request.getRequestId()),                    // {1}
+                serverName,                                                // {2}
+                resourceGroup.getResourceGroupName(),                      // {3}
+                image == null ? "-" : image.getImageName() + ":" + image.getImageVersion(), // {4}
+                request.getExpiresAt().toLocalDate().toString(),           // {5}
+                RECEIVED_AT_FORMAT.format(receivedAt));                    // {6}
+
+        sendMailAlert(user.getEmail(), subject, body);
+    }
+
     public void sendRequestRejectedEmail(Request request, String adminComment) {
         User user = request.getUser();
         String serverName = request.getResourceGroup().getServerName();
