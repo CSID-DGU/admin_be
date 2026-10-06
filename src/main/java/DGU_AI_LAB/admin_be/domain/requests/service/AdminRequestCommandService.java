@@ -251,9 +251,8 @@ public class AdminRequestCommandService {
             job = jobClient.getResult(JobResults.KIND_PROVISION, requestId);
         } catch (Exception lookupFailure) {
             log.warn("생성 작업 등록 실패 후 작업 상태 조회도 실패 — PROCESSING 유지, 재조정에 맡김: requestId={}", requestId, lookupFailure);
-            notifyApprovalFailure(String.format(
-                    "[승인 확인 필요] 생성 작업 등록 결과를 확인하지 못해 PROCESSING으로 두었습니다(작업이 없으면 재조정이 되돌립니다): username=%s, requestId=%d, error=%s",
-                    username, requestId, cause.getMessage()), serverName);
+            alarmService.alertNeedsAction("notification.admin.approval.register-unconfirmed",
+                serverName, username, requestId, cause.getMessage());
             throw asRuntime(cause);
         }
         if (job != null && JobResults.isRunning(job.phase())) {
@@ -266,9 +265,8 @@ public class AdminRequestCommandService {
     /** 등록된 작업이 없다 — 아직 아무것도 만들어지지 않았으므로 정리할 자원 없이 되돌린다. */
     private Long revertUnregistered(Long requestId, String username, String serverName, Exception cause) {
         log.warn("[보상 트랜잭션] 생성 작업 등록 실패 → 상태 복구 시작: {}", username, cause);
-        notifyApprovalFailure(String.format(
-                "[승인 실패] 생성 작업 등록 실패로 상태를 PENDING으로 되돌렸습니다: username=%s, requestId=%d, error=%s",
-                username, requestId, cause.getMessage()), serverName);
+        alarmService.alertNeedsAction("notification.admin.approval.register-failed",
+                serverName, username, requestId, cause.getMessage());
         revertToPendingIfStillProcessing(requestId, serverName);
         throw asRuntime(cause);
     }
@@ -300,9 +298,8 @@ public class AdminRequestCommandService {
                 return;
             }
             log.error("생성 작업 성공 결과에 자원 정보가 없어 신청에 반영하지 못함: requestId={}", requestId);
-            notifyApprovalFailure(String.format(
-                    "[승인 확인 필요] 생성 작업은 성공했으나 결과 정보를 받지 못해 신청에 반영하지 못했습니다: requestId=%d",
-                    requestId), serverNameOf(requestId));
+            alarmService.alertNeedsAction("notification.admin.approval.result-missing",
+                serverNameOf(requestId), requestId);
             return;
         }
 
@@ -364,9 +361,8 @@ public class AdminRequestCommandService {
             if (alertDeduplicator.firstOccurrence("provision-pending-group:" + requestId + ":" + jobIdOf(requestId))) {
                 log.error("생성 작업 결과로 새 그룹의 gid 를 채우지 못해 신청에 반영하지 못함: requestId={}, {}",
                         requestId, groupProblemRef[0]);
-                notifyApprovalFailure(String.format(
-                        "[승인 확인 필요] 생성 작업은 성공했으나 새 그룹의 gid를 채우지 못해 신청에 반영하지 못했습니다: requestId=%d, %s",
-                        requestId, groupProblemRef[0]), serverNameOf(requestId));
+                alarmService.alertNeedsAction("notification.admin.approval.group-gid-missing",
+                serverNameOf(requestId), requestId, groupProblemRef[0]);
             }
             return;
         }
@@ -388,9 +384,8 @@ public class AdminRequestCommandService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void failApprovalJob(Long requestId, JobResultResponseDTO result) {
         String serverName = serverNameOf(requestId);
-        notifyApprovalFailure(String.format(
-                "[승인 실패] 생성 작업이 실패해 상태를 PENDING으로 되돌렸습니다: requestId=%d, error=%s",
-                requestId, result.errorCode()), serverName);
+        alarmService.alertNeedsAction("notification.admin.approval.job-failed",
+                serverName, requestId, result.errorCode());
         revertToPendingIfStillProcessing(requestId, serverName);
     }
 
@@ -401,9 +396,8 @@ public class AdminRequestCommandService {
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void reportUnknownApprovalJob(Long requestId, JobResultResponseDTO result) {
-        notifyApprovalFailure(String.format(
-                "[승인 확인 필요] 생성 작업의 결과가 불명입니다. 자원이 남아 있는지 확인이 필요합니다: requestId=%d, error=%s",
-                requestId, result.errorCode()), serverNameOf(requestId));
+        alarmService.alertNeedsAction("notification.admin.approval.job-unknown",
+                serverNameOf(requestId), requestId, result.errorCode());
     }
 
     /**
@@ -413,9 +407,8 @@ public class AdminRequestCommandService {
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void reportDegradedApprovalJob(Long requestId, JobResultResponseDTO result) {
-        notifyApprovalFailure(String.format(
-                "[승인 확인 필요] 생성 작업이 복구되지 않아 관리자 확인으로 넘어왔습니다. 만든 자원은 남아 있습니다: requestId=%d, jobId=%s",
-                requestId, result.jobId()), serverNameOf(requestId));
+        alarmService.alertNeedsAction("notification.admin.approval.job-degraded",
+                serverNameOf(requestId), requestId, result.jobId());
     }
 
     /**
@@ -427,9 +420,8 @@ public class AdminRequestCommandService {
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void reportApplyFailure(Long requestId, String detail) {
-        notifyApprovalFailure(String.format(
-                "[승인 확인 필요] 생성 작업 결과를 신청에 반영하는 중 오류가 났습니다: requestId=%d, error=%s",
-                requestId, detail), serverNameOf(requestId));
+        alarmService.alertNeedsAction("notification.admin.approval.apply-failed",
+                serverNameOf(requestId), requestId, detail);
     }
 
     /** 알림 중복 키용 현재 작업 번호. 같은 신청이라도 새 작업이면 새 사건으로 다시 알린다. */
@@ -526,28 +518,6 @@ public class AdminRequestCommandService {
 
     // ── 보상 트랜잭션 헬퍼 ─────────────────────────────────────────────
 
-    // 보상 트랜잭션 자체의 실패는 로그만 남기면 관리자가 직접 읽기 전까지 아무도 모른다 —
-    // 원래 실패(계정/Pod 생성 실패 등) 위에 이 정리마저 실패했다는 건 인프라와 DB가 어긋난
-    // 채로 방치된다는 뜻이라 즉시 알림이 필요하다. 관리자가 "새로운 서버 사용 신청" 알림을
-    // 실제로 보는 farm/lab 채널로 보내야 놓치지 않는다 — 범용 에러 채널은 잘 안 보게 된다.
-    private void alertCompensationFailure(String message, String serverName) {
-        try {
-            alarmService.sendAdminSlackNotification(serverName, message);
-        } catch (Exception ignored) {
-            // 알림 발송 실패가 원래 예외 전파를 막으면 안 된다.
-        }
-    }
-
-    // 승인 실패는 대부분 작업 결과 폴러가 뒤늦게 알게 되어 승인을 누른 관리자의 HTTP 응답으로는 보이지 않는다.
-    // 관리자가 신청 목록만 보고 원인을 모른 채 재승인하지 않도록 farm/lab 채널에 실패 이력을 남긴다.
-    // (보상 자체의 실패가 아니라 원래 승인 처리의 실패를 알린다는 점만 alertCompensationFailure와 다르다.)
-    private void notifyApprovalFailure(String message, String serverName) {
-        try {
-            alarmService.sendAdminSlackNotification(serverName, message);
-        } catch (Exception ignored) {
-        }
-    }
-
     // 승인이 실패한 신청을 PENDING으로 되돌린다. 실패는 두 경우로 갈린다. ① 그 사이 다른 관리자가
     // 거절해 상태가 이미 DENIED 등으로 바뀐 경우(건드리지 않는다) ② 여전히 PROCESSING인 채 실패한 경우.
     // 상태 확인 없이 덮어쓰면 ①에서 다른 관리자의 거절 결정을 지우고, ②를 그대로 두면 신청이 재승인도
@@ -564,7 +534,8 @@ public class AdminRequestCommandService {
             });
         } catch (Exception e) {
             log.error("[보상 트랜잭션 실패] 요청 상태 복구 실패 — 수동 확인 필요: requestId={}", requestId, e);
-            alertCompensationFailure(String.format("[보상 트랜잭션 실패] 요청 상태 복구 실패 - 수동 확인 필요: requestId=%d", requestId), serverName);
+            alarmService.alertNeedsAction("notification.admin.approval.revert-failed",
+                serverName, requestId);
         }
     }
 }

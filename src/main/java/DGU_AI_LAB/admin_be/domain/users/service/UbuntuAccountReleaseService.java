@@ -117,8 +117,8 @@ public class UbuntuAccountReleaseService {
                     .ifPresent(User::abortUbuntuAccountRelease);
             return null;
         });
-        alert(String.format("[계정 회수] userId=%d 우분투 계정의 farm 노드를 알 수 없어 삭제 보류 - 수동 정리 필요: ubuntuUsername=%s",
-                userId, username));
+        alarmService.alertNeedsAction("notification.admin.account-revoke.unknown-nodes",
+                    userId, username);
     }
 
     /** 이 노드에서 계정 회수가 끝났는가. 아직 등록하지 않았으면 등록한다. */
@@ -175,8 +175,8 @@ public class UbuntuAccountReleaseService {
         if (jobId == null) {
             // 번호가 없으면 이 작업의 결과를 가려낼 수 없다. config-server 응답 계약 위반이다.
             if (alertDeduplicator.firstOccurrence(dailyKey(userId, node, "no-job-id"))) {
-                alert(String.format("[계정 회수] 작업 번호 없이 등록됨 - 수동 확인 필요: userId=%d, node=%s, requestId=%d",
-                        userId, node.nodeName(), node.requestId()));
+                alarmService.alertNeedsAction("notification.admin.account-revoke.no-job-id",
+                    userId, node.nodeName(), node.requestId());
             }
             return;
         }
@@ -191,15 +191,15 @@ public class UbuntuAccountReleaseService {
     private void reportRegistrationFailure(Long userId, NodeJob node, Exception e) {
         log.warn("[계정 회수] 작업 등록 실패 - 다음 바퀴에 다시 등록: userId={}, node={}", userId, node.nodeName(), e);
         if (alertDeduplicator.firstOccurrence(dailyKey(userId, node, "register"))) {
-            alert(String.format("[계정 회수] 작업 등록 실패(계속 재시도): userId=%d, node=%s, error=%s",
-                    userId, node.nodeName(), e.getMessage()));
+            alarmService.alertNeedsAction("notification.admin.account-revoke.register-failed",
+                    userId, node.nodeName(), e.getMessage());
         }
     }
 
     private void reportOnce(Long userId, NodeJob node, JobResultResponseDTO result, String what) {
         if (alertDeduplicator.firstOccurrence("account-revoke:" + userId + ":" + node.nodeName() + ":" + node.jobId())) {
-            alert(String.format("[계정 회수] %s - %s: userId=%d, node=%s, requestId=%d, error=%s",
-                    what, adviceFor(result), userId, node.nodeName(), node.requestId(), result.errorCode()));
+            alarmService.alertNeedsAction("notification.admin.account-revoke.job-unresolved",
+                    what, adviceFor(result), userId, node.nodeName(), node.requestId(), result.errorCode());
         }
     }
 
@@ -217,14 +217,5 @@ public class UbuntuAccountReleaseService {
 
     private static String dailyKey(Long userId, NodeJob node, String what) {
         return "account-revoke-" + what + ":" + userId + ":" + node.nodeName() + ":" + LocalDate.now();
-    }
-
-    private void alert(String message) {
-        log.error(message);
-        try {
-            alarmService.sendSlackAlert(message, null);
-        } catch (Exception e) {
-            log.warn("[계정 회수] 알림 전송 실패", e);
-        }
     }
 }

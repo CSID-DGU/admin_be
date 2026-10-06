@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
+import DGU_AI_LAB.admin_be.support.Alerts;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.AdminBeApplication;
@@ -171,22 +172,17 @@ public class RequestSchedulerServiceTest {
                 reqExpired.getExpiresAt().toLocalDate().toString(),
                 messageUtils.get("notification.home.kept", "testuser"));
 
-        verify(alarmService).sendAllAlerts(
+        verify(alarmService).notifyUser(
                 eq(testUser.getName()),
                 eq(testUser.getEmail()),
                 eq(expectedDelSubject),
                 eq(expectedDelBody)
         );
 
-        // 관리자 알림 검증
+        // 처리 기록 검증: 삭제 1회
         // notification.admin.delete.success ({0}서버 표시, {1}계정, {2}서버)
-        String expectedAdminMsg = messageUtils.get("notification.admin.delete.success",
-                "FARM-01", "testuser", "FARM-01");
-
-        verify(alarmService).sendAdminSlackNotification(
-                eq("FARM-01"),
-                eq(expectedAdminMsg)
-        );
+        assertThat(Alerts.recorded(alarmService))
+                .containsExactly("notification.admin.delete.success FARM-01 testuser FARM-01");
 
 
         // 2. [알림 검증] 1일 전 (req1Day)
@@ -201,9 +197,8 @@ public class RequestSchedulerServiceTest {
 
         // 5. [총 호출 횟수 검증]
         // 사용자 알림: 삭제1 + 1일전1 + 3일전1 + 7일전1 = 4회
-        verify(alarmService, times(4)).sendAllAlerts(anyString(), anyString(), anyString(), anyString());
-        // 관리자 알림: 삭제1회
-        verify(alarmService, times(1)).sendAdminSlackNotification(anyString(), anyString());
+        verify(alarmService, times(4)).notifyUser(anyString(), anyString(), anyString(), anyString());
+        assertThat(Alerts.needsAction(alarmService)).isEmpty();
     }
 
     @Test
@@ -276,13 +271,9 @@ public class RequestSchedulerServiceTest {
         assertThat(requestRepository.findById(freshProcessing.getRequestId()).orElseThrow().getStatus())
                 .isEqualTo(Status.PROCESSING);
 
-        String expectedProcessingMsg = messageUtils.get("notification.admin.request.stale-processing",
-                staleProcessing.getRequestId(), "testuser", 20L);
-        verify(alarmService).sendSlackAlert(eq(expectedProcessingMsg), isNull());
-
-        String expectedMigratingMsg = messageUtils.get("notification.admin.request.stale-migrating",
-                staleMigrating.getRequestId(), "testuser", 20L);
-        verify(alarmService).sendSlackAlert(eq(expectedMigratingMsg), isNull());
+        assertThat(Alerts.needsAction(alarmService)).containsExactlyInAnyOrder(
+                "notification.admin.request.stale-processing " + staleProcessing.getRequestId() + " testuser 20",
+                "notification.admin.request.stale-migrating " + staleMigrating.getRequestId() + " testuser 20");
     }
 
     // [헬퍼] 만료 예고 알림 검증 로직 분리
@@ -301,7 +292,7 @@ public class RequestSchedulerServiceTest {
                 messageUtils.get("notification.home.kept", request.getUbuntuUsername())
         );
 
-        verify(alarmService).sendAllAlerts(
+        verify(alarmService).notifyUser(
                 eq(user.getName()),
                 eq(user.getEmail()),
                 eq(expectedSubject),

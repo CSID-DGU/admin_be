@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
+import DGU_AI_LAB.admin_be.support.Alerts;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
@@ -10,7 +11,6 @@ import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
-import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,6 +23,7 @@ import org.mockito.quality.Strictness;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -39,7 +40,6 @@ class RequestSchedulerServiceUnitTest {
     @Mock private RequestRepository requestRepository;
     @Mock private AlarmService alarmService;
     @Mock private RequestExpiryService requestExpiryService;
-    @Mock private MessageUtils messageUtils;
     @Mock private RequestNotificationService requestNotificationService;
     @Mock private AdminRequestCommandService adminRequestCommandService;
     @Mock private JobClient jobClient;
@@ -51,7 +51,7 @@ class RequestSchedulerServiceUnitTest {
     @BeforeEach
     void setUp() {
         service = new RequestSchedulerService(
-                requestRepository, alarmService, requestExpiryService, messageUtils, requestNotificationService,
+                requestRepository, alarmService, requestExpiryService, requestNotificationService,
                 adminRequestCommandService, jobClient
         );
         when(mockRg.getServerName()).thenReturn("FARM-01");
@@ -79,8 +79,8 @@ class RequestSchedulerServiceUnitTest {
 
         service.processExpiredRequests(now);
 
-        verify(alarmService).sendAdminSlackNotification(eq("FARM-01"), any());
-        verify(alarmService).sendSlackAlert(any(), any());
+        assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("FARM-01")).hasSize(1);
+        assertThat(Alerts.needsAction(alarmService)).hasSize(1);
     }
 
     @Test
@@ -94,8 +94,7 @@ class RequestSchedulerServiceUnitTest {
         service.processExpiredRequests(now);
 
         verify(requestExpiryService).deleteExpiredRequest(2L);
-        verify(alarmService, never()).sendAdminSlackNotification(any(), any());
-        verify(alarmService, never()).sendSlackAlert(any(), any());
+        assertThat(Alerts.needsAction(alarmService)).isEmpty();
     }
 
     @Test
@@ -113,7 +112,7 @@ class RequestSchedulerServiceUnitTest {
 
         verify(requestExpiryService).deleteExpiredRequest(3L);
         verify(requestExpiryService).deleteExpiredRequest(4L); // 하나 실패해도 나머지는 계속 처리
-        verify(alarmService, times(1)).sendAdminSlackNotification(any(), any());
+        assertThat(Alerts.needsAction(alarmService)).hasSize(1);
     }
 
     @Test
@@ -126,7 +125,7 @@ class RequestSchedulerServiceUnitTest {
         service.processExpiredRequests(now);
 
         verify(requestExpiryService, never()).deleteExpiredRequest(any());
-        verify(alarmService, never()).sendAdminSlackNotification(any(), any());
+        assertThat(Alerts.needsAction(alarmService)).isEmpty();
     }
 
     @Test
@@ -141,7 +140,7 @@ class RequestSchedulerServiceUnitTest {
         service.reconcileStaleInFlightRequests();
 
         verify(adminRequestCommandService).revertToPendingIfStillProcessing(10L, "FARM-01");
-        verify(alarmService).sendSlackAlert(any(), any());
+        assertThat(Alerts.needsAction(alarmService)).hasSize(1);
     }
 
     @Test
@@ -156,7 +155,7 @@ class RequestSchedulerServiceUnitTest {
         service.reconcileStaleInFlightRequests();
 
         verify(adminRequestCommandService, never()).revertToPendingIfStillProcessing(any(), any());
-        verify(alarmService).sendSlackAlert(any(), any());
+        assertThat(Alerts.needsAction(alarmService)).hasSize(1);
     }
 
     @Test
@@ -168,7 +167,7 @@ class RequestSchedulerServiceUnitTest {
         service.reconcileStaleInFlightRequests();
 
         verify(adminRequestCommandService, never()).revertToPendingIfStillProcessing(any(), any());
-        verify(alarmService, never()).sendSlackAlert(any(), any());
+        assertThat(Alerts.needsAction(alarmService)).isEmpty();
     }
 
     private static JobResultResponseDTO provisionJob(String phase) {
@@ -186,7 +185,7 @@ class RequestSchedulerServiceUnitTest {
         service.reconcileStaleInFlightRequests();
 
         verify(adminRequestCommandService, never()).revertToPendingIfStillProcessing(any(), any());
-        verify(alarmService, never()).sendSlackAlert(any(), any());
+        assertThat(Alerts.needsAction(alarmService)).isEmpty();
     }
 
     @Test

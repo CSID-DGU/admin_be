@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
+import DGU_AI_LAB.admin_be.support.Alerts;
 import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
@@ -23,6 +24,7 @@ import org.mockito.quality.Strictness;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -84,7 +86,7 @@ class RevokeJobPollerTest {
         poller.pollRevokeJobs();
 
         verify(requestExpiryService).failContainerRevoke(REQUEST_ID);
-        verify(alarmService).sendSlackAlert(contains("POD_DELETE_FAILED"), isNull());
+        assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("POD_DELETE_FAILED")).hasSize(1);
     }
 
     @Test
@@ -99,7 +101,7 @@ class RevokeJobPollerTest {
 
         verify(requestExpiryService, never()).failContainerRevoke(anyLong());
         verify(requestExpiryService, never()).completeContainerRevoke(anyLong());
-        verify(alarmService, times(1)).sendSlackAlert(anyString(), isNull());
+        assertThat(Alerts.needsAction(alarmService)).hasSize(1);
     }
 
     @Test
@@ -141,7 +143,7 @@ class RevokeJobPollerTest {
 
         poller.pollRevokeJobs(); // 예외가 밖으로 나가면 이 시험 자체가 실패한다
 
-        verify(alarmService, never()).sendSlackAlert(anyString(), any());
+        assertThat(Alerts.needsAction(alarmService)).isEmpty();
     }
 
     @Test

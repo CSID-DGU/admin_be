@@ -57,7 +57,7 @@ public class RequestNotificationService {
                 String email = user.getEmail();
                 // 조회 트랜잭션이 끝난 뒤에 보낸다 — 대상이 많아도 전송하는 동안 DB 연결을 쥐고 있지 않는다.
                 AfterCommit.run("만료 " + dayLabel + " 전 알림, 요청 ID " + request.getRequestId(),
-                        () -> alarmService.sendAllAlerts(name, email, subject, message));
+                        () -> alarmService.notifyUser(name, email, subject, message));
 
             } catch (Exception e) {
                 log.warn("{} 전 알림 실패: {}", dayLabel, e.getMessage());

@@ -267,16 +267,9 @@ public class GroupOperationService {
                 () -> alarmService.sendGroupAddedEmail(changeRequest, changeRequest.getAdminComment(), notice.groupNames()));
     }
 
-    // 관리자가 실제로 보는 farm/lab 채널로 알린다. 알림 실패가 결과 반영을 막으면 안 된다.
     private void notifyAddFailed(FailureNotice notice, String errorCode) {
-        try {
-            alarmService.sendAdminSlackNotification(notice.serverName(), String.format(
-                    "[그룹 추가] 반영하지 못해 변경 요청을 승인 대기로 되돌렸습니다 - 다시 승인하면 이어서 반영됩니다. "
-                            + "AD에는 이미 반영됐을 수 있고 거절해도 되돌려지지 않으니, 거절한다면 사용자 그룹 관리에서 "
-                            + "해당 그룹을 제거해 주세요: changeRequestId=%d, username=%s, error=%s",
-                    notice.changeRequestId(), notice.username(), errorCode));
-        } catch (Exception ignored) {
-        }
+        alarmService.alertNeedsAction("notification.admin.group.add-failed",
+                notice.serverName(), notice.changeRequestId(), notice.username(), errorCode);
     }
 
     private GroupOperation lock(Long operationId) {

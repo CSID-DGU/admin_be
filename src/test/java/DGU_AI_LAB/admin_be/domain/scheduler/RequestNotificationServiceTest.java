@@ -127,11 +127,11 @@ class RequestNotificationServiceTest {
 
             notificationService.sendPreExpiryNotification(LocalDateTime.now(), "7일");
 
-            verify(alarmService, never()).sendAllAlerts(any(), any(), any(), any());
+            verify(alarmService, never()).notifyUser(any(), any(), any(), any());
         }
 
         @Test
-        @DisplayName("조회된 요청마다 alarmService.sendAllAlerts를 호출한다")
+        @DisplayName("조회된 요청마다 alarmService.notifyUser를 호출한다")
         void sendsAlertForEachRequest() {
             LocalDateTime expiresAt = LocalDateTime.of(2025, 11, 17, 12, 0, 0);
             Request req1 = buildRequest(1L, "유저A", "a@dgu.ac.kr", "FARM-01", "usera", expiresAt);
@@ -143,7 +143,7 @@ class RequestNotificationServiceTest {
 
             notificationService.sendPreExpiryNotification(LocalDateTime.now(), "7일");
 
-            verify(alarmService, times(2)).sendAllAlerts(any(), any(), any(), any());
+            verify(alarmService, times(2)).notifyUser(any(), any(), any(), any());
         }
 
         @Test
@@ -176,7 +176,7 @@ class RequestNotificationServiceTest {
 
             notificationService.sendPreExpiryNotification(LocalDateTime.now(), "1일");
 
-            verify(alarmService).sendAllAlerts(eq("홍길동"), eq("hong@dgu.ac.kr"), any(), any());
+            verify(alarmService).notifyUser(eq("홍길동"), eq("hong@dgu.ac.kr"), any(), any());
         }
 
         @Test
@@ -195,7 +195,7 @@ class RequestNotificationServiceTest {
 
             notificationService.sendPreExpiryNotification(LocalDateTime.now(), "7일");
 
-            verify(alarmService, times(1)).sendAllAlerts(any(), any(), any(), any());
+            verify(alarmService, times(1)).notifyUser(any(), any(), any(), any());
         }
 
         @Test
@@ -211,7 +211,7 @@ class RequestNotificationServiceTest {
 
             notificationService.sendPreExpiryNotification(LocalDateTime.now(), "1일");
 
-            verify(alarmService, never()).sendAllAlerts(any(), any(), any(), any());
+            verify(alarmService, never()).notifyUser(any(), any(), any(), any());
         }
 
         @Test
@@ -226,11 +226,11 @@ class RequestNotificationServiceTest {
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
             doThrow(new RuntimeException("Slack error"))
                     .doNothing()
-                    .when(alarmService).sendAllAlerts(any(), any(), any(), any());
+                    .when(alarmService).notifyUser(any(), any(), any(), any());
 
             notificationService.sendPreExpiryNotification(LocalDateTime.now(), "3일");
 
-            verify(alarmService, times(2)).sendAllAlerts(any(), any(), any(), any());
+            verify(alarmService, times(2)).notifyUser(any(), any(), any(), any());
         }
 
         @Test

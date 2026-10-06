@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.support.Alerts;
 import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
@@ -651,7 +652,7 @@ class AdminRequestCommandServiceTest {
             service.completeApprovalJob(requestId, null);
             service.completeApprovalJob(requestId, null);
 
-            verify(alarmService, times(1)).sendAdminSlackNotification(any(), any());
+            assertThat(Alerts.needsAction(alarmService)).hasSize(1);
             verify(request, never()).completeApproval();
         }
 
@@ -735,7 +736,7 @@ class AdminRequestCommandServiceTest {
 
             // Then
             verify(request, never()).completeApproval();
-            verify(alarmService).sendAdminSlackNotification(any(), contains("결과 정보를 받지 못해"));
+            assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("approval.result-missing")).hasSize(1);
         }
 
         @Test
@@ -752,7 +753,7 @@ class AdminRequestCommandServiceTest {
 
             // Then
             verify(request).revertToPending();
-            verify(alarmService).sendAdminSlackNotification(any(), contains("KDC_FAILED"));
+            assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("KDC_FAILED")).hasSize(1);
         }
 
         @Test
@@ -766,7 +767,7 @@ class AdminRequestCommandServiceTest {
             service.reportDegradedApprovalJob(requestId, result);
 
             verify(request, never()).revertToPending();
-            verify(alarmService).sendAdminSlackNotification(any(), contains("자원은 남아 있습니다"));
+            assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("approval.job-degraded")).hasSize(1);
         }
 
         @Test
@@ -783,7 +784,7 @@ class AdminRequestCommandServiceTest {
 
             // Then
             verify(request, never()).revertToPending();
-            verify(alarmService).sendAdminSlackNotification(any(), contains("결과가 불명"));
+            assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("approval.job-unknown")).hasSize(1);
         }
     }
     @Nested
@@ -910,7 +911,7 @@ class AdminRequestCommandServiceTest {
             verify(request, never()).assignPodInfo(any(), any());
             verify(mockUser, never()).assignUbuntuAccount(any(), any());
             verify(transactionStatus, times(2)).setRollbackOnly();
-            verify(alarmService, times(1)).sendAdminSlackNotification(any(), contains("vision-lab"));
+            assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("vision-lab")).hasSize(1);
             verify(alarmService, never()).sendContainerCreatedEmail(any(), any(), any());
         }
 
@@ -929,7 +930,7 @@ class AdminRequestCommandServiceTest {
 
             assertThat(pending.getUbuntuGid()).isNull();
             verify(request, never()).completeApproval();
-            verify(alarmService).sendAdminSlackNotification(any(), contains("ailab"));
+            assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("ailab")).hasSize(1);
         }
 
         @Test

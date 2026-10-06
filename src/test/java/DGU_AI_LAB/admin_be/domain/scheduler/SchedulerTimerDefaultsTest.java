@@ -52,7 +52,7 @@ class SchedulerTimerDefaultsTest {
     @DisplayName("설정을 주입하지 않은 인스턴스의 정체 임계가 20분이다")
     void staleThresholdField_initialisesToTwentyMinutes() throws Exception {
         RequestSchedulerService service = new RequestSchedulerService(
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null);
 
         Field field = RequestSchedulerService.class.getDeclaredField(THRESHOLD_FIELD);
         field.setAccessible(true);

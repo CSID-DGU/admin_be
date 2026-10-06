@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.support.Alerts;
 import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
@@ -164,7 +165,7 @@ class UbuntuAccountReleaseServiceTest {
         service.advance(USER_ID);
 
         assertThat(user.getUbuntuAccountStatus()).isEqualTo(UbuntuAccountStatus.RELEASING);
-        verify(alarmService, times(1)).sendSlackAlert(contains("ACCOUNT_IN_USE"), isNull());
+        assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("ACCOUNT_IN_USE")).hasSize(1);
     }
 
     @Test
@@ -179,12 +180,11 @@ class UbuntuAccountReleaseServiceTest {
         service.advance(USER_ID);
 
         assertThat(user.getUbuntuAccountStatus()).isEqualTo(UbuntuAccountStatus.RELEASING);
-        verify(alarmService, times(1)).sendSlackAlert(
-                argThat(msg -> msg.contains("ACCOUNT_ABSENT_UNVERIFIED")
-                        && msg.contains("다시 실행해도 풀리지 않습니다")
-                        && msg.contains("계정 파일과 삭제 기록을 확인")
-                        && !msg.contains("다시 실행해 주세요")),
-                isNull());
+        assertThat(Alerts.needsAction(alarmService))
+                .filteredOn(alert -> alert.contains("ACCOUNT_ABSENT_UNVERIFIED"))
+                .singleElement().asString()
+                .contains("다시 실행해도 풀리지 않습니다", "계정 파일과 삭제 기록을 확인")
+                .doesNotContain("다시 실행해 주세요");
     }
 
     @Test
@@ -225,7 +225,7 @@ class UbuntuAccountReleaseServiceTest {
         service.advance(USER_ID);
 
         verify(ubuntuAccountService, times(2)).registerAccountRevoke(anyString(), anyString(), anyLong());
-        verify(alarmService, times(1)).sendSlackAlert(anyString(), isNull());
+        assertThat(Alerts.needsAction(alarmService)).hasSize(1);
     }
 
     @Test
@@ -237,7 +237,7 @@ class UbuntuAccountReleaseServiceTest {
 
         verifyNoInteractions(ubuntuAccountService);
         assertThat(user.getUbuntuAccountStatus()).isEqualTo(UbuntuAccountStatus.ACTIVE);
-        verify(alarmService).sendSlackAlert(contains("farm 노드를 알 수 없어"), isNull());
+        assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("account-revoke.unknown-nodes")).hasSize(1);
     }
 
     @Test

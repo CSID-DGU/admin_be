@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.groups.service;
 
+import DGU_AI_LAB.admin_be.support.Alerts;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupOperationResponseDTO;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
@@ -266,7 +267,7 @@ class GroupOperationServiceTest {
             assertThat(changeRequest.getReviewedBy()).isNull();
             assertThat(operation.getStatus()).isEqualTo(GroupOperationStatus.FAILED);
             assertThat(user.getUserGroups()).isEmpty();
-            verify(alarmService).sendAdminSlackNotification(any(), anyString());
+            assertThat(Alerts.needsAction(alarmService)).hasSize(1);
         }
     }
 

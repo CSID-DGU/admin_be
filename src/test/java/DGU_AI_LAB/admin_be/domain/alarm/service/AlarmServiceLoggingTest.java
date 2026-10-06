@@ -58,7 +58,7 @@ class AlarmServiceLoggingTest {
     @DisplayName("메일 전송 실패 시 로그와 Slack 알림 메시지에 수신자 이메일 전체가 남지 않는다")
     void doesNotLogFullEmailOnMailSendFailure() {
         try (LogCaptor logCaptor = LogCaptor.forClass(AlarmService.class)) {
-            alarmService.sendMailAlert(EMAIL, "제목", "본문");
+            alarmService.notifyUser("홍길동", EMAIL, "제목", "본문");
 
             String logs = logCaptor.joined();
             assertThat(logs).doesNotContain(EMAIL);
