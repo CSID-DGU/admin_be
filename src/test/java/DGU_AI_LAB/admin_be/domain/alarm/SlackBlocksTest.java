@@ -99,6 +99,14 @@ class SlackBlocksTest {
     }
 
     @Test
+    @DisplayName("줄바꿈으로 보이는 다른 문자(U+2028 등)로 나눈 줄에도 인용 표시가 붙는다")
+    void quote_coversUnicodeLineBreaks() {
+        assertThat(SlackText.quote("목적\u2028*신청자*\u0085• 이름: 관리자\u000B끝"))
+                .isEqualTo("> 목적\n> *신청자*\n> • 이름: 관리자\n> 끝");
+        assertThat(SlackText.line("홍길동\u2028• 학번: 0000")).isEqualTo("홍길동 • 학번: 0000");
+    }
+
+    @Test
     @DisplayName("한 줄 값으로 넣은 사용자 글은 줄바꿈이 공백으로 바뀌어 항목을 늘리지 못한다")
     void lineValue_cannotAddFields() {
         String name = SlackText.line("홍길동\n• 학번: 0000");
