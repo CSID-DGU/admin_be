@@ -48,6 +48,9 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class RequestCommandServiceTest {
 
+    @Mock
+    private DGU_AI_LAB.admin_be.domain.home.service.HomeCleanupService homeCleanupService;
+
     @InjectMocks
     private RequestCommandService requestCommandService;
 
@@ -186,6 +189,25 @@ class RequestCommandServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.CONTAINER_REQUEST_ALREADY_PENDING);
+            verify(requestRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(requestCreateThrottle);
+        }
+
+        @Test
+        @DisplayName("홈을 지우는 중이면 신청을 받지 않는다")
+        void createRequest_homeCleanupInProgress_rejects() {
+            User user = userWithUbuntuUsername("honggildong");
+            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
+            when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
+            when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
+            when(homeCleanupService.isDeleting(1L)).thenReturn(true);
+            SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
+            when(dto.resourceGroupId()).thenReturn(1);
+
+            assertThatThrownBy(() -> requestCommandService.createRequest(1L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.HOME_CLEANUP_IN_PROGRESS);
             verify(requestRepository, never()).saveAndFlush(any());
             verifyNoInteractions(requestCreateThrottle);
         }

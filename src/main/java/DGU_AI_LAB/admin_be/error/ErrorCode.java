@@ -169,6 +169,7 @@ public enum ErrorCode {
     //FORBIDDEN_REQUEST(HttpStatus.BAD_REQUEST, "본인의 신청만 변경 신청할 수 있습니다."),
     UNSUPPORTED_CHANGE_TYPE(HttpStatus.BAD_REQUEST, "지원되지 않는 요청 타입(enum)입니다."),
     CONTAINER_REQUEST_ALREADY_PENDING(HttpStatus.CONFLICT, "승인을 기다리는 신청이 이미 있어요. 기존 신청을 취소한 뒤 다시 신청해 주세요."),
+    HOME_CLEANUP_IN_PROGRESS(HttpStatus.CONFLICT, "보존 기간이 지난 홈 폴더를 정리하는 중이에요. 잠시 뒤 다시 신청해 주세요."),
     CHANGE_REQUEST_ALREADY_PENDING(HttpStatus.CONFLICT, "같은 종류의 변경 요청이 이미 대기 중입니다. 처리된 뒤 다시 요청해주세요."),
     CHANGE_REQUEST_EXPIRES_AT_PASSED(HttpStatus.CONFLICT, "요청한 만료 일시가 이미 지났습니다. 거절하고 새로 요청받아 주세요."),
     REQUEST_MIGRATION_IN_PROGRESS(HttpStatus.CONFLICT, "마이그레이션이 진행 중인 요청이 있어 삭제할 수 없습니다."),

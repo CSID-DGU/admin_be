@@ -38,12 +38,13 @@ public class HomeCleanupService {
 
     /**
      * 지워야 할 홈이면 삭제 시도를 만든다. 후보 조회 뒤 새로 신청했거나 이미 처리됐을 수 있어 여기서 다시 본다.
+     * 사용자 행을 잠그고 본다 — 신청 생성도 같은 행을 잠그므로, 확인과 시도 생성 사이에 새 신청이 끼어들지 못한다.
      *
      * @return 작업을 등록해야 하면 그 내용
      */
     @Transactional
     public Optional<Target> begin(Long userId, LocalDateTime now) {
-        User user = userRepository.findById(userId).orElseThrow();
+        User user = userRepository.findByIdForUpdate(userId).orElseThrow();
         if (user.getUbuntuUsername() == null || user.getUbuntuUid() == null || user.hasOpenRequest()) {
             return Optional.empty();
         }
@@ -54,6 +55,12 @@ public class HomeCleanupService {
             return Optional.empty();
         }
         return Optional.of(Target.of(cleanupRepository.save(HomeCleanup.start(user, endedAt.get()))));
+    }
+
+    /** 홈을 지우는 중인지. 그 사이 새 신청은 받지 않는다 — 승인되면 지워지는 홈 위에 컨테이너가 뜬다. */
+    @Transactional(readOnly = true)
+    public boolean isDeleting(Long userId) {
+        return cleanupRepository.existsByUser_UserIdAndStatus(userId, HomeCleanupStatus.PROCESSING);
     }
 
     @Transactional

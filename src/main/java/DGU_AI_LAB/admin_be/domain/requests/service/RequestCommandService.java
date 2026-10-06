@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.home.service.HomeCleanupService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
@@ -52,6 +53,7 @@ public class RequestCommandService {
     private final AlarmService alarmService;
     private final RequestCreateThrottle requestCreateThrottle;
     private final PendingGroupService pendingGroupService;
+    private final HomeCleanupService homeCleanupService;
 
     /** 아직 승인·거절이 정해지지 않은 신청 상태. */
     private static final List<Status> AWAITING_DECISION = List.of(Status.PENDING, Status.PROCESSING);
@@ -190,6 +192,12 @@ public class RequestCommandService {
         // 위에서 User 행을 잠갔으므로 같은 사용자의 동시 신청 두 건이 이 검사를 함께 통과하지 못한다.
         if (requestRepository.existsByUser_UserIdAndStatusIn(userId, AWAITING_DECISION)) {
             throw new BusinessException(ErrorCode.CONTAINER_REQUEST_ALREADY_PENDING);
+        }
+
+        // 홈 삭제 시도도 User 행을 잠그고 만들어지므로(HomeCleanupService.begin), 여기서 진행 중이 아니면
+        // 이 신청이 커밋된 뒤에는 삭제가 시작되지 않는다.
+        if (homeCleanupService.isDeleting(userId)) {
+            throw new BusinessException(ErrorCode.HOME_CLEANUP_IN_PROGRESS);
         }
 
         ContainerImage img = containerImageRepository.findById(dto.imageId())

@@ -46,7 +46,7 @@ class HomeCleanupServiceTest {
     @BeforeEach
     void setUp() {
         service = new HomeCleanupService(userRepository, cleanupRepository, new HomeRetentionPolicy());
-        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user));
         when(user.getUbuntuUsername()).thenReturn("hong");
         when(user.getUbuntuUid()).thenReturn(55010L);
         when(user.hasOpenRequest()).thenReturn(false);

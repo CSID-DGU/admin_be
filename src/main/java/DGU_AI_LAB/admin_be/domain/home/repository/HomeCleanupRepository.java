@@ -21,6 +21,8 @@ public interface HomeCleanupRepository extends JpaRepository<HomeCleanup, Long> 
 
     List<HomeCleanup> findAllByStatus(HomeCleanupStatus status);
 
+    boolean existsByUser_UserIdAndStatus(Long userId, HomeCleanupStatus status);
+
     /** 그 종료 시각(또는 그 뒤)을 근거로 이미 진행 중이거나 끝난 시도가 있는가. */
     boolean existsByUser_UserIdAndStatusInAndLastContainerEndedAtGreaterThanEqual(
             Long userId, Collection<HomeCleanupStatus> statuses, LocalDateTime lastContainerEndedAt);
