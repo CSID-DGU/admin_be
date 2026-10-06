@@ -6,9 +6,11 @@ import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -17,6 +19,15 @@ import java.util.Optional;
 
 @Repository
 public interface RequestRepository extends JpaRepository<Request, Long> {
+
+    /**
+     * 신청서 메시지의 Slack 식별자만 적는다. 엔티티를 읽어 고치지 않는 것은 수정 시각(updated_at)을 건드리지 않기
+     * 위해서다 — 그 시각은 홈 보존 기간 같은 판단의 기준이라 알림 때문에 바뀌면 안 된다.
+     */
+    @Modifying
+    @Transactional
+    @Query("UPDATE Request r SET r.slackMessageTs = :ts WHERE r.requestId = :requestId")
+    int updateSlackMessageTs(@Param("requestId") Long requestId, @Param("ts") String ts);
 
     List<Request> findAllByUser(User user);
     List<Request> findAllByUser_UserId(Long userId);

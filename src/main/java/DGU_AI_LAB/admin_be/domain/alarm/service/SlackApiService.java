@@ -13,6 +13,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -104,7 +105,7 @@ public class SlackApiService {
             throw new BusinessException(ErrorCode.SLACK_DM_CHANNEL_FAILED);
         }
 
-        sendMessageToSlackChannel(channelId, message, botToken);
+        postToChannel(channelId, message, null);
     }
 
     /**
@@ -219,22 +220,36 @@ public class SlackApiService {
         return null;
     }
 
-    private void sendMessageToSlackChannel(String channelId, String message, String token) {
+    /**
+     * 봇으로 채널에 글을 올리고 그 메시지의 식별자(ts)를 돌려준다. threadTs가 있으면 그 메시지의 스레드 댓글로 달되
+     * 채널에도 함께 보이게 한다 — 스레드에만 달면 채널을 보는 사람에게 알림이 가지 않는다.
+     * 봇이 그 채널에 들어가 있어야 한다.
+     */
+    public String postToChannel(String channelId, String message, String threadTs) {
         String url = "https://slack.com/api/chat.postMessage";
         HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(token);
+        headers.setBearerAuth(botToken);
         headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<Map<String, Object>> request = new HttpEntity<>(Map.of("channel", channelId, "text", message), headers);
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("channel", channelId);
+        payload.put("text", message);
+        if (threadTs != null) {
+            payload.put("thread_ts", threadTs);
+            payload.put("reply_broadcast", true);
+        }
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(payload, headers);
 
+        Map<?, ?> body;
         try {
-            ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
-            if (!Boolean.TRUE.equals(response.getBody().get("ok"))) {
-                log.error("Slack 메시지 전송 실패: {}", response.getBody().get("error"));
-                throw new BusinessException(ErrorCode.SLACK_SEND_FAILED);
-            }
+            body = restTemplate.postForEntity(url, request, Map.class).getBody();
         } catch (Exception e) {
             log.error("Slack 채널 메시지 전송 실패: {}", e.toString(), e);
             throw new BusinessException(ErrorCode.SLACK_SEND_FAILED);
         }
+        if (body == null || !Boolean.TRUE.equals(body.get("ok"))) {
+            log.error("Slack 메시지 전송 실패: {}", body == null ? "응답 없음" : body.get("error"));
+            throw new BusinessException(ErrorCode.SLACK_SEND_FAILED);
+        }
+        return (String) body.get("ts");
     }
 }

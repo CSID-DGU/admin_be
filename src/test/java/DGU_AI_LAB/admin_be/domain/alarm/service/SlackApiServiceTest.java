@@ -5,10 +5,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -143,6 +146,57 @@ class SlackApiServiceTest {
             // act & assert
             assertThatThrownBy(() -> slackApiService.sendDM("testuser", "test@example.com", "hello"))
                     .isNotInstanceOf(NullPointerException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("postToChannel")
+    class PostToChannelTests {
+
+        @SuppressWarnings("unchecked")
+        private Map<String, Object> sentPayload() {
+            ArgumentCaptor<HttpEntity<Map<String, Object>>> captor = ArgumentCaptor.forClass(HttpEntity.class);
+            verify(restTemplate).postForEntity(contains("chat.postMessage"), captor.capture(), eq(Map.class));
+            return captor.getValue().getBody();
+        }
+
+        @Test
+        @DisplayName("채널에 올리고 Slack이 돌려준 메시지 식별자(ts)를 반환한다")
+        void returnsTs() {
+            when(restTemplate.postForEntity(contains("chat.postMessage"), any(), eq(Map.class)))
+                    .thenReturn(new ResponseEntity<>(Map.of("ok", true, "ts", "1728200000.000100"), HttpStatus.OK));
+
+            String ts = slackApiService.postToChannel("C0REQ", "신청서", null);
+
+            assertThat(ts).isEqualTo("1728200000.000100");
+            assertThat(sentPayload()).containsEntry("channel", "C0REQ").containsEntry("text", "신청서")
+                    .doesNotContainKeys("thread_ts", "reply_broadcast");
+        }
+
+        @Test
+        @DisplayName("스레드 댓글은 원래 메시지를 가리키고 채널에도 함께 보이게 보낸다")
+        void threadReplyIsBroadcast() {
+            when(restTemplate.postForEntity(contains("chat.postMessage"), any(), eq(Map.class)))
+                    .thenReturn(new ResponseEntity<>(Map.of("ok", true, "ts", "1728200099.000200"), HttpStatus.OK));
+
+            slackApiService.postToChannel("C0REQ", "취소 알림", "1728200000.000100");
+
+            assertThat(sentPayload()).containsEntry("thread_ts", "1728200000.000100")
+                    .containsEntry("reply_broadcast", true);
+        }
+
+        @Test
+        @DisplayName("Slack이 거절하거나(ok=false) 응답이 없거나 연결이 안 되면 BusinessException이다")
+        void failuresBecomeBusinessException() {
+            when(restTemplate.postForEntity(contains("chat.postMessage"), any(), eq(Map.class)))
+                    .thenReturn(new ResponseEntity<>(Map.of("ok", false, "error", "not_in_channel"), HttpStatus.OK))
+                    .thenReturn(new ResponseEntity<>(null, HttpStatus.OK))
+                    .thenThrow(new org.springframework.web.client.ResourceAccessException("timeout"));
+
+            for (int i = 0; i < 3; i++) {
+                assertThatThrownBy(() -> slackApiService.postToChannel("C0REQ", "신청서", null))
+                        .isInstanceOf(DGU_AI_LAB.admin_be.error.exception.BusinessException.class);
+            }
         }
     }
 }

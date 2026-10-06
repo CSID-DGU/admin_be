@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.dto.SlackMessageDto;
 import DGU_AI_LAB.admin_be.domain.alarm.service.SlackApiService;
+import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -35,6 +36,9 @@ class SlackNotificationWorkerTest {
 
     @Mock
     private ObjectMapper objectMapper;
+
+    @Mock
+    private RequestRepository requestRepository;
 
     @Mock
     private ListOperations<String, Object> listOperations;
@@ -210,6 +214,90 @@ class SlackNotificationWorkerTest {
 
             verify(slackApiService, never()).sendWebhook(anyString(), anyString());
             verify(slackApiService, never()).sendDM(anyString(), anyString(), anyString());
+            verify(listOperations, never()).rightPush(anyString(), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("processSlackQueue — 봇 채널 전송(CHANNEL)")
+    class ChannelMessages {
+
+        private SlackMessageDto queue(SlackMessageDto dto) {
+            when(listOperations.leftPop(QUEUE_KEY)).thenReturn(dto);
+            when(objectMapper.convertValue(dto, SlackMessageDto.class)).thenReturn(dto);
+            return dto;
+        }
+
+        private SlackMessageDto.SlackMessageDtoBuilder channelMessage() {
+            return SlackMessageDto.builder()
+                    .type(SlackMessageDto.MessageType.CHANNEL)
+                    .channelId("C0REQ")
+                    .webhookUrl("https://hooks.slack.com/request")
+                    .message("신청서");
+        }
+
+        @Test
+        @DisplayName("신청서를 봇으로 올리면 돌려받은 메시지 식별자를 그 신청에 적고 webhook은 쓰지 않는다")
+        void storesTs_afterPostingRequest() {
+            queue(channelMessage().requestId(42L).build());
+            when(slackApiService.postToChannel("C0REQ", "신청서", null)).thenReturn("1728200000.000100");
+
+            worker.processSlackQueue();
+
+            verify(requestRepository).updateSlackMessageTs(42L, "1728200000.000100");
+            verify(slackApiService, never()).sendWebhook(anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("스레드 댓글은 원래 메시지 식별자를 넘겨 올리고 신청에는 아무것도 적지 않는다")
+        void repliesInThread_withoutStoringTs() {
+            queue(channelMessage().threadTs("1728200000.000100").message("취소 알림").build());
+            when(slackApiService.postToChannel("C0REQ", "취소 알림", "1728200000.000100")).thenReturn("1728200099.000200");
+
+            worker.processSlackQueue();
+
+            verifyNoInteractions(requestRepository);
+            verify(slackApiService, never()).sendWebhook(anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("봇 전송이 실패하면 같은 글을 webhook으로 대신 보낸다")
+        void fallsBackToWebhook_whenBotFails() {
+            queue(channelMessage().requestId(42L).build());
+            when(slackApiService.postToChannel(any(), any(), any()))
+                    .thenThrow(new BusinessException(ErrorCode.SLACK_SEND_FAILED));
+
+            worker.processSlackQueue();
+
+            verify(slackApiService).sendWebhook("https://hooks.slack.com/request", "신청서");
+            verifyNoInteractions(requestRepository);
+        }
+
+        @Test
+        @DisplayName("대신 보낸 webhook까지 일시 장애면 webhook 유형으로 다시 넣어 재시도 때 봇을 또 거치지 않는다")
+        void requeuesAsWebhook_whenFallbackFailsTransiently() {
+            queue(channelMessage().build());
+            when(slackApiService.postToChannel(any(), any(), any()))
+                    .thenThrow(new BusinessException(ErrorCode.SLACK_SEND_FAILED));
+            doThrow(new RuntimeException("timeout")).when(slackApiService).sendWebhook(anyString(), anyString());
+
+            worker.processSlackQueue();
+
+            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
+            verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
+            assertThat(captor.getValue().getType()).isEqualTo(SlackMessageDto.MessageType.WEBHOOK);
+        }
+
+        @Test
+        @DisplayName("메시지는 올라갔는데 식별자를 못 적어도 webhook으로 또 보내지 않는다")
+        void doesNotResend_whenStoringTsFails() {
+            queue(channelMessage().requestId(42L).build());
+            when(slackApiService.postToChannel(any(), any(), any())).thenReturn("1728200000.000100");
+            when(requestRepository.updateSlackMessageTs(any(), any())).thenThrow(new RuntimeException("db down"));
+
+            worker.processSlackQueue();
+
+            verify(slackApiService, never()).sendWebhook(anyString(), anyString());
             verify(listOperations, never()).rightPush(anyString(), any());
         }
     }

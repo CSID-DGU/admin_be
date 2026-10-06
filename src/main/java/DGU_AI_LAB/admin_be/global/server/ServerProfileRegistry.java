@@ -21,6 +21,7 @@ import java.util.Optional;
 public class ServerProfileRegistry {
 
     static final String WEBHOOK_PREFIX = "slack-webhook-url.";
+    static final String CHANNEL_ID_PREFIX = "slack-channel-id.";
 
     private final Map<String, Server> servers = new HashMap<>();
     private final Environment environment;
@@ -49,6 +50,16 @@ public class ServerProfileRegistry {
     /** 새 사용 신청서를 보낼 채널. 서버에 request-channel이 없으면 관리 채널과 같다. */
     public Optional<String> requestWebhookUrl(String serverName) {
         return find(serverName).map(server -> environment.getProperty(WEBHOOK_PREFIX + server.requestChannelOrAdmin()));
+    }
+
+    /**
+     * 신청서 채널의 Slack 채널 ID. 있으면 신청서를 봇으로 올려 후속 알림을 스레드 댓글로 달 수 있다.
+     * 적어 두지 않은 서버는 빈 값이고, 그때는 webhook으로만 보낸다.
+     */
+    public Optional<String> requestChannelId(String serverName) {
+        return find(serverName)
+                .map(server -> environment.getProperty(CHANNEL_ID_PREFIX + server.requestChannelOrAdmin()))
+                .filter(id -> !id.isBlank());
     }
 
     /**

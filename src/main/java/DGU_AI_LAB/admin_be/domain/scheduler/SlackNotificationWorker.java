@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.dto.SlackMessageDto;
 import DGU_AI_LAB.admin_be.domain.alarm.service.SlackApiService;
+import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,6 +25,7 @@ public class SlackNotificationWorker {
     private final RedisTemplate<String, Object> redisTemplate;
     private final SlackApiService slackApiService;
     private final ObjectMapper objectMapper;
+    private final RequestRepository requestRepository;
 
     private static final String SLACK_QUEUE_KEY = "slack:notification:queue";
     private static final int MAX_RETRY_COUNT = 3;
@@ -42,6 +44,11 @@ public class SlackNotificationWorker {
         }
 
         try {
+            if (dto.getType() == SlackMessageDto.MessageType.CHANNEL && !postToChannel(dto)) {
+                // 봇으로 못 올렸으면 webhook으로 대신 보낸다. 유형을 바꿔 두어 재시도 때 봇을 다시 거치지 않게 한다.
+                dto.setType(SlackMessageDto.MessageType.WEBHOOK);
+            }
+
             if (dto.getType() == SlackMessageDto.MessageType.WEBHOOK) {
                 slackApiService.sendWebhook(dto.getWebhookUrl(), dto.getMessage());
                 log.info("Slack Webhook 전송 성공 (Queue)");
@@ -65,6 +72,35 @@ public class SlackNotificationWorker {
         } catch (Exception e) {
             // 일시적 장애(네트워크, Slack API 다운 등)는 재시도
             requeue(dto, e);
+        }
+    }
+
+    /**
+     * 봇으로 채널에 올린다. 올렸으면 true. 실패는 여기서 삼키고 false를 돌려준다 — 봇이 채널에 없거나, 채널이 바뀌어
+     * 스레드의 원래 메시지를 못 찾는 경우처럼 다시 해도 같은 실패가 대부분이라 호출부가 webhook으로 넘긴다.
+     */
+    private boolean postToChannel(SlackMessageDto dto) {
+        String ts;
+        try {
+            ts = slackApiService.postToChannel(dto.getChannelId(), dto.getMessage(), dto.getThreadTs());
+        } catch (Exception e) {
+            log.warn("Slack 봇 전송 실패, webhook으로 대신 보냄: {}", e.getMessage());
+            return false;
+        }
+        log.info("Slack 채널 전송 성공 (Queue)");
+        rememberMessage(dto.getRequestId(), ts);
+        return true;
+    }
+
+    /** 올라간 신청서 메시지의 식별자를 신청에 적어 둔다. 못 적어도 이미 나간 알림은 그대로 두고, 후속 알림만 일반 메시지로 간다. */
+    private void rememberMessage(Long requestId, String ts) {
+        if (requestId == null || ts == null) {
+            return;
+        }
+        try {
+            requestRepository.updateSlackMessageTs(requestId, ts);
+        } catch (Exception e) {
+            log.error("신청서 메시지 식별자를 적지 못함: 요청 ID {}", requestId, e);
         }
     }
 

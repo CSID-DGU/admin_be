@@ -33,6 +33,22 @@ class ServerProfileRegistryTest {
     }
 
     @Test
+    @DisplayName("신청서 채널 ID는 적어 둔 서버만 돌려주고, 없거나 비어 있으면 빈 값이다")
+    void requestChannelIdIsOptional() {
+        Map<String, Server> servers = Map.of("FARM", FARM, "LAB", new Server("lab.example.org", "lab-admin", null, null));
+        ServerProfileRegistry registry = new ServerProfileRegistry(new ServerProfileProperties(servers),
+                new MockEnvironment()
+                        .withProperty("slack-webhook-url.farm-admin", FARM_WEBHOOK)
+                        .withProperty("slack-webhook-url.lab-admin", "https://hooks.slack.com/lab")
+                        .withProperty("slack-channel-id.farm-admin", "C0FARM")
+                        .withProperty("slack-channel-id.lab-admin", " "));
+
+        assertThat(registry.requestChannelId("farm")).contains("C0FARM");
+        assertThat(registry.requestChannelId("LAB")).isEmpty();
+        assertThat(registry.requestChannelId("nowhere")).isEmpty();
+    }
+
+    @Test
     @DisplayName("모르는 서버·null은 빈 값을 돌려주고 포트는 그대로 둔다")
     void unknownServerYieldsEmpty() {
         ServerProfileRegistry registry = registry(Map.of("FARM", FARM));

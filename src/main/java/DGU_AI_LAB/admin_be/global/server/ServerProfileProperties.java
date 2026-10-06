@@ -26,6 +26,9 @@ import java.util.Map;
  *         size: 98
  * </pre>
  *
+ * <p>같은 키 이름으로 {@code slack-channel-id.<키>}에 Slack 채널 ID를 적어 두면(선택) 신청서를 봇으로 올리고, 그 신청의
+ * 취소 알림을 신청서 메시지의 스레드 댓글로 단다. 봇이 그 채널에 들어가 있어야 하며, 안 되면 webhook으로 대신 보낸다.
+ *
  * <p>admin-channel·request-channel은 webhook 주소가 아니라 {@code slack-webhook-url} 아래 키 이름이다. webhook은 비밀값이라
  * 한곳에 모아 두고, 실험 스택처럼 알림을 막아야 하는 환경이 그 한곳만 덮어쓰면 되게 한다.
  */
