@@ -111,7 +111,7 @@ public class UserLifecycleTransactionalService {
         String email = user.getEmail();
         // 문구는 지금 만들고 전송은 커밋 뒤에 한다 — 메일 서버가 느려도 트랜잭션을 그만큼 열어 두지 않는다.
         AfterCommit.run("계정 비활성화 경고, userId " + user.getUserId(), () -> {
-            alarmService.sendAllAlerts(name, email, subject, body);
+            alarmService.notifyUser(name, email, subject, body);
             log.info("경고 알림 발송: {} ({}일 전)", email, daysLeft);
         });
     }

@@ -137,13 +137,8 @@ public class AdminUserService {
 
         if (!failedRequestIds.isEmpty()) {
             // 컨테이너가 남은 동안 계정 회수 폴러는 기다린다. 관리자가 다시 누르면 남은 컨테이너부터 다시 회수한다.
-            try {
-                alarmService.sendSlackAlert(String.format(
-                        "[%s] userId=%d 컨테이너 회수 등록 실패 - 확인 후 다시 실행해 주세요: requestIds=%s",
-                        logPrefix, userId, failedRequestIds), null);
-            } catch (Exception ignored) {
-                // 알림 발송 실패가 원래 예외 전파를 막으면 안 된다.
-            }
+            alarmService.alertNeedsAction("notification.admin.user.revoke-register-failed",
+                    logPrefix, userId, failedRequestIds.toString());
             throw new BusinessException(ErrorCode.USER_REQUEST_CLEANUP_PARTIALLY_FAILED);
         }
         log.info("[{}] userId={} 정리 시작 완료 — 컨테이너·계정 회수는 결과 폴러가 마무리한다", logPrefix, userId);
@@ -215,7 +210,7 @@ public class AdminUserService {
         AfterCommit.run("계정 비활성화 안내(" + logPrefix + "), userId " + userId, () -> {
             String subject = messageUtils.get(noticeKey + ".subject");
             String body = messageUtils.get(noticeKey + ".body", withdrawn.getName());
-            alarmService.sendAllAlerts(withdrawn.getName(), withdrawn.getEmail(), subject, body);
+            alarmService.notifyUser(withdrawn.getName(), withdrawn.getEmail(), subject, body);
         });
     }
 
@@ -299,7 +294,7 @@ public class AdminUserService {
         AfterCommit.run("계정 비활성화 안내(deactivateUser), userId " + userId, () -> {
             String subject = messageUtils.get("notification.user.admin-delete.subject");
             String body = messageUtils.get("notification.user.admin-delete.body", deactivated.getName());
-            alarmService.sendAllAlerts(deactivated.getName(), deactivated.getEmail(), subject, body);
+            alarmService.notifyUser(deactivated.getName(), deactivated.getEmail(), subject, body);
         });
 
         return UserSummaryDTO.fromEntity(deactivated);

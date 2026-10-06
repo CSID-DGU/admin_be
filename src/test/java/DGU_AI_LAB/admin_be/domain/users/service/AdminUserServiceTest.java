@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.support.Alerts;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.groups.service.PendingGroupService;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
@@ -303,7 +304,7 @@ class AdminUserServiceTest {
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_REQUEST_CLEANUP_PARTIALLY_FAILED);
 
             verify(requestExpiryService).startContainerRevoke(ok.getRequestId());
-            verify(alarmService).sendSlackAlert(contains("컨테이너 회수 등록 실패"), isNull());
+            assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("user.revoke-register-failed")).hasSize(1);
             assertThat(mockUser.getIsActive()).isTrue();
             // 계정 회수는 컨테이너가 남은 동안 기다리므로 RELEASING으로 둔다. 관리자가 다시 누르면 이어서 한다.
             assertThat(mockUser.getUbuntuAccountStatus()).isEqualTo(UbuntuAccountStatus.RELEASING);

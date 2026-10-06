@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
@@ -32,6 +33,16 @@ import org.springframework.stereotype.Service;
 /**
  * [알림 통합 관리 서비스]
  * 시스템 내 모든 알림(Slack, Email) 발송 요청의 진입점 역할을 합니다.
+ *
+ * <p>어디로 보낼지는 알림의 성격으로만 정한다. 호출부는 채널을 고르지 않고 아래 넷 중 하나를 부른다.
+ * <ul>
+ *   <li>결정 요청(승인·거절이 필요한 신청) → 신청서 채널: {@link #sendNewRequestNotification},
+ *       {@link #prepareRequestCancelledNotification}</li>
+ *   <li>조치 필요(실패·멈춤·수동 확인) → 오류 채널 한 곳: {@link #alertNeedsAction}</li>
+ *   <li>처리 기록(정상 완료) → 알림 기록(noti) 채널: {@link #recordLog}</li>
+ *   <li>사용자 안내 → 메일 + Slack DM + 알림 기록 채널의 발송 기록: {@link #notifyUser}</li>
+ * </ul>
+ * 전송 실패는 여기서 잡아 기록한다 — 알림이 실패해도 호출한 쪽의 처리는 실패하지 않는다.
  */
 @Service
 @RequiredArgsConstructor
@@ -74,29 +85,88 @@ public class AlarmService {
 
     private static final String SLACK_QUEUE_KEY = "slack:notification:queue";
 
-    // --- Public Methods ---
-    public void sendSlackAlert(String message, String webhookUrl) {
-        String urlToUse = (webhookUrl != null && !webhookUrl.isEmpty()) ? webhookUrl : errorLogWebhookUrl;
+    // --- 성격별 전송 창구 ---
 
-        SlackMessageDto dto = SlackMessageDto.builder()
-                .type(SlackMessageDto.MessageType.WEBHOOK)
-                .webhookUrl(urlToUse)
-                .message(message)
-                .build();
-        pushToQueue(dto);
+    /**
+     * 조치 필요: 실패했거나 멈췄거나 사람이 확인해야 하는 일. 오류 채널 한 곳으로만 보낸다.
+     * 로그에는 어떤 알림인지(키)만 남긴다 — 값에는 이름·메일 주소가 들어올 수 있다.
+     */
+    public void alertNeedsAction(String messageKey, Object... args) {
+        safely("조치 필요 알림", () -> {
+            log.warn("[조치 필요] {}", messageKey);
+            enqueueWebhook(render(messageKey, args), errorLogWebhookUrl);
+        });
     }
 
-    public void sendDMAlert(String username, String email, String message) {
-        SlackMessageDto dto = SlackMessageDto.builder()
+    /** 처리 기록: 정상적으로 끝난 일을 나중에 되짚어 볼 수 있게 알림 기록(noti) 채널에 남긴다. */
+    public void recordLog(String messageKey, Object... args) {
+        safely("처리 기록 알림", () -> enqueueWebhook(render(messageKey, args), notiLogWebhookUrl));
+    }
+
+    /**
+     * 사용자 안내: 메일과 Slack DM으로 보내고, 보냈다는 기록(본문 없음)을 알림 기록 채널에 남긴다.
+     * 메일이 실패하면 기록 대신 오류 채널로 알린다. DM은 메일 성패와 상관없이 보낸다.
+     */
+    public void notifyUser(String username, String email, String subject, String body) {
+        safely("사용자 안내", () -> {
+            enqueueDM(username, email, body);
+            mailWithReceipt(username, email, subject, body);
+        });
+    }
+
+    /** 메일만 보내는 안내(접속 정보처럼 DM으로 보내지 않는 것). 발송 기록 규칙은 {@link #notifyUser}와 같다. */
+    private void mailWithReceipt(String username, String email, String subject, String body) {
+        if (sendMail(email, subject, body)) {
+            enqueueWebhook(render("notification.monitor.log", username, email, subject), notiLogWebhookUrl);
+        }
+    }
+
+    /**
+     * Slack 채널로 보낼 문구 양식에 값을 채운다. 숫자는 문자열로 바꿔 넣는다 — MessageFormat에 숫자형을 주면 1,234처럼
+     * 콤마가 붙는다. 글 값은 모두 Slack mrkdwn 이스케이프를 한다 — 이름·메일 주소·실패 사유처럼 사용자나 외부에서 온 글이
+     * {@code <!channel>} 같은 채널 호출이나 링크로 바뀌지 않게, 호출부가 아니라 여기서 빠짐없이 막는다.
+     * 양식은 DB(message_templates)를 먼저 찾으므로 DB 장애를 알리는 순간에는 읽지 못할 수 있다. 그때는 문구 대신
+     * 키와 값을 그대로 보낸다 — 문구가 없다고 알림 자체를 잃으면 안 된다.
+     */
+    private String render(String messageKey, Object... args) {
+        Object[] plain = Arrays.stream(args)
+                .map(arg -> arg instanceof Number ? arg.toString() : arg)
+                .map(arg -> arg instanceof String text ? SlackText.escapeKeepingEmpty(text) : arg)
+                .toArray();
+        try {
+            return messageUtils.get(messageKey, plain);
+        } catch (Exception e) {
+            log.error("알림 문구를 읽지 못해 키와 값으로 대신 보냄: {}", messageKey, e);
+            return messageKey + " " + Arrays.toString(plain);
+        }
+    }
+
+    private void safely(String what, Runnable send) {
+        try {
+            send.run();
+        } catch (Exception e) {
+            log.error("{} 전송 실패", what, e);
+        }
+    }
+
+    private void enqueueWebhook(String message, String webhookUrl) {
+        pushToQueue(SlackMessageDto.builder()
+                .type(SlackMessageDto.MessageType.WEBHOOK)
+                .webhookUrl(webhookUrl)
+                .message(message)
+                .build());
+    }
+
+    private void enqueueDM(String username, String email, String message) {
+        pushToQueue(SlackMessageDto.builder()
                 .type(SlackMessageDto.MessageType.DM)
                 .username(username)
                 .email(email)
                 .message(message)
-                .build();
-        pushToQueue(dto);
+                .build());
     }
 
-    public void sendMailAlert(String to, String subject, String body) {
+    private boolean sendMail(String to, String subject, String body) {
         try {
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(from);
@@ -104,9 +174,11 @@ public class AlarmService {
             message.setSubject(subject);
             message.setText(body);
             mailSender.send(message);
+            return true;
         } catch (Exception e) {
             log.error("메일 전송 실패: 수신자={}", maskEmail(to), e);
-            sendSlackAlert("🚨 메일 전송 실패! 수신자: " + maskEmail(to), errorLogWebhookUrl);
+            alertNeedsAction("notification.admin.mail-failed", maskEmail(to));
+            return false;
         }
     }
 
@@ -121,39 +193,7 @@ public class AlarmService {
         return email.charAt(0) + "***" + email.substring(at);
     }
 
-    /**
-     * [사용자 알림 + 관리자 로그]
-     * 사용자에게는 실제 알림을, 관리자 'noti' 채널에는 로그를 남깁니다.
-     */
-    public void sendAllAlerts(String username, String email, String subject, String message) {
-        // 1. 사용자 발송
-        sendMailAlert(email, subject, message);
-        sendDMAlert(username, email, message);
-
-        // 2. 관리자 로그 채널(noti)에 기록
-        sendMonitoringLog(username, email, subject);
-    }
-
-    // --- Helper / Formatting Methods ---
-    /**
-     * noti 채널에 짧은 로그(영수증)를 남기는 메서드
-     */
-    private void sendMonitoringLog(String username, String email, String subject) {
-        try {
-            // properties: notification.monitor.log
-            String logMessage = messageUtils.get("notification.monitor.log", username, email, subject);
-
-            // 명시적으로 'noti' 채널 URL 사용
-            sendSlackAlert(logMessage, notiLogWebhookUrl);
-        } catch (Exception e) {
-            log.warn("로그 전송 실패", e);
-        }
-    }
-
-    // 알 수 없는 서버라면 에러 채널로 보내서 관리자가 확인하게 한다.
-    private String getAdminWebhookUrl(String serverName) {
-        return serverProfileRegistry.adminWebhookUrl(serverName).orElse(errorLogWebhookUrl);
-    }
+    // --- 결정 요청(신청서 채널) ---
 
     /**
      * 신청이 들어오면 서버별 관리 교수님 채널에 승인 판단에 필요한 정보를 전부 담아 보낸다.
@@ -198,7 +238,7 @@ public class AlarmService {
                 formatTeamInfo(request),                                   // {19}
                 RECEIVED_AT_FORMAT.format(receivedAt));                    // {20}
 
-        sendSlackAlert(message, requestChannelUrl(user, serverName));
+        enqueueWebhook(message, requestChannelUrl(user, serverName));
     }
 
     /**
@@ -221,7 +261,7 @@ public class AlarmService {
                 RECEIVED_AT_FORMAT.format(receivedAt),                     // {1}
                 SlackText.escape(user.getName()));                         // {2}
         String webhookUrl = requestChannelUrl(user, serverName);
-        return () -> sendSlackAlert(message, webhookUrl);
+        return () -> safely("신청 취소 알림", () -> enqueueWebhook(message, webhookUrl));
     }
 
     /**
@@ -313,8 +353,7 @@ public class AlarmService {
                 messageUtils.get("email.container.created.password-notice"), // {6}
                 extraPorts);                                           // {7}
 
-        sendMailAlert(user.getEmail(), subject, body);
-        sendMonitoringLog(user.getName(), user.getEmail(), subject);
+        mailWithReceipt(user.getName(), user.getEmail(), subject, body);
     }
 
     /**
@@ -339,8 +378,7 @@ public class AlarmService {
                 resolveHostIp(serverName),                        // {4}
                 PodPortUtils.formatExtraPortSummary(allPorts));   // {5}
 
-        sendMailAlert(user.getEmail(), subject, body);
-        sendMonitoringLog(user.getName(), user.getEmail(), subject);
+        mailWithReceipt(user.getName(), user.getEmail(), subject, body);
     }
 
     private static String externalPortOf(List<PodExternalPort> ports, String purpose) {
@@ -378,8 +416,7 @@ public class AlarmService {
                 podName,                                     // {5}
                 PodPortUtils.formatPortSummary(ports));      // {6}
 
-        sendMailAlert(user.getEmail(), subject, body);
-        sendMonitoringLog(user.getName(), user.getEmail(), subject);
+        mailWithReceipt(user.getName(), user.getEmail(), subject, body);
     }
 
     /**
@@ -405,7 +442,7 @@ public class AlarmService {
                 request.getExpiresAt().toLocalDate().toString(),           // {5}
                 RECEIVED_AT_FORMAT.format(receivedAt));                    // {6}
 
-        sendMailAlert(user.getEmail(), subject, body);
+        sendMail(user.getEmail(), subject, body);
     }
 
     public void sendRequestRejectedEmail(Request request, String adminComment) {
@@ -418,8 +455,7 @@ public class AlarmService {
                 serverName,        // {1}
                 orNone(adminComment)); // {2}
 
-        sendMailAlert(user.getEmail(), subject, body);
-        sendMonitoringLog(user.getName(), user.getEmail(), subject);
+        mailWithReceipt(user.getName(), user.getEmail(), subject, body);
     }
 
     public void sendModificationRejectedEmail(ChangeRequest changeRequest, String adminComment) {
@@ -432,8 +468,7 @@ public class AlarmService {
                 changeType,        // {1}
                 orNone(adminComment)); // {2}
 
-        sendMailAlert(user.getEmail(), subject, body);
-        sendMonitoringLog(user.getName(), user.getEmail(), subject);
+        mailWithReceipt(user.getName(), user.getEmail(), subject, body);
     }
 
     /**
@@ -450,8 +485,7 @@ public class AlarmService {
                 changeType,        // {1}
                 orNone(adminComment)); // {2}
 
-        sendMailAlert(user.getEmail(), subject, body);
-        sendMonitoringLog(user.getName(), user.getEmail(), subject);
+        mailWithReceipt(user.getName(), user.getEmail(), subject, body);
     }
 
     /**
@@ -472,22 +506,12 @@ public class AlarmService {
                 orNone(adminComment), // {2}
                 shareCommands);    // {3}
 
-        sendMailAlert(user.getEmail(), subject, body);
-        sendMonitoringLog(user.getName(), user.getEmail(), subject);
+        mailWithReceipt(user.getName(), user.getEmail(), subject, body);
     }
 
     /** 관리자가 메모를 비워 두면 MessageFormat이 "null"을 찍으므로 "없음"으로 바꾼다. */
     private static String orNone(String text) {
         return text == null || text.isBlank() ? "없음" : text;
-    }
-
-    /** 관리자가 나중에 되짚어 볼 처리 기록을 알림 기록(noti) 채널에 남긴다. 승인 판단용 채널에는 보내지 않는다. */
-    public void sendNotiLog(String message) {
-        sendSlackAlert(message, notiLogWebhookUrl);
-    }
-
-    public void sendAdminSlackNotification(String serverName, String message) {
-        sendSlackAlert(message, getAdminWebhookUrl(serverName));
     }
 
     // --- Fallback Logic ---

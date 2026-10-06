@@ -106,7 +106,7 @@ class UserLifecycleTransactionalServiceTest {
 
             lifecycleService.processInactiveUser(1L, NOW);
 
-            verify(alarmService, times(1)).sendAllAlerts(any(), any(), any(), any());
+            verify(alarmService, times(1)).notifyUser(any(), any(), any(), any());
         }
 
         @Test
@@ -123,7 +123,7 @@ class UserLifecycleTransactionalServiceTest {
             when(valueOps.setIfAbsent(anyString(), any(), any(Duration.class))).thenReturn(false);
             lifecycleService.processInactiveUser(1L, NOW);
 
-            verify(alarmService, times(1)).sendAllAlerts(any(), any(), any(), any());
+            verify(alarmService, times(1)).notifyUser(any(), any(), any(), any());
         }
 
         @Test
@@ -136,7 +136,7 @@ class UserLifecycleTransactionalServiceTest {
 
             lifecycleService.processInactiveUser(1L, NOW);
 
-            verify(alarmService, times(1)).sendAllAlerts(any(), any(), any(), any());
+            verify(alarmService, times(1)).notifyUser(any(), any(), any(), any());
         }
 
         @Test
@@ -183,7 +183,7 @@ class UserLifecycleTransactionalServiceTest {
             verify(noticeStore).save(1L, NOW.toLocalDate().plusDays(7), NOW.toLocalDate());
             verify(messageUtils).get("notification.user.delete-warning.body",
                     "홍길동", "7", NOW.toLocalDate().plusDays(7).toString());
-            verify(alarmService, times(1)).sendAllAlerts(any(), any(), any(), any());
+            verify(alarmService, times(1)).notifyUser(any(), any(), any(), any());
         }
 
         @Test
@@ -207,7 +207,7 @@ class UserLifecycleTransactionalServiceTest {
 
             lifecycleService.processInactiveUser(1L, NOW);
 
-            verify(alarmService, times(1)).sendAllAlerts(any(), any(), any(), any());
+            verify(alarmService, times(1)).notifyUser(any(), any(), any(), any());
         }
 
         @Test
@@ -218,7 +218,7 @@ class UserLifecycleTransactionalServiceTest {
 
             assertThat(lifecycleService.processInactiveUser(1L, NOW)).isFalse();
 
-            verify(alarmService, times(1)).sendAllAlerts(any(), any(), any(), any());
+            verify(alarmService, times(1)).notifyUser(any(), any(), any(), any());
         }
 
         @Test

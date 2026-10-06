@@ -29,6 +29,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -241,8 +242,8 @@ public class PodMigrationService {
             try {
                 job = jobClient.getResult(JobResults.KIND_MIGRATE, requestId);
             } catch (Exception lookupFailure) {
-                alert(String.format("[마이그레이션 확인 필요] 작업 등록 결과를 확인하지 못해 MIGRATING으로 두었습니다: requestId=%d, error=%s",
-                        requestId, e.getMessage()), lookupFailure);
+                alert(lookupFailure, "notification.admin.migration.register-unconfirmed",
+                        requestId, e.getMessage());
                 throw e;
             }
             if (job != null && JobResults.isRunning(job.phase())) {
@@ -266,7 +267,7 @@ public class PodMigrationService {
             Long jobId = requestRepository.findById(requestId).map(Request::getJobId).orElse(null);
             if (alertDeduplicator.firstOccurrence("migration-missing-result:" + requestId + ":" + jobId)) {
                 log.error("마이그레이션 성공 결과에 자원 정보가 없어 신청에 반영하지 못함: requestId={}", requestId);
-                alert(String.format("[마이그레이션 확인 필요] 작업은 성공했으나 결과 정보를 받지 못해 신청에 반영하지 못했습니다: requestId=%d", requestId), null);
+                alert(null, "notification.admin.migration.result-missing", requestId);
             }
             return;
         }
@@ -306,7 +307,7 @@ public class PodMigrationService {
                 return null;
             });
         } catch (RuntimeException e) {
-            alert(String.format("[마이그레이션] 결과 DB 반영 실패 - Pod/포트 상태 수동 확인 필요: requestId=%d", requestId), e);
+            alert(e, "notification.admin.migration.apply-failed", requestId);
             throw e;
         }
         if (!applied[0]) {
@@ -316,8 +317,8 @@ public class PodMigrationService {
             log.info("Pod 마이그레이션 완료: requestId={}, from={}, to={}, newPod={}",
                     requestId, made.fromNode(), made.toNode(), made.podName());
             if ("failed".equals(made.oldPodCleanup())) {
-                alert(String.format("[마이그레이션] 새 Pod는 정상 반영됐지만 기존 Pod 정리 실패 - 수동 확인 필요: requestId=%d, oldPod=%s, oldNode=%s",
-                        requestId, made.oldPodName(), made.fromNode()), null);
+                alert(null, "notification.admin.migration.old-pod-cleanup-failed",
+                        requestId, made.oldPodName(), made.fromNode());
             }
             if (portsChangedRequest[0] != null) {
                 notifyPortsChanged(portsChangedRequest[0]);
@@ -330,14 +331,14 @@ public class PodMigrationService {
     /** 작업이 실패로 끝났다. 제어기가 새 Pod를 정리했고 기존 Pod는 그대로이므로 FULFILLED로 되돌리고 알린다. */
     public void failMigrationJob(Long requestId, JobResultResponseDTO result) {
         revertToFulfilled(requestId);
-        alert(String.format("[마이그레이션 실패] 기존 컨테이너를 유지합니다: requestId=%d, error=%s",
-                requestId, result == null ? null : result.errorCode()), null);
+        alert(null, "notification.admin.migration.job-failed",
+                        requestId, result == null ? null : result.errorCode());
     }
 
     /** 결과 불명이거나 자원을 남긴 실패. 실제 Pod 상태를 확인하기 전에는 되돌리지 않고 MIGRATING으로 둔 채 알린다. */
     public void reportUnresolvedMigrationJob(Long requestId, JobResultResponseDTO result) {
-        alert(String.format("[마이그레이션 확인 필요] 결과를 확정할 수 없어 MIGRATING으로 둡니다. Pod 상태를 확인하세요: requestId=%d, phase=%s, error=%s",
-                requestId, result.phase(), result.errorCode()), null);
+        alert(null, "notification.admin.migration.job-unresolved",
+                        requestId, result.phase(), result.errorCode());
     }
 
     /** 신청의 마지막 마이그레이션 작업 결과. */
@@ -357,7 +358,7 @@ public class PodMigrationService {
                 return null;
             });
         } catch (Exception e) {
-            alert(String.format("[마이그레이션] MIGRATING 상태 복구 실패 - 수동 확인 필요: requestId=%d", requestId), e);
+            alert(e, "notification.admin.migration.revert-failed", requestId);
         }
     }
 
@@ -383,16 +384,13 @@ public class PodMigrationService {
         return purpose + ":" + internalPort + ":" + externalPort;
     }
 
-    private void alert(String message, Exception cause) {
+    private void alert(Exception cause, String messageKey, Object... args) {
+        // 값은 신청 번호·Pod·노드·오류 코드뿐이라 그대로 남긴다.
         if (cause != null) {
-            log.error(message, cause);
+            log.error("[마이그레이션] {} {}", messageKey, Arrays.toString(args), cause);
         } else {
-            log.warn(message);
+            log.warn("[마이그레이션] {} {}", messageKey, Arrays.toString(args));
         }
-        try {
-            alarmService.sendSlackAlert(message, null);
-        } catch (Exception ignored) {
-            // 알림 발송 실패가 원래 흐름을 막으면 안 된다.
-        }
+        alarmService.alertNeedsAction(messageKey, args);
     }
 }

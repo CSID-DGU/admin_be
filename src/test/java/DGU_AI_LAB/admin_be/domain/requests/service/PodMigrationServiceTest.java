@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.support.Alerts;
 import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
@@ -315,7 +316,7 @@ class PodMigrationServiceTest {
         assertThatThrownBy(() -> service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null)))
                 .isInstanceOf(BusinessException.class);
         verify(request, never()).endMigration();
-        verify(alarmService).sendSlackAlert(contains("MIGRATING으로 두었습니다"), any());
+        assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("migration.register-unconfirmed")).hasSize(1);
     }
 
     @Test
@@ -329,7 +330,7 @@ class PodMigrationServiceTest {
         verify(podExternalPortRepository).deleteByRequestRequestId(1L);
         verify(podExternalPortRepository).save(any(PodExternalPort.class));
         verify(request).endMigration();
-        verify(alarmService, never()).sendSlackAlert(anyString(), any());
+        assertThat(Alerts.needsAction(alarmService)).isEmpty();
     }
 
     @Test
@@ -417,7 +418,7 @@ class PodMigrationServiceTest {
 
         verify(request, never()).endMigration();
         verify(request, never()).assignPodInfo(any(), any());
-        verify(alarmService, times(1)).sendSlackAlert(anyString(), any());
+        assertThat(Alerts.needsAction(alarmService)).hasSize(1);
     }
 
     @Test
@@ -439,7 +440,7 @@ class PodMigrationServiceTest {
         service.completeMigrationJob(1L, migrated("failed"));
 
         verify(request).endMigration();
-        verify(alarmService).sendSlackAlert(contains("기존 Pod 정리 실패"), any());
+        assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("migration.old-pod-cleanup-failed")).hasSize(1);
     }
 
     @Test
@@ -450,7 +451,7 @@ class PodMigrationServiceTest {
         service.failMigrationJob(1L, new JobResultResponseDTO("1", "migrate", 9L, "FAIL", "POD_NOT_FOUND", null, null));
 
         verify(request).endMigration();
-        verify(alarmService).sendSlackAlert(contains("POD_NOT_FOUND"), any());
+        assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("POD_NOT_FOUND")).hasSize(1);
     }
 
     @Test
@@ -459,7 +460,7 @@ class PodMigrationServiceTest {
         service.reportUnresolvedMigrationJob(1L, new JobResultResponseDTO("1", "migrate", 9L, "UNKNOWN", "DEGRADED", null, null));
 
         verify(request, never()).endMigration();
-        verify(alarmService).sendSlackAlert(contains("확인 필요"), any());
+        assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("migration.job-unresolved")).hasSize(1);
     }
 
     @Test

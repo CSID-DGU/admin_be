@@ -5,7 +5,6 @@ import DGU_AI_LAB.admin_be.global.event.RequestContainerDeletedEvent;
 import DGU_AI_LAB.admin_be.global.event.RequestExpiredEvent;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -16,7 +15,6 @@ import org.springframework.transaction.event.TransactionalEventListener;
  */
 @Component
 @RequiredArgsConstructor
-@Slf4j
 public class RequestEventListener {
 
     private final AlarmService alarmService;
@@ -30,33 +28,19 @@ public class RequestEventListener {
         String serverName = event.serverName();
         String username = event.ubuntuUsername();
 
-        // 1. 사용자 삭제 알림
-        try {
-            String subject = messageUtils.get("notification.expired.detail.subject");
-            String message = messageUtils.get("notification.expired.detail.body",
-                    userName, serverName, username,
-                    event.podName(), event.portSummary(), event.expiresAt(), event.homeNotice());
+        // 처리 기록을 먼저 남긴다 — 사용자 안내 문구를 만들다 실패해도 정리했다는 기록은 남는다.
+        recordCleanup(serverName, username);
 
-            alarmService.sendAllAlerts(userName, userEmail, subject, message);
-        } catch (Exception e) {
-            log.warn("사용자 삭제 알림 전송 실패: {}", e.getMessage());
-        }
-
-        // 2. 관리자 알림
-        try {
-            // properties: notification.admin.delete.success ({0}서버 표시, {1}계정, {2}서버) — {0}은 DB에 고쳐 둔 템플릿이 그대로 쓰이도록 자리를 유지한다
-            String adminMsg = messageUtils.get("notification.admin.delete.success",
-                    serverName, username, serverName);
-
-            alarmService.sendAdminSlackNotification(serverName, adminMsg);
-        } catch (Exception e) {
-            log.warn("관리자 알림 전송 실패: {}", e.getMessage());
-        }
+        String subject = messageUtils.get("notification.expired.detail.subject");
+        String message = messageUtils.get("notification.expired.detail.body",
+                userName, serverName, username,
+                event.podName(), event.portSummary(), event.expiresAt(), event.homeNotice());
+        alarmService.notifyUser(userName, userEmail, subject, message);
     }
 
     /**
      * 관리자가 컨테이너 하나를 회수한 경우. 사용자 안내 문구만 만료와 다르고(만료일이 없다),
-     * 관리자 슬랙 문구는 "리소스 삭제 완료"라 만료와 같은 것을 그대로 쓴다.
+     * 관리자 쪽 처리 기록은 "리소스 삭제 완료"라 만료와 같은 것을 그대로 쓴다.
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleContainerDeletedEvent(RequestContainerDeletedEvent event) {
@@ -64,24 +48,17 @@ public class RequestEventListener {
         String serverName = event.serverName();
         String username = event.ubuntuUsername();
 
-        try {
-            String subject = messageUtils.get("notification.deleted.detail.subject");
-            String message = messageUtils.get("notification.deleted.detail.body",
-                    userName, serverName, username, event.podName(), event.portSummary(), event.homeNotice());
+        recordCleanup(serverName, username);
 
-            alarmService.sendAllAlerts(userName, event.userEmail(), subject, message);
-        } catch (Exception e) {
-            log.warn("컨테이너 회수 안내 전송 실패: {}", e.getMessage());
-        }
+        String subject = messageUtils.get("notification.deleted.detail.subject");
+        String message = messageUtils.get("notification.deleted.detail.body",
+                userName, serverName, username, event.podName(), event.portSummary(), event.homeNotice());
+        alarmService.notifyUser(userName, event.userEmail(), subject, message);
+    }
 
-        try {
-            String adminMsg = messageUtils.get("notification.admin.delete.success",
-                    serverName, username, serverName);
-
-            alarmService.sendAdminSlackNotification(serverName, adminMsg);
-        } catch (Exception e) {
-            log.warn("관리자 알림 전송 실패: {}", e.getMessage());
-        }
+    // notification.admin.delete.success ({0}서버 표시, {1}계정, {2}서버) — {0}은 DB에 고쳐 둔 템플릿이 그대로 쓰이도록 자리를 유지한다
+    private void recordCleanup(String serverName, String username) {
+        alarmService.recordLog("notification.admin.delete.success", serverName, username, serverName);
     }
 
 }

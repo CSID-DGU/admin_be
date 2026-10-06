@@ -49,22 +49,18 @@ public class RevokeJobPoller extends JobResultPoller {
     @Override
     protected void onFailure(Request request, JobResultResponseDTO result) {
         requestExpiryService.failContainerRevoke(request.getRequestId());
-        alert(request, result, "컨테이너 회수 실패 — FULFILLED로 되돌림");
+        alert(request, result, "notification.admin.revoke.job-failed");
     }
 
     @Override
     protected void onUnresolved(Request request, JobResultResponseDTO result) {
-        alert(request, result, (JobResults.isDegraded(result) ? "컨테이너 회수가 자원을 남긴 채 멈춤" : "컨테이너 회수 결과 불명")
-                + " — 수동 확인 필요");
+        alert(request, result, JobResults.isDegraded(result)
+                ? "notification.admin.revoke.job-degraded" : "notification.admin.revoke.job-unknown");
     }
 
-    private void alert(Request request, JobResultResponseDTO result, String what) {
-        log.error("[회수] {}: requestId={}, pod={}, error={}", what, request.getRequestId(), request.getPodName(), result.errorCode());
-        try {
-            alarmService.sendSlackAlert(String.format("[회수] %s: requestId=%d, pod=%s, error=%s",
-                    what, request.getRequestId(), request.getPodName(), result.errorCode()), null);
-        } catch (Exception e) {
-            log.warn("회수 실패 알림 전송 실패: requestId={}", request.getRequestId(), e);
-        }
+    private void alert(Request request, JobResultResponseDTO result, String messageKey) {
+        log.error("[회수] {}: requestId={}, pod={}, error={}",
+                messageKey, request.getRequestId(), request.getPodName(), result.errorCode());
+        alarmService.alertNeedsAction(messageKey, request.getRequestId(), request.getPodName(), result.errorCode());
     }
 }

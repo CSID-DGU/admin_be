@@ -46,10 +46,6 @@ public class ServerProfileRegistry {
         return find(serverName).map(Server::publicHost);
     }
 
-    public Optional<String> adminWebhookUrl(String serverName) {
-        return find(serverName).map(server -> environment.getProperty(WEBHOOK_PREFIX + server.adminChannel()));
-    }
-
     /** 새 사용 신청서를 보낼 채널. 서버에 request-channel이 없으면 관리 채널과 같다. */
     public Optional<String> requestWebhookUrl(String serverName) {
         return find(serverName).map(server -> environment.getProperty(WEBHOOK_PREFIX + server.requestChannelOrAdmin()));

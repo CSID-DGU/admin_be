@@ -9,7 +9,6 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
-import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -32,7 +31,6 @@ public class RequestSchedulerService {
     private final RequestRepository requestRepository;
     private final AlarmService alarmService;
     private final RequestExpiryService requestExpiryService;
-    private final MessageUtils messageUtils;
     private final RequestNotificationService requestNotificationService;
     private final AdminRequestCommandService adminRequestCommandService;
     private final JobClient jobClient;
@@ -109,11 +107,8 @@ public class RequestSchedulerService {
         // 처리(승인/거절)됐으면 건드리지 않는다.
         adminRequestCommandService.revertToPendingIfStillProcessing(
                 request.getRequestId(), request.getResourceGroup().getServerName());
-        try {
-            String msg = messageUtils.get("notification.admin.request.stale-processing",
-                    request.getRequestId(), request.getUbuntuUsername(), staleInFlightThresholdMinutes);
-            alarmService.sendSlackAlert(msg, null);
-        } catch (Exception ignored) {}
+        alarmService.alertNeedsAction("notification.admin.request.stale-processing",
+                request.getRequestId(), request.getUbuntuUsername(), staleInFlightThresholdMinutes);
     }
 
     /**
@@ -143,11 +138,8 @@ public class RequestSchedulerService {
         log.error("🔧 [재조정] {}분 넘게 MIGRATING 상태로 방치된 요청 발견 — 실제 인프라 상태와 충돌할 수 있어 " +
                         "자동 복구하지 않고 알림만 발송: requestId={}",
                 staleInFlightThresholdMinutes, request.getRequestId());
-        try {
-            String msg = messageUtils.get("notification.admin.request.stale-migrating",
-                    request.getRequestId(), request.getUbuntuUsername(), staleInFlightThresholdMinutes);
-            alarmService.sendSlackAlert(msg, null);
-        } catch (Exception ignored) {}
+        alarmService.alertNeedsAction("notification.admin.request.stale-migrating",
+                request.getRequestId(), request.getUbuntuUsername(), staleInFlightThresholdMinutes);
     }
 
     public void processExpiredRequests(LocalDateTime now) {
@@ -166,24 +158,10 @@ public class RequestSchedulerService {
 
             } catch (Exception e) {
                 log.error("계정 삭제 실패 (ID: {}): {}", request.getRequestId(), e.getMessage());
-                sendFailureAlertToAdmin(serverName, username, e.getMessage());
+                alarmService.alertNeedsAction("notification.admin.delete.fail",
+                        serverName, serverName, username, e.getMessage());
             }
         }
-    }
-
-    /**
-     * 1. 비즈니스 관리자 (Farm/Lab) 채널 알림
-     * 2. 시스템 에러 (Error Log) 채널 알림
-     */
-    private void sendFailureAlertToAdmin(String serverName, String username, String errorMsg) {
-        try {
-            String msg = messageUtils.get("notification.admin.delete.fail",
-                    serverName, serverName, username, errorMsg);
-            alarmService.sendAdminSlackNotification(serverName, msg);
-            // AlarmService.sendSlackAlert에서 url이 null이면 기본값(error-log)으로 전송합니다.
-            alarmService.sendSlackAlert(msg, null);
-
-        } catch (Exception ignored) {}
     }
 
 }

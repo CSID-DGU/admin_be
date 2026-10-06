@@ -128,7 +128,7 @@ class UserSchedulerServiceTest {
         assertThat(userRepository.findById(podUser.getUserId()).get().getIsActive()).isTrue();
 
         // 3. [D-7] 알림 검증 (정확한 메시지 매칭)
-        verify(alarmService).sendAllAlerts(
+        verify(alarmService).notifyUser(
                 eq("D7User"),
                 eq("d7@test.com"),
                 eq(d7Subject),
@@ -136,7 +136,7 @@ class UserSchedulerServiceTest {
         );
 
         // 4. [D-1] 알림 검증
-        verify(alarmService).sendAllAlerts(
+        verify(alarmService).notifyUser(
                 eq("D1User"),
                 eq("d1@test.com"),
                 eq(d1Subject),

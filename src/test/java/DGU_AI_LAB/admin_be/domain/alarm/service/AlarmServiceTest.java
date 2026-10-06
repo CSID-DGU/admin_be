@@ -100,82 +100,140 @@ class AlarmServiceTest {
     }
 
     @Nested
-    @DisplayName("sendSlackAlert")
-    class SendSlackAlert {
+    @DisplayName("성격별 전송 창구")
+    class Gateways {
 
-        @Test
-        @DisplayName("명시적 webhookUrl을 제공하면 해당 URL로 큐에 적재한다")
-        void sendSlackAlert_usesProvidedWebhookUrl() {
-            String webhookUrl = "https://hooks.slack.com/custom";
-
-            alarmService.sendSlackAlert("테스트 메시지", webhookUrl);
-
+        private SlackMessageDto queued() {
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
-            assertThat(captor.getValue().getWebhookUrl()).isEqualTo(webhookUrl);
-            assertThat(captor.getValue().getType()).isEqualTo(SlackMessageDto.MessageType.WEBHOOK);
+            return captor.getValue();
         }
 
         @Test
-        @DisplayName("webhookUrl이 null이면 errorLog 채널로 폴백된다")
-        void sendSlackAlert_usesErrorLogUrl_whenWebhookUrlNull() {
-            alarmService.sendSlackAlert("에러 메시지", null);
+        @DisplayName("조치 필요 알림은 문구 양식에 값을 채워 오류 채널로 적재하고, 숫자는 콤마가 붙지 않게 문자열로 넘긴다")
+        void alertNeedsAction_goesToErrorChannel() {
+            when(messageUtils.get("notification.admin.revoke.job-failed", "1234", "pod-a", "POD_DELETE_FAILED"))
+                    .thenReturn("회수 실패 1234");
 
-            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
-            verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
-            assertThat(captor.getValue().getWebhookUrl()).isEqualTo(ERROR_WEBHOOK);
+            alarmService.alertNeedsAction("notification.admin.revoke.job-failed", 1234L, "pod-a", "POD_DELETE_FAILED");
+
+            SlackMessageDto dto = queued();
+            assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.WEBHOOK);
+            assertThat(dto.getWebhookUrl()).isEqualTo(ERROR_WEBHOOK);
+            assertThat(dto.getMessage()).isEqualTo("회수 실패 1234");
         }
 
         @Test
-        @DisplayName("webhookUrl이 빈 문자열이면 errorLog 채널로 폴백된다")
-        void sendSlackAlert_usesErrorLogUrl_whenWebhookUrlEmpty() {
-            alarmService.sendSlackAlert("에러 메시지", "");
+        @DisplayName("문구 양식을 읽지 못해도(DB 장애 등) 알림을 잃지 않고 키와 값을 그대로 보낸다")
+        void alertNeedsAction_sendsKeyAndValues_whenTemplateUnreadable() {
+            when(messageUtils.get(eq("notification.admin.approval.revert-failed"), any(), any()))
+                    .thenThrow(new RuntimeException("DB 연결 실패"));
 
-            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
-            verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
-            assertThat(captor.getValue().getWebhookUrl()).isEqualTo(ERROR_WEBHOOK);
+            alarmService.alertNeedsAction("notification.admin.approval.revert-failed", "FARM", 7L);
+
+            SlackMessageDto dto = queued();
+            assertThat(dto.getWebhookUrl()).isEqualTo(ERROR_WEBHOOK);
+            assertThat(dto.getMessage()).isEqualTo("notification.admin.approval.revert-failed [FARM, 7]");
         }
 
         @Test
-        @DisplayName("Redis 장애 시 SlackApiService.sendWebhook으로 직접 전송을 시도한다")
-        void sendSlackAlert_fallbackToDirectSend_whenRedisDown() throws Exception {
+        @DisplayName("Redis 장애 시 큐를 거치지 않고 오류 채널로 직접 보낸다")
+        void alertNeedsAction_sendsDirectly_whenRedisDown() {
             when(redisTemplate.opsForList()).thenThrow(new RuntimeException("Redis 연결 실패"));
-            when(messageUtils.get(anyString())).thenReturn("(fallback)");
+            when(messageUtils.get("notification.admin.mail-failed", "h***@dgu.ac.kr")).thenReturn("메일 실패");
+            when(messageUtils.get("notification.error.redis-fallback")).thenReturn(" (직접 전송)");
 
-            alarmService.sendSlackAlert("긴급 메시지", FARM_WEBHOOK);
+            alarmService.alertNeedsAction("notification.admin.mail-failed", "h***@dgu.ac.kr");
 
-            verify(slackApiService).sendWebhook(eq(FARM_WEBHOOK), anyString());
-        }
-    }
-
-    @Nested
-    @DisplayName("sendDMAlert")
-    class SendDMAlert {
-
-        @Test
-        @DisplayName("DM 알림은 DM 타입으로 큐에 적재된다")
-        void sendDMAlert_pushesToQueueWithDMType() {
-            alarmService.sendDMAlert("홍길동", "hong@dgu.ac.kr", "승인 완료");
-
-            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
-            verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
-            SlackMessageDto dto = captor.getValue();
-            assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.DM);
-            assertThat(dto.getUsername()).isEqualTo("홍길동");
-            assertThat(dto.getEmail()).isEqualTo("hong@dgu.ac.kr");
-            assertThat(dto.getMessage()).isEqualTo("승인 완료");
+            verify(slackApiService).sendWebhook(ERROR_WEBHOOK, "메일 실패 (직접 전송)");
         }
 
         @Test
-        @DisplayName("Redis 장애 시 DM 타입은 webhookUrl이 null이어도 NPE 없이 직접 전송된다")
-        void sendDMAlert_fallback_doesNotThrowNPE_whenWebhookUrlIsNull() {
+        @DisplayName("전송이 끝내 실패해도 호출한 쪽으로 예외를 올리지 않는다")
+        void alertNeedsAction_neverThrows() {
             when(redisTemplate.opsForList()).thenThrow(new RuntimeException("Redis 연결 실패"));
-            when(messageUtils.get("notification.error.redis-fallback")).thenReturn(" [Redis 장애]");
-            doNothing().when(slackApiService).sendDM(anyString(), anyString(), anyString());
-            doNothing().when(slackApiService).sendWebhook(anyString(), anyString());
+            doThrow(new RuntimeException("Slack 연결 실패")).when(slackApiService).sendWebhook(any(), any());
 
-            assertThatCode(() -> alarmService.sendDMAlert("testuser", "test@example.com", "hello"))
+            assertThatCode(() -> alarmService.alertNeedsAction("notification.admin.mail-failed", "h***@dgu.ac.kr"))
                     .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("처리 기록은 알림 기록 채널로 적재한다")
+        void recordLog_goesToNotiChannel() {
+            when(messageUtils.get("notification.admin.delete.success", "FARM", "user1", "FARM")).thenReturn("정리 완료");
+
+            alarmService.recordLog("notification.admin.delete.success", "FARM", "user1", "FARM");
+
+            SlackMessageDto dto = queued();
+            assertThat(dto.getWebhookUrl()).isEqualTo(NOTI_WEBHOOK);
+            assertThat(dto.getMessage()).isEqualTo("정리 완료");
+        }
+
+        @Test
+        @DisplayName("채널 알림에 넣는 글 값은 Slack mrkdwn 이스케이프를 거친다 — <!channel> 같은 글이 호출로 바뀌지 않는다")
+        void channelAlerts_escapeTextArgs() {
+            when(messageUtils.get("notification.monitor.log", "&lt;!channel&gt; 홍&amp;길동", "hong@dgu.ac.kr", "제목"))
+                    .thenReturn("발송 기록");
+            when(messageUtils.get("notification.admin.home-cleanup.fail", "&lt;@U1&gt;", "7", "&lt;!here&gt;"))
+                    .thenReturn("홈 삭제 실패");
+
+            alarmService.notifyUser("<!channel> 홍&길동", "hong@dgu.ac.kr", "제목", "내용");
+            alarmService.alertNeedsAction("notification.admin.home-cleanup.fail", "<@U1>", 7L, "<!here>");
+
+            List<SlackMessageDto> queued = allQueued(3);
+            assertThat(queued.get(0).getMessage()).isEqualTo("내용");
+            assertThat(queued.get(1).getMessage()).isEqualTo("발송 기록");
+            assertThat(queued.get(2).getMessage()).isEqualTo("홈 삭제 실패");
+        }
+
+        private List<SlackMessageDto> allQueued(int count) {
+            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
+            verify(listOperations, times(count)).rightPush(eq(QUEUE_KEY), captor.capture());
+            return captor.getAllValues();
+        }
+
+        @Test
+        @DisplayName("사용자 안내는 메일과 Slack DM을 보내고 발송 기록을 알림 기록 채널에 남긴다")
+        void notifyUser_sendsMailDmAndReceipt() {
+            when(messageUtils.get("notification.monitor.log", "홍길동", "hong@dgu.ac.kr", "제목")).thenReturn("발송 기록");
+
+            alarmService.notifyUser("홍길동", "hong@dgu.ac.kr", "제목", "내용");
+
+            verify(mailSender).send(any(SimpleMailMessage.class));
+            List<SlackMessageDto> queued = allQueued(2);
+            SlackMessageDto dm = queued.get(0);
+            assertThat(dm.getType()).isEqualTo(SlackMessageDto.MessageType.DM);
+            assertThat(dm.getUsername()).isEqualTo("홍길동");
+            assertThat(dm.getEmail()).isEqualTo("hong@dgu.ac.kr");
+            assertThat(dm.getMessage()).isEqualTo("내용");
+            assertThat(queued.get(1).getWebhookUrl()).isEqualTo(NOTI_WEBHOOK);
+            assertThat(queued.get(1).getMessage()).isEqualTo("발송 기록");
+        }
+
+        @Test
+        @DisplayName("메일이 실패하면 오류 채널로 알리고 발송 기록은 남기지 않는다 — DM은 그대로 보낸다")
+        void notifyUser_alertsInsteadOfReceipt_whenMailFails() {
+            doThrow(new RuntimeException("SMTP 오류")).when(mailSender).send(any(SimpleMailMessage.class));
+            when(messageUtils.get("notification.admin.mail-failed", "h***@dgu.ac.kr")).thenReturn("메일 실패");
+
+            alarmService.notifyUser("홍길동", "hong@dgu.ac.kr", "제목", "내용");
+
+            List<SlackMessageDto> queued = allQueued(2);
+            assertThat(queued.get(0).getType()).isEqualTo(SlackMessageDto.MessageType.DM);
+            assertThat(queued.get(1).getWebhookUrl()).isEqualTo(ERROR_WEBHOOK);
+            assertThat(queued.get(1).getMessage()).isEqualTo("메일 실패");
+        }
+
+        @Test
+        @DisplayName("Redis 장애 시 DM도 큐를 거치지 않고 직접 보낸다")
+        void notifyUser_sendsDmDirectly_whenRedisDown() {
+            when(redisTemplate.opsForList()).thenThrow(new RuntimeException("Redis 연결 실패"));
+            when(messageUtils.get("notification.error.redis-fallback")).thenReturn(" (직접 전송)");
+
+            alarmService.notifyUser("홍길동", "hong@dgu.ac.kr", "제목", "내용");
+
+            verify(slackApiService).sendDM("홍길동", "hong@dgu.ac.kr", "내용 (직접 전송)");
         }
     }
 
@@ -218,16 +276,6 @@ class AlarmServiceTest {
             assertThat(AlarmService.isTestAccount("2022112431@dgu.ac.kr")).isFalse();
             assertThat(AlarmService.isTestAccount("no-at-sign")).isFalse();
             assertThat(AlarmService.isTestAccount(null)).isFalse();
-        }
-
-        @Test
-        @DisplayName("신청서 채널에는 신청서만 간다 — 같은 서버의 다른 관리자 알림은 관리 채널로 간다")
-        void otherAdminNotifications_stayOnAdminChannel() {
-            alarmService.sendAdminSlackNotification("FARM", "만료 임박");
-
-            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
-            verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
-            assertThat(captor.getValue().getWebhookUrl()).isEqualTo(FARM_WEBHOOK);
         }
 
         @Test
@@ -343,61 +391,6 @@ class AlarmServiceTest {
             String message = render(request, List.of(), 0);
 
             assertThat(message).contains("&lt;!channel&gt; 모두 확인 &amp; 승인").doesNotContain("<!channel>");
-        }
-    }
-
-    @Nested
-    @DisplayName("sendAdminSlackNotification")
-    class SendAdminSlackNotification {
-
-        @Test
-        @DisplayName("FARM 서버명으로 호출하면 farm 관리자 채널로 적재된다")
-        void sendAdminSlackNotification_routesToFarmChannel() {
-            alarmService.sendAdminSlackNotification("FARM", "Pod 삭제 완료");
-
-            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
-            verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
-            assertThat(captor.getValue().getWebhookUrl()).isEqualTo(FARM_WEBHOOK);
-            assertThat(captor.getValue().getMessage()).isEqualTo("Pod 삭제 완료");
-        }
-
-        @Test
-        @DisplayName("LAB 서버명으로 호출하면 lab 관리자 채널로 적재된다")
-        void sendAdminSlackNotification_routesToLabChannel() {
-            alarmService.sendAdminSlackNotification("LAB", "계정 삭제 완료");
-
-            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
-            verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
-            assertThat(captor.getValue().getWebhookUrl()).isEqualTo(LAB_WEBHOOK);
-        }
-    }
-
-    @Nested
-    @DisplayName("sendAllAlerts")
-    class SendAllAlerts {
-
-        @Test
-        @DisplayName("메일, DM 큐, 모니터링 로그 큐가 모두 호출된다")
-        void sendAllAlerts_callsMailDmAndMonitoringLog() {
-            when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("모니터링 로그");
-
-            alarmService.sendAllAlerts("홍길동", "hong@dgu.ac.kr", "제목", "내용");
-
-            verify(mailSender).send(any(SimpleMailMessage.class));
-            // DM 1회 + 모니터링 WEBHOOK 1회
-            verify(listOperations, times(2)).rightPush(eq(QUEUE_KEY), any());
-        }
-
-        @Test
-        @DisplayName("메일 전송 실패해도 DM 큐 적재는 계속 진행된다")
-        void sendAllAlerts_continuesWithDM_whenMailFails() {
-            doThrow(new RuntimeException("SMTP 오류")).when(mailSender).send(any(SimpleMailMessage.class));
-            when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("로그");
-
-            alarmService.sendAllAlerts("홍길동", "hong@dgu.ac.kr", "제목", "내용");
-
-            // 메일은 실패했지만 큐 적재(DM + 모니터링)는 계속 진행
-            verify(listOperations, atLeastOnce()).rightPush(eq(QUEUE_KEY), any());
         }
     }
 

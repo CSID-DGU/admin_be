@@ -204,7 +204,8 @@ class AdminRequestCommandServiceApprovalContractTest {
 
         InOrder order = inOrder(jobClient, alarmService, request);
         order.verify(jobClient).registerProvision(any(ProvisionRegisterRequestDTO.class));
-        order.verify(alarmService).sendAdminSlackNotification(eq("farm2"), anyString());
+        order.verify(alarmService).alertNeedsAction(
+                eq("notification.admin.approval.register-failed"), any(Object[].class));
         order.verify(request).revertToPending();
     }
 

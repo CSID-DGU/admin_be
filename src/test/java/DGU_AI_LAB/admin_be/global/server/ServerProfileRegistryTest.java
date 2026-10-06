@@ -29,7 +29,7 @@ class ServerProfileRegistryTest {
         ServerProfileRegistry registry = registry(Map.of("FARM", FARM));
 
         assertThat(registry.publicHost(" farm ")).contains("farm.example.org");
-        assertThat(registry.adminWebhookUrl("Farm")).contains(FARM_WEBHOOK);
+        assertThat(registry.requestWebhookUrl("Farm")).contains(FARM_WEBHOOK);
     }
 
     @Test
@@ -38,7 +38,7 @@ class ServerProfileRegistryTest {
         ServerProfileRegistry registry = registry(Map.of("FARM", FARM));
 
         assertThat(registry.publicHost("LAB")).isEmpty();
-        assertThat(registry.adminWebhookUrl(null)).isEmpty();
+        assertThat(registry.requestWebhookUrl(null)).isEmpty();
         assertThat(registry.publicPort("LAB", "30022")).isEqualTo("30022");
     }
 
@@ -72,7 +72,6 @@ class ServerProfileRegistryTest {
                 new MockEnvironment().withProperty("slack-webhook-url.farm-admin", FARM_WEBHOOK)
                         .withProperty("slack-webhook-url.farm-request", "https://hooks.example/request"));
         assertThat(split.requestWebhookUrl("FARM")).contains("https://hooks.example/request");
-        assertThat(split.adminWebhookUrl("FARM")).contains(FARM_WEBHOOK);
     }
 
     @Test

@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
+import DGU_AI_LAB.admin_be.support.Alerts;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.global.event.RequestContainerDeletedEvent;
 import DGU_AI_LAB.admin_be.global.event.RequestExpiredEvent;
@@ -15,6 +16,7 @@ import org.mockito.quality.Strictness;
 
 import org.junit.jupiter.api.BeforeEach;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -34,7 +36,6 @@ class RequestEventListenerTest {
 
     private static final String SUBJECT = "[DGU AI LAB] 서버 계정 삭제 완료 안내";
     private static final String BODY    = "안녕하세요, 홍길동님. 서버 계정이 삭제되었습니다.";
-    private static final String ADMIN_MSG = "🗑️ [LAB] 리소스 삭제 완료: user1 (server-lab)";
 
     private static final RequestExpiredEvent EVENT = new RequestExpiredEvent(
             "홍길동", "hong@test.com", "user1", "server-lab",
@@ -45,8 +46,6 @@ class RequestEventListenerTest {
         when(messageUtils.get("notification.expired.detail.subject")).thenReturn(SUBJECT);
         when(messageUtils.get(eq("notification.expired.detail.body"), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(BODY);
-        when(messageUtils.get(eq("notification.admin.delete.success"), any(), any(), any()))
-                .thenReturn(ADMIN_MSG);
     }
 
     @Test
@@ -54,7 +53,7 @@ class RequestEventListenerTest {
     void handleExpiredEvent_sendsUserNotificationWithStringFields() {
         requestEventListener.handleExpiredEvent(EVENT);
 
-        verify(alarmService).sendAllAlerts(eq("홍길동"), eq("hong@test.com"), eq(SUBJECT), eq(BODY));
+        verify(alarmService).notifyUser(eq("홍길동"), eq("hong@test.com"), eq(SUBJECT), eq(BODY));
     }
 
     @Test
@@ -77,20 +76,12 @@ class RequestEventListenerTest {
     }
 
     @Test
-    @DisplayName("관리자 알림은 serverName으로 전송한다")
+    @DisplayName("정리했다는 기록을 알림 기록 채널에 남긴다")
     void handleExpiredEvent_sendsAdminNotificationWithServerName() {
         requestEventListener.handleExpiredEvent(EVENT);
 
-        verify(alarmService).sendAdminSlackNotification(eq("server-lab"), eq(ADMIN_MSG));
-    }
-
-    @Test
-    @DisplayName("알림 전송 실패 시 예외가 전파되지 않는다")
-    void handleExpiredEvent_doesNotPropagateException_whenAlarmFails() {
-        doThrow(new RuntimeException("slack error")).when(alarmService).sendAllAlerts(any(), any(), any(), any());
-
-        requestEventListener.handleExpiredEvent(EVENT);
-
-        verify(alarmService, times(1)).sendAllAlerts(any(), any(), any(), any());
+        assertThat(Alerts.recorded(alarmService))
+                .containsExactly("notification.admin.delete.success server-lab user1 server-lab");
+        assertThat(Alerts.needsAction(alarmService)).isEmpty();
     }
 }
