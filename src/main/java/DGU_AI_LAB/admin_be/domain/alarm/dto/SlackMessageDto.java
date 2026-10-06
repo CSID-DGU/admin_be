@@ -15,7 +15,8 @@ public class SlackMessageDto implements Serializable {
 
     public enum MessageType {
         WEBHOOK, // 관리자 채널 알림
-        DM       // 사용자 개인 DM
+        DM,      // 사용자 개인 DM
+        CHANNEL  // 봇이 채널에 올리는 글(스레드 댓글 포함). 실패하면 webhookUrl로 대신 보낸다
     }
 
     private MessageType type;
@@ -23,6 +24,13 @@ public class SlackMessageDto implements Serializable {
 
     // Webhook용 필드
     private String webhookUrl;
+
+    // CHANNEL용 필드
+    private String channelId;
+    /** 있으면 그 메시지의 스레드 댓글로 단다. */
+    private String threadTs;
+    /** 있으면 올라간 메시지의 식별자(ts)를 이 신청에 적어 둔다. */
+    private Long requestId;
 
     // DM용 필드
     private String username;

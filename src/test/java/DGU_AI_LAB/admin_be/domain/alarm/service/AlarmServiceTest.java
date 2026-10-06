@@ -79,6 +79,8 @@ class AlarmServiceTest {
     private static final String FARM_WEBHOOK = "https://hooks.slack.com/farm";
     private static final String LAB_WEBHOOK = "https://hooks.slack.com/lab";
     private static final String FARM_REQUEST_WEBHOOK = "https://hooks.slack.com/farm-request";
+    private static final String FARM_REQUEST_CHANNEL_ID = "C0FARMREQ";
+    private static final String NOTI_CHANNEL_ID = "C0NOTI";
 
     @Spy
     private ServerProfileRegistry serverProfileRegistry = new ServerProfileRegistry(
@@ -89,7 +91,8 @@ class AlarmServiceTest {
             new MockEnvironment()
                     .withProperty("slack-webhook-url.farm-admin", FARM_WEBHOOK)
                     .withProperty("slack-webhook-url.lab-admin", LAB_WEBHOOK)
-                    .withProperty("slack-webhook-url.farm-request", FARM_REQUEST_WEBHOOK));
+                    .withProperty("slack-webhook-url.farm-request", FARM_REQUEST_WEBHOOK)
+                    .withProperty("slack-channel-id.farm-request", FARM_REQUEST_CHANNEL_ID));
 
     @BeforeEach
     void setUp() {
@@ -558,6 +561,107 @@ class AlarmServiceTest {
 
             verify(messageUtils).get(eq("email.container.ports-changed.body"),
                     any(), any(), eq("30010"), eq(""), eq("lab.example.org"), eq("없음"));
+        }
+    }
+
+    @Nested
+    @DisplayName("신청서 채널 — 봇 전송과 스레드 댓글")
+    class RequestChannelThread {
+
+        private SlackMessageDto queued() {
+            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
+            verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
+            return captor.getValue();
+        }
+
+        @Test
+        @DisplayName("채널 ID가 있는 서버의 신청서는 봇으로 올리고, 메시지 식별자를 적을 신청 번호와 대신 보낼 webhook을 함께 싣는다")
+        void newRequest_goesByBot_whenChannelIdKnown() {
+            Request request = mockRequest("홍길동", "FARM");
+            when(request.getRequestId()).thenReturn(42L);
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("새 신청");
+
+            alarmService.sendNewRequestNotification(request, List.of(), 0);
+
+            SlackMessageDto dto = queued();
+            assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.CHANNEL);
+            assertThat(dto.getChannelId()).isEqualTo(FARM_REQUEST_CHANNEL_ID);
+            assertThat(dto.getRequestId()).isEqualTo(42L);
+            assertThat(dto.getThreadTs()).isNull();
+            assertThat(dto.getWebhookUrl()).isEqualTo(FARM_REQUEST_WEBHOOK);
+        }
+
+        @Test
+        @DisplayName("채널 ID가 없는 서버(LAB)의 신청서는 예전처럼 webhook으로 간다")
+        void newRequest_goesByWebhook_whenNoChannelId() {
+            Request request = mockRequest("홍길동", "LAB");
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("새 신청");
+
+            alarmService.sendNewRequestNotification(request, List.of(), 0);
+
+            SlackMessageDto dto = queued();
+            assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.WEBHOOK);
+            assertThat(dto.getWebhookUrl()).isEqualTo(LAB_WEBHOOK);
+        }
+
+        @Test
+        @DisplayName("테스트용 계정의 신청서는 봇으로 올릴 때도 서버 신청서 채널이 아니라 알림 기록 채널로만 간다")
+        void newRequest_ofTestAccount_neverReachesServerChannel() {
+            ReflectionTestUtils.setField(alarmService, "notiChannelId", NOTI_CHANNEL_ID);
+            Request request = mockRequest("tester", "FARM");
+            when(request.getUser().getEmail()).thenReturn("tester@e2e.local");
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("새 신청");
+
+            alarmService.sendNewRequestNotification(request, List.of(), 0);
+
+            SlackMessageDto dto = queued();
+            assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.CHANNEL);
+            assertThat(dto.getChannelId()).isEqualTo(NOTI_CHANNEL_ID);
+            assertThat(dto.getWebhookUrl()).isEqualTo(NOTI_WEBHOOK);
+        }
+
+        @Test
+        @DisplayName("신청서 메시지 식별자를 알면 취소 알림을 그 메시지의 스레드 댓글로 단다")
+        void cancel_repliesInThread_whenMessageKnown() {
+            Request request = mockRequest("홍길동", "FARM");
+            when(request.getSlackMessageTs()).thenReturn("1728200000.000100");
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("취소 알림");
+
+            alarmService.prepareRequestCancelledNotification(request).run();
+
+            SlackMessageDto dto = queued();
+            assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.CHANNEL);
+            assertThat(dto.getChannelId()).isEqualTo(FARM_REQUEST_CHANNEL_ID);
+            assertThat(dto.getThreadTs()).isEqualTo("1728200000.000100");
+            assertThat(dto.getRequestId()).isNull();
+            assertThat(dto.getWebhookUrl()).isEqualTo(FARM_REQUEST_WEBHOOK);
+        }
+
+        @Test
+        @DisplayName("신청서 메시지 식별자를 모르면 취소 알림은 일반 메시지(webhook)로 간다")
+        void cancel_goesByWebhook_whenMessageUnknown() {
+            Request request = mockRequest("홍길동", "FARM");
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("취소 알림");
+
+            alarmService.prepareRequestCancelledNotification(request).run();
+
+            SlackMessageDto dto = queued();
+            assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.WEBHOOK);
+            assertThat(dto.getWebhookUrl()).isEqualTo(FARM_REQUEST_WEBHOOK);
+        }
+
+        @Test
+        @DisplayName("큐(Redis)가 죽었으면 봇으로 올릴 신청서도 webhook으로 바로 보낸다")
+        void newRequest_sendsWebhookDirectly_whenRedisDown() {
+            Request request = mockRequest("홍길동", "FARM");
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("새 신청");
+            when(messageUtils.get("notification.error.redis-fallback")).thenReturn("(직접 전송)");
+            when(listOperations.rightPush(any(), any())).thenThrow(new RuntimeException("redis down"));
+
+            alarmService.sendNewRequestNotification(request, List.of(), 0);
+
+            verify(slackApiService).sendWebhook(FARM_REQUEST_WEBHOOK, "새 신청(직접 전송)");
+            verify(slackApiService, never()).postToChannel(any(), any(), any());
         }
     }
 

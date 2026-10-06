@@ -89,6 +89,13 @@ public class Request extends BaseTimeEntity {
     @Column(name = "enable_vnc", nullable = false)
     private boolean enableVnc = false;
 
+    /**
+     * 신청서 채널에 올라간 이 신청서 메시지의 Slack 식별자(ts). 취소 같은 후속 알림을 그 메시지의 스레드 댓글로 다는 데 쓴다.
+     * 전송 뒤에 따로 채워지므로(RequestRepository#updateSlackMessageTs) 비어 있을 수 있다.
+     */
+    @Column(name = "slack_message_ts", length = 32)
+    private String slackMessageTs;
+
     @Builder
     public Request(LocalDateTime expiresAt, String usagePurpose, String formAnswers, User user, ResourceGroup resourceGroup, ContainerImage containerImage, boolean enableVnc) {
         this.enableVnc = enableVnc;

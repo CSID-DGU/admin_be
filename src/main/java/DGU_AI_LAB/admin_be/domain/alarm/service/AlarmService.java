@@ -37,7 +37,7 @@ import org.springframework.stereotype.Service;
  * <p>어디로 보낼지는 알림의 성격으로만 정한다. 호출부는 채널을 고르지 않고 아래 넷 중 하나를 부른다.
  * <ul>
  *   <li>결정 요청(승인·거절이 필요한 신청) → 신청서 채널: {@link #sendNewRequestNotification},
- *       {@link #prepareRequestCancelledNotification}</li>
+ *       그 신청의 후속 변화는 신청서 메시지의 스레드 댓글: {@link #prepareRequestCancelledNotification}</li>
  *   <li>조치 필요(실패·멈춤·수동 확인) → 오류 채널 한 곳: {@link #alertNeedsAction}</li>
  *   <li>처리 기록(정상 완료) → 알림 기록(noti) 채널: {@link #recordLog}</li>
  *   <li>사용자 안내 → 메일 + Slack DM + 알림 기록 채널의 발송 기록: {@link #notifyUser}</li>
@@ -56,6 +56,10 @@ public class AlarmService {
 
     @Value("${slack-webhook-url.noti}") // 사용자 알림 로그용
     private String notiLogWebhookUrl;
+
+    /** 알림 기록 채널의 Slack 채널 ID(선택). 있으면 테스트용 계정의 신청서도 봇으로 올려 스레드 댓글을 단다. */
+    @Value("${slack-channel-id.noti:}")
+    private String notiChannelId;
 
     @Value("${slack-webhook-url.error-log}")
     private String errorLogWebhookUrl; // 중요한 에러 로그용
@@ -238,12 +242,13 @@ public class AlarmService {
                 formatTeamInfo(request),                                   // {19}
                 RECEIVED_AT_FORMAT.format(receivedAt));                    // {20}
 
-        enqueueWebhook(message, requestChannelUrl(user, serverName));
+        enqueueRequestChannel(message, requestChannel(user, serverName), null, request.getRequestId());
     }
 
     /**
      * 승인 전에 신청자가 취소한 신청을 신청서 채널에 알린다. 신청서는 그 채널에 그대로 남아 있어, 알리지 않으면
-     * 승인자가 이미 없는 신청을 처리하려 한다.
+     * 승인자가 이미 없는 신청을 처리하려 한다. 신청서를 봇으로 올려 그 메시지의 식별자를 알고 있으면 스레드 댓글로 달고,
+     * 모르면(webhook으로 보냈거나 아직 적히기 전) 일반 메시지로 보낸다.
      *
      * <p>신청 정보는 호출한 시점(트랜잭션 안)에 읽어 문구를 만들고, 전송은 돌려준 작업을 실행할 때 한다 — 호출자가
      * 커밋 뒤에 실행한다(Redis 장애 시 직접 전송으로 폴백하므로 행 잠금을 쥔 채 보내지 않는다).
@@ -260,18 +265,52 @@ public class AlarmService {
                 serverName,                                                // {0}
                 RECEIVED_AT_FORMAT.format(receivedAt),                     // {1}
                 SlackText.escape(user.getName()));                         // {2}
-        String webhookUrl = requestChannelUrl(user, serverName);
-        return () -> safely("신청 취소 알림", () -> enqueueWebhook(message, webhookUrl));
+        RequestChannel channel = requestChannel(user, serverName);
+        String threadTs = request.getSlackMessageTs();
+        return () -> safely("신청 취소 알림", () -> {
+            if (threadTs == null) {
+                enqueueWebhook(message, channel.webhookUrl());
+                return;
+            }
+            enqueueRequestChannel(message, channel, threadTs, null);
+        });
+    }
+
+    /** 신청서 채널 한 곳. 채널 ID는 봇으로 올릴 때 쓰고, 없거나 봇 전송이 실패하면 webhook으로 보낸다. */
+    private record RequestChannel(String webhookUrl, String channelId) {
     }
 
     /**
      * 신청서와 그 신청의 취소 알림이 가는 채널. 서버별 신청서 채널로 가고(따로 없으면 관리 채널), 그 채널에는
-     * 이 둘 말고 다른 알림을 보내지 않는다. 테스트용 계정의 것만 알림 기록 채널로 돌린다.
+     * 이 둘 말고 다른 알림을 보내지 않는다. 테스트용 계정의 것은 webhook이든 봇이든 알림 기록 채널로만 돌린다.
      */
-    private String requestChannelUrl(User user, String serverName) {
-        return isTestAccount(user.getEmail())
-                ? notiLogWebhookUrl
-                : serverProfileRegistry.requestWebhookUrl(serverName).orElse(errorLogWebhookUrl);
+    private RequestChannel requestChannel(User user, String serverName) {
+        if (isTestAccount(user.getEmail())) {
+            return new RequestChannel(notiLogWebhookUrl,
+                    notiChannelId == null || notiChannelId.isBlank() ? null : notiChannelId);
+        }
+        return new RequestChannel(
+                serverProfileRegistry.requestWebhookUrl(serverName).orElse(errorLogWebhookUrl),
+                serverProfileRegistry.requestChannelId(serverName).orElse(null));
+    }
+
+    /**
+     * 신청서 채널로 보낸다. requestId를 주면 올라간 메시지의 식별자를 그 신청에 적어 두고, threadTs를 주면 그 메시지의
+     * 스레드 댓글로 단다. 채널 ID가 없는 채널은 둘 다 할 수 없어 webhook으로 보낸다.
+     */
+    private void enqueueRequestChannel(String message, RequestChannel channel, String threadTs, Long requestId) {
+        if (channel.channelId() == null) {
+            enqueueWebhook(message, channel.webhookUrl());
+            return;
+        }
+        pushToQueue(SlackMessageDto.builder()
+                .type(SlackMessageDto.MessageType.CHANNEL)
+                .channelId(channel.channelId())
+                .threadTs(threadTs)
+                .requestId(requestId)
+                .webhookUrl(channel.webhookUrl())
+                .message(message)
+                .build());
     }
 
     static boolean isTestAccount(String email) {
@@ -530,10 +569,11 @@ public class AlarmService {
         String fullMessage = dto.getMessage() + notice;
 
         try {
-            if (dto.getType() == SlackMessageDto.MessageType.WEBHOOK) {
-                slackApiService.sendWebhook(dto.getWebhookUrl(), fullMessage);
-            } else {
+            if (dto.getType() == SlackMessageDto.MessageType.DM) {
                 slackApiService.sendDM(dto.getUsername(), dto.getEmail(), fullMessage);
+            } else {
+                // 봇으로 올릴 글(CHANNEL)도 큐가 죽은 동안에는 webhook으로 보낸다 — 스레드는 포기하고 전달만 지킨다.
+                slackApiService.sendWebhook(dto.getWebhookUrl(), fullMessage);
             }
 
             // Fallback이 작동했다는 건 시스템이 불안정하다는 뜻이므로 에러 로그 채널에 알립니다.
