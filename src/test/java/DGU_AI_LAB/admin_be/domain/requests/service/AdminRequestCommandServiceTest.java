@@ -680,6 +680,7 @@ class AdminRequestCommandServiceTest {
             verify(request).completeApproval();
             verify(podExternalPortRepository, times(2)).save(any(PodExternalPort.class));
             verify(alarmService).sendContainerCreatedEmail(request, "32001", "32002");
+            verify(alarmService).sendContainerCreatedNotification(request, "32001", "32002");
         }
 
         @Test
@@ -722,6 +723,7 @@ class AdminRequestCommandServiceTest {
             // Then
             verify(request, never()).completeApproval();
             verify(alarmService, never()).sendContainerCreatedEmail(any(), any(), any());
+            verify(alarmService, never()).sendContainerCreatedNotification(any(), any(), any());
         }
 
         @Test

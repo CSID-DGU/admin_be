@@ -668,6 +668,69 @@ class AlarmServiceTest {
     }
 
     @Nested
+    @DisplayName("sendContainerCreatedNotification")
+    class SendContainerCreatedNotification {
+
+        private Request fulfilledRequest(String serverName) {
+            Request request = mockRequest("홍길동", serverName);
+            when(request.getRequestId()).thenReturn(1234L);
+            when(request.getCreatedAt()).thenReturn(java.time.LocalDateTime.of(2026, 10, 6, 13, 5));
+            when(request.getNodeName()).thenReturn("farm6");
+            when(request.getUser().getUbuntuUid()).thenReturn(10148L);
+            when(request.getUser().getUbuntuGid()).thenReturn(10148L);
+            when(serverProfileRegistry.publicPort(eq(serverName), anyString())).thenAnswer(inv -> inv.getArgument(1));
+            return request;
+        }
+
+        @Test
+        @DisplayName("배정 결과(계정·노드·포트·UID·GID)를 담아 그 신청서의 스레드 댓글로 단다")
+        void repliesInThreadWithResult() {
+            Request request = fulfilledRequest("FARM");
+            when(request.getSlackMessageTs()).thenReturn("1728200000.000100");
+            when(messageUtils.get("notification.admin.request-fulfilled",
+                    "1234", "FARM", "2026-10-06 13:05", "홍길동", "testuser", "farm6", "-", "9502", "9503", "10148", "10148"))
+                    .thenReturn("생성 완료");
+
+            alarmService.sendContainerCreatedNotification(request, "9502", "9503");
+
+            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
+            verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
+            SlackMessageDto dto = captor.getValue();
+            assertThat(dto.getMessage()).isEqualTo("생성 완료");
+            assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.CHANNEL);
+            assertThat(dto.getChannelId()).isEqualTo(FARM_REQUEST_CHANNEL_ID);
+            assertThat(dto.getThreadTs()).isEqualTo("1728200000.000100");
+            assertThat(dto.getRequestId()).isNull();
+            assertThat(dto.isBlockLayout()).isTrue();
+        }
+
+        @Test
+        @DisplayName("신청서 메시지 식별자를 모르면 신청서 채널에 일반 메시지(webhook)로 보낸다")
+        void goesByWebhook_whenMessageUnknown() {
+            Request request = fulfilledRequest("FARM");
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("생성 완료");
+
+            alarmService.sendContainerCreatedNotification(request, "9502", "9503");
+
+            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
+            verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
+            assertThat(captor.getValue().getType()).isEqualTo(SlackMessageDto.MessageType.WEBHOOK);
+            assertThat(captor.getValue().getWebhookUrl()).isEqualTo(FARM_REQUEST_WEBHOOK);
+        }
+
+        @Test
+        @DisplayName("알림을 만들다 실패해도 예외를 밖으로 내지 않는다 — 승인 처리는 이미 끝났다")
+        void swallowsFailure() {
+            Request request = fulfilledRequest("FARM");
+            when(messageUtils.get(anyString(), any(Object[].class))).thenThrow(new IllegalStateException("양식 없음"));
+
+            alarmService.sendContainerCreatedNotification(request, "9502", "9503");
+
+            verify(listOperations, never()).rightPush(any(), any());
+        }
+    }
+
+    @Nested
     @DisplayName("prepareRequestCancelledNotification")
     class PrepareRequestCancelledNotification {
 
