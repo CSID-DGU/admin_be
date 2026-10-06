@@ -14,6 +14,9 @@ import java.util.Map;
  *   <li>그 밖의 덩어리는 글 그대로 넣는다.</li>
  * </ul>
  * Slack 한도를 넘는 글은 빈 목록을 돌려준다 — 호출부는 블록 없이 글만 보낸다.
+ *
+ * <p>줄 모양이 곧 구조이므로, 양식에 넣는 사용자 입력은 {@link SlackText#line}(한 줄 값)이나
+ * {@link SlackText#quote}(여러 줄 글)로 넣어야 한다. 그대로 넣으면 입력에 든 빈 줄·소제목·항목 줄이 구역으로 읽힌다.
  */
 public final class SlackBlocks {
 
@@ -87,10 +90,9 @@ public final class SlackBlocks {
         return mrkdwn("*" + label + "*\n" + value);
     }
 
-    /** 큰 제목은 꾸밈 없는 글(plain_text)이라 mrkdwn용으로 바꿔 둔 문자를 되돌린다. */
+    /** 이스케이프된 문자(&amp;lt; 등)는 되돌리지 않는다 — 되돌리면 값에 든 {@code <!channel>} 같은 글이 되살아난다. */
     private static Map<String, Object> header(String title) {
-        String plain = title.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&");
-        return Map.of("type", "header", "text", Map.of("type", "plain_text", "text", plain, "emoji", true));
+        return Map.of("type", "header", "text", Map.of("type", "plain_text", "text", title, "emoji", true));
     }
 
     private static Map<String, Object> mrkdwn(String text) {

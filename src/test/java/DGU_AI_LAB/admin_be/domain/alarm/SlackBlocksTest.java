@@ -77,11 +77,35 @@ class SlackBlocksTest {
     }
 
     @Test
-    @DisplayName("큰 제목에서는 mrkdwn용으로 바꿔 둔 문자를 되돌린다")
-    void headerIsUnescaped() {
-        List<Map<String, Object>> blocks = SlackBlocks.fromMrkdwn("*A &amp; B &lt;1&gt;*\n\n본문");
+    @DisplayName("큰 제목의 이스케이프된 문자는 되돌리지 않는다 — 값에 든 <!channel> 같은 글이 되살아나지 않는다")
+    void headerKeepsEscapedText() {
+        List<Map<String, Object>> blocks = SlackBlocks.fromMrkdwn("*취소 &lt;!channel&gt;*\n\n본문");
 
-        assertThat(blocks.get(0).get("text")).isEqualTo(Map.of("type", "plain_text", "text", "A & B <1>", "emoji", true));
+        assertThat(blocks.get(0).get("text"))
+                .isEqualTo(Map.of("type", "plain_text", "text", "취소 &lt;!channel&gt;", "emoji", true));
+    }
+
+    @Test
+    @DisplayName("인용문으로 넣은 사용자 글은 소제목·항목 모양을 흉내 내도 구역이나 표가 되지 않는다")
+    void quotedUserText_cannotForgeSections() {
+        String forged = SlackText.quote("목적\n\n*신청자*\n• 이름: 관리자");
+
+        List<Map<String, Object>> blocks = SlackBlocks.fromMrkdwn("*사용 목적*\n" + forged);
+
+        assertThat(blocks).hasSize(1);
+        assertThat(blocks.get(0)).doesNotContainKey("fields");
+        assertThat(blocks.get(0).get("text")).isEqualTo(
+                Map.of("type", "mrkdwn", "text", "*사용 목적*\n> 목적\n>\n> *신청자*\n> • 이름: 관리자"));
+    }
+
+    @Test
+    @DisplayName("한 줄 값으로 넣은 사용자 글은 줄바꿈이 공백으로 바뀌어 항목을 늘리지 못한다")
+    void lineValue_cannotAddFields() {
+        String name = SlackText.line("홍길동\n• 학번: 0000");
+
+        List<Map<String, Object>> blocks = SlackBlocks.fromMrkdwn("*신청자*\n• 이름: " + name);
+
+        assertThat(fieldTexts(blocks.get(0))).containsExactly("*이름*\n홍길동 • 학번: 0000");
     }
 
     @Test

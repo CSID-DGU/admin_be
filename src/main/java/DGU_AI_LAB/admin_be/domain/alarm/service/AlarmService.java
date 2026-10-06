@@ -225,19 +225,19 @@ public class AlarmService {
         LocalDate expiresOn = request.getExpiresAt().toLocalDate();
 
         String message = messageUtils.get("notification.admin.new-request",
-                SlackText.escape(user.getName()),                          // {0}
-                SlackText.escape(user.getStudentId()),                     // {1}
-                SlackText.escape(user.getDepartment()),                    // {2}
-                SlackText.escape(user.getEmail()),                         // {3}
-                SlackText.escape(user.getPhone()),                         // {4}
+                SlackText.line(user.getName()),                            // {0}
+                SlackText.line(user.getStudentId()),                       // {1}
+                SlackText.line(user.getDepartment()),                      // {2}
+                SlackText.line(user.getEmail()),                           // {3}
+                SlackText.line(user.getPhone()),                           // {4}
                 request.getUbuntuUsername(),                               // {5}
-                SlackText.escape(resourceGroup.getResourceGroupName()),    // {6}
+                SlackText.line(resourceGroup.getResourceGroupName()),      // {6}
                 serverName,                                                // {7}
-                SlackText.escape(request.getUsagePurpose()),               // {8}
+                SlackText.quote(request.getUsagePurpose()),                // {8}
                 expiresOn.toString(),                                      // {9}
                 String.valueOf(request.getRequestId()),                    // {10}
                 describe(resourceGroup.getDescription()),                  // {11}
-                image == null ? "-" : SlackText.escape(image.getImageName() + ":" + image.getImageVersion()), // {12}
+                image == null ? "-" : SlackText.line(image.getImageName() + ":" + image.getImageVersion()), // {12}
                 formatGroups(request),                                     // {13}
                 formatPortRequests(portRequests),                          // {14}
                 request.isEnableVnc() ? "사용" : "사용 안 함",               // {15}
@@ -269,7 +269,7 @@ public class AlarmService {
         String message = messageUtils.get("notification.admin.request-cancelled",
                 serverName,                                                // {0}
                 RECEIVED_AT_FORMAT.format(receivedAt),                     // {1}
-                SlackText.escape(user.getName()),                          // {2}
+                SlackText.line(user.getName()),                            // {2}
                 String.valueOf(request.getRequestId()));                   // {3}
         RequestChannel channel = requestChannel(user, serverName);
         String threadTs = request.getSlackMessageTs();
@@ -329,7 +329,7 @@ public class AlarmService {
     }
 
     private static String describe(String description) {
-        return description == null || description.isBlank() ? "" : " (" + SlackText.escape(description) + ")";
+        return description == null || description.isBlank() ? "" : " (" + SlackText.line(description) + ")";
     }
 
     private static String formatGroups(Request request) {
@@ -340,7 +340,7 @@ public class AlarmService {
                         : rg.getGroup().getGroupName())
                 .sorted()
                 .collect(Collectors.joining(", "));
-        return groups.isEmpty() ? "없음" : SlackText.escape(groups);
+        return groups.isEmpty() ? "없음" : SlackText.line(groups);
     }
 
     /**
@@ -354,7 +354,7 @@ public class AlarmService {
         }
         try {
             String teamInfo = FORM_ANSWERS_MAPPER.readTree(formAnswers).path(FORM_ANSWER_TEAM_INFO).asText("");
-            return teamInfo.isBlank() ? "없음" : SlackText.escape(teamInfo.strip());
+            return teamInfo.isBlank() ? "없음" : SlackText.line(teamInfo.strip());
         } catch (JsonProcessingException e) {
             return "없음";
         }
@@ -365,7 +365,7 @@ public class AlarmService {
             return "없음";
         }
         return portRequests.stream()
-                .map(p -> p.getInternalPort() + "번 (" + SlackText.escape(p.getUsagePurpose()) + ")")
+                .map(p -> p.getInternalPort() + "번 (" + SlackText.line(p.getUsagePurpose()) + ")")
                 .collect(Collectors.joining(", "));
     }
 

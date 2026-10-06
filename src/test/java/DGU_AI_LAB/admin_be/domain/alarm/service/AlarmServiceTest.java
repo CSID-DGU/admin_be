@@ -354,7 +354,7 @@ class AlarmServiceTest {
                     "이메일: 홍길동@dgu.ac.kr", "전화번호: 010-0000-0000", "서버 계정(ID): testuser",
                     "지금 사용 중인 컨테이너: 2개", "GPU: 3090ti (RTX 3090 24GB)", "dguailab/decs:260915",
                     "공유 그룹: vision-team", "추가 포트: 6006번 (TensorBoard)", "noVNC): 사용",
-                    "2026-12-17 ~ 2026-12-31 (총 14일)", "*사용 목적*\n첫째 줄\n둘째 줄");
+                    "2026-12-17 ~ 2026-12-31 (총 14일)", "*사용 목적*\n> 첫째 줄\n> 둘째 줄");
             assertThat(message).doesNotContain("{").doesNotContain(":bell:");
         }
 
