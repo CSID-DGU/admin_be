@@ -22,11 +22,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @Transactional
@@ -57,6 +59,10 @@ class UserSchedulerServiceTest {
     // 탈퇴 경로(컨테이너·계정 회수)는 AdminUserServiceTest에서 검증한다. 여기선 대상 선정과 위임만 본다.
     @MockitoBean
     private AdminUserService adminUserService;
+
+    // 기한이 지난 사용자는 경고를 받은 기록이 있어야 탈퇴로 넘어간다. 기록 자체는 UserLifecycleTransactionalServiceTest에서 본다.
+    @MockitoBean
+    private InactivityNoticeStore noticeStore;
 
 
     @Test
@@ -102,6 +108,8 @@ class UserSchedulerServiceTest {
         entityManager.clear();
 
 
+        when(noticeStore.findDeadline(softTarget.getUserId())).thenReturn(Optional.of(now.toLocalDate().minusDays(1)));
+
         // --- When ---
         userSchedulerService.runUserLifecycleScheduler();
 
@@ -132,6 +140,7 @@ class UserSchedulerServiceTest {
 
         // 5. [탈퇴 대상]만 탈퇴 경로로 넘긴다
         verify(adminUserService).withdrawInactiveUser(softTarget.getUserId());
+        verify(noticeStore).forget(softTarget.getUserId());
         verify(adminUserService, never()).withdrawInactiveUser(activeUser.getUserId());
         verify(adminUserService, never()).withdrawInactiveUser(podUser.getUserId());
         verify(adminUserService, never()).withdrawInactiveUser(d7User.getUserId());

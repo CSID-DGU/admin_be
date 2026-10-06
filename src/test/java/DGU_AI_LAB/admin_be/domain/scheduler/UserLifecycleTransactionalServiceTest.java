@@ -50,6 +50,9 @@ class UserLifecycleTransactionalServiceTest {
     private RedisTemplate<String, Object> redisTemplate;
 
     @Mock
+    private InactivityNoticeStore noticeStore;
+
+    @Mock
     @SuppressWarnings("rawtypes")
     private ValueOperations valueOps;
 
@@ -59,6 +62,8 @@ class UserLifecycleTransactionalServiceTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
         when(valueOps.setIfAbsent(anyString(), any(), any(Duration.class))).thenReturn(true);
         when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
+        // 기본은 기한을 미리 알린 사용자다. 알린 적 없는 경우는 NoticeBeforeDeactivation에서 따로 본다.
+        when(noticeStore.findDeadline(anyLong())).thenReturn(Optional.of(NOW.toLocalDate().minusDays(1)));
     }
 
     private static Request request(Status status, LocalDateTime approvedAt, LocalDateTime updatedAt) {
@@ -152,6 +157,86 @@ class UserLifecycleTransactionalServiceTest {
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
             assertThat(lifecycleService.processInactiveUser(1L, NOW)).isFalse();
+        }
+    }
+
+    @Nested
+    @DisplayName("processInactiveUser - 경고 없는 비활성화 방지")
+    class NoticeBeforeDeactivation {
+
+        private User overdueUser() {
+            User user = buildUser(NOW.minusYears(2), null);
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+            return user;
+        }
+
+        @Test
+        @DisplayName("기한이 지났는데 경고한 적이 없으면 비활성화하지 않고, 7일 뒤를 예정일로 알리고 기록한다")
+        void overdueWithoutNotice_getsGraceWarning() {
+            overdueUser();
+            when(noticeStore.findDeadline(1L)).thenReturn(Optional.empty());
+
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isFalse();
+
+            verify(noticeStore).save(1L, NOW.toLocalDate().plusDays(7), NOW.toLocalDate());
+            verify(messageUtils).get("notification.user.delete-warning.body",
+                    "홍길동", "7", NOW.toLocalDate().plusDays(7).toString());
+            verify(alarmService, times(1)).sendAllAlerts(any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("유예 중에는 알린 예정일 기준으로 3일·1일 전에 다시 경고하고 비활성화하지 않는다")
+        void duringGrace_remindsAgainstNoticedDeadline() {
+            overdueUser();
+            when(noticeStore.findDeadline(1L)).thenReturn(Optional.of(NOW.toLocalDate().plusDays(3)));
+
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isFalse();
+
+            verify(alarmService, times(1)).sendAllAlerts(any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("유예 중 경고일이 아닌 날은 아무것도 하지 않는다")
+        void duringGrace_offDay_doesNothing() {
+            overdueUser();
+            when(noticeStore.findDeadline(1L)).thenReturn(Optional.of(NOW.toLocalDate().plusDays(5)));
+
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isFalse();
+
+            verifyNoInteractions(alarmService);
+        }
+
+        @Test
+        @DisplayName("알린 예정일이 되면 비활성화 대상이다")
+        void noticedDeadlineReached_isWithdrawn() {
+            overdueUser();
+            when(noticeStore.findDeadline(1L)).thenReturn(Optional.of(NOW.toLocalDate()));
+
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isTrue();
+            verifyNoInteractions(alarmService);
+        }
+
+        @Test
+        @DisplayName("기한 전 경고(7·3·1일)는 규칙상 기한을 예정일로 기록한다")
+        void regularWarning_recordsRuleDate() {
+            User user = buildUser(NOW.plusDays(3).minusYears(1), null);
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+            lifecycleService.processInactiveUser(1L, NOW);
+
+            verify(noticeStore).save(1L, NOW.toLocalDate().plusDays(3), NOW.toLocalDate());
+            verify(noticeStore, never()).findDeadline(anyLong());
+        }
+
+        @Test
+        @DisplayName("경고 기록을 읽지 못하면 비활성화하지 않고 예외로 그 회차를 건너뛴다")
+        void storeFailure_doesNotWithdraw() {
+            overdueUser();
+            when(noticeStore.findDeadline(1L)).thenThrow(new IllegalStateException("Redis down"));
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> lifecycleService.processInactiveUser(1L, NOW))
+                    .isInstanceOf(IllegalStateException.class);
+            verifyNoInteractions(alarmService);
         }
     }
 
