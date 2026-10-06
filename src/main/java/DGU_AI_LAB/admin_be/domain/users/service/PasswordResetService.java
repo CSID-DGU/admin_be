@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.users.service;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.PasswordChangeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
+import DGU_AI_LAB.admin_be.domain.requests.job.JobRegistrationUnconfirmedException;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.PasswordResetSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.PasswordHashes;
@@ -88,7 +89,8 @@ public class PasswordResetService {
      * 계정이 없으면(첫 승인 전, 또는 회수 뒤) 바꿀 컨테이너가 없으므로 바로 적용한다 — 다음 승인이 이 해시로 계정을 만든다.
      *
      * <p>작업 등록은 트랜잭션 안에서 한다. PROCESSING이 보이는 시점에는 그 작업이 이미 등록돼 있어, 폴러가 같은 신청의
-     * 이전 작업 결과를 이번 것으로 읽지 않는다. 등록이 실패하면 신청은 승인 대기로 남는다.
+     * 이전 작업 결과를 이번 것으로 읽지 않는다. 등록이 실패하면 신청은 승인 대기로 남는다. 등록 결과를 확인하지 못한
+     * 경우만 예외다({@link #registerJob}).
      */
     public PasswordResetSummaryDTO approve(Long resetId, Long adminId) {
         Long userId = userIdOf(resetId);
@@ -108,9 +110,7 @@ public class PasswordResetService {
                 reset.applyWithoutJob(admin);
                 return new Approval(PasswordResetSummaryDTO.fromEntity(reset), true);
             }
-            Long jobId = jobClient.registerPasswordChange(new PasswordChangeRegisterRequestDTO(
-                    resetId, user.getUbuntuUsername(), reset.getUbuntuPasswordHash()));
-            reset.startProcessing(admin, jobId);
+            reset.startProcessing(admin, registerJob(resetId, user.getUbuntuUsername(), reset.getUbuntuPasswordHash()));
             return new Approval(PasswordResetSummaryDTO.fromEntity(reset), false);
         });
         log.info("[passwordReset] resetId={} 승인: adminId={}, status={}", resetId, adminId, approval.request().status());
@@ -118,6 +118,24 @@ public class PasswordResetService {
             afterApplied(approval.request().email());
         }
         return approval.request();
+    }
+
+    /**
+     * 컨테이너 반영 작업을 등록한다. 등록 결과를 확인하지 못했으면(요청은 닿았을 수 있는데 답이 없음) 작업 번호 없이
+     * 돌아온다 — 작업이 돌고 있을 수 있어, 승인 대기로 남기면 컨테이너 비밀번호만 바뀌고 신청은 거절·재신청이
+     * 가능한 채로 남는다. 번호가 없는 신청은 폴러가 등록 대기 시간 뒤 최신 결과로 판단하고, 작업이 없었으면
+     * 그때 승인 대기로 되돌린다.
+     *
+     * @return 등록된 작업 번호. 등록 결과를 확인하지 못했으면 null
+     */
+    private Long registerJob(Long resetId, String ubuntuUsername, String ubuntuPasswordHash) {
+        try {
+            return jobClient.registerPasswordChange(
+                    new PasswordChangeRegisterRequestDTO(resetId, ubuntuUsername, ubuntuPasswordHash));
+        } catch (JobRegistrationUnconfirmedException e) {
+            log.warn("[passwordReset] resetId={} 작업 등록 결과를 확인하지 못함 — PROCESSING으로 두고 폴러에 맡김", resetId, e);
+            return null;
+        }
     }
 
     public PasswordResetSummaryDTO deny(Long resetId, Long adminId) {

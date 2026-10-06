@@ -20,6 +20,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -139,6 +140,49 @@ class PasswordResetJobPollerTest {
         poller.pollPasswordResets();
 
         verifyNoInteractions(passwordResetService, notifier);
+    }
+
+    /** 등록 결과를 확인하지 못해 작업 번호 없이 승인된 신청. */
+    private void processingWithoutJob(LocalDateTime approvedAt) {
+        PasswordResetRequest reset = mock(PasswordResetRequest.class);
+        when(reset.getPasswordResetRequestId()).thenReturn(RESET_ID);
+        when(reset.getJobId()).thenReturn(null);
+        when(reset.getUpdatedAt()).thenReturn(approvedAt);
+        when(resetRepository.findAllByStatus(PasswordResetStatus.PROCESSING)).thenReturn(List.of(reset));
+    }
+
+    @Test
+    @DisplayName("작업 번호가 없는 신청은 등록 대기 시간 동안 결과를 조회하지 않는다 — 작업이 아직 기록되지 않았을 수 있다")
+    void unconfirmedRegistrationWaitsOutGrace() {
+        processingWithoutJob(LocalDateTime.now());
+
+        poller.pollPasswordResets();
+
+        verifyNoInteractions(jobClient, passwordResetService, notifier);
+    }
+
+    @Test
+    @DisplayName("작업 번호가 없는 신청도 등록 대기 시간이 지나 작업이 성공해 있으면 적용한다")
+    void unconfirmedRegistrationCompletesAfterGrace() {
+        processingWithoutJob(LocalDateTime.now().minus(JobResults.REGISTRATION_GRACE).minusSeconds(1));
+        result(JOB_ID, JobResults.PHASE_SUCCESS, null);
+
+        poller.pollPasswordResets();
+
+        verify(passwordResetService).complete(RESET_ID);
+        verifyNoInteractions(notifier);
+    }
+
+    @Test
+    @DisplayName("작업 번호가 없는 신청은 등록 대기 시간이 지나도 작업 기록이 없으면 승인 대기로 되돌린다")
+    void unconfirmedRegistrationWithoutJobReturnsToPending() {
+        processingWithoutJob(LocalDateTime.now().minus(JobResults.REGISTRATION_GRACE).minusSeconds(1));
+        result(null, JobResults.PHASE_NONE, null);
+        when(passwordResetService.returnToPending(RESET_ID)).thenReturn(Optional.of(SUMMARY));
+
+        poller.pollPasswordResets();
+
+        verify(notifier).jobFailed(SUMMARY, JobResults.PHASE_NONE, null, true);
     }
 
     @Test

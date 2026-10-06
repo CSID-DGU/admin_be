@@ -21,6 +21,7 @@ import org.springframework.stereotype.Component;
  *   <li>그 밖에 끝난 결과(FAIL·UNKNOWN·기록 없음) → 승인 대기로 되돌리고 관리자에게 알림</li>
  *   <li>START·RETRY → 다음 바퀴에 다시 본다</li>
  *   <li>이번에 등록한 작업이 아닌 결과는 반영하지 않는다</li>
+ *   <li>작업 번호가 없는 신청(등록 결과를 확인하지 못함)은 등록 대기 시간이 지난 뒤 최신 결과로 판단한다</li>
  * </ul>
  *
  * <p>컨테이너 작업과 달리 결과 불명·일부만 바뀐 실패도 PROCESSING에 남겨 두지 않는다. 비밀번호 교체는 같은 해시를
@@ -41,6 +42,11 @@ public class PasswordResetJobPoller {
         for (PasswordResetRequest reset : resetRepository.findAllByStatus(PasswordResetStatus.PROCESSING)) {
             Long resetId = reset.getPasswordResetRequestId();
             try {
+                // 등록 결과를 확인하지 못해 작업 번호 없이 승인된 신청이다. 작업이 아직 기록되지 않았을 수 있어,
+                // 지금 조회하면 기록 없음이나 이전 작업의 결과를 이번 것으로 읽는다.
+                if (JobResults.awaitingRegistration(reset.getJobId(), reset.getUpdatedAt())) {
+                    continue;
+                }
                 advance(resetId, reset.getJobId());
             } catch (Exception e) {
                 // 한 신청의 실패가 나머지 신청 처리를 막지 않게 한다. 조회 실패는 대개 일시적이라 다음 바퀴에 다시 본다.

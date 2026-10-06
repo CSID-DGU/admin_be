@@ -14,6 +14,9 @@ import DGU_AI_LAB.admin_be.error.exception.BusinessException;
  * 계정·컨테이너 작업을 등록하고 결과를 조회하는 창구. 실제 실행은 작업 실행기(config-server의 제어기)가 한다.
  * 결과를 어떻게 읽을지(등록 대기, 다른 작업의 결과, DEGRADED 등)는 {@link JobResults}가 정한다.
  *
+ * <p>등록 요청이 닿았을 수 있는데 답을 받지 못하면 등록 메서드는 {@link JobRegistrationUnconfirmedException}을
+ * 던진다. 작업이 등록돼 돌고 있을 수 있으므로 호출자는 등록되지 않았다고 단정하면 안 된다.
+ *
  * <p>baseline·noprobe·full 세 방식이 모두 이 창구를 쓴다. 방식 차이(재시도, 결과 확인, 접근 시험)는 실행기 쪽에서만
  * 나므로 호출자는 방식을 모른다.
  */
