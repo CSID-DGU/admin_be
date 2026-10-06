@@ -48,10 +48,19 @@ public class SlackApiService {
     // 1. Webhook 전송
     // =========================================================================
     public void sendWebhook(String webhookUrl, String message) {
+        sendWebhook(webhookUrl, message, List.of());
+    }
+
+    /** blocks가 있으면 그 양식으로 보이고, message는 알림 미리보기에 쓰인다. */
+    public void sendWebhook(String webhookUrl, String message, List<Map<String, Object>> blocks) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        Map<String, String> payload = Map.of("text", message);
-        HttpEntity<Map<String, String>> request = new HttpEntity<>(payload, headers);
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("text", message);
+        if (!blocks.isEmpty()) {
+            payload.put("blocks", blocks);
+        }
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(payload, headers);
 
         try {
             ResponseEntity<String> response = restTemplate.postForEntity(webhookUrl, request, String.class);
@@ -226,6 +235,11 @@ public class SlackApiService {
      * 봇이 그 채널에 들어가 있어야 한다.
      */
     public String postToChannel(String channelId, String message, String threadTs) {
+        return postToChannel(channelId, message, threadTs, List.of());
+    }
+
+    /** blocks가 있으면 그 양식으로 보이고, message는 알림 미리보기에 쓰인다. */
+    public String postToChannel(String channelId, String message, String threadTs, List<Map<String, Object>> blocks) {
         String url = "https://slack.com/api/chat.postMessage";
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(botToken);
@@ -233,6 +247,9 @@ public class SlackApiService {
         Map<String, Object> payload = new HashMap<>();
         payload.put("channel", channelId);
         payload.put("text", message);
+        if (!blocks.isEmpty()) {
+            payload.put("blocks", blocks);
+        }
         if (threadTs != null) {
             payload.put("thread_ts", threadTs);
             payload.put("reply_broadcast", true);

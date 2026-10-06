@@ -350,11 +350,11 @@ class AlarmServiceTest {
             String message = render(request, List.of(port), 2);
 
             assertThat(message).contains(
-                    "2026-12-17 10:05 접수", "관리 번호 #1234", "이름: 홍길동", "학번: 20260000", "학과: 컴퓨터공학과",
+                    "2026-12-17 10:05 접수", "[새 서버 사용 신청] #1234 · ", "이름: 홍길동", "학번: 20260000", "학과: 컴퓨터공학과",
                     "이메일: 홍길동@dgu.ac.kr", "전화번호: 010-0000-0000", "서버 계정(ID): testuser",
                     "지금 사용 중인 컨테이너: 2개", "GPU: 3090ti (RTX 3090 24GB)", "dguailab/decs:260915",
                     "공유 그룹: vision-team", "추가 포트: 6006번 (TensorBoard)", "noVNC): 사용",
-                    "2026-12-17 ~ 2026-12-31 (총 14일)", "*사용 목적*\n첫째 줄\n둘째 줄");
+                    "2026-12-17 ~ 2026-12-31 (총 14일)", "*사용 목적*\n> 첫째 줄\n> 둘째 줄");
             assertThat(message).doesNotContain("{").doesNotContain(":bell:");
         }
 
@@ -589,6 +589,7 @@ class AlarmServiceTest {
             assertThat(dto.getRequestId()).isEqualTo(42L);
             assertThat(dto.getThreadTs()).isNull();
             assertThat(dto.getWebhookUrl()).isEqualTo(FARM_REQUEST_WEBHOOK);
+            assertThat(dto.isBlockLayout()).isTrue();
         }
 
         @Test
@@ -648,6 +649,7 @@ class AlarmServiceTest {
             SlackMessageDto dto = queued();
             assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.WEBHOOK);
             assertThat(dto.getWebhookUrl()).isEqualTo(FARM_REQUEST_WEBHOOK);
+            assertThat(dto.isBlockLayout()).isTrue();
         }
 
         @Test
@@ -670,12 +672,13 @@ class AlarmServiceTest {
     class PrepareRequestCancelledNotification {
 
         @Test
-        @DisplayName("취소 알림은 신청서 제목과 같은 서버·접수 시각을 달고 서버별 신청서 채널로 가며, 실행하기 전에는 보내지 않는다")
+        @DisplayName("취소 알림은 신청서 제목과 같은 신청 번호·서버·접수 시각을 달고 서버별 신청서 채널로 가며, 실행하기 전에는 보내지 않는다")
         void routesToRequestChannel_onlyWhenRun() {
             Request request = mockRequest("홍길동", "FARM");
             when(request.getCreatedAt()).thenReturn(java.time.LocalDateTime.of(2026, 10, 6, 13, 5));
+            when(request.getRequestId()).thenReturn(1234L);
             when(messageUtils.get("notification.admin.request-cancelled",
-                    "FARM", "2026-10-06 13:05", "홍길동")).thenReturn("취소 알림");
+                    "FARM", "2026-10-06 13:05", "홍길동", "1234")).thenReturn("취소 알림");
 
             Runnable send = alarmService.prepareRequestCancelledNotification(request);
             verify(listOperations, never()).rightPush(any(), any());
@@ -700,45 +703,6 @@ class AlarmServiceTest {
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
             assertThat(captor.getValue().getWebhookUrl()).isEqualTo(NOTI_WEBHOOK);
-        }
-    }
-
-    @Nested
-    @DisplayName("sendRequestReceivedEmail")
-    class SendRequestReceivedEmail {
-
-        private Request receivedRequest() {
-            Request request = mockRequestForCreated("홍길동", "hong@dgu.ac.kr", "FARM", 812L);
-            when(request.getResourceGroup().getResourceGroupName()).thenReturn("A6000");
-            when(request.getExpiresAt()).thenReturn(java.time.LocalDateTime.of(2026, 12, 31, 23, 59));
-            when(request.getCreatedAt()).thenReturn(java.time.LocalDateTime.of(2026, 10, 6, 13, 5));
-            return request;
-        }
-
-        @Test
-        @DisplayName("신청자에게 관리 번호·서버·GPU·개발 환경·종료일·접수 시각을 담은 접수 확인 메일을 보낸다")
-        void sendsReceiptToApplicant() {
-            Request request = receivedRequest();
-            when(messageUtils.get("email.request.received.subject", "FARM")).thenReturn("접수 제목");
-            when(messageUtils.get("email.request.received.body",
-                    "홍길동", "812", "FARM", "A6000", "ubuntu:22.04", "2026-12-31", "2026-10-06 13:05"))
-                    .thenReturn("접수 본문");
-
-            alarmService.sendRequestReceivedEmail(request);
-
-            ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
-            verify(mailSender).send(captor.capture());
-            assertThat(captor.getValue().getTo()).containsExactly("hong@dgu.ac.kr");
-            assertThat(captor.getValue().getSubject()).isEqualTo("접수 제목");
-            assertThat(captor.getValue().getText()).isEqualTo("접수 본문");
-        }
-
-        @Test
-        @DisplayName("접수 확인은 메일만 보낸다 — 같은 신청이 신청서 채널로 이미 가므로 Slack에는 따로 남기지 않는다")
-        void doesNotPushToSlack() {
-            alarmService.sendRequestReceivedEmail(receivedRequest());
-
-            verify(listOperations, never()).rightPush(any(), any());
         }
     }
 

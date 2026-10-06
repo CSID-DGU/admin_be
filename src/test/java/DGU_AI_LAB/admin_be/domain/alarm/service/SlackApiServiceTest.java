@@ -170,7 +170,19 @@ class SlackApiServiceTest {
 
             assertThat(ts).isEqualTo("1728200000.000100");
             assertThat(sentPayload()).containsEntry("channel", "C0REQ").containsEntry("text", "신청서")
-                    .doesNotContainKeys("thread_ts", "reply_broadcast");
+                    .doesNotContainKeys("thread_ts", "reply_broadcast", "blocks");
+        }
+
+        @Test
+        @DisplayName("블록을 주면 글과 함께 싣고, 글은 알림 미리보기용으로 그대로 둔다")
+        void sendsBlocksWithText() {
+            when(restTemplate.postForEntity(contains("chat.postMessage"), any(), eq(Map.class)))
+                    .thenReturn(new ResponseEntity<>(Map.of("ok", true, "ts", "1728200000.000100"), HttpStatus.OK));
+            java.util.List<Map<String, Object>> blocks = java.util.List.of(Map.of("type", "divider"));
+
+            slackApiService.postToChannel("C0REQ", "신청서", null, blocks);
+
+            assertThat(sentPayload()).containsEntry("text", "신청서").containsEntry("blocks", blocks);
         }
 
         @Test
