@@ -273,13 +273,46 @@ public class AlarmService {
                 String.valueOf(request.getRequestId()));                   // {3}
         RequestChannel channel = requestChannel(user, serverName);
         String threadTs = request.getSlackMessageTs();
-        return () -> safely("신청 취소 알림", () -> {
-            if (threadTs == null) {
-                enqueueWebhook(message, channel.webhookUrl(), true);
-                return;
-            }
-            enqueueRequestChannel(message, channel, threadTs, null);
+        return () -> safely("신청 취소 알림", () -> replyToRequest(message, channel, threadTs));
+    }
+
+    /**
+     * 승인한 신청의 컨테이너가 만들어졌음을 신청서 채널에 알린다 — 그 신청서의 스레드 댓글로 달아(모르면 일반 메시지)
+     * 승인자가 배정 결과(노드·포트·UID)를 따로 묻거나 관리자가 손으로 적지 않아도 되게 한다.
+     * 포트는 문자열로 받는다 — MessageFormat에 숫자형을 주면 30,888처럼 콤마가 붙는다.
+     */
+    public void sendContainerCreatedNotification(Request request, String sshPort, String jupyterPort) {
+        safely("생성 완료 알림", () -> {
+            User user = request.getUser();
+            var image = request.getContainerImage();
+            String serverName = request.getResourceGroup().getServerName();
+            LocalDateTime receivedAt = request.getCreatedAt() != null
+                    ? request.getCreatedAt()
+                    : LocalDateTime.now(ZoneId.of("Asia/Seoul"));
+
+            String message = messageUtils.get("notification.admin.request-fulfilled",
+                    String.valueOf(request.getRequestId()),                    // {0}
+                    serverName,                                                // {1}
+                    RECEIVED_AT_FORMAT.format(receivedAt),                     // {2}
+                    SlackText.line(user.getName()),                            // {3}
+                    request.getUbuntuUsername(),                               // {4}
+                    SlackText.line(request.getNodeName()),                     // {5}
+                    image == null ? "-" : SlackText.line(image.getImageName() + ":" + image.getImageVersion()), // {6}
+                    serverProfileRegistry.publicPort(serverName, sshPort),     // {7}
+                    serverProfileRegistry.publicPort(serverName, jupyterPort), // {8}
+                    String.valueOf(user.getUbuntuUid()),                       // {9}
+                    String.valueOf(user.getUbuntuGid()));                      // {10}
+            replyToRequest(message, requestChannel(user, serverName), request.getSlackMessageTs());
         });
+    }
+
+    /** 신청서의 후속 알림. 신청서 메시지의 식별자를 알면 그 스레드 댓글로, 모르면(webhook으로 보냈거나 아직 적히기 전) 일반 메시지로 보낸다. */
+    private void replyToRequest(String message, RequestChannel channel, String threadTs) {
+        if (threadTs == null) {
+            enqueueWebhook(message, channel.webhookUrl(), true);
+            return;
+        }
+        enqueueRequestChannel(message, channel, threadTs, null);
     }
 
     /** 신청서 채널 한 곳. 채널 ID는 봇으로 올릴 때 쓰고, 없거나 봇 전송이 실패하면 webhook으로 보낸다. */

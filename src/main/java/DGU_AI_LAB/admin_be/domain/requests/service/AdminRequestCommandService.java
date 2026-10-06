@@ -374,6 +374,8 @@ public class AdminRequestCommandService {
         String jupyterPort = externalPortOf(made, "jupyter");
         AfterCommit.run("컨테이너 배정 안내 메일, 요청 ID " + requestId,
                 () -> alarmService.sendContainerCreatedEmail(savedRequest, sshPort, jupyterPort));
+        AfterCommit.run("생성 완료 알림, 요청 ID " + requestId,
+                () -> alarmService.sendContainerCreatedNotification(savedRequest, sshPort, jupyterPort));
     }
 
     /**
