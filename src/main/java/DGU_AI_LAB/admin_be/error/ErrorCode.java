@@ -140,6 +140,7 @@ public enum ErrorCode {
     // 이걸 형식 오류와 같은 코드로 묶으면 관리자가 신청이 잘못됐다고 판단하고 되돌린다.
     PRIMARY_GROUP_REMOVAL(HttpStatus.CONFLICT, "계정의 기본 그룹에서는 뺄 수 없습니다."),
     GROUP_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "그룹 작업을 등록하지 못했어요. 잠시 후 다시 시도해 주세요."),
+    HOME_DELETE_FAILED(HttpStatus.BAD_GATEWAY, "홈 폴더 삭제 작업을 등록하지 못했어요."),
     GROUP_OPERATION_IN_PROGRESS(HttpStatus.CONFLICT, "같은 그룹 작업을 반영하는 중이에요. 끝난 뒤 다시 시도해 주세요."),
     GROUP_OPERATION_NOT_FOUND(HttpStatus.NOT_FOUND, "그룹 작업을 찾을 수 없습니다."),
     // 같은 새 그룹을 두 신청이 동시에 만들면 gid 가 두 번 발급된다. 앞 신청이 끝나면 그룹이 생겨 그대로 승인된다.

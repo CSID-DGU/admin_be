@@ -7,5 +7,6 @@ public record RequestExpiredEvent(
         String serverName,
         String podName,
         String portSummary,
-        String expiresAt
+        String expiresAt,
+        String homeNotice
 ) {}

@@ -83,4 +83,18 @@ public interface UserRepository extends JpaRepository<User,Long> {
             "  AND NOT EXISTS (SELECT r FROM Request r WHERE r.user = u AND r.status IN :openStatuses)")
     List<User> findInactiveUsers(@Param("thresholdDate") LocalDateTime thresholdDate,
                                  @Param("openStatuses") Collection<Status> openStatuses);
+
+    /**
+     * 홈 삭제 후보. 리눅스 계정을 가진 적이 있고, 끝나지 않은 신청이 하나도 없고, 마지막 컨테이너가 기준 시각보다 먼저
+     * 끝난 사용자다. 계정이 회수됐거나 비활성화된 사용자도 홈은 남아 있으므로 포함한다. 이미 지웠는지까지 따진 최종
+     * 판정은 HomeCleanupService가 한다.
+     */
+    @Query("SELECT u FROM User u " +
+            "WHERE u.ubuntuUsername IS NOT NULL AND u.ubuntuUid IS NOT NULL " +
+            "  AND NOT EXISTS (SELECT r FROM Request r WHERE r.user = u AND r.status IN :openStatuses) " +
+            "  AND (SELECT MAX(d.updatedAt) FROM Request d WHERE d.user = u " +
+            "         AND d.status = DGU_AI_LAB.admin_be.domain.requests.entity.Status.DELETED " +
+            "         AND d.approvedAt IS NOT NULL) < :endedBefore")
+    List<User> findHomeCleanupCandidates(@Param("endedBefore") LocalDateTime endedBefore,
+                                         @Param("openStatuses") Collection<Status> openStatuses);
 }

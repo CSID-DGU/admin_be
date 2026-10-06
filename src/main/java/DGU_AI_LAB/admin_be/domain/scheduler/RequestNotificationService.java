@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.home.service.HomeRetentionNotice;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -26,6 +27,7 @@ public class RequestNotificationService {
     private final AlarmService alarmService;
     private final MessageUtils messageUtils;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final HomeRetentionNotice homeRetentionNotice;
 
     @Transactional(readOnly = true)
     public void sendPreExpiryNotification(LocalDateTime targetDate, String dayLabel) {
@@ -47,7 +49,8 @@ public class RequestNotificationService {
                 String expireDate = request.getExpiresAt().toLocalDate().toString();
                 String subject = messageUtils.get("notification.pre-expiry.subject", dayLabel);
                 String message = messageUtils.get("notification.pre-expiry.body",
-                        user.getName(), dayLabel, expireDate, serverName, request.getUbuntuUsername());
+                        user.getName(), dayLabel, expireDate, serverName, request.getUbuntuUsername(),
+                        homeRetentionNotice.beforeExpiry(request));
 
                 alarmService.sendAllAlerts(user.getName(), user.getEmail(), subject, message);
 

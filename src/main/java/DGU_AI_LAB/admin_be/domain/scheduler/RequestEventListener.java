@@ -35,7 +35,7 @@ public class RequestEventListener {
             String subject = messageUtils.get("notification.expired.detail.subject");
             String message = messageUtils.get("notification.expired.detail.body",
                     userName, serverName, username,
-                    event.podName(), event.portSummary(), event.expiresAt());
+                    event.podName(), event.portSummary(), event.expiresAt(), event.homeNotice());
 
             alarmService.sendAllAlerts(userName, userEmail, subject, message);
         } catch (Exception e) {
@@ -67,7 +67,7 @@ public class RequestEventListener {
         try {
             String subject = messageUtils.get("notification.deleted.detail.subject");
             String message = messageUtils.get("notification.deleted.detail.body",
-                    userName, serverName, username, event.podName(), event.portSummary());
+                    userName, serverName, username, event.podName(), event.portSummary(), event.homeNotice());
 
             alarmService.sendAllAlerts(userName, event.userEmail(), subject, message);
         } catch (Exception e) {

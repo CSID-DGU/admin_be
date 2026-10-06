@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.home.service.HomeRetentionNotice;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.pod.PodPortUtils;
@@ -47,6 +48,7 @@ public class RequestExpiryService {
     private final PodExternalPortRepository podExternalPortRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final PlatformTransactionManager transactionManager;
+    private final HomeRetentionNotice homeRetentionNotice;
 
     /** 만료된 신청의 컨테이너 회수를 시작한다. FULFILLED가 아니면 만료 스케줄러가 다음 회차에 다시 본다. */
     public void deleteExpiredRequest(Long requestId) {
@@ -162,13 +164,15 @@ public class RequestExpiryService {
             podExternalPortRepository.deleteByRequestRequestId(requestId);
             // 이벤트는 이 트랜잭션 안에서 publish해야 한다 — RequestEventListener가
             // @TransactionalEventListener(AFTER_COMMIT)이라 활성 트랜잭션 없이 publish하면 실행되지 않는다.
+            String homeNotice = homeRetentionNotice.afterEnd(request, LocalDateTime.now(REQUEST_ZONE).toLocalDate());
             eventPublisher.publishEvent(isExpired(request)
                     ? new RequestExpiredEvent(request.getUser().getName(), request.getUser().getEmail(),
                             request.getUbuntuUsername(), request.getResourceGroup().getServerName(),
-                            request.getPodName(), portSummary, request.getExpiresAt().toLocalDate().toString())
+                            request.getPodName(), portSummary, request.getExpiresAt().toLocalDate().toString(),
+                            homeNotice)
                     : new RequestContainerDeletedEvent(request.getUser().getName(), request.getUser().getEmail(),
                             request.getUbuntuUsername(), request.getResourceGroup().getServerName(),
-                            request.getPodName(), portSummary));
+                            request.getPodName(), portSummary, homeNotice));
             log.info("컨테이너 회수 완료: requestId={}, pod={}", requestId, request.getPodName());
             return null;
         });

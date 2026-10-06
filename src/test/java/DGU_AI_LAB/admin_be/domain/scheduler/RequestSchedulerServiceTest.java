@@ -161,14 +161,15 @@ public class RequestSchedulerServiceTest {
 
         // [이벤트 리스너 검증] -> 삭제 완료 알림 (MessageUtils 사용 검증)
         // subject: notification.expired.detail.subject
-        // body: notification.expired.detail.body ({0}이름, {1}서버, {2}계정, {3}컨테이너, {4}포트, {5}만료일)
-        // 테스트 요청은 podName 미설정(null), 포트 없음("없음")
+        // body: notification.expired.detail.body ({0}이름, {1}서버, {2}계정, {3}컨테이너, {4}포트, {5}만료일, {6}홈 안내)
+        // 테스트 요청은 podName 미설정(null), 포트 없음("없음"). 30일 남은 컨테이너가 있어 홈은 유지된다고 알린다.
         String expectedDelSubject = messageUtils.get("notification.expired.detail.subject");
         String expectedDelBody = messageUtils.get("notification.expired.detail.body",
                 testUser.getName(), "FARM-01", "testuser",
                 reqExpired.getPodName(),
                 "없음",
-                reqExpired.getExpiresAt().toLocalDate().toString());
+                reqExpired.getExpiresAt().toLocalDate().toString(),
+                messageUtils.get("notification.home.kept", "testuser"));
 
         verify(alarmService).sendAllAlerts(
                 eq(testUser.getName()),
@@ -289,13 +290,15 @@ public class RequestSchedulerServiceTest {
         // subject: notification.pre-expiry.subject ({0} 기간)
         String expectedSubject = messageUtils.get("notification.pre-expiry.subject", dayLabel);
 
-        // body: notification.pre-expiry.body ({0}이름, {1}기간, {2}날짜, {3}서버, {4}계정)
+        // body: notification.pre-expiry.body ({0}이름, {1}기간, {2}날짜, {3}서버, {4}계정, {5}홈 안내)
+        // 더 오래 남는 컨테이너(30일)가 있어 홈은 유지된다고 알린다.
         String expectedBody = messageUtils.get("notification.pre-expiry.body",
                 user.getName(),
                 dayLabel,
                 request.getExpiresAt().toLocalDate().toString(),
                 request.getResourceGroup().getServerName(),
-                request.getUbuntuUsername()
+                request.getUbuntuUsername(),
+                messageUtils.get("notification.home.kept", request.getUbuntuUsername())
         );
 
         verify(alarmService).sendAllAlerts(

@@ -507,6 +507,11 @@ public class AlarmService {
         return text == null || text.isBlank() ? "없음" : text;
     }
 
+    /** 관리자가 나중에 되짚어 볼 처리 기록을 알림 기록(noti) 채널에 남긴다. 승인 판단용 채널에는 보내지 않는다. */
+    public void sendNotiLog(String message) {
+        sendSlackAlert(message, notiLogWebhookUrl);
+    }
+
     public void sendAdminSlackNotification(String serverName, String message) {
         sendSlackAlert(message, getAdminWebhookUrl(serverName));
     }
