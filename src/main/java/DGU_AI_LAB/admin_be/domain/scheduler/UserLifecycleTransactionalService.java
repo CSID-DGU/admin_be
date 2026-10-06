@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Objects;
@@ -32,9 +33,13 @@ public class UserLifecycleTransactionalService {
     private final AlarmService alarmService;
     private final MessageUtils messageUtils;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final InactivityNoticeStore noticeStore;
 
     /** 마지막 컨테이너가 끝난 뒤(컨테이너를 쓴 적이 없으면 가입한 뒤) 이만큼 지나면 비활성화한다. */
     static final int INACTIVE_MONTHS = 12;
+
+    /** 기한이 지나도록 경고를 받지 못한 사용자에게 경고와 함께 주는 유예 기간. */
+    static final int NOTICE_DAYS = 7;
 
     /**
      * 장기 미사용 규칙 — 마지막 컨테이너가 끝난 지 1년이 지나면 비활성화한다. 로그인 여부는 보지 않는다.
@@ -42,8 +47,9 @@ public class UserLifecycleTransactionalService {
      *   <li>끝나지 않은 신청(대기·처리 중·사용 중·이동 중·회수 중)이 하나라도 있으면 대상이 아니다.</li>
      *   <li>기준 시각 = 마지막 컨테이너가 끝난 시각. 컨테이너를 쓴 적이 없으면 가입 시각.</li>
      * </ul>
-     * 비활성화 7·3·1일 전에 경고한다. 비활성화(컨테이너·우분투 계정 회수 포함)는 HTTP 호출이 있어 이 트랜잭션 밖에서
-     * 호출자가 수행한다.
+     * 비활성화 7·3·1일 전에 경고한다. 기한이 지났는데 경고한 적이 없는 사용자(오래된 계정이 다시 활성화됐거나, 오래
+     * 기다리던 신청이 거절돼 대상이 된 경우)는 바로 비활성화하지 않고, 그날 경고하면서 {@link #NOTICE_DAYS}일 뒤로
+     * 예정일을 잡는다. 비활성화(컨테이너·우분투 계정 회수 포함)는 HTTP 호출이 있어 이 트랜잭션 밖에서 호출자가 수행한다.
      *
      * @return 비활성화 예정일이 지나 비활성화해야 하면 true
      */
@@ -61,13 +67,21 @@ public class UserLifecycleTransactionalService {
             return false;
         }
 
-        LocalDateTime deleteDate = inactiveSince.plusMonths(INACTIVE_MONTHS);
-        long daysLeft = ChronoUnit.DAYS.between(now.toLocalDate(), deleteDate.toLocalDate());
+        LocalDate today = now.toLocalDate();
+        LocalDate ruleDate = inactiveSince.plusMonths(INACTIVE_MONTHS).toLocalDate();
+        LocalDate deleteDate = ruleDate.isAfter(today) ? ruleDate : noticedDeadline(userId, today);
+        long daysLeft = ChronoUnit.DAYS.between(today, deleteDate);
 
         if (daysLeft == 7 || daysLeft == 3 || daysLeft == 1) {
-            sendWarningAlert(user, daysLeft, deleteDate, now.toLocalDate().toString());
+            noticeStore.save(userId, deleteDate, today);
+            sendWarningAlert(user, daysLeft, deleteDate, today.toString());
         }
         return daysLeft <= 0;
+    }
+
+    /** 규칙상 기한이 지난 사용자의 비활성화 예정일. 경고하면서 알린 날이 있으면 그날, 없으면 오늘부터 유예를 준다. */
+    private LocalDate noticedDeadline(Long userId, LocalDate today) {
+        return noticeStore.findDeadline(userId).orElseGet(() -> today.plusDays(NOTICE_DAYS));
     }
 
     private static boolean hasOpenRequest(User user) {
@@ -88,13 +102,13 @@ public class UserLifecycleTransactionalService {
                 .orElse(user.getCreatedAt());
     }
 
-    private void sendWarningAlert(User user, long daysLeft, LocalDateTime deleteDate, String today) {
+    private void sendWarningAlert(User user, long daysLeft, LocalDate deleteDate, String today) {
         if (isDuplicateWarning(user.getUserId(), daysLeft, today)) {
             log.debug("계정 삭제 경고 중복 발송 방지: userId={}, daysLeft={}, date={}", user.getUserId(), daysLeft, today);
             return;
         }
 
-        String dateStr = deleteDate.toLocalDate().toString();
+        String dateStr = deleteDate.toString();
         String subject = messageUtils.get("notification.user.delete-warning.subject", String.valueOf(daysLeft));
         String body = messageUtils.get("notification.user.delete-warning.body",
                 user.getName(), String.valueOf(daysLeft), dateStr);
