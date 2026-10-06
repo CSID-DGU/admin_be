@@ -207,6 +207,7 @@ public class RequestCommandService {
         // 커밋 후에 보낸다: Redis 장애 시 직접 HTTP 전송으로 폴백하는데, 그게 User 행 잠금을 쥔 채
         // 실행되면 같은 사용자의 승인·신청이 그만큼 막힌다. 롤백되면 존재하지 않는 신청을 알리지도 않는다.
         runAfterCommit(() -> notifyNewRequest(req, portRequests, userId));
+        runAfterCommit(() -> confirmReceipt(req));
 
         return SaveRequestResponseDTO.fromEntity(req);
     }
@@ -219,6 +220,15 @@ public class RequestCommandService {
         } catch (Exception e) {
             // 사용자는 신청을 성공적으로 생성했지만, 관리자에게 알림만 가지 않은 상황입니다.
             log.error("슬랙 알림 전송에 실패했습니다. (요청 ID: {}). 하지만 사용 신청은 정상적으로 처리되었습니다.", req.getRequestId(), e);
+        }
+    }
+
+    /** 신청자에게 접수 확인 메일을 보낸다. 관리자 알림과 따로 보내 한쪽이 실패해도 다른 쪽은 나간다. */
+    private void confirmReceipt(Request req) {
+        try {
+            alarmService.sendRequestReceivedEmail(req);
+        } catch (Exception e) {
+            log.error("접수 확인 메일 전송에 실패했습니다. (요청 ID: {}). 하지만 사용 신청은 정상적으로 처리되었습니다.", req.getRequestId(), e);
         }
     }
 
