@@ -197,6 +197,30 @@ class AlarmServiceTest {
         }
 
         @Test
+        @DisplayName("이메일 도메인이 e2e로 시작하는 테스트용 계정의 신청은 신청서 채널이 아니라 알림 기록 채널로 적재된다")
+        void sendNewRequestNotification_routesToNotiChannel_forTestAccount() {
+            Request request = mockRequest("tester", "FARM");
+            when(request.getUser().getEmail()).thenReturn("Tester@E2E.local");
+            when(messageUtils.get(anyString(), any(), any())).thenReturn("새 신청");
+
+            alarmService.sendNewRequestNotification(request, List.of(), 0);
+
+            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
+            verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
+            assertThat(captor.getValue().getWebhookUrl()).isEqualTo(NOTI_WEBHOOK);
+        }
+
+        @Test
+        @DisplayName("테스트용 계정 판정은 도메인만 본다 — 아이디가 e2e로 시작하는 학교 메일은 실제 사용자다")
+        void isTestAccount_looksAtDomainOnly() {
+            assertThat(AlarmService.isTestAccount("hc1006@e2e.local")).isTrue();
+            assertThat(AlarmService.isTestAccount("e2e@dgu.ac.kr")).isFalse();
+            assertThat(AlarmService.isTestAccount("2022112431@dgu.ac.kr")).isFalse();
+            assertThat(AlarmService.isTestAccount("no-at-sign")).isFalse();
+            assertThat(AlarmService.isTestAccount(null)).isFalse();
+        }
+
+        @Test
         @DisplayName("신청서 채널에는 신청서만 간다 — 같은 서버의 다른 관리자 알림은 관리 채널로 간다")
         void otherAdminNotifications_stayOnAdminChannel() {
             alarmService.sendAdminSlackNotification("FARM", "만료 임박");

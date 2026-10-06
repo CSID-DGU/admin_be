@@ -9,6 +9,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
@@ -50,6 +51,13 @@ public class AlarmService {
 
     @Value("${spring.mail.username}")
     private String from;
+
+    /**
+     * 테스트용 계정의 이메일 도메인 앞부분(예: tester@e2e.local). 이런 계정의 새 신청서는 서버별 신청서 채널 대신
+     * 알림 기록(noti) 채널로 간다 — 신청서 채널은 승인자가 실제 신청을 판단하는 곳이라 시험 신청이 섞이면 안 된다.
+     * 가입은 학교 도메인만 받으므로(EmailDomainPolicy) 이 도메인 계정은 점검 도구가 DB에 직접 넣은 것뿐이다.
+     */
+    private static final String TEST_EMAIL_DOMAIN_PREFIX = "e2e";
 
     /** 신청 화면이 폼 응답에 팀 프로젝트 정보를 담는 키. */
     private static final String FORM_ANSWER_TEAM_INFO = "teamInfo";
@@ -191,7 +199,19 @@ public class AlarmService {
                 RECEIVED_AT_FORMAT.format(receivedAt));                    // {20}
 
         // 신청서는 서버별 신청서 채널로 간다(따로 없으면 관리 채널). 그 채널에는 신청서 말고 다른 알림을 보내지 않는다.
-        sendSlackAlert(message, serverProfileRegistry.requestWebhookUrl(serverName).orElse(errorLogWebhookUrl));
+        // 테스트용 계정의 신청서만 알림 기록 채널로 돌린다.
+        String webhookUrl = isTestAccount(user.getEmail())
+                ? notiLogWebhookUrl
+                : serverProfileRegistry.requestWebhookUrl(serverName).orElse(errorLogWebhookUrl);
+        sendSlackAlert(message, webhookUrl);
+    }
+
+    static boolean isTestAccount(String email) {
+        if (email == null) {
+            return false;
+        }
+        int at = email.lastIndexOf('@');
+        return at >= 0 && email.substring(at + 1).toLowerCase(Locale.ROOT).startsWith(TEST_EMAIL_DOMAIN_PREFIX);
     }
 
     private static String describe(String description) {
