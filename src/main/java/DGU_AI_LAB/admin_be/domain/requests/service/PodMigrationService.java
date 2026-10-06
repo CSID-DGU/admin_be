@@ -29,6 +29,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -384,8 +385,11 @@ public class PodMigrationService {
     }
 
     private void alert(Exception cause, String messageKey, Object... args) {
+        // 값은 신청 번호·Pod·노드·오류 코드뿐이라 그대로 남긴다.
         if (cause != null) {
-            log.error("마이그레이션 알림의 원인: {}", messageKey, cause);
+            log.error("[마이그레이션] {} {}", messageKey, Arrays.toString(args), cause);
+        } else {
+            log.warn("[마이그레이션] {} {}", messageKey, Arrays.toString(args));
         }
         alarmService.alertNeedsAction(messageKey, args);
     }

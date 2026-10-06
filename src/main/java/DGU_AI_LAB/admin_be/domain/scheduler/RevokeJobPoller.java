@@ -9,6 +9,7 @@ import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.global.alert.AlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Component;
  *   <li>DEGRADED·UNKNOWN → 컨테이너가 남았는지 모르므로 그대로 두고 관리자에게 한 번 알림</li>
  * </ul>
  */
+@Slf4j
 @Component
 public class RevokeJobPoller extends JobResultPoller {
 
@@ -57,6 +59,8 @@ public class RevokeJobPoller extends JobResultPoller {
     }
 
     private void alert(Request request, JobResultResponseDTO result, String messageKey) {
+        log.error("[회수] {}: requestId={}, pod={}, error={}",
+                messageKey, request.getRequestId(), request.getPodName(), result.errorCode());
         alarmService.alertNeedsAction(messageKey, request.getRequestId(), request.getPodName(), result.errorCode());
     }
 }

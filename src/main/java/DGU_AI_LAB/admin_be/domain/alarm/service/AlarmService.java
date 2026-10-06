@@ -87,12 +87,14 @@ public class AlarmService {
 
     // --- 성격별 전송 창구 ---
 
-    /** 조치 필요: 실패했거나 멈췄거나 사람이 확인해야 하는 일. 오류 채널 한 곳으로만 보낸다. */
+    /**
+     * 조치 필요: 실패했거나 멈췄거나 사람이 확인해야 하는 일. 오류 채널 한 곳으로만 보낸다.
+     * 로그에는 어떤 알림인지(키)만 남긴다 — 값에는 이름·메일 주소가 들어올 수 있다.
+     */
     public void alertNeedsAction(String messageKey, Object... args) {
         safely("조치 필요 알림", () -> {
-            String message = render(messageKey, args);
-            log.warn("[조치 필요] {}", message);
-            enqueueWebhook(message, errorLogWebhookUrl);
+            log.warn("[조치 필요] {}", messageKey);
+            enqueueWebhook(render(messageKey, args), errorLogWebhookUrl);
         });
     }
 
