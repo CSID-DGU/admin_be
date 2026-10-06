@@ -198,12 +198,40 @@ public class AlarmService {
                 formatTeamInfo(request),                                   // {19}
                 RECEIVED_AT_FORMAT.format(receivedAt));                    // {20}
 
-        // 신청서는 서버별 신청서 채널로 간다(따로 없으면 관리 채널). 그 채널에는 신청서 말고 다른 알림을 보내지 않는다.
-        // 테스트용 계정의 신청서만 알림 기록 채널로 돌린다.
-        String webhookUrl = isTestAccount(user.getEmail())
+        sendSlackAlert(message, requestChannelUrl(user, serverName));
+    }
+
+    /**
+     * 승인 전에 신청자가 취소한 신청을 신청서 채널에 알린다. 신청서는 그 채널에 그대로 남아 있어, 알리지 않으면
+     * 승인자가 이미 없는 신청을 처리하려 한다.
+     *
+     * <p>신청 정보는 호출한 시점(트랜잭션 안)에 읽어 문구를 만들고, 전송은 돌려준 작업을 실행할 때 한다 — 호출자가
+     * 커밋 뒤에 실행한다(Redis 장애 시 직접 전송으로 폴백하므로 행 잠금을 쥔 채 보내지 않는다).
+     */
+    public Runnable prepareRequestCancelledNotification(Request request) {
+        User user = request.getUser();
+        var resourceGroup = request.getResourceGroup();
+        String serverName = resourceGroup.getServerName();
+        LocalDateTime receivedAt = request.getCreatedAt() != null
+                ? request.getCreatedAt()
+                : LocalDateTime.now(ZoneId.of("Asia/Seoul"));
+
+        String message = messageUtils.get("notification.admin.request-cancelled",
+                serverName,                                                // {0}
+                RECEIVED_AT_FORMAT.format(receivedAt),                     // {1}
+                SlackText.escape(user.getName()));                         // {2}
+        String webhookUrl = requestChannelUrl(user, serverName);
+        return () -> sendSlackAlert(message, webhookUrl);
+    }
+
+    /**
+     * 신청서와 그 신청의 취소 알림이 가는 채널. 서버별 신청서 채널로 가고(따로 없으면 관리 채널), 그 채널에는
+     * 이 둘 말고 다른 알림을 보내지 않는다. 테스트용 계정의 것만 알림 기록 채널로 돌린다.
+     */
+    private String requestChannelUrl(User user, String serverName) {
+        return isTestAccount(user.getEmail())
                 ? notiLogWebhookUrl
                 : serverProfileRegistry.requestWebhookUrl(serverName).orElse(errorLogWebhookUrl);
-        sendSlackAlert(message, webhookUrl);
     }
 
     static boolean isTestAccount(String email) {

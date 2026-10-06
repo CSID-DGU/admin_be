@@ -560,6 +560,52 @@ class RequestCommandServiceTest {
         }
 
         @Test
+        @DisplayName("승인을 기다리던 신청을 취소하면 신청서 채널 알림을 커밋 뒤에 보낸다")
+        void cancelRequest_notifiesRequestChannelAfterCommit_whenPending() {
+            Request request = buildRequest();
+            when(requestRepository.findByIdForUpdate(11L)).thenReturn(Optional.of(request));
+            Runnable send = mock(Runnable.class);
+            when(alarmService.prepareRequestCancelledNotification(request)).thenReturn(send);
+
+            TransactionSynchronizationManager.initSynchronization();
+            try {
+                requestCommandService.cancelRequest(1L, 11L);
+                verify(alarmService).prepareRequestCancelledNotification(request);
+                verifyNoInteractions(send);
+
+                TransactionSynchronizationManager.getSynchronizations()
+                        .forEach(TransactionSynchronization::afterCommit);
+                verify(send).run();
+            } finally {
+                TransactionSynchronizationManager.clearSynchronization();
+            }
+        }
+
+        @Test
+        @DisplayName("거절된 신청을 지울 때는 신청서 채널에 알리지 않는다 — 이미 처리가 끝난 신청이다")
+        void cancelRequest_doesNotNotify_whenDenied() {
+            Request request = buildRequest();
+            request.reject("사유");
+            when(requestRepository.findByIdForUpdate(12L)).thenReturn(Optional.of(request));
+
+            requestCommandService.cancelRequest(1L, 12L);
+
+            verifyNoInteractions(alarmService);
+        }
+
+        @Test
+        @DisplayName("취소 알림을 만들지 못해도 취소는 끝난다")
+        void cancelRequest_succeeds_whenNoticeFails() {
+            Request request = buildRequest();
+            when(requestRepository.findByIdForUpdate(11L)).thenReturn(Optional.of(request));
+            when(alarmService.prepareRequestCancelledNotification(request)).thenThrow(new IllegalStateException("boom"));
+
+            requestCommandService.cancelRequest(1L, 11L);
+
+            assertThat(request.getStatus()).isEqualTo(Status.DELETED);
+        }
+
+        @Test
         @DisplayName("PENDING 상태의 본인 신청을 취소하면 DELETED로 바뀐다")
         void cancelRequest_succeeds_whenPending() {
             Request request = buildRequest();

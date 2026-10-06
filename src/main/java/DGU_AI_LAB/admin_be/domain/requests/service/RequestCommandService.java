@@ -74,9 +74,33 @@ public class RequestCommandService {
             throw new BusinessException(ErrorCode.FORBIDDEN_REQUEST);
         }
 
+        // 승인을 기다리던 신청만 신청서 채널에 취소를 알린다. 거절된 신청은 이미 처리가 끝나 알릴 것이 없다.
+        boolean awaitingDecision = request.getStatus() == Status.PENDING;
         request.delete();
         // 이 신청이 승인 대기 그룹을 고른 마지막 신청이었다면 그 그룹도 지운다 — 인프라에는 아직 없다.
         pendingGroupService.deleteAbandoned(request);
+
+        if (awaitingDecision) {
+            notifyCancelledAfterCommit(request);
+        }
+    }
+
+    /** 문구는 지금(트랜잭션 안에서) 만들고 전송만 커밋 뒤로 미룬다. 알림 실패는 취소를 실패시키지 않는다. */
+    private void notifyCancelledAfterCommit(Request request) {
+        Runnable send;
+        try {
+            send = alarmService.prepareRequestCancelledNotification(request);
+        } catch (Exception e) {
+            log.error("신청 취소 알림을 만들지 못했습니다. (요청 ID: {}). 하지만 취소는 정상적으로 처리되었습니다.", request.getRequestId(), e);
+            return;
+        }
+        runAfterCommit(() -> {
+            try {
+                send.run();
+            } catch (Exception e) {
+                log.error("신청 취소 알림 전송에 실패했습니다. (요청 ID: {}). 하지만 취소는 정상적으로 처리되었습니다.", request.getRequestId(), e);
+            }
+        });
     }
 
     /**
