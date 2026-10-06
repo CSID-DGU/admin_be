@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
+import DGU_AI_LAB.admin_be.domain.users.service.InactivityNoticeStore;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -64,6 +65,7 @@ class UserLifecycleTransactionalServiceTest {
         when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
         // 기본은 기한을 미리 알린 사용자다. 알린 적 없는 경우는 NoticeBeforeDeactivation에서 따로 본다.
         when(noticeStore.findDeadline(anyLong())).thenReturn(Optional.of(NOW.toLocalDate().minusDays(1)));
+        when(noticeStore.save(anyLong(), any(), any())).thenReturn(true);
     }
 
     private static Request request(Status status, LocalDateTime approvedAt, LocalDateTime updatedAt) {
@@ -181,6 +183,30 @@ class UserLifecycleTransactionalServiceTest {
             verify(noticeStore).save(1L, NOW.toLocalDate().plusDays(7), NOW.toLocalDate());
             verify(messageUtils).get("notification.user.delete-warning.body",
                     "홍길동", "7", NOW.toLocalDate().plusDays(7).toString());
+            verify(alarmService, times(1)).sendAllAlerts(any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("유예 예정일을 기록하지 못하면 경고를 보내지 않고 다음 회차로 넘긴다 — 기록 없는 유예는 매일 새로 시작된다")
+        void graceNotRecorded_sendsNoWarning() {
+            overdueUser();
+            when(noticeStore.findDeadline(1L)).thenReturn(Optional.empty());
+            when(noticeStore.save(anyLong(), any(), any())).thenReturn(false);
+
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isFalse();
+
+            verifyNoInteractions(alarmService);
+        }
+
+        @Test
+        @DisplayName("기한 전 경고는 예정일을 기록하지 못해도 보낸다")
+        void regularWarningNotRecorded_stillSent() {
+            User user = buildUser(NOW.plusDays(3).minusYears(1), null);
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+            when(noticeStore.save(anyLong(), any(), any())).thenReturn(false);
+
+            lifecycleService.processInactiveUser(1L, NOW);
+
             verify(alarmService, times(1)).sendAllAlerts(any(), any(), any(), any());
         }
 

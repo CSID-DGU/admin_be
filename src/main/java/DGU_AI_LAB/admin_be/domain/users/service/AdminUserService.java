@@ -45,6 +45,7 @@ public class AdminUserService {
     private final MessageUtils messageUtils;
     private final TokenService tokenService;
     private final PasswordResetService passwordResetService;
+    private final InactivityNoticeStore inactivityNoticeStore;
     private final PlatformTransactionManager transactionManager;
 
     /**
@@ -250,6 +251,9 @@ public class AdminUserService {
         }
 
         user.reactivate();
+        // 비활성화 전에 받은 미사용 경고의 예정일을 지운다. 남아 있으면 다음 날 경고 없이 다시 비활성화된다.
+        // 지우지 못하면 예외로 재활성화를 되돌린다.
+        inactivityNoticeStore.forget(userId);
         log.info("[reactivateUser] userId={} 재활성화 완료", userId);
         return UserSummaryDTO.fromEntity(user);
     }

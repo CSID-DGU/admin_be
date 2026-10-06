@@ -1,4 +1,4 @@
-package DGU_AI_LAB.admin_be.domain.scheduler;
+package DGU_AI_LAB.admin_be.domain.users.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,7 +16,6 @@ import java.time.Duration;
 import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -62,16 +61,26 @@ class InactivityNoticeStoreTest {
     void savesWithExpiryAfterDeadline() {
         store.save(1L, TODAY.plusDays(7), TODAY);
 
+        assertThat(store.save(3L, TODAY, TODAY)).isTrue();
         verify(valueOps).set("user-inactive-notice:1", "2026-01-17", Duration.ofDays(10));
     }
 
     @Test
-    @DisplayName("기록·삭제 실패는 삼킨다")
-    void swallowsWriteFailures() {
+    @DisplayName("기록에 실패하면 예외 없이 false를 돌려준다")
+    void saveReportsFailure() {
         doThrow(new IllegalStateException("Redis down")).when(valueOps).set(anyString(), anyString(), any(Duration.class));
-        when(redis.delete(anyString())).thenThrow(new IllegalStateException("Redis down"));
 
-        assertThatCode(() -> store.save(1L, TODAY, TODAY)).doesNotThrowAnyException();
-        assertThatCode(() -> store.forget(1L)).doesNotThrowAnyException();
+        assertThat(store.save(1L, TODAY, TODAY)).isFalse();
+        assertThat(store.save(2L, TODAY, TODAY)).isFalse();
+    }
+
+    @Test
+    @DisplayName("기록을 지우고, Redis에 닿지 못하면 예외를 그대로 던진다")
+    void forgetDeletesAndPropagatesFailure() {
+        store.forget(1L);
+        verify(redis).delete("user-inactive-notice:1");
+
+        when(redis.delete(anyString())).thenThrow(new IllegalStateException("Redis down"));
+        assertThatThrownBy(() -> store.forget(1L)).isInstanceOf(IllegalStateException.class);
     }
 }

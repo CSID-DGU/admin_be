@@ -1,4 +1,4 @@
-package DGU_AI_LAB.admin_be.domain.scheduler;
+package DGU_AI_LAB.admin_be.domain.users.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,22 +36,29 @@ public class InactivityNoticeStore {
         return Optional.ofNullable(redis.opsForValue().get(KEY_PREFIX + userId)).map(LocalDate::parse);
     }
 
-    /** 경고와 함께 알린 예정일을 남긴다. 남기지 못해도 경고는 나가고, 기록이 없으면 다음에 유예를 다시 준다. */
-    public void save(Long userId, LocalDate deadline, LocalDate today) {
+    /**
+     * 경고와 함께 알린 예정일을 남긴다.
+     *
+     * @return 남겼으면 true. false면 기록이 없으므로 호출자는 이 예정일을 알린 것으로 치면 안 된다
+     */
+    public boolean save(Long userId, LocalDate deadline, LocalDate today) {
         try {
             long keepDays = Math.max(ChronoUnit.DAYS.between(today, deadline), 0) + KEEP_DAYS_AFTER_DEADLINE;
             redis.opsForValue().set(KEY_PREFIX + userId, deadline.toString(), Duration.ofDays(keepDays));
+            return true;
         } catch (Exception e) {
             log.warn("비활성화 예정일을 기록하지 못함: userId={}", userId, e);
+            return false;
         }
     }
 
-    /** 비활성화가 끝난 사용자의 기록을 지운다. 남겨 두면 곧바로 다시 활성화된 사용자가 경고 없이 비활성화된다. */
+    /**
+     * 다시 활성화되는 사용자의 기록을 지운다. 어느 경로(자동·관리자)로 비활성화됐든 기록이 남아 있으면, 다시 활성화된
+     * 사용자가 옛 예정일로 경고 없이 비활성화된다.
+     *
+     * <p>Redis에 닿지 못하면 예외를 그대로 던진다 — 기록이 남은 채로 다시 활성화하지 않게 호출자가 그 요청을 실패시킨다.
+     */
     public void forget(Long userId) {
-        try {
-            redis.delete(KEY_PREFIX + userId);
-        } catch (Exception e) {
-            log.warn("비활성화 예정일 기록을 지우지 못함: userId={}", userId, e);
-        }
+        redis.delete(KEY_PREFIX + userId);
     }
 }

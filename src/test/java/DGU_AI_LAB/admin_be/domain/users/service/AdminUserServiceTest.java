@@ -85,6 +85,9 @@ class AdminUserServiceTest {
     private PasswordResetService passwordResetService;
 
     @Mock
+    private InactivityNoticeStore inactivityNoticeStore;
+
+    @Mock
     private PlatformTransactionManager transactionManager;
 
     @Mock
@@ -407,6 +410,27 @@ class AdminUserServiceTest {
             assertThat(mockUser.getIsActive()).isTrue();
             assertThat(mockUser.getDeletedAt()).isNull();
             assertThat(result.isActive()).isTrue();
+        }
+
+        @Test
+        @DisplayName("재활성화하면 비활성화 전에 받은 미사용 경고 기록을 지운다 — 남으면 경고 없이 다시 비활성화된다")
+        void reactivateUser_forgetsInactivityNotice() {
+            mockUser.deactivate();
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+
+            adminUserService.reactivateUser(1L);
+
+            verify(inactivityNoticeStore).forget(1L);
+        }
+
+        @Test
+        @DisplayName("경고 기록을 지우지 못하면 재활성화를 실패시킨다")
+        void reactivateUser_failsWhenNoticeCannotBeCleared() {
+            mockUser.deactivate();
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            doThrow(new IllegalStateException("Redis down")).when(inactivityNoticeStore).forget(1L);
+
+            assertThatThrownBy(() -> adminUserService.reactivateUser(1L)).isInstanceOf(IllegalStateException.class);
         }
 
         @Test
