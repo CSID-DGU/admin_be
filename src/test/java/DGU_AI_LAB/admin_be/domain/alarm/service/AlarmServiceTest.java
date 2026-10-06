@@ -350,7 +350,7 @@ class AlarmServiceTest {
             String message = render(request, List.of(port), 2);
 
             assertThat(message).contains(
-                    "2026-12-17 10:05 접수", "관리 번호 #1234", "이름: 홍길동", "학번: 20260000", "학과: 컴퓨터공학과",
+                    "2026-12-17 10:05 접수", "[새 서버 사용 신청] #1234 · ", "이름: 홍길동", "학번: 20260000", "학과: 컴퓨터공학과",
                     "이메일: 홍길동@dgu.ac.kr", "전화번호: 010-0000-0000", "서버 계정(ID): testuser",
                     "지금 사용 중인 컨테이너: 2개", "GPU: 3090ti (RTX 3090 24GB)", "dguailab/decs:260915",
                     "공유 그룹: vision-team", "추가 포트: 6006번 (TensorBoard)", "noVNC): 사용",
@@ -670,12 +670,13 @@ class AlarmServiceTest {
     class PrepareRequestCancelledNotification {
 
         @Test
-        @DisplayName("취소 알림은 신청서 제목과 같은 서버·접수 시각을 달고 서버별 신청서 채널로 가며, 실행하기 전에는 보내지 않는다")
+        @DisplayName("취소 알림은 신청서 제목과 같은 신청 번호·서버·접수 시각을 달고 서버별 신청서 채널로 가며, 실행하기 전에는 보내지 않는다")
         void routesToRequestChannel_onlyWhenRun() {
             Request request = mockRequest("홍길동", "FARM");
             when(request.getCreatedAt()).thenReturn(java.time.LocalDateTime.of(2026, 10, 6, 13, 5));
+            when(request.getRequestId()).thenReturn(1234L);
             when(messageUtils.get("notification.admin.request-cancelled",
-                    "FARM", "2026-10-06 13:05", "홍길동")).thenReturn("취소 알림");
+                    "FARM", "2026-10-06 13:05", "홍길동", "1234")).thenReturn("취소 알림");
 
             Runnable send = alarmService.prepareRequestCancelledNotification(request);
             verify(listOperations, never()).rightPush(any(), any());

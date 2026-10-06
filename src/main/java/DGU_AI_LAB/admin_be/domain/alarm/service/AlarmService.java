@@ -264,7 +264,8 @@ public class AlarmService {
         String message = messageUtils.get("notification.admin.request-cancelled",
                 serverName,                                                // {0}
                 RECEIVED_AT_FORMAT.format(receivedAt),                     // {1}
-                SlackText.escape(user.getName()));                         // {2}
+                SlackText.escape(user.getName()),                          // {2}
+                String.valueOf(request.getRequestId()));                   // {3}
         RequestChannel channel = requestChannel(user, serverName);
         String threadTs = request.getSlackMessageTs();
         return () -> safely("신청 취소 알림", () -> {
