@@ -122,12 +122,17 @@ public class AlarmService {
     }
 
     /**
-     * 문구 양식에 값을 채운다. 숫자는 문자열로 바꿔 넣는다 — MessageFormat에 숫자형을 주면 1,234처럼 콤마가 붙는다.
+     * Slack 채널로 보낼 문구 양식에 값을 채운다. 숫자는 문자열로 바꿔 넣는다 — MessageFormat에 숫자형을 주면 1,234처럼
+     * 콤마가 붙는다. 글 값은 모두 Slack mrkdwn 이스케이프를 한다 — 이름·메일 주소·실패 사유처럼 사용자나 외부에서 온 글이
+     * {@code <!channel>} 같은 채널 호출이나 링크로 바뀌지 않게, 호출부가 아니라 여기서 빠짐없이 막는다.
      * 양식은 DB(message_templates)를 먼저 찾으므로 DB 장애를 알리는 순간에는 읽지 못할 수 있다. 그때는 문구 대신
      * 키와 값을 그대로 보낸다 — 문구가 없다고 알림 자체를 잃으면 안 된다.
      */
     private String render(String messageKey, Object... args) {
-        Object[] plain = Arrays.stream(args).map(arg -> arg instanceof Number ? arg.toString() : arg).toArray();
+        Object[] plain = Arrays.stream(args)
+                .map(arg -> arg instanceof Number ? arg.toString() : arg)
+                .map(arg -> arg instanceof String text ? SlackText.escapeKeepingEmpty(text) : arg)
+                .toArray();
         try {
             return messageUtils.get(messageKey, plain);
         } catch (Exception e) {

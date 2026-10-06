@@ -1,6 +1,5 @@
 package DGU_AI_LAB.admin_be.domain.home.service;
 
-import DGU_AI_LAB.admin_be.domain.alarm.SlackText;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -17,11 +16,11 @@ public class HomeCleanupNotifier {
 
     public void deleted(HomeCleanupService.Target target) {
         alarmService.recordLog("notification.admin.home-cleanup.success",
-                SlackText.escape(target.ubuntuUsername()), target.lastContainerEndedAt().toLocalDate().toString());
+                target.ubuntuUsername(), target.lastContainerEndedAt().toLocalDate().toString());
     }
 
     public void failed(HomeCleanupService.Target target, String failureCode) {
         alarmService.alertNeedsAction("notification.admin.home-cleanup.fail",
-                SlackText.escape(target.ubuntuUsername()), target.cleanupId(), SlackText.escape(failureCode));
+                target.ubuntuUsername(), target.cleanupId(), failureCode);
     }
 }

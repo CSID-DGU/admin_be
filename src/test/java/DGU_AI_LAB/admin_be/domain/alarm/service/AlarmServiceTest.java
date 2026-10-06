@@ -170,6 +170,23 @@ class AlarmServiceTest {
             assertThat(dto.getMessage()).isEqualTo("정리 완료");
         }
 
+        @Test
+        @DisplayName("채널 알림에 넣는 글 값은 Slack mrkdwn 이스케이프를 거친다 — <!channel> 같은 글이 호출로 바뀌지 않는다")
+        void channelAlerts_escapeTextArgs() {
+            when(messageUtils.get("notification.monitor.log", "&lt;!channel&gt; 홍&amp;길동", "hong@dgu.ac.kr", "제목"))
+                    .thenReturn("발송 기록");
+            when(messageUtils.get("notification.admin.home-cleanup.fail", "&lt;@U1&gt;", "7", "&lt;!here&gt;"))
+                    .thenReturn("홈 삭제 실패");
+
+            alarmService.notifyUser("<!channel> 홍&길동", "hong@dgu.ac.kr", "제목", "내용");
+            alarmService.alertNeedsAction("notification.admin.home-cleanup.fail", "<@U1>", 7L, "<!here>");
+
+            List<SlackMessageDto> queued = allQueued(3);
+            assertThat(queued.get(0).getMessage()).isEqualTo("내용");
+            assertThat(queued.get(1).getMessage()).isEqualTo("발송 기록");
+            assertThat(queued.get(2).getMessage()).isEqualTo("홈 삭제 실패");
+        }
+
         private List<SlackMessageDto> allQueued(int count) {
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations, times(count)).rightPush(eq(QUEUE_KEY), captor.capture());

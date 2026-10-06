@@ -1,6 +1,5 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
-import DGU_AI_LAB.admin_be.domain.alarm.SlackText;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.PasswordResetSummaryDTO;
 import DGU_AI_LAB.admin_be.global.util.EmailService;
@@ -23,7 +22,7 @@ public class PasswordResetNotifier {
     /** 승인을 기다리는 신청이 새로 들어왔다. */
     public void requested(PasswordResetSummaryDTO request) {
         alarmService.alertNeedsAction("notification.admin.password-reset.requested",
-                request.passwordResetRequestId(), SlackText.escape(request.name()), SlackText.escape(request.email()));
+                request.passwordResetRequestId(), request.name(), request.email());
     }
 
     public void applied(String email) {

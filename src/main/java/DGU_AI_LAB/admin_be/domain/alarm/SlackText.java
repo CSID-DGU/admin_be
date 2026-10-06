@@ -12,6 +12,14 @@ public final class SlackText {
         if (text == null || text.isBlank()) {
             return "-";
         }
+        return escapeKeepingEmpty(text);
+    }
+
+    /** {@link #escape}와 같되 빈 값을 "-"로 바꾸지 않는다. 알림 문구에 넣는 값을 한꺼번에 이스케이프할 때 쓴다. */
+    public static String escapeKeepingEmpty(String text) {
+        if (text == null) {
+            return null;
+        }
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 }
