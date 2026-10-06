@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.global.event.RequestContainerDeletedEvent;
 import DGU_AI_LAB.admin_be.global.event.RequestExpiredEvent;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import org.junit.jupiter.api.DisplayName;
@@ -37,12 +38,12 @@ class RequestEventListenerTest {
 
     private static final RequestExpiredEvent EVENT = new RequestExpiredEvent(
             "홍길동", "hong@test.com", "user1", "server-lab",
-            "pod-xxx", "ssh(30022)", "2025-12-31");
+            "pod-xxx", "ssh(30022)", "2025-12-31", "홈 안내");
 
     @BeforeEach
     void setUp() {
         when(messageUtils.get("notification.expired.detail.subject")).thenReturn(SUBJECT);
-        when(messageUtils.get(eq("notification.expired.detail.body"), any(), any(), any(), any(), any(), any()))
+        when(messageUtils.get(eq("notification.expired.detail.body"), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(BODY);
         when(messageUtils.get(eq("notification.admin.delete.success"), any(), any(), any()))
                 .thenReturn(ADMIN_MSG);
@@ -54,6 +55,25 @@ class RequestEventListenerTest {
         requestEventListener.handleExpiredEvent(EVENT);
 
         verify(alarmService).sendAllAlerts(eq("홍길동"), eq("hong@test.com"), eq(SUBJECT), eq(BODY));
+    }
+
+    @Test
+    @DisplayName("만료 안내 본문에 홈 폴더 안내를 넣는다")
+    void handleExpiredEvent_passesHomeNoticeToBody() {
+        requestEventListener.handleExpiredEvent(EVENT);
+
+        verify(messageUtils).get("notification.expired.detail.body",
+                "홍길동", "server-lab", "user1", "pod-xxx", "ssh(30022)", "2025-12-31", "홈 안내");
+    }
+
+    @Test
+    @DisplayName("관리자 회수 안내 본문에 홈 폴더 안내를 넣는다")
+    void handleContainerDeletedEvent_passesHomeNoticeToBody() {
+        requestEventListener.handleContainerDeletedEvent(new RequestContainerDeletedEvent(
+                "홍길동", "hong@test.com", "user1", "server-lab", "pod-xxx", "ssh(30022)", "홈 안내"));
+
+        verify(messageUtils).get("notification.deleted.detail.body",
+                "홍길동", "server-lab", "user1", "pod-xxx", "ssh(30022)", "홈 안내");
     }
 
     @Test

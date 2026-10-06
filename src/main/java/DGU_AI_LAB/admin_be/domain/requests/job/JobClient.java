@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.job;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.GroupChangeRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.HomeDeleteRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.PasswordChangeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ProvisionRegisterRequestDTO;
@@ -67,11 +68,20 @@ public interface JobClient {
     Long registerGroupChange(GroupChangeRegisterRequestDTO body);
 
     /**
+     * 보존 기간이 지난 홈 삭제 작업을 등록한다. 실행기는 그 계정의 컨테이너가 없고 홈 소유자가 보낸 uid일 때만
+     * 지우며, 홈이 이미 없으면 성공으로 끝낸다. 계정과 uid는 그대로 둔다.
+     *
+     * @return 등록된 작업 번호. 응답에 없으면 null
+     * @throws BusinessException 같은 번호의 작업이 아직 끝나지 않았거나(409, INVALID_REQUEST_STATUS) 등록이 실패한 경우
+     */
+    Long registerHomeDelete(HomeDeleteRegisterRequestDTO body);
+
+    /**
      * 작업 결과를 조회한다. 등록 이력이 없으면 phase가 {@link JobResults#PHASE_NONE}으로 온다.
      *
      * @param kind      {@link JobResults#KIND_PROVISION}·{@link JobResults#KIND_REVOKE}·{@link JobResults#KIND_MIGRATE}·
-     *                  {@link JobResults#KIND_PASSWORD}·{@link JobResults#KIND_GROUP}
-     * @param requestId 신청 번호. 비밀번호 교체는 비밀번호 재설정 신청 번호, 그룹 작업은 그룹 작업 번호
+     *                  {@link JobResults#KIND_PASSWORD}·{@link JobResults#KIND_GROUP}·{@link JobResults#KIND_HOME}
+     * @param requestId 신청 번호. 비밀번호 교체는 비밀번호 재설정 신청 번호, 그룹 작업은 그룹 작업 번호, 홈 삭제는 홈 정리 번호
      */
     JobResultResponseDTO getResult(String kind, Long requestId);
 

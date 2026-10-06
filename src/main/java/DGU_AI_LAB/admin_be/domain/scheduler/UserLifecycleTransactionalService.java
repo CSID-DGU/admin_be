@@ -1,8 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
-import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
-import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
@@ -18,7 +16,6 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.Objects;
 
 /**
  * 유저 생명주기 처리를 트랜잭션 경계 안에서 실행합니다.
@@ -58,7 +55,7 @@ public class UserLifecycleTransactionalService {
     public boolean processInactiveUser(Long userId, LocalDateTime now) {
         User user = userRepository.findById(userId).orElseThrow();
         // 조회 뒤 관리자로 승격됐거나 새로 신청했을 수 있어 트랜잭션 안에서 다시 본다.
-        if (!user.getIsActive() || user.getRole() == Role.ADMIN || hasOpenRequest(user)) {
+        if (!user.getIsActive() || user.getRole() == Role.ADMIN || user.hasOpenRequest()) {
             return false;
         }
 
@@ -90,22 +87,12 @@ public class UserLifecycleTransactionalService {
         return noticeStore.findDeadline(userId).orElseGet(() -> today.plusDays(NOTICE_DAYS));
     }
 
-    private static boolean hasOpenRequest(User user) {
-        return user.getRequests().stream().anyMatch(r -> Status.openStatuses().contains(r.getStatus()));
-    }
-
     /**
-     * 마지막 컨테이너가 끝난 시각. 승인됐던 신청이 DELETED로 끝난 시각(updated_at)이다 — DELETED는 끝 상태라 그 뒤로
-     * 행이 바뀌지 않는다. 컨테이너를 쓴 적이 없으면 가입 시각. 어느 쪽이든 가입 시각보다 이르지 않다
-     * (UserRepository.findInactiveUsers가 가입 시각으로 후보를 추리는 근거).
+     * 마지막 컨테이너가 끝난 시각({@link User#lastContainerEndedAt()}). 컨테이너를 쓴 적이 없으면 가입 시각. 어느 쪽이든
+     * 가입 시각보다 이르지 않다(UserRepository.findInactiveUsers가 가입 시각으로 후보를 추리는 근거).
      */
     private static LocalDateTime inactiveSince(User user) {
-        return user.getRequests().stream()
-                .filter(r -> r.getStatus() == Status.DELETED && r.getApprovedAt() != null)
-                .map(Request::getUpdatedAt)
-                .filter(Objects::nonNull)
-                .max(LocalDateTime::compareTo)
-                .orElse(user.getCreatedAt());
+        return user.lastContainerEndedAt().orElse(user.getCreatedAt());
     }
 
     private void sendWarningAlert(User user, long daysLeft, LocalDate deleteDate, String today) {

@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.job;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.GroupChangeRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.HomeDeleteRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.PasswordChangeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ProvisionRegisterRequestDTO;
@@ -75,6 +76,11 @@ public class ConfigServerJobClient implements JobClient {
     public Long registerGroupChange(GroupChangeRegisterRequestDTO body) {
         return register("/operations/group", body, body.requestId(), ConfigServerJobClient::groupRegistrationError,
                 ErrorCode.GROUP_CHANGE_FAILED);
+    }
+
+    @Override
+    public Long registerHomeDelete(HomeDeleteRegisterRequestDTO body) {
+        return register("/operations/home", body, body.requestId(), ErrorCode.HOME_DELETE_FAILED);
     }
 
     /**

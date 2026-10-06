@@ -140,6 +140,7 @@ public enum ErrorCode {
     // 이걸 형식 오류와 같은 코드로 묶으면 관리자가 신청이 잘못됐다고 판단하고 되돌린다.
     PRIMARY_GROUP_REMOVAL(HttpStatus.CONFLICT, "계정의 기본 그룹에서는 뺄 수 없습니다."),
     GROUP_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "그룹 작업을 등록하지 못했어요. 잠시 후 다시 시도해 주세요."),
+    HOME_DELETE_FAILED(HttpStatus.BAD_GATEWAY, "홈 폴더 삭제 작업을 등록하지 못했어요."),
     GROUP_OPERATION_IN_PROGRESS(HttpStatus.CONFLICT, "같은 그룹 작업을 반영하는 중이에요. 끝난 뒤 다시 시도해 주세요."),
     GROUP_OPERATION_NOT_FOUND(HttpStatus.NOT_FOUND, "그룹 작업을 찾을 수 없습니다."),
     // 같은 새 그룹을 두 신청이 동시에 만들면 gid 가 두 번 발급된다. 앞 신청이 끝나면 그룹이 생겨 그대로 승인된다.
@@ -168,6 +169,7 @@ public enum ErrorCode {
     //FORBIDDEN_REQUEST(HttpStatus.BAD_REQUEST, "본인의 신청만 변경 신청할 수 있습니다."),
     UNSUPPORTED_CHANGE_TYPE(HttpStatus.BAD_REQUEST, "지원되지 않는 요청 타입(enum)입니다."),
     CONTAINER_REQUEST_ALREADY_PENDING(HttpStatus.CONFLICT, "승인을 기다리는 신청이 이미 있어요. 기존 신청을 취소한 뒤 다시 신청해 주세요."),
+    HOME_CLEANUP_IN_PROGRESS(HttpStatus.CONFLICT, "보존 기간이 지난 홈 폴더를 정리하는 중이에요. 잠시 뒤 다시 신청해 주세요."),
     CHANGE_REQUEST_ALREADY_PENDING(HttpStatus.CONFLICT, "같은 종류의 변경 요청이 이미 대기 중입니다. 처리된 뒤 다시 요청해주세요."),
     CHANGE_REQUEST_EXPIRES_AT_PASSED(HttpStatus.CONFLICT, "요청한 만료 일시가 이미 지났습니다. 거절하고 새로 요청받아 주세요."),
     REQUEST_MIGRATION_IN_PROGRESS(HttpStatus.CONFLICT, "마이그레이션이 진행 중인 요청이 있어 삭제할 수 없습니다."),

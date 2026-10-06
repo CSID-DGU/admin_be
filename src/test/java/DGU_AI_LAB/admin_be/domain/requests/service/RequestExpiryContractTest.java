@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.home.service.HomeRetentionNotice;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
@@ -62,6 +63,7 @@ class RequestExpiryContractTest {
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private PlatformTransactionManager transactionManager;
+    @Mock private HomeRetentionNotice homeRetentionNotice;
     @Mock private TransactionStatus transactionStatus;
 
     @Mock private ResourceGroup mockRg;
@@ -75,7 +77,8 @@ class RequestExpiryContractTest {
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         service = new RequestExpiryService(
-                requestRepository, jobClient, podExternalPortRepository, eventPublisher, transactionManager);
+                requestRepository, jobClient, podExternalPortRepository, eventPublisher, transactionManager,
+                homeRetentionNotice);
         when(mockRg.getServerName()).thenReturn("FARM-01");
         when(mockUser.getName()).thenReturn("테스트유저");
         when(mockUser.getEmail()).thenReturn("test@dgu.ac.kr");

@@ -30,6 +30,10 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     boolean existsByUser_UserIdAndStatus(Long userId, Status status);
     boolean existsByUser_UserIdAndStatusIn(Long userId, Collection<Status> statuses);
     long countByUser_UserIdAndStatusIn(Long userId, Collection<Status> statuses);
+
+    /** 같은 사용자의 다른 신청 가운데 그 시각 이후까지 이어지는 것이 있는가. */
+    boolean existsByUser_UserIdAndRequestIdNotAndStatusInAndExpiresAtGreaterThanEqual(
+            Long userId, Long requestId, Collection<Status> statuses, LocalDateTime from);
     List<Request> findAllByStatusIn(List<Status> statuses);
     List<Request> findAllByUser_UserIdAndStatusIn(Long userId, List<Status> statuses);
 

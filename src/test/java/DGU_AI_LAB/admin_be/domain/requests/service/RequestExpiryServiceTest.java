@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.home.service.HomeRetentionNotice;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
@@ -57,6 +58,7 @@ class RequestExpiryServiceTest {
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private PlatformTransactionManager transactionManager;
+    @Mock private HomeRetentionNotice homeRetentionNotice;
     @Mock private TransactionStatus transactionStatus;
 
     @Mock private ResourceGroup mockRg;
@@ -68,7 +70,8 @@ class RequestExpiryServiceTest {
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         service = new RequestExpiryService(
-                requestRepository, jobClient, podExternalPortRepository, eventPublisher, transactionManager);
+                requestRepository, jobClient, podExternalPortRepository, eventPublisher, transactionManager,
+                homeRetentionNotice);
         when(mockRg.getServerName()).thenReturn("FARM-01");
         when(mockUser.getName()).thenReturn("테스트유저");
         when(mockUser.getEmail()).thenReturn("test@dgu.ac.kr");
@@ -244,6 +247,7 @@ class RequestExpiryServiceTest {
         @DisplayName("성공하면 DELETED로 바꾸고 외부 포트를 회수한 뒤, 만료일이 지난 신청이면 만료 안내를 발행한다")
         void successOnExpiredRequestPublishesExpiredEvent() {
             Request request = mockRequest(10L, Status.EXPIRING, LocalDateTime.now().minusDays(1));
+            when(homeRetentionNotice.afterEnd(eq(request), any())).thenReturn("홈 안내");
 
             service.completeContainerRevoke(10L);
 
@@ -253,18 +257,21 @@ class RequestExpiryServiceTest {
             verify(eventPublisher).publishEvent(event.capture());
             assertThat(event.getValue()).isInstanceOf(RequestExpiredEvent.class);
             assertThat(((RequestExpiredEvent) event.getValue()).ubuntuUsername()).isEqualTo("testuser");
+            assertThat(((RequestExpiredEvent) event.getValue()).homeNotice()).isEqualTo("홈 안내");
         }
 
         @Test
         @DisplayName("만료일이 남은 신청(관리자 회수·사용자 정리)이면 회수 안내를 발행한다")
         void successOnLiveRequestPublishesContainerDeletedEvent() {
-            mockRequest(11L, Status.EXPIRING, LocalDateTime.now().plusDays(30));
+            Request request = mockRequest(11L, Status.EXPIRING, LocalDateTime.now().plusDays(30));
+            when(homeRetentionNotice.afterEnd(eq(request), any())).thenReturn("홈 안내");
 
             service.completeContainerRevoke(11L);
 
             ArgumentCaptor<Object> event = ArgumentCaptor.forClass(Object.class);
             verify(eventPublisher).publishEvent(event.capture());
             assertThat(event.getValue()).isInstanceOf(RequestContainerDeletedEvent.class);
+            assertThat(((RequestContainerDeletedEvent) event.getValue()).homeNotice()).isEqualTo("홈 안내");
         }
 
         @Test

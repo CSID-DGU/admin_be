@@ -1,7 +1,7 @@
 package DGU_AI_LAB.admin_be.global.event;
 
 /**
- * 관리자가 컨테이너 하나를 회수했을 때 발행한다. 우분투 계정과 홈 디렉터리는 남는다.
+ * 관리자가 컨테이너 하나를 회수했을 때 발행한다. 우분투 계정은 남고, 홈 디렉터리는 {@code homeNotice}에 적힌 대로 처리된다.
  *
  * <p>만료 회수({@link RequestExpiredEvent})와 이벤트를 나눈 이유는 통보 문구 때문이다.
  * 만료 안내는 "기간 만료로 인해 삭제되었습니다 / 만료일: ..."이라고 단정하는데, 관리자가 지운 것을
@@ -13,5 +13,6 @@ public record RequestContainerDeletedEvent(
         String ubuntuUsername,
         String serverName,
         String podName,
-        String portSummary
+        String portSummary,
+        String homeNotice
 ) {}

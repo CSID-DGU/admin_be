@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.users.entity;
 
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
@@ -13,6 +14,8 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.Optional;
+import java.util.Objects;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -178,6 +181,23 @@ public class User extends BaseTimeEntity {
     /** 리눅스 계정이 지금 살아 있는지. false면 승인 시 계정 생성(또는 같은 UID로 되살리기)을 요청해야 한다. */
     public boolean hasUbuntuAccount() {
         return this.ubuntuAccountStatus == UbuntuAccountStatus.ACTIVE;
+    }
+
+    /**
+     * 마지막 컨테이너가 끝난 시각. 승인됐던 신청이 DELETED로 끝난 시각(updated_at)이다 — DELETED는 끝 상태라 그 뒤로
+     * 행이 바뀌지 않는다. 컨테이너를 쓴 적이 없으면 비어 있다.
+     */
+    public Optional<LocalDateTime> lastContainerEndedAt() {
+        return this.requests.stream()
+                .filter(r -> r.getStatus() == Status.DELETED && r.getApprovedAt() != null)
+                .map(Request::getUpdatedAt)
+                .filter(Objects::nonNull)
+                .max(LocalDateTime::compareTo);
+    }
+
+    /** 끝나지 않은 신청(대기·처리 중·사용 중·이동 중·회수 중)이 있는가. */
+    public boolean hasOpenRequest() {
+        return this.requests.stream().anyMatch(r -> Status.openStatuses().contains(r.getStatus()));
     }
 
     /** 계정 회수 작업이 도는 중인지. 그 사이 승인·비밀번호 변경은 거절해야 한다 — 지워질 계정에 반영된다. */

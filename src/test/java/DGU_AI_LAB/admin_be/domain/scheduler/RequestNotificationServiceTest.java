@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.home.service.HomeRetentionNotice;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -50,6 +51,9 @@ class RequestNotificationServiceTest {
 
     @Mock
     private RedisTemplate<String, Object> redisTemplate;
+
+    @Mock
+    private HomeRetentionNotice homeRetentionNotice;
 
     @Mock
     @SuppressWarnings("rawtypes")
@@ -151,12 +155,13 @@ class RequestNotificationServiceTest {
             when(requestRepository.findAllByExpiresAtBetweenAndStatusIn(any(), any(), any()))
                     .thenReturn(List.of(request));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
+            when(homeRetentionNotice.beforeExpiry(request)).thenReturn("홈 안내");
 
             notificationService.sendPreExpiryNotification(LocalDateTime.now(), "3일");
 
             verify(messageUtils).get(eq("notification.pre-expiry.subject"), eq("3일"));
             verify(messageUtils).get(eq("notification.pre-expiry.body"),
-                    eq("유저"), eq("3일"), anyString(), eq("FARM-01"), eq("userx"));
+                    eq("유저"), eq("3일"), anyString(), eq("FARM-01"), eq("userx"), eq("홈 안내"));
         }
 
         @Test
