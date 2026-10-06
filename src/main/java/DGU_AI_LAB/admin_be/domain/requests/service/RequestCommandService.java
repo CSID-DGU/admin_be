@@ -228,11 +228,10 @@ public class RequestCommandService {
             }
         }
 
-        // === 관리자 채널 알림·신청자 접수 확인 메일 (따로 보내 한쪽이 실패해도 다른 쪽은 나간다) ===
+        // === 관리자 채널 알림 ===
         // 커밋 후에 보낸다: Redis 장애 시 직접 HTTP 전송으로 폴백하는데, 그게 User 행 잠금을 쥔 채
         // 실행되면 같은 사용자의 승인·신청이 그만큼 막힌다. 롤백되면 존재하지 않는 신청을 알리지도 않는다.
         AfterCommit.run("새 신청 알림, 요청 ID " + req.getRequestId(), () -> notifyNewRequest(req, portRequests, userId));
-        AfterCommit.run("접수 확인 메일, 요청 ID " + req.getRequestId(), () -> alarmService.sendRequestReceivedEmail(req));
 
         return SaveRequestResponseDTO.fromEntity(req);
     }

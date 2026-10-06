@@ -154,10 +154,15 @@ public class AlarmService {
     }
 
     private void enqueueWebhook(String message, String webhookUrl) {
+        enqueueWebhook(message, webhookUrl, false);
+    }
+
+    private void enqueueWebhook(String message, String webhookUrl, boolean blockLayout) {
         pushToQueue(SlackMessageDto.builder()
                 .type(SlackMessageDto.MessageType.WEBHOOK)
                 .webhookUrl(webhookUrl)
                 .message(message)
+                .blockLayout(blockLayout)
                 .build());
     }
 
@@ -270,7 +275,7 @@ public class AlarmService {
         String threadTs = request.getSlackMessageTs();
         return () -> safely("신청 취소 알림", () -> {
             if (threadTs == null) {
-                enqueueWebhook(message, channel.webhookUrl());
+                enqueueWebhook(message, channel.webhookUrl(), true);
                 return;
             }
             enqueueRequestChannel(message, channel, threadTs, null);
@@ -296,12 +301,12 @@ public class AlarmService {
     }
 
     /**
-     * 신청서 채널로 보낸다. requestId를 주면 올라간 메시지의 식별자를 그 신청에 적어 두고, threadTs를 주면 그 메시지의
+     * 신청서 채널로 보낸다. 승인자가 읽고 판단하는 글이라 블록 양식(제목·항목 표·구분선)으로 보낸다. requestId를 주면 올라간 메시지의 식별자를 그 신청에 적어 두고, threadTs를 주면 그 메시지의
      * 스레드 댓글로 단다. 채널 ID가 없는 채널은 둘 다 할 수 없어 webhook으로 보낸다.
      */
     private void enqueueRequestChannel(String message, RequestChannel channel, String threadTs, Long requestId) {
         if (channel.channelId() == null) {
-            enqueueWebhook(message, channel.webhookUrl());
+            enqueueWebhook(message, channel.webhookUrl(), true);
             return;
         }
         pushToQueue(SlackMessageDto.builder()
@@ -311,6 +316,7 @@ public class AlarmService {
                 .requestId(requestId)
                 .webhookUrl(channel.webhookUrl())
                 .message(message)
+                .blockLayout(true)
                 .build());
     }
 
@@ -457,32 +463,6 @@ public class AlarmService {
                 PodPortUtils.formatPortSummary(ports));      // {6}
 
         mailWithReceipt(user.getName(), user.getEmail(), subject, body);
-    }
-
-    /**
-     * 신청자에게 접수됐음을 알린다. 접수 여부를 알 길이 없으면 같은 신청을 다시 낸다.
-     * 관리자 쪽에는 같은 신청이 신청서 채널로 이미 가므로 알림 기록은 따로 남기지 않는다.
-     */
-    public void sendRequestReceivedEmail(Request request) {
-        User user = request.getUser();
-        var resourceGroup = request.getResourceGroup();
-        var image = request.getContainerImage();
-        String serverName = resourceGroup.getServerName();
-        LocalDateTime receivedAt = request.getCreatedAt() != null
-                ? request.getCreatedAt()
-                : LocalDateTime.now(ZoneId.of("Asia/Seoul"));
-
-        String subject = messageUtils.get("email.request.received.subject", serverName);
-        String body = messageUtils.get("email.request.received.body",
-                user.getName(),                                            // {0}
-                String.valueOf(request.getRequestId()),                    // {1}
-                serverName,                                                // {2}
-                resourceGroup.getResourceGroupName(),                      // {3}
-                image == null ? "-" : image.getImageName() + ":" + image.getImageVersion(), // {4}
-                request.getExpiresAt().toLocalDate().toString(),           // {5}
-                RECEIVED_AT_FORMAT.format(receivedAt));                    // {6}
-
-        sendMail(user.getEmail(), subject, body);
     }
 
     public void sendRequestRejectedEmail(Request request, String adminComment) {

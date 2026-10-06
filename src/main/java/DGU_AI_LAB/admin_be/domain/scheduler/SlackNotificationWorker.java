@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
+import DGU_AI_LAB.admin_be.domain.alarm.SlackBlocks;
 import DGU_AI_LAB.admin_be.domain.alarm.dto.SlackMessageDto;
 import DGU_AI_LAB.admin_be.domain.alarm.service.SlackApiService;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -11,6 +12,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * Consumer / Worker
@@ -50,7 +54,7 @@ public class SlackNotificationWorker {
             }
 
             if (dto.getType() == SlackMessageDto.MessageType.WEBHOOK) {
-                slackApiService.sendWebhook(dto.getWebhookUrl(), dto.getMessage());
+                sendWebhook(dto);
                 log.info("Slack Webhook 전송 성공 (Queue)");
 
             } else if (dto.getType() == SlackMessageDto.MessageType.DM) {
@@ -82,7 +86,10 @@ public class SlackNotificationWorker {
     private boolean postToChannel(SlackMessageDto dto) {
         String ts;
         try {
-            ts = slackApiService.postToChannel(dto.getChannelId(), dto.getMessage(), dto.getThreadTs());
+            List<Map<String, Object>> blocks = blocksOf(dto);
+            ts = blocks.isEmpty()
+                    ? slackApiService.postToChannel(dto.getChannelId(), dto.getMessage(), dto.getThreadTs())
+                    : slackApiService.postToChannel(dto.getChannelId(), dto.getMessage(), dto.getThreadTs(), blocks);
         } catch (Exception e) {
             log.warn("Slack 봇 전송 실패, webhook으로 대신 보냄: {}", e.getMessage());
             return false;
@@ -90,6 +97,24 @@ public class SlackNotificationWorker {
         log.info("Slack 채널 전송 성공 (Queue)");
         rememberMessage(dto.getRequestId(), ts);
         return true;
+    }
+
+    /** 블록 양식으로 보내 보고, 그 전송이 실패하면 글만 다시 보낸다 — 양식 때문에 알림이 빠지지 않게 한다. */
+    private void sendWebhook(SlackMessageDto dto) {
+        List<Map<String, Object>> blocks = blocksOf(dto);
+        if (!blocks.isEmpty()) {
+            try {
+                slackApiService.sendWebhook(dto.getWebhookUrl(), dto.getMessage(), blocks);
+                return;
+            } catch (Exception e) {
+                log.warn("Slack 블록 양식 전송 실패, 글만 다시 보냄: {}", e.getMessage());
+            }
+        }
+        slackApiService.sendWebhook(dto.getWebhookUrl(), dto.getMessage());
+    }
+
+    private static List<Map<String, Object>> blocksOf(SlackMessageDto dto) {
+        return dto.isBlockLayout() ? SlackBlocks.fromMrkdwn(dto.getMessage()) : List.of();
     }
 
     /** 올라간 신청서 메시지의 식별자를 신청에 적어 둔다. 못 적어도 이미 나간 알림은 그대로 두고, 후속 알림만 일반 메시지로 간다. */

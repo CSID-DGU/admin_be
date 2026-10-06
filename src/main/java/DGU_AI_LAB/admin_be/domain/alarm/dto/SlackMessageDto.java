@@ -21,6 +21,8 @@ public class SlackMessageDto implements Serializable {
 
     private MessageType type;
     private String message;
+    /** true면 글을 Slack 블록 양식(제목·항목 표·구분선)으로 바꿔 보낸다. WEBHOOK·CHANNEL에만 쓴다. */
+    private boolean blockLayout;
 
     // Webhook용 필드
     private String webhookUrl;

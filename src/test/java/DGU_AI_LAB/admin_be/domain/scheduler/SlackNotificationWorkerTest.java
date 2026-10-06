@@ -261,6 +261,33 @@ class SlackNotificationWorkerTest {
         }
 
         @Test
+        @DisplayName("블록 양식으로 보낼 글은 블록을 함께 실어 봇으로 올린다")
+        void postsWithBlocks_whenBlockLayout() {
+            queue(channelMessage().requestId(42L).message("*제목*\n\n본문").blockLayout(true).build());
+            when(slackApiService.postToChannel(eq("C0REQ"), eq("*제목*\n\n본문"), eq(null), org.mockito.ArgumentMatchers.anyList()))
+                    .thenReturn("1728200000.000100");
+
+            worker.processSlackQueue();
+
+            verify(slackApiService).postToChannel("C0REQ", "*제목*\n\n본문", null,
+                    DGU_AI_LAB.admin_be.domain.alarm.SlackBlocks.fromMrkdwn("*제목*\n\n본문"));
+            verify(requestRepository).updateSlackMessageTs(42L, "1728200000.000100");
+        }
+
+        @Test
+        @DisplayName("webhook으로 보낸 블록 양식이 실패하면 글만 다시 보낸다 — 양식 때문에 알림이 빠지지 않는다")
+        void webhookFallsBackToPlainText_whenBlocksRejected() {
+            queue(SlackMessageDto.builder().type(SlackMessageDto.MessageType.WEBHOOK)
+                    .webhookUrl("https://hooks.slack.com/request").message("*제목*\n\n본문").blockLayout(true).build());
+            doThrow(new RuntimeException("invalid_blocks")).when(slackApiService)
+                    .sendWebhook(anyString(), anyString(), org.mockito.ArgumentMatchers.anyList());
+
+            worker.processSlackQueue();
+
+            verify(slackApiService).sendWebhook("https://hooks.slack.com/request", "*제목*\n\n본문");
+        }
+
+        @Test
         @DisplayName("봇 전송이 실패하면 같은 글을 webhook으로 대신 보낸다")
         void fallsBackToWebhook_whenBotFails() {
             queue(channelMessage().requestId(42L).build());

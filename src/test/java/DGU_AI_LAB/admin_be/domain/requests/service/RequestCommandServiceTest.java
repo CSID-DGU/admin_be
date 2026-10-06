@@ -135,7 +135,6 @@ class RequestCommandServiceTest {
                 TransactionSynchronizationManager.getSynchronizations()
                         .forEach(TransactionSynchronization::afterCommit);
                 verify(alarmService).sendNewRequestNotification(eq(savedReq), any(), anyLong());
-                verify(alarmService).sendRequestReceivedEmail(savedReq);
             } finally {
                 TransactionSynchronizationManager.clearSynchronization();
             }
