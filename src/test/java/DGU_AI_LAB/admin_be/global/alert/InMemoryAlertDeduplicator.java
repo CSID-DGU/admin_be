@@ -12,4 +12,9 @@ public class InMemoryAlertDeduplicator implements AlertDeduplicator {
     public boolean firstOccurrence(String eventKey) {
         return seen.add(eventKey);
     }
+
+    @Override
+    public boolean firstOccurrenceWhileItLasts(String eventKey) {
+        return seen.add(eventKey);
+    }
 }

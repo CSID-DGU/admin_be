@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -58,5 +59,32 @@ class RedisAlertDeduplicatorTest {
                 .thenThrow(new RedisConnectionFailureException("down"));
 
         assertThat(dedup.firstOccurrence("job-unresolved:revoke:41:900")).isTrue();
+    }
+
+    @Test
+    @DisplayName("이어지는 사건은 다시 볼 때마다 기록 수명을 늘리고 알리지 않게 한다")
+    void lastingEventExtendsRecord() {
+        when(ops.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(false);
+
+        assertThat(dedup.firstOccurrenceWhileItLasts("container-stopped:7:p")).isFalse();
+        verify(redis).expire("alert-once:container-stopped:7:p", Duration.ofHours(168));
+    }
+
+    @Test
+    @DisplayName("이어지는 사건도 처음 보면 알리게 하고 수명은 건드리지 않는다")
+    void lastingEventFirstTime() {
+        when(ops.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true);
+
+        assertThat(dedup.firstOccurrenceWhileItLasts("container-stopped:7:p")).isTrue();
+        verify(redis, never()).expire(anyString(), any(Duration.class));
+    }
+
+    @Test
+    @DisplayName("수명을 늘리지 못해도 이미 알린 사건은 다시 알리지 않게 한다")
+    void lastingEventExpireFails() {
+        when(ops.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(false);
+        when(redis.expire(anyString(), any(Duration.class))).thenThrow(new RedisConnectionFailureException("down"));
+
+        assertThat(dedup.firstOccurrenceWhileItLasts("container-stopped:7:p")).isFalse();
     }
 }

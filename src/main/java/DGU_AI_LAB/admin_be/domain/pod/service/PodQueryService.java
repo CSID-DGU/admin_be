@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.pod.service;
 
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodEventDTO;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodResponseDTO;
+import DGU_AI_LAB.admin_be.domain.pod.dto.response.StoppedPodDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import io.fabric8.kubernetes.api.model.Pod;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -50,6 +52,23 @@ public class PodQueryService {
                     .collect(Collectors.toList());
         } catch (Exception e) {
             log.error("[PodQuery] pod 목록 조회 실패", e);
+            throw e;
+        }
+    }
+
+    /** 멈춰서 스스로 돌아오지 않는 Pod 목록. 네임스페이스 전체를 한 번에 읽는다. */
+    public List<StoppedPodDTO> listStoppedPods() {
+        try {
+            return client.pods()
+                    .inNamespace(namespace)
+                    .list()
+                    .getItems()
+                    .stream()
+                    .map(StoppedPodDTO::from)
+                    .flatMap(Optional::stream)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            log.error("[PodQuery] 멈춘 pod 목록 조회 실패", e);
             throw e;
         }
     }
