@@ -1,5 +1,9 @@
 package DGU_AI_LAB.admin_be.domain.pod.service;
 
+import DGU_AI_LAB.admin_be.domain.pod.dto.response.StoppedPodDTO;
+import io.fabric8.kubernetes.api.model.ContainerStateTerminated;
+import io.fabric8.kubernetes.api.model.ContainerStateTerminatedBuilder;
+import io.fabric8.kubernetes.api.model.ContainerStatusBuilder;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodEventDTO;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodResponseDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -99,6 +103,62 @@ class PodQueryServiceTest {
             List<String> result = podQueryService.getPodNames();
 
             assertThat(result).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("listStoppedPods")
+    class ListStoppedPods {
+
+        private Pod pod(String name, String phase, String podReason, ContainerStateTerminated terminated) {
+            return new PodBuilder()
+                    .withMetadata(new ObjectMetaBuilder().withName(name).build())
+                    .withNewSpec().withNodeName("farm9").endSpec()
+                    .withNewStatus()
+                        .withPhase(phase)
+                        .withReason(podReason)
+                        .withContainerStatuses(terminated == null ? List.of() : List.of(
+                                new ContainerStatusBuilder().withName("shell")
+                                        .withNewState().withTerminated(terminated).endState().build()))
+                    .endStatus()
+                    .build();
+        }
+
+        @Test
+        @DisplayName("Failed·Succeeded Pod만 사유·종료 코드·종료 시각과 함께 돌려준다")
+        void returnsOnlyStoppedPods() {
+            ContainerStateTerminated oom = new ContainerStateTerminatedBuilder()
+                    .withReason("OOMKilled").withExitCode(137).withFinishedAt("2026-10-07T00:24:14Z").build();
+            when(inNamespace.list()).thenReturn(new PodListBuilder().withItems(
+                    pod("running", "Running", null, null),
+                    pod("pending", "Pending", null, null),
+                    pod("oom", "Failed", null, oom),
+                    pod("done", "Succeeded", null, new ContainerStateTerminatedBuilder()
+                            .withReason("Completed").withExitCode(0).build())).build());
+
+            assertThat(podQueryService.listStoppedPods()).containsExactly(
+                    new StoppedPodDTO("oom", "farm9", "OOMKilled", 137, "2026-10-07T00:24:14Z"),
+                    new StoppedPodDTO("done", "farm9", "Completed", 0, null));
+        }
+
+        @Test
+        @DisplayName("Pod 전체에 붙은 사유(Evicted)를 컨테이너 사유보다 먼저 쓰고, 컨테이너 기록이 없으면 종료 코드는 비운다")
+        void prefersPodLevelReason() {
+            when(inNamespace.list()).thenReturn(new PodListBuilder().withItems(
+                    pod("evicted", "Failed", "Evicted", null)).build());
+
+            assertThat(podQueryService.listStoppedPods()).containsExactly(
+                    new StoppedPodDTO("evicted", "farm9", "Evicted", null, null));
+        }
+
+        @Test
+        @DisplayName("사유를 알 수 없으면 Pod 단계를 사유로 쓴다")
+        void fallsBackToPhase() {
+            when(inNamespace.list()).thenReturn(new PodListBuilder().withItems(
+                    pod("bare", "Failed", null, null)).build());
+
+            assertThat(podQueryService.listStoppedPods()).containsExactly(
+                    new StoppedPodDTO("bare", "farm9", "Failed", null, null));
         }
     }
 

@@ -35,4 +35,18 @@ public class RedisAlertDeduplicator implements AlertDeduplicator {
             return true;
         }
     }
+
+    @Override
+    public boolean firstOccurrenceWhileItLasts(String eventKey) {
+        if (firstOccurrence(eventKey)) {
+            return true;
+        }
+        try {
+            redis.expire(KEY_PREFIX + eventKey, ttl);
+        } catch (Exception e) {
+            // 수명을 늘리지 못해도 이번 바퀴는 이미 알린 사건이다. 기록이 먼저 사라지면 그때 한 번 더 알린다.
+            log.warn("알림 중복 기록의 수명을 늘리지 못했다: key={}", eventKey, e);
+        }
+        return false;
+    }
 }

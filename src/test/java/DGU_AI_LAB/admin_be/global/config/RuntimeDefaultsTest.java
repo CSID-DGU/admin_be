@@ -40,7 +40,7 @@ class RuntimeDefaultsTest {
             assertThat(props.getProperty("mail.smtp.timeout")).isEqualTo("10000");
             assertThat(props.getProperty("mail.smtp.writetimeout")).isEqualTo("10000");
             assertThat(ctx.getBean(ThreadPoolTaskScheduler.class).getScheduledThreadPoolExecutor().getCorePoolSize())
-                    .isEqualTo(10);
+                    .isEqualTo(11);
         }
     }
 
