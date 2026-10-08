@@ -34,10 +34,10 @@ public record SaveRequestRequestDTO(
         @Positive(message = "이미지 ID는 양수여야 합니다.")
         Long imageId,
 
-        // 승인자가 이 글만 보고 판단하므로 50자 이상을 요구한다. 상한은 requests.usage_purpose 컬럼(1000자)이다.
-        @Schema(description = "사용 목적 (50~1000자)", example = "졸업 프로젝트로 PyTorch를 사용해 의료 영상(흉부 X-ray) 분류 모델을 학습하려고 합니다. 데이터는 약 2만 장이고, 한 번 학습에 GPU 1장으로 6시간 정도 걸릴 것으로 예상합니다.")
+        // 승인자가 이 글만 보고 판단하므로 200자 이상을 요구한다. 상한은 requests.usage_purpose 컬럼(1000자)이다.
+        @Schema(description = "사용 목적 (200~1000자)", example = "졸업 프로젝트로 PyTorch를 사용해 의료 영상(흉부 X-ray) 분류 모델을 학습하려고 합니다. 데이터는 약 2만 장이고, 한 번 학습에 GPU 1장으로 6시간 정도 걸릴 것으로 예상합니다. 일주일에 2~3번 학습할 예정이며, 12월 중순 최종 발표 전까지 사용하려고 합니다. 학습한 모델과 실험 기록은 홈 디렉터리에 저장하고, 결과 확인에는 Jupyter와 TensorBoard를 쓸 예정입니다.")
         @NotBlank(message = "사용 목적은 필수입니다.")
-        @Size(min = 50, max = 1000, message = "사용 목적은 50자 이상 1000자 이하로 적어 주세요.")
+        @Size(min = 200, max = 1000, message = "사용 목적은 200자 이상 1000자 이하로 적어 주세요.")
         String usagePurpose,
 
         @Schema(description = "폼 응답", example = "{\"question\": \"answer\"}")
