@@ -460,6 +460,31 @@ public class AlarmService {
         mailWithReceipt(user.getName(), user.getEmail(), subject, body);
     }
 
+    /**
+     * [추가 포트 변경 안내 메일] 포트 변경 요청이 컨테이너에 반영됐을 때 보낸다. SSH·Jupyter 접속 정보는 그대로라
+     * 바뀐 뒤의 추가 포트만 알린다. 포트는 커밋된 신청의 포트 기록에서 읽고, 생성 안내의 SSH 포트와 같은 방식
+     * (포워딩 서버는 공인 포트)으로 적는다.
+     */
+    public void sendExtraPortsChangedEmail(Request request) {
+        User user = request.getUser();
+        String serverName = request.getResourceGroup().getServerName();
+        List<PodExternalPort> allPorts = podExternalPortRepository.findByRequestRequestId(request.getRequestId());
+
+        String extraPorts = PodPortUtils.extraPorts(allPorts).stream()
+                .map(port -> port.getUsagePurpose() + "("
+                        + serverProfileRegistry.publicPort(serverName, String.valueOf(port.getExternalPort())) + ")")
+                .collect(Collectors.joining(", "));
+
+        String subject = messageUtils.get("email.container.extra-ports-changed.subject", serverName);
+        String body = messageUtils.get("email.container.extra-ports-changed.body",
+                user.getName(),                                   // {0}
+                request.getUbuntuUsername(),                      // {1}
+                resolveHostIp(serverName),                        // {2}
+                extraPorts.isEmpty() ? "없음" : extraPorts);       // {3}
+
+        mailWithReceipt(user.getName(), user.getEmail(), subject, body);
+    }
+
     private static String externalPortOf(List<PodExternalPort> ports, String purpose) {
         return ports.stream()
                 .filter(p -> purpose.equalsIgnoreCase(p.getUsagePurpose()))

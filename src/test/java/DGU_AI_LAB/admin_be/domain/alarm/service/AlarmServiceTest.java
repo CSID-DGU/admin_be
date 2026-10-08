@@ -565,6 +565,46 @@ class AlarmServiceTest {
     }
 
     @Nested
+    @DisplayName("sendExtraPortsChangedEmail")
+    class SendExtraPortsChangedEmail {
+
+        @Test
+        @DisplayName("추가 포트만 공인 포트로 바꿔 안내한다 — SSH·Jupyter 는 그대로라 적지 않는다")
+        void listsOnlyExtraPortsAsPublicPorts() {
+            Request request = mockRequestForCreated("이순신", "lee@dgu.ac.kr", "FARM", 5L);
+            PodExternalPort ssh = mockPodPort("ssh", 30010);
+            PodExternalPort jupyter = mockPodPort("jupyter", 30011);
+            PodExternalPort web = mockPodPort("web", 30012);
+            when(podExternalPortRepository.findByRequestRequestId(5L)).thenReturn(List.of(ssh, jupyter, web));
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any())).thenReturn("본문");
+
+            alarmService.sendExtraPortsChangedEmail(request);
+
+            verify(messageUtils).get(eq("email.container.extra-ports-changed.body"),
+                    eq("이순신"), eq("testuser"), eq("farm.example.org"), eq("web(9312)"));
+            ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+            verify(mailSender).send(captor.capture());
+            assertThat(captor.getValue().getTo()).containsExactly("lee@dgu.ac.kr");
+        }
+
+        @Test
+        @DisplayName("추가 포트를 모두 뺐으면 없음으로 안내한다")
+        void noExtraPortsIsNone() {
+            Request request = mockRequestForCreated("홍길동", "hong@dgu.ac.kr", "LAB", 6L);
+            PodExternalPort ssh = mockPodPort("ssh", 30010);
+            when(podExternalPortRepository.findByRequestRequestId(6L)).thenReturn(List.of(ssh));
+            when(messageUtils.get(anyString(), any())).thenReturn("제목");
+            when(messageUtils.get(anyString(), any(), any(), any(), any())).thenReturn("본문");
+
+            alarmService.sendExtraPortsChangedEmail(request);
+
+            verify(messageUtils).get(eq("email.container.extra-ports-changed.body"),
+                    any(), any(), eq("lab.example.org"), eq("없음"));
+        }
+    }
+
+    @Nested
     @DisplayName("신청서 채널 — 봇 전송과 스레드 댓글")
     class RequestChannelThread {
 

@@ -53,6 +53,8 @@ public final class JobResults {
     public static final String KIND_GROUP = "group";
     /** 보존 기간이 지난 홈 삭제. 신청 번호 자리에 홈 정리 번호를 쓴다. */
     public static final String KIND_HOME = "home";
+    /** 떠 있는 컨테이너의 추가 포트 변경. 신청 번호 자리에 포트 작업 번호를 쓴다. */
+    public static final String KIND_PORT = "port";
 
     /**
      * 작업 번호가 아직 없는 신청을 기다리는 시간. 등록은 몇 초면 끝나므로, 이보다 오래 번호가 없으면 등록 뒤 기록

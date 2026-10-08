@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.dto.request;
 
+import DGU_AI_LAB.admin_be.domain.portRequests.dto.PortChangeValue;
+import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
@@ -15,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.time.LocalDateTime;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -22,7 +25,7 @@ import java.util.stream.Collectors;
 @Schema(description = "단일 변경 요청 DTO")
 public record SingleChangeRequestDTO(
 
-        @Schema(description = "변경 타입", example = "EXPIRES_AT", allowableValues = {"EXPIRES_AT", "GROUP"})
+        @Schema(description = "변경 타입", example = "EXPIRES_AT", allowableValues = {"EXPIRES_AT", "GROUP", "PORT"})
         @NotNull(message = "변경 타입은 필수입니다.")
         ChangeType changeType,
 
@@ -41,17 +44,19 @@ public record SingleChangeRequestDTO(
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /**
-     * 승인 시 실제 계정·컨테이너까지 반영되는 종류만 받는다. RESOURCE_GROUP·CONTAINER_IMAGE·PORT는
+     * 승인 시 실제 계정·컨테이너까지 반영되는 종류만 받는다. RESOURCE_GROUP·CONTAINER_IMAGE는
      * 승인해도 DB 값만 바뀌고 떠 있는 Pod는 그대로라 DB와 실제가 어긋난다 — 받지 않는다.
      */
-    public static final Set<ChangeType> SUPPORTED_TYPES = EnumSet.of(ChangeType.EXPIRES_AT, ChangeType.GROUP);
+    public static final Set<ChangeType> SUPPORTED_TYPES =
+            EnumSet.of(ChangeType.EXPIRES_AT, ChangeType.GROUP, ChangeType.PORT);
 
     /**
      * 기존 Request에서 oldValue를 추출하고 ChangeRequest 엔티티 생성
      */
-    public static ChangeRequest toEntity(SingleChangeRequestDTO dto, Request originalRequest, User requestedBy, ObjectMapper objectMapper) {
+    public static ChangeRequest toEntity(SingleChangeRequestDTO dto, Request originalRequest, User requestedBy,
+                                         List<PortRequests> currentPorts, ObjectMapper objectMapper) {
         try {
-            String oldValue = extractOldValue(originalRequest, dto.changeType(), objectMapper);
+            String oldValue = extractOldValue(originalRequest, dto.changeType(), currentPorts, objectMapper);
 
             // new_value는 MySQL json 컬럼이고 승인 로직은 readValue(String.class)로 읽는다.
             // EXPIRES_AT의 생 날짜 문자열은 유효한 JSON이 아니므로 저장 직전에 JSON 인코딩한다. (#367)
@@ -79,7 +84,8 @@ public record SingleChangeRequestDTO(
     /**
      * 변경 타입에 따라 기존 값을 추출
      */
-    private static String extractOldValue(Request originalRequest, ChangeType changeType, ObjectMapper objectMapper) {
+    private static String extractOldValue(Request originalRequest, ChangeType changeType, List<PortRequests> currentPorts,
+                                          ObjectMapper objectMapper) {
         try {
             return switch (changeType) {
                 case EXPIRES_AT -> objectMapper.writeValueAsString(originalRequest.getExpiresAt());
@@ -91,6 +97,7 @@ public record SingleChangeRequestDTO(
                             .collect(Collectors.toSet());
                     yield objectMapper.writeValueAsString(oldGroupIds);
                 }
+                case PORT -> PortChangeValue.currentValue(currentPorts, objectMapper);
                 default -> throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
             };
         } catch (BusinessException e) {
@@ -105,8 +112,28 @@ public record SingleChangeRequestDTO(
      * DTO 내부에서 자체적으로 유효성을 검증하고 데이터베이스 존재 여부까지 확인하는 팩토리 메서드
      */
     public static ChangeRequest createValidatedChangeRequest(SingleChangeRequestDTO dto, Request originalRequest, User requestedBy, ObjectMapper objectMapper) {
+        return createValidatedChangeRequest(dto, originalRequest, requestedBy, List.of(), objectMapper);
+    }
+
+    /** @param currentPorts 원본 신청에 지금 달린 추가 포트. PORT 변경 요청의 이전 값과 "달라진 것이 있는지" 판정에 쓴다 */
+    public static ChangeRequest createValidatedChangeRequest(SingleChangeRequestDTO dto, Request originalRequest, User requestedBy,
+                                                             List<PortRequests> currentPorts, ObjectMapper objectMapper) {
         dto.validateAndCheckExistence(originalRequest);
-        return toEntity(dto, originalRequest, requestedBy, objectMapper);
+        if (dto.changeType() == ChangeType.PORT) {
+            dto.requirePortsChanged(currentPorts);
+        }
+        return toEntity(dto, originalRequest, requestedBy, currentPorts, objectMapper);
+    }
+
+    /** 지금과 같은 포트 구성은 받지 않는다 — 승인해도 바뀌는 것이 없다. */
+    private void requirePortsChanged(List<PortRequests> currentPorts) {
+        Set<Integer> current = currentPorts.stream()
+                .map(PortRequests::getInternalPort)
+                .filter(port -> !PortChangeValue.isProtected(port))
+                .collect(Collectors.toSet());
+        if (current.equals(PortChangeValue.numbers(PortChangeValue.validated(newValue, OBJECT_MAPPER)))) {
+            throw new BusinessException("지금 열려 있는 추가 포트와 같습니다.", ErrorCode.INVALID_INPUT_VALUE);
+        }
     }
 
     /**
@@ -127,7 +154,7 @@ public record SingleChangeRequestDTO(
         }
 
         if (!SUPPORTED_TYPES.contains(changeType)) {
-            throw new BusinessException("기간 연장(EXPIRES_AT)과 그룹 추가(GROUP)만 변경 요청할 수 있습니다.", ErrorCode.UNSUPPORTED_CHANGE_TYPE);
+            throw new BusinessException("기간 연장(EXPIRES_AT), 그룹 추가(GROUP), 추가 포트 변경(PORT)만 변경 요청할 수 있습니다.", ErrorCode.UNSUPPORTED_CHANGE_TYPE);
         }
 
         if (newValue == null || newValue.trim().isEmpty()) {
@@ -163,6 +190,7 @@ public record SingleChangeRequestDTO(
                         throw new BusinessException("아직 만들어지지 않은 그룹은 추가할 수 없습니다.", ErrorCode.INVALID_INPUT_VALUE);
                     }
                 }
+                case PORT -> PortChangeValue.validated(newValue, OBJECT_MAPPER);
                 default -> throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
             }
         } catch (BusinessException e) {
