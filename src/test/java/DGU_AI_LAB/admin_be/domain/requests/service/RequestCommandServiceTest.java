@@ -329,6 +329,30 @@ class RequestCommandServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.CHANGE_REQUEST_ALREADY_PENDING);
             verify(changeRequestRepository, never()).save(any());
+            verify(alarmService, never()).recordLog(any(), any(Object[].class));
+        }
+
+        @Test
+        @DisplayName("변경 요청을 받으면 알림 기록 채널에 접수 사실을 남긴다")
+        void createSingleChangeRequest_recordsReceipt() {
+            User owner = mock(User.class);
+            when(owner.getUserId()).thenReturn(1L);
+            when(owner.getName()).thenReturn("홍길동");
+            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("FARM").build();
+            Request request = mock(Request.class);
+            when(request.getUser()).thenReturn(owner);
+            when(request.getStatus()).thenReturn(Status.FULFILLED);
+            when(request.getResourceGroup()).thenReturn(rg);
+            when(request.getUbuntuUsername()).thenReturn("honggildong");
+            when(requestRepository.findByIdForUpdate(13L)).thenReturn(Optional.of(request));
+
+            String newValue = LocalDateTime.now().plusDays(30).withNano(0).toString();
+            requestCommandService.createSingleChangeRequest(
+                    1L, 13L, new SingleChangeRequestDTO(ChangeType.EXPIRES_AT, newValue, "사유"));
+
+            verify(changeRequestRepository).save(any());
+            verify(alarmService).recordLog("notification.admin.change-request.requested",
+                    "FARM", ChangeType.EXPIRES_AT.label(), "홍길동", "honggildong", null);
         }
     }
 
