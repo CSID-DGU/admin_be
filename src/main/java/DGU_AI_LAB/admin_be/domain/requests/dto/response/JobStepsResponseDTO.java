@@ -31,6 +31,8 @@ public record JobStepsResponseDTO(
     /**
      * @param probe 접근·차단 시험 단계면 시험 이름(uid, gpu, endpoint 등)
      * @param step  재시도(RETRY) 행이면 다시 돌린 단계 이름
+     * @param resource 그 밖의 행이면 단계가 다룬 대상(account, groups, replication 등). 같은 action을 쓰는
+     *                 단계(계정 생성과 공유 그룹 반영 등)를 화면이 가려 보여 주는 데 쓴다
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Step(
@@ -40,6 +42,7 @@ public record JobStepsResponseDTO(
             Integer attempt,
             String probe,
             String step,
+            String resource,
             @JsonProperty("error_code") String errorCode,
             Map<String, Object> summary
     ) {}
