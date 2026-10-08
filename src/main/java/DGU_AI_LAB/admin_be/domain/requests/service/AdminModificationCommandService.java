@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.groups.service.GroupOperationService;
+import DGU_AI_LAB.admin_be.domain.portRequests.service.PortOperationService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
@@ -41,6 +42,7 @@ public class AdminModificationCommandService {
     private final UserRepository userRepository;
     private final ChangeRequestRepository changeRequestRepository;
     private final GroupOperationService groupOperationService;
+    private final PortOperationService portOperationService;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -68,6 +70,9 @@ public class AdminModificationCommandService {
      * <p>GROUP 은 AD·계정 원장·떠 있는 컨테이너까지 바꿔야 해서 작업으로 등록만 하고 변경 요청을 반영 중(PROCESSING)
      * 으로 둔 채 돌아온다. 사용자 그룹 기록과 승인 완료(FULFILLED)·안내 메일은 작업이 성공한 뒤
      * {@link GroupOperationService#complete}가 한다. 작업이 실패하면 변경 요청은 승인 대기로 돌아온다.
+     *
+     * <p>PORT 도 같은 흐름이다 — 떠 있는 컨테이너의 포트를 작업으로 바꾸고, 포트 기록·승인 완료·안내 메일은
+     * {@link PortOperationService#complete}가 한다.
      */
     @Transactional
     public void approveModification(Long adminId, ApproveModificationDTO dto) {
@@ -101,6 +106,10 @@ public class AdminModificationCommandService {
 
         if (changeRequest.getChangeType() == ChangeType.GROUP) {
             groupOperationService.startAdd(changeRequest, originalRequest, admin, dto.adminComment());
+            return;
+        }
+        if (changeRequest.getChangeType() == ChangeType.PORT) {
+            portOperationService.start(changeRequest, originalRequest, admin, dto.adminComment());
             return;
         }
 
@@ -137,9 +146,9 @@ public class AdminModificationCommandService {
     // Map으로 등록해두면 새 ChangeType이 추가될 때 이 메서드 자체를 수정하지 않고
     // applier 하나만 더 등록하면 된다 (개방-폐쇄 원칙).
 
-    // GROUP은 작업으로 등록해 반영하므로 이 맵을 거치지 않고 approveModification에서 직접 분기한다
+    // GROUP·PORT는 작업으로 등록해 반영하므로 이 맵을 거치지 않고 approveModification에서 직접 분기한다
     // — 여기 등록하면 죽은 코드가 된다.
-    // RESOURCE_GROUP·CONTAINER_IMAGE·PORT는 DB 값만 바꾸고 떠 있는 Pod에는 반영하지 못해 등록하지 않는다
+    // RESOURCE_GROUP·CONTAINER_IMAGE는 DB 값만 바꾸고 떠 있는 Pod에는 반영하지 못해 등록하지 않는다
     // (SingleChangeRequestDTO.SUPPORTED_TYPES). 예전에 들어온 요청은 UNSUPPORTED_CHANGE_TYPE으로 막히고 거절만 할 수 있다.
     private Map<ChangeType, ChangeApplier> changeAppliers() {
         return Map.of(ChangeType.EXPIRES_AT, this::applyExpiresAtChange);

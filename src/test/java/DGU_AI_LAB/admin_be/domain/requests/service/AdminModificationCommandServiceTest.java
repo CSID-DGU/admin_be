@@ -5,6 +5,7 @@ import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.service.GroupOperationService;
+import DGU_AI_LAB.admin_be.domain.portRequests.service.PortOperationService;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
@@ -73,6 +74,7 @@ class AdminModificationCommandServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private ChangeRequestRepository changeRequestRepository;
     @Mock private GroupOperationService groupOperationService;
+    @Mock private PortOperationService portOperationService;
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private JobClient jobClient;
     @Mock private PlatformTransactionManager transactionManager;
@@ -93,7 +95,7 @@ class AdminModificationCommandServiceTest {
         // @RequiredArgsConstructor 생성자 필드 선언 순서대로 주입
         service = new AdminModificationCommandService(
                 alarmService, requestRepository, userRepository, changeRequestRepository,
-                groupOperationService, new ObjectMapper()
+                groupOperationService, portOperationService, new ObjectMapper()
         );
         // 공유 엔티티 기본 설정
         when(mockUser.getName()).thenReturn("테스트유저");
@@ -278,7 +280,7 @@ class AdminModificationCommandServiceTest {
         }
 
         @ParameterizedTest
-        @EnumSource(value = ChangeType.class, names = {"RESOURCE_GROUP", "CONTAINER_IMAGE", "PORT"})
+        @EnumSource(value = ChangeType.class, names = {"RESOURCE_GROUP", "CONTAINER_IMAGE"})
         @DisplayName("DB만 바뀌고 Pod에 반영되지 않는 종류는 예전에 들어온 요청이라도 승인하지 않고 신청을 건드리지 않는다")
         void approveModification_dbOnlyTypes_areUnsupported(ChangeType type) {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
@@ -320,6 +322,26 @@ class AdminModificationCommandServiceTest {
             verify(mockUser, never()).addGroupIfAbsent(any());
             verify(alarmService, never()).sendGroupAddedEmail(any(), any(), anyList());
             verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
+        }
+
+        @Test
+        @DisplayName("PORT 변경 요청 승인은 반영 작업 등록으로 넘기고, 승인 완료·안내 메일은 작업이 끝난 뒤로 미룬다")
+        void approveModification_port_registersJobInsteadOfApplying() {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            Request originalRequest = buildMockedRequestWithStatus(26L, Status.FULFILLED);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.PORT);
+            when(changeRequest.getRequest()).thenReturn(originalRequest);
+            when(changeRequestRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(changeRequest));
+            when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
+
+            service.approveModification(100L, new ApproveModificationDTO(10L, "포트 변경 승인"));
+
+            verify(portOperationService).start(changeRequest, originalRequest, mockUser, "포트 변경 승인");
+            // 작업이 성공하기 전에는 승인된 것이 아니다 — DB 기록과 안내는 PortOperationService.complete 가 한다.
+            verify(changeRequest, never()).approve(any(), any());
+            verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
+            verify(alarmService, never()).sendExtraPortsChangedEmail(any());
         }
 
         @Test

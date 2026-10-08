@@ -4,6 +4,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.request.GroupChangeRegisterReques
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.HomeDeleteRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.PasswordChangeRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.PortChangeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ProvisionRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
@@ -77,11 +78,22 @@ public interface JobClient {
     Long registerHomeDelete(HomeDeleteRegisterRequestDTO body);
 
     /**
+     * 추가 포트 변경 작업을 등록한다. 실행기는 컨테이너를 다시 만들지 않고 빠진 포트를 닫고 새 포트를 연다.
+     * 이미 맞춰진 포트는 그대로 두므로 실패한 작업은 다시 등록하면 이어서 끝난다.
+     *
+     * @return 등록된 작업 번호. 응답에 없으면 null
+     * @throws BusinessException 같은 번호의 작업이 아직 끝나지 않았거나(409, INVALID_REQUEST_STATUS) 등록이 거절·실패한 경우
+     */
+    Long registerPortChange(PortChangeRegisterRequestDTO body);
+
+    /**
      * 작업 결과를 조회한다. 등록 이력이 없으면 phase가 {@link JobResults#PHASE_NONE}으로 온다.
      *
      * @param kind      {@link JobResults#KIND_PROVISION}·{@link JobResults#KIND_REVOKE}·{@link JobResults#KIND_MIGRATE}·
-     *                  {@link JobResults#KIND_PASSWORD}·{@link JobResults#KIND_GROUP}·{@link JobResults#KIND_HOME}
-     * @param requestId 신청 번호. 비밀번호 교체는 비밀번호 재설정 신청 번호, 그룹 작업은 그룹 작업 번호, 홈 삭제는 홈 정리 번호
+     *                  {@link JobResults#KIND_PASSWORD}·{@link JobResults#KIND_GROUP}·{@link JobResults#KIND_HOME}·
+     *                  {@link JobResults#KIND_PORT}
+     * @param requestId 신청 번호. 비밀번호 교체는 비밀번호 재설정 신청 번호, 그룹 작업은 그룹 작업 번호, 홈 삭제는 홈 정리 번호,
+     *                  포트 변경은 포트 작업 번호
      */
     JobResultResponseDTO getResult(String kind, Long requestId);
 

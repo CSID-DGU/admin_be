@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.dto.request;
 
+import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
@@ -14,6 +15,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -54,11 +56,10 @@ class SingleChangeRequestDTOTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = ChangeType.class, names = {"RESOURCE_GROUP", "CONTAINER_IMAGE", "PORT"})
+    @EnumSource(value = ChangeType.class, names = {"RESOURCE_GROUP", "CONTAINER_IMAGE"})
     @DisplayName("승인해도 떠 있는 Pod에 반영되지 않는 종류는 값이 올바라도 UNSUPPORTED_CHANGE_TYPE으로 거절한다")
     void createValidatedChangeRequest_rejectsTypesThatOnlyChangeDb(ChangeType type) {
-        String validValue = type == ChangeType.PORT ? "[{\"internalPort\":8080,\"usagePurpose\":\"web\"}]" : "2";
-        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(type, validValue, "reason");
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(type, "2", "reason");
 
         assertThatThrownBy(() ->
                 SingleChangeRequestDTO.createValidatedChangeRequest(dto, Request.builder().build(), null, new ObjectMapper()))
@@ -160,7 +161,62 @@ class SingleChangeRequestDTOTest {
                 .thenThrow(new BusinessException("입력값 문제", ErrorCode.INVALID_INPUT_VALUE));
 
         assertThatThrownBy(() ->
-                SingleChangeRequestDTO.toEntity(dto, originalRequest, null, objectMapper))
+                SingleChangeRequestDTO.toEntity(dto, originalRequest, null, List.of(), objectMapper))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    private static PortRequests port(int internalPort, String purpose) {
+        return PortRequests.builder().internalPort(internalPort).usagePurpose(purpose).build();
+    }
+
+    @Test
+    @DisplayName("PORT - 이전 값은 지금 달린 추가 포트이고(noVNC 제외), 새 값은 보낸 목록 그대로 저장한다")
+    void createValidatedChangeRequest_port_storesCurrentAndWantedPorts() {
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(
+                ChangeType.PORT, "[{\"internalPort\":3000,\"usagePurpose\":\"web\"}]", "reason");
+
+        ChangeRequest changeRequest = SingleChangeRequestDTO.createValidatedChangeRequest(
+                dto, Request.builder().build(), null, List.of(port(5000, "api"), port(6080, "novnc")), new ObjectMapper());
+
+        assertThat(changeRequest.getChangeType()).isEqualTo(ChangeType.PORT);
+        assertThat(changeRequest.getOldValue()).isEqualTo("[{\"internalPort\":5000,\"usagePurpose\":\"api\"}]");
+        assertThat(changeRequest.getNewValue()).isEqualTo("[{\"internalPort\":3000,\"usagePurpose\":\"web\"}]");
+    }
+
+    @Test
+    @DisplayName("PORT - 빈 목록은 추가 포트를 모두 빼는 요청이다")
+    void createValidatedChangeRequest_port_emptyListRemovesAll() {
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.PORT, "[]", "reason");
+
+        ChangeRequest changeRequest = SingleChangeRequestDTO.createValidatedChangeRequest(
+                dto, Request.builder().build(), null, List.of(port(5000, "api")), new ObjectMapper());
+
+        assertThat(changeRequest.getNewValue()).isEqualTo("[]");
+    }
+
+    @Test
+    @DisplayName("PORT - 지금 열려 있는 포트와 같으면 받지 않는다")
+    void createValidatedChangeRequest_port_unchanged_throws() {
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(
+                ChangeType.PORT, "[{\"internalPort\":5000,\"usagePurpose\":\"api\"}]", "reason");
+
+        assertThatThrownBy(() -> SingleChangeRequestDTO.createValidatedChangeRequest(
+                dto, Request.builder().build(), null, List.of(port(5000, "api"), port(6080, "novnc")), new ObjectMapper()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    @Test
+    @DisplayName("PORT - 기본 포트는 바꿀 수 없다")
+    void createValidatedChangeRequest_port_protectedPort_throws() {
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(
+                ChangeType.PORT, "[{\"internalPort\":22,\"usagePurpose\":\"ssh2\"}]", "reason");
+
+        assertThatThrownBy(() -> SingleChangeRequestDTO.createValidatedChangeRequest(
+                dto, Request.builder().build(), null, List.of(), new ObjectMapper()))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);

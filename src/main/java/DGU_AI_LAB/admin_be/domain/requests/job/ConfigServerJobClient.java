@@ -4,6 +4,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.request.GroupChangeRegisterReques
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.HomeDeleteRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.PasswordChangeRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.PortChangeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ProvisionRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
@@ -23,7 +24,7 @@ import java.util.Map;
 import java.util.function.BiFunction;
 
 /**
- * config-server의 작업 API(POST /operations/{provision|migrate|revoke|password|group}, GET /operations/{kind}/{신청번호}[/steps])로
+ * config-server의 작업 API(POST /operations/{provision|migrate|revoke|password|group|home|port}, GET /operations/{kind}/{신청번호}[/steps])로
  * {@link JobClient}를 구현한다.
  */
 @Slf4j
@@ -81,6 +82,11 @@ public class ConfigServerJobClient implements JobClient {
     @Override
     public Long registerHomeDelete(HomeDeleteRegisterRequestDTO body) {
         return register("/operations/home", body, body.requestId(), ErrorCode.HOME_DELETE_FAILED);
+    }
+
+    @Override
+    public Long registerPortChange(PortChangeRegisterRequestDTO body) {
+        return register("/operations/port", body, body.requestId(), ErrorCode.PORT_CHANGE_FAILED);
     }
 
     /**
