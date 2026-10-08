@@ -129,6 +129,22 @@ public class RequestCommandService {
         ChangeRequest changeRequest = SingleChangeRequestDTO.createValidatedChangeRequest(
                 dto, originalRequest, requestedBy, portRequestService.getPortRequestsByRequestId(requestId), objectMapper);
         changeRequestRepository.save(changeRequest);
+
+        notifyChangeRequestedAfterCommit(changeRequest, originalRequest, requestedBy);
+    }
+
+    /**
+     * 변경 요청이 들어왔음을 알림 기록(noti) 채널에 남긴다 — 신청서 채널이 아니라 사용자 안내 발송 기록이 쌓이는 곳이다.
+     * 값은 지금(트랜잭션 안에서) 읽고 전송만 커밋 뒤로 미룬다. 알림 실패는 접수를 실패시키지 않는다.
+     */
+    private void notifyChangeRequestedAfterCommit(ChangeRequest changeRequest, Request originalRequest, User requestedBy) {
+        String serverName = originalRequest.getResourceGroup().getServerName();
+        String changeType = changeRequest.getChangeType().label();
+        String name = requestedBy.getName();
+        String username = originalRequest.getUbuntuUsername();
+        AfterCommit.run("변경 요청 접수 알림, 요청 ID " + originalRequest.getRequestId(),
+                () -> alarmService.recordLog("notification.admin.change-request.requested",
+                        serverName, changeType, name, username, changeRequest.getChangeRequestId()));
     }
 
     /**
