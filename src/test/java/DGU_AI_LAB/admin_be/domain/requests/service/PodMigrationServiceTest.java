@@ -471,11 +471,11 @@ class PodMigrationServiceTest {
                 new JobResultResponseDTO("1", "migrate", 9L, "START", null, null, null));
         when(jobClient.getSteps("migrate", 1L)).thenReturn(new JobStepsResponseDTO("1", "migrate", List.of(
                 new JobStepsResponseDTO.Job(9L, null, null, "START", null, List.of(
-                        new JobStepsResponseDTO.Step(null, "SELECT_NODE", "SUCCESS", 1, null, null, null, null),
-                        new JobStepsResponseDTO.Step(null, "COMMIT_IMAGE", "SUCCESS", 1, null, null, null, null),
-                        new JobStepsResponseDTO.Step(null, "CREATE_POD_K8S", "FAIL", 1, null, null, null, null))),
+                        new JobStepsResponseDTO.Step(null, "SELECT_NODE", "SUCCESS", 1, null, null, null, null, null),
+                        new JobStepsResponseDTO.Step(null, "COMMIT_IMAGE", "SUCCESS", 1, null, null, null, null, null),
+                        new JobStepsResponseDTO.Step(null, "CREATE_POD_K8S", "FAIL", 1, null, null, null, null, null))),
                 new JobStepsResponseDTO.Job(8L, null, null, "SUCCESS", null, List.of(
-                        new JobStepsResponseDTO.Step(null, "DELETE_POD_K8S", "SUCCESS", 1, null, null, null, null))))));
+                        new JobStepsResponseDTO.Step(null, "DELETE_POD_K8S", "SUCCESS", 1, null, null, null, null, null))))));
 
         assertThat(service.getLatestMigration(1L).completedSteps()).containsExactly("SELECT_NODE", "COMMIT_IMAGE");
     }
