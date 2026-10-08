@@ -60,7 +60,7 @@ class RequestDtoValidationTest {
             return SaveRequestRequestDTO.builder()
                     .resourceGroupId(1)
                     .imageId(1L)
-                    .usagePurpose("가".repeat(50))
+                    .usagePurpose("가".repeat(200))
                     .formAnswers(Map.of("q", "a"))
                     .expiresAt(LocalDateTime.now().plusDays(30))
                     .ubuntuGids(Set.of(20004L))
@@ -85,10 +85,10 @@ class RequestDtoValidationTest {
         }
 
         @Test
-        @DisplayName("사용 목적이 50자보다 짧으면 거절한다")
-        void usagePurpose_under50_isRejected() {
-            assertThat(violatedPaths(valid().usagePurpose("가".repeat(49)).build())).contains("usagePurpose");
-            assertThat(violatedPaths(valid().usagePurpose("가".repeat(50)).build())).doesNotContain("usagePurpose");
+        @DisplayName("사용 목적이 200자보다 짧으면 거절한다")
+        void usagePurpose_under200_isRejected() {
+            assertThat(violatedPaths(valid().usagePurpose("가".repeat(199)).build())).contains("usagePurpose");
+            assertThat(violatedPaths(valid().usagePurpose("가".repeat(200)).build())).doesNotContain("usagePurpose");
         }
 
         @Test
