@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.warnings.service.SuspensionGuard;
 import DGU_AI_LAB.admin_be.support.Alerts;
 import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
@@ -58,6 +59,7 @@ class PodMigrationServiceTest {
     @Mock private TransactionStatus transactionStatus;
     @Mock private AlarmService alarmService;
     @Mock private ContainerRestartThrottle restartThrottle;
+    @Mock private SuspensionGuard suspensionGuard;
     @Mock private Request request;
     @Mock private User user;
     @Mock private ResourceGroup resourceGroup;
@@ -68,7 +70,7 @@ class PodMigrationServiceTest {
     void setUp() {
         when(request.getJobId()).thenReturn(10L); // result()의 작업 번호와 같다
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
-        service = new PodMigrationService(requestRepository, podExternalPortRepository, nodeRepository, jobClient, transactionManager, alarmService,
+        service = new PodMigrationService(requestRepository, suspensionGuard, podExternalPortRepository, nodeRepository, jobClient, transactionManager, alarmService,
                 restartThrottle, new InMemoryAlertDeduplicator());
         when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of(node("FARM2"), node("FARM7")));
         when(request.getUbuntuUsername()).thenReturn("testuser");
@@ -504,5 +506,42 @@ class PodMigrationServiceTest {
         assertThat(result.status()).isEqualTo("migrated");
         assertThat(result.fromNode()).isEqualTo("farm2");
         assertThat(result.toNode()).isEqualTo("farm7");
+    }
+
+    @Test
+    @DisplayName("이용 정지 중인 사용자는 본인 컨테이너를 다시 만들 수 없다 — 다시 만들면 접속 포트가 새로 열린다")
+    void ownRestartIsRefusedWhileSuspended() {
+        when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
+        when(user.getUserId()).thenReturn(7L);
+        doThrow(new BusinessException(ErrorCode.USER_SUSPENDED)).when(suspensionGuard).requireNotSuspended(7L);
+
+        assertThatThrownBy(() -> service.startOwnRestart(7L, 1L, null))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.USER_SUSPENDED);
+        verify(request, never()).beginMigration();
+        verifyNoInteractions(restartThrottle, jobClient);
+    }
+
+    @Test
+    @DisplayName("관리자가 이용 정지 중인 사용자의 컨테이너를 다시 만들면 접속 포트를 막힌 채로 만들게 한다")
+    void adminRestartOfSuspendedUserKeepsAccessBlocked() {
+        when(user.getUserId()).thenReturn(7L);
+        when(suspensionGuard.isSuspended(7L)).thenReturn(true);
+
+        service.startRestart(1L, new RestartPodRequestDTO(false));
+
+        verify(jobClient).registerMigrate(
+                MigrateRegisterRequestDTO.restart(1L, "ailab-testuser-old", "testuser", false).accessBlocked(true));
+    }
+
+    @Test
+    @DisplayName("옮긴 뒤에는 새 접속 포트에 이용 정지가 걸려 있는지 다시 맞춘다")
+    void completedMigrationReblocksNewPorts() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        when(user.getUserId()).thenReturn(7L);
+
+        service.completeMigrationJob(1L, migrated(null));
+
+        verify(suspensionGuard).reblockAfterPortsCreated(7L);
     }
 }

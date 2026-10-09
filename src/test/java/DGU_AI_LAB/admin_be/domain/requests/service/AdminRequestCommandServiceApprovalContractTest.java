@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.warnings.service.SuspensionGuard;
 import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
@@ -88,6 +89,8 @@ class AdminRequestCommandServiceApprovalContractTest {
     @Mock private ResourceGroup mockRg;
     @Mock private User mockUser;
 
+    @Mock private SuspensionGuard suspensionGuard;
+
     private AdminRequestCommandService service;
 
     @BeforeEach
@@ -95,7 +98,7 @@ class AdminRequestCommandServiceApprovalContractTest {
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
 
         service = new AdminRequestCommandService(
-                alarmService, requestRepository, userRepository, passwordResetRequestRepository,
+                alarmService, requestRepository, userRepository, suspensionGuard, passwordResetRequestRepository,
                 containerImageRepository,
                 resourceGroupRepository, podExternalPortRepository, jobClient,
                 new PendingGroupService(groupRepository, requestGroupRepository, mock(EntityManager.class)),

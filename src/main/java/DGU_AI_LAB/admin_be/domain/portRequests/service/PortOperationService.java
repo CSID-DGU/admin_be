@@ -21,6 +21,7 @@ import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.domain.warnings.service.SuspensionGuard;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
@@ -65,6 +66,7 @@ public class PortOperationService {
     private final RequestRepository requestRepository;
     private final ChangeRequestRepository changeRequestRepository;
     private final JobClient jobClient;
+    private final SuspensionGuard suspensionGuard;
     private final AlarmService alarmService;
     private final ObjectMapper objectMapper;
     private final PlatformTransactionManager transactionManager;
@@ -92,7 +94,8 @@ public class PortOperationService {
                 .toList();
         PortOperation operation = operationRepository.save(new PortOperation(changeRequest, originalRequest, admin));
         operation.registered(jobClient.registerPortChange(new PortChangeRegisterRequestDTO(
-                operation.getPortOperationId(), originalRequest.getUbuntuUsername(), originalRequest.getPodName(), ports)));
+                operation.getPortOperationId(), originalRequest.getUbuntuUsername(), originalRequest.getPodName(), ports,
+                suspensionGuard.isSuspended(originalRequest.getUser().getUserId()) ? Boolean.TRUE : null)));
         changeRequest.startProcessing(admin, adminComment);
         log.info("[portOperation] operationId={} 포트 변경 등록: changeRequestId={}, pod={}",
                 operation.getPortOperationId(), changeRequest.getChangeRequestId(), originalRequest.getPodName());
@@ -100,11 +103,13 @@ public class PortOperationService {
 
     /** 작업이 성공했다. 결과를 DB 에 반영한다. 이미 끝난 작업이면 아무것도 하지 않는다. */
     public void complete(Long operationId, JobResultResponseDTO.Result result) {
+        final Long[] ownerId = {null};
         AppliedNotice applied = inTransaction(() -> {
             PortOperation operation = lock(operationId);
             if (!operation.isProcessing()) {
                 return null;
             }
+            ownerId[0] = operation.getRequest().getUser().getUserId();
             ChangeRequest changeRequest = lockChangeRequest(operation);
             Request request = requestRepository.findByIdForUpdate(operation.getRequest().getRequestId())
                     .orElseThrow(() -> new EntityNotFoundException(ErrorCode.RESOURCE_NOT_FOUND));
@@ -130,6 +135,7 @@ public class PortOperationService {
             return new AppliedNotice(request, ChangeRequestDecision.of(changeRequest));
         });
         log.info("[portOperation] operationId={} 작업 성공 반영", operationId);
+        reblock(ownerId[0]);
         if (applied != null) {
             AfterCommit.run("추가 포트 변경 안내 메일·채널 알림, 요청 ID " + applied.request().getRequestId(), () -> {
                 alarmService.sendChangeRequestDecidedNotification(applied.decision());
@@ -143,11 +149,13 @@ public class PortOperationService {
      * 이어서 끝나므로, 변경 요청을 승인 대기로 되돌려 다시 승인하거나 거절할 수 있게 한다.
      */
     public void fail(Long operationId, String errorCode) {
+        final Long[] ownerId = {null};
         FailureNotice notice = inTransaction(() -> {
             PortOperation operation = lock(operationId);
             if (!operation.isProcessing()) {
                 return null;
             }
+            ownerId[0] = operation.getRequest().getUser().getUserId();
             operation.markFailed(truncate(errorCode));
             ChangeRequest changeRequest = lockChangeRequest(operation);
             if (changeRequest.getStatus() != Status.PROCESSING) {
@@ -159,9 +167,20 @@ public class PortOperationService {
                     request.getResourceGroup().getServerName(), request.getUbuntuUsername());
         });
         log.error("[portOperation] operationId={} 작업 실패: error={}", operationId, errorCode);
+        reblock(ownerId[0]);
         if (notice != null) {
             alarmService.alertNeedsAction("notification.admin.port.change-failed",
                     notice.serverName(), notice.changeRequestId(), notice.username(), errorCode);
+        }
+    }
+
+    /**
+     * 작업이 도는 사이 이용 정지가 시작됐으면 새 포트는 열린 채로 만들어졌다. 실패한 작업도 포트를 만들었을 수 있어
+     * 결과와 상관없이 작업이 끝날 때마다 부른다.
+     */
+    private void reblock(Long ownerId) {
+        if (ownerId != null) {
+            suspensionGuard.reblockAfterPortsCreated(ownerId);
         }
     }
 

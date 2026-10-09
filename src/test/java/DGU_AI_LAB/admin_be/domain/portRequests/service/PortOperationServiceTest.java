@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.portRequests.service;
 
+import DGU_AI_LAB.admin_be.domain.warnings.service.SuspensionGuard;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
@@ -58,6 +59,7 @@ class PortOperationServiceTest {
     private static final Long REQUEST_ID = 42L;
     private static final Long CHANGE_REQUEST_ID = 9L;
     private static final Long OPERATION_ID = 7L;
+    private static final Long OWNER_ID = 5L;
     private static final Long JOB_ID = 77L;
     private static final String POD = "ailab-alice-7f3a9c21";
 
@@ -67,6 +69,7 @@ class PortOperationServiceTest {
     @Mock private RequestRepository requestRepository;
     @Mock private ChangeRequestRepository changeRequestRepository;
     @Mock private JobClient jobClient;
+    @Mock private SuspensionGuard suspensionGuard;
     @Mock private AlarmService alarmService;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
@@ -82,10 +85,11 @@ class PortOperationServiceTest {
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         service = new PortOperationService(operationRepository, portRequestRepository, podExternalPortRepository,
-                requestRepository, changeRequestRepository, jobClient, alarmService, new ObjectMapper(),
+                requestRepository, changeRequestRepository, jobClient, suspensionGuard, alarmService, new ObjectMapper(),
                 transactionManager);
 
         owner = User.builder().email("alice@dgu.ac.kr").name("alice").ubuntuUsername("alice").build();
+        ReflectionTestUtils.setField(owner, "userId", OWNER_ID);
         admin = User.builder().email("admin@dgu.ac.kr").name("admin").build();
         when(resourceGroup.getServerName()).thenReturn("FARM");
         when(request.getRequestId()).thenReturn(REQUEST_ID);
@@ -142,7 +146,7 @@ class PortOperationServiceTest {
         ArgumentCaptor<PortChangeRegisterRequestDTO> body = ArgumentCaptor.forClass(PortChangeRegisterRequestDTO.class);
         verify(jobClient).registerPortChange(body.capture());
         assertThat(body.getValue()).isEqualTo(new PortChangeRegisterRequestDTO(OPERATION_ID, "alice", POD,
-                List.of(new PortChangeRegisterRequestDTO.Port(3000, "web"))));
+                List.of(new PortChangeRegisterRequestDTO.Port(3000, "web")), null));
         assertThat(changeRequest.getStatus()).isEqualTo(Status.PROCESSING);
         assertThat(changeRequest.getAdminComment()).isEqualTo("승인합니다");
         verifyNoInteractions(portRequestRepository, podExternalPortRepository);
@@ -195,6 +199,8 @@ class PortOperationServiceTest {
         verify(podExternalPortRepository, times(3)).save(external.capture());
         assertThat(external.getAllValues()).extracting(PodExternalPort::getExternalPort)
                 .containsExactly(30001, 30002, 30100);
+        // 작업과 겹쳐 시작된 이용 정지가 새 포트에도 걸리게 한다.
+        verify(suspensionGuard).reblockAfterPortsCreated(OWNER_ID);
 
         assertThat(changeRequest.getStatus()).isEqualTo(Status.FULFILLED);
         assertThat(operation.getStatus()).isEqualTo(PortOperationStatus.APPLIED);
@@ -261,6 +267,8 @@ class PortOperationServiceTest {
         PortOperation operation = processing();
 
         service.fail(OPERATION_ID, "POD_NOT_FOUND");
+        // 실패한 작업도 포트를 만들었을 수 있다.
+        verify(suspensionGuard).reblockAfterPortsCreated(OWNER_ID);
 
         assertThat(operation.getStatus()).isEqualTo(PortOperationStatus.FAILED);
         assertThat(operation.getErrorCode()).isEqualTo("POD_NOT_FOUND");
@@ -288,5 +296,18 @@ class PortOperationServiceTest {
     @DisplayName("PortOperation 은 mock 이 아닌 신청의 컨테이너 이름을 등록 시점 값으로 담는다")
     void operationKeepsThePodNameAtRegistration() {
         assertThat(new PortOperation(changeRequest, request, mock(User.class)).getPodName()).isEqualTo(POD);
+    }
+
+    @Test
+    @DisplayName("이용 정지 중인 사용자의 포트 변경은 새 포트를 막힌 채로 열게 한다")
+    void startForSuspendedUserKeepsNewPortsBlocked() {
+        ReflectionTestUtils.setField(owner, "userId", 5L);
+        when(suspensionGuard.isSuspended(5L)).thenReturn(true);
+
+        service.start(changeRequest, request, admin, "승인합니다");
+
+        ArgumentCaptor<PortChangeRegisterRequestDTO> body = ArgumentCaptor.forClass(PortChangeRegisterRequestDTO.class);
+        verify(jobClient).registerPortChange(body.capture());
+        assertThat(body.getValue().accessBlocked()).isTrue();
     }
 }

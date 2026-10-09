@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.job;
 
+import DGU_AI_LAB.admin_be.domain.requests.dto.request.AccessChangeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.GroupChangeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.HomeDeleteRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigrateRegisterRequestDTO;
@@ -87,13 +88,22 @@ public interface JobClient {
     Long registerPortChange(PortChangeRegisterRequestDTO body);
 
     /**
+     * 계정의 접속 차단·해제 작업을 등록한다. 실행기는 그 계정의 모든 컨테이너의 모든 접속 포트를 막거나 풀며,
+     * 컨테이너와 외부 포트 배정은 건드리지 않는다. 이미 맞춰진 포트는 그대로 두므로 다시 등록해도 안전하다.
+     *
+     * @return 등록된 작업 번호. 응답에 없으면 null
+     * @throws BusinessException 같은 번호의 작업이 아직 끝나지 않았거나(409, INVALID_REQUEST_STATUS) 등록이 실패한 경우
+     */
+    Long registerAccessChange(AccessChangeRegisterRequestDTO body);
+
+    /**
      * 작업 결과를 조회한다. 등록 이력이 없으면 phase가 {@link JobResults#PHASE_NONE}으로 온다.
      *
      * @param kind      {@link JobResults#KIND_PROVISION}·{@link JobResults#KIND_REVOKE}·{@link JobResults#KIND_MIGRATE}·
      *                  {@link JobResults#KIND_PASSWORD}·{@link JobResults#KIND_GROUP}·{@link JobResults#KIND_HOME}·
-     *                  {@link JobResults#KIND_PORT}
+     *                  {@link JobResults#KIND_PORT}·{@link JobResults#KIND_ACCESS}
      * @param requestId 신청 번호. 비밀번호 교체는 비밀번호 재설정 신청 번호, 그룹 작업은 그룹 작업 번호, 홈 삭제는 홈 정리 번호,
-     *                  포트 변경은 포트 작업 번호
+     *                  포트 변경은 포트 작업 번호, 접속 차단·해제는 접속 작업 번호
      */
     JobResultResponseDTO getResult(String kind, Long requestId);
 

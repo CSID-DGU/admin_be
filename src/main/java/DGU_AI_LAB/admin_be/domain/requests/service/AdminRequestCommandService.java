@@ -25,6 +25,7 @@ import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupReposit
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.PasswordResetRequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
+import DGU_AI_LAB.admin_be.domain.warnings.service.SuspensionGuard;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.util.AfterCommit;
@@ -48,6 +49,7 @@ public class AdminRequestCommandService {
 
     private final RequestRepository requestRepository;
     private final UserRepository userRepository;
+    private final SuspensionGuard suspensionGuard;
     private final PasswordResetRequestRepository passwordResetRequestRepository;
     private final ContainerImageRepository containerImageRepository;
     private final ResourceGroupRepository resourceGroupRepository;
@@ -133,6 +135,8 @@ public class AdminRequestCommandService {
             // 계정이 만들어질 수 있다(재설정 승인은 PROCESSING 신청이 있으면 거절한다).
             User owner = userRepository.findByIdForUpdate(req.getUser().getUserId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+            // 이용 정지 중에는 새 컨테이너를 만들지 않는다. 신청은 대기로 남아 정지가 끝난 뒤 승인할 수 있다.
+            suspensionGuard.requireNotSuspendedLocked(owner.getUserId());
             // 계정 회수가 도는 중이면 새 컨테이너가 곧 지워질 계정을 쓰게 된다. 회수가 끝난 뒤 승인하면 되살린다.
             if (owner.isReleasingUbuntuAccount()) {
                 throw new BusinessException(ErrorCode.UBUNTU_ACCOUNT_RELEASING);
@@ -369,6 +373,8 @@ public class AdminRequestCommandService {
         if (savedRequest == null) {
             return;
         }
+        // 승인과 경고 부여가 겹쳐 작업이 도는 사이 이용 정지가 시작됐으면 새 컨테이너의 접속 포트는 열린 채로 만들어졌다.
+        suspensionGuard.reblockAfterPortsCreated(savedRequest.getUser().getUserId());
         String sshPort = externalPortOf(made, "ssh");
         String jupyterPort = externalPortOf(made, "jupyter");
         AfterCommit.run("컨테이너 배정 안내 메일, 요청 ID " + requestId,

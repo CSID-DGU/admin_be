@@ -55,6 +55,8 @@ public final class JobResults {
     public static final String KIND_HOME = "home";
     /** 떠 있는 컨테이너의 추가 포트 변경. 신청 번호 자리에 포트 작업 번호를 쓴다. */
     public static final String KIND_PORT = "port";
+    /** 계정의 접속 차단·해제. 신청 번호 자리에 접속 작업 번호를 쓴다. */
+    public static final String KIND_ACCESS = "access";
 
     /**
      * 작업 번호가 아직 없는 신청을 기다리는 시간. 등록은 몇 초면 끝나므로, 이보다 오래 번호가 없으면 등록 뒤 기록

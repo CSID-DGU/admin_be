@@ -18,6 +18,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.warnings.service.SuspensionGuard;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.util.AfterCommit;
@@ -52,6 +53,7 @@ import java.util.stream.Collectors;
 public class PodMigrationService {
 
     private final RequestRepository requestRepository;
+    private final SuspensionGuard suspensionGuard;
     private final PodExternalPortRepository podExternalPortRepository;
     private final NodeRepository nodeRepository;
     private final JobClient jobClient;
@@ -119,6 +121,7 @@ public class PodMigrationService {
         // (잠금 안에서 다시 확인한다).
         requireOwner(requestRepository.findById(requestId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND)), userId);
+        suspensionGuard.requireNotSuspended(userId);
         start(requestId, req -> requireOwner(req, userId), req -> restartThrottle.acquire(userId),
                 req -> restartJob(req, dto));
     }
@@ -151,7 +154,8 @@ public class PodMigrationService {
             authorize.accept(req);
             req.beginMigration();
             admit.accept(req);
-            return job.apply(req);
+            // 이용 정지 중인 사용자의 새 Pod 는 접속 포트를 막힌 채로 만든다(관리자가 옮기거나 다시 만드는 경우).
+            return job.apply(req).accessBlocked(suspensionGuard.isSuspended(req.getUser().getUserId()));
         });
         Long jobId = registerMigration(body);
         // 결과 폴러가 이 번호의 결과만 반영하게 남긴다. 그 사이 끝났거나 되돌려졌으면 건드리지 않는다.
@@ -272,6 +276,7 @@ public class PodMigrationService {
             return;
         }
         final boolean[] applied = {false};
+        final Long[] ownerId = {null};
         final Request[] portsChangedRequest = {null};
         try {
             new TransactionTemplate(transactionManager).execute(status -> {
@@ -303,6 +308,7 @@ public class PodMigrationService {
                     }
                 }
                 req.endMigration();
+                ownerId[0] = req.getUser().getUserId();
                 applied[0] = true;
                 return null;
             });
@@ -316,6 +322,7 @@ public class PodMigrationService {
         if (made != null && made.isMigrated()) {
             log.info("Pod 마이그레이션 완료: requestId={}, from={}, to={}, newPod={}",
                     requestId, made.fromNode(), made.toNode(), made.podName());
+            suspensionGuard.reblockAfterPortsCreated(ownerId[0]);
             if ("failed".equals(made.oldPodCleanup())) {
                 alert(null, "notification.admin.migration.old-pod-cleanup-failed",
                         requestId, made.oldPodName(), made.fromNode());

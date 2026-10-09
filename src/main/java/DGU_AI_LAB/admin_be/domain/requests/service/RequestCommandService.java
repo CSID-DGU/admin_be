@@ -26,6 +26,7 @@ import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
 import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
+import DGU_AI_LAB.admin_be.domain.warnings.service.SuspensionGuard;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -48,6 +49,7 @@ public class RequestCommandService {
     private final ObjectMapper objectMapper;
     private final RequestRepository requestRepository;
     private final UserRepository userRepository;
+    private final SuspensionGuard suspensionGuard;
     private final ContainerImageRepository containerImageRepository;
     private final GroupRepository groupRepository;
     private final ResourceGroupRepository resourceGroupRepository;
@@ -144,6 +146,7 @@ public class RequestCommandService {
         if (!originalRequest.getUser().getUserId().equals(userId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN_REQUEST);
         }
+        suspensionGuard.requireNotSuspended(userId);
 
         // FULFILLED 상태에서만 변경 요청 가능
         if (originalRequest.getStatus() != Status.FULFILLED) {
@@ -212,6 +215,7 @@ public class RequestCommandService {
         // 자체도 같은 사용자 기준으로 일관되게 잠그고 시작한다.
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        suspensionGuard.requireNotSuspendedLocked(userId);
 
         ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
