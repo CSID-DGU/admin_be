@@ -23,6 +23,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
+import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestDecision;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -121,6 +122,7 @@ class AdminModificationCommandServiceTest {
         @DisplayName("PENDING 상태 변경 요청을 거절하면 changeRequest.deny()가 호출된다")
         void rejectModification_success_whenStatusIsPending() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getRequestedBy()).thenReturn(mock(User.class));
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
             when(changeRequestRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
@@ -174,6 +176,7 @@ class AdminModificationCommandServiceTest {
         @DisplayName("변경 요청 거절 성공 시 alarmService.sendModificationRejectedEmail이 호출된다")
         void rejectModification_sendsRejectionEmail_onSuccess() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getRequestedBy()).thenReturn(mock(User.class));
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
             when(changeRequestRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
@@ -182,12 +185,15 @@ class AdminModificationCommandServiceTest {
             service.rejectModification(100L, dto);
 
             verify(alarmService).sendModificationRejectedEmail(changeRequest, "변경 사유 불충분");
+            // 채널에 남은 접수 알림에도 결과를 댓글로 남긴다.
+            verify(alarmService).sendChangeRequestDecidedNotification(any(ChangeRequestDecision.class));
         }
 
         @Test
         @DisplayName("거절 사유가 이메일 발송 메서드에 그대로 전달된다")
         void rejectModification_passesAdminCommentToEmail() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getRequestedBy()).thenReturn(mock(User.class));
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
             when(changeRequestRepository.findByIdForUpdate(11L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
@@ -209,12 +215,14 @@ class AdminModificationCommandServiceTest {
                     .isInstanceOf(BusinessException.class);
 
             verify(alarmService, never()).sendModificationRejectedEmail(any(), anyString());
+            verify(alarmService, never()).sendChangeRequestDecidedNotification(any());
         }
 
         @Test
         @DisplayName("이메일 발송 실패 시 예외가 전파되지 않고 deny()는 이미 호출된 상태다")
         void rejectModification_emailFailure_doesNotPropagateException() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getRequestedBy()).thenReturn(mock(User.class));
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
             when(changeRequestRepository.findByIdForUpdate(13L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
@@ -231,6 +239,7 @@ class AdminModificationCommandServiceTest {
         @DisplayName("이메일 발송 시 RuntimeException 발생해도 deny()는 호출되고 정상 종료된다")
         void rejectModification_emailThrowsRuntimeException_denyStillCalled() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getRequestedBy()).thenReturn(mock(User.class));
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
             when(changeRequestRepository.findByIdForUpdate(14L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
@@ -258,6 +267,7 @@ class AdminModificationCommandServiceTest {
             LocalDateTime newExpiry = LocalDateTime.now().plusYears(1).withNano(0);
 
             ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getRequestedBy()).thenReturn(mock(User.class));
             Request originalRequest = buildMockedRequestWithStatus(21L, Status.FULFILLED);
             when(originalRequest.getExpiresAt()).thenReturn(oldExpiry);
             when(changeRequest.getStatus()).thenReturn(Status.PENDING);
@@ -275,6 +285,7 @@ class AdminModificationCommandServiceTest {
             assertThat(captor.getValue()).isEqualTo(newExpiry);
             verify(changeRequest).approve(mockUser, "기간 연장 승인");
             verify(alarmService).sendContainerExtendedEmail(eq(originalRequest), eq(oldExpiry), eq(newExpiry));
+            verify(alarmService).sendChangeRequestDecidedNotification(any(ChangeRequestDecision.class));
             // EXPIRES_AT은 전용 메일(sendContainerExtendedEmail)만 보내고, 공용 승인 메일은 중복 발송하지 않는다
             verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
         }

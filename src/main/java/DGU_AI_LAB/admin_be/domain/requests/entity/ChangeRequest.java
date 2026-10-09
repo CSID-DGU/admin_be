@@ -55,6 +55,13 @@ public class ChangeRequest extends BaseTimeEntity {
     @Column(name = "reviewed_at")
     private LocalDateTime reviewedAt;
 
+    /**
+     * 채널에 올라간 이 변경 요청 접수 알림의 Slack 식별자(ts). 결과(승인 완료·거절)를 그 메시지의 스레드 댓글로 다는 데 쓴다.
+     * 전송 뒤에 따로 채워지므로(ChangeRequestRepository#updateSlackMessageTs) 비어 있을 수 있다.
+     */
+    @Column(name = "slack_message_ts", length = 32)
+    private String slackMessageTs;
+
     @Builder
     public ChangeRequest(Request request, ChangeType changeType, String oldValue, String newValue, String reason, User requestedBy) {
         this.request = request;

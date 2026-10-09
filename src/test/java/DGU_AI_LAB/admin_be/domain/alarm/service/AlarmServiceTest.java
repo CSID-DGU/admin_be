@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.alarm.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestDecision;
 import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestNotice;
 import DGU_AI_LAB.admin_be.domain.alarm.dto.SlackMessageDto;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
@@ -343,6 +344,8 @@ class AlarmServiceTest {
             assertThat(dto.getChannelId()).isEqualTo(FARM_REQUEST_CHANNEL_ID);
             // 신청서의 스레드 식별자를 적는 자리에 변경 요청을 적지 않는다.
             assertThat(dto.getRequestId()).isNull();
+            // 결과를 스레드 댓글로 달 수 있게, 올라간 메시지의 식별자는 이 변경 요청에 적는다.
+            assertThat(dto.getChangeRequestId()).isEqualTo(7L);
         }
 
         @ParameterizedTest
@@ -888,6 +891,130 @@ class AlarmServiceTest {
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
             assertThat(captor.getValue().getWebhookUrl()).isEqualTo(NOTI_WEBHOOK);
+        }
+    }
+
+    @Nested
+    @DisplayName("결과 알림 — 접수 알림의 스레드 댓글")
+    class DecisionReplies {
+
+        private static final String TS = "1728200000.000100";
+
+        private void useRealMessages() {
+            ResourceBundleMessageSource source = new ResourceBundleMessageSource();
+            source.setBasename("messages");
+            source.setDefaultEncoding("UTF-8");
+            ReflectionTestUtils.setField(alarmService, "messageUtils", new MessageUtils(source));
+        }
+
+        private SlackMessageDto queued() {
+            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
+            verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
+            return captor.getValue();
+        }
+
+        private ChangeRequestDecision decision(ChangeType type, String serverName, boolean approved, String comment, String ts) {
+            return new ChangeRequestDecision(7L, type, "홍길동", "hong@dgu.ac.kr", serverName, approved, comment, ts);
+        }
+
+        @Test
+        @DisplayName("승인된 사용 기간 연장은 접수 알림과 같은 서버별 신청서 채널에, 접수 알림의 스레드 댓글로 단다")
+        void approvedExpiry_repliesInRequestChannelThread() {
+            useRealMessages();
+
+            alarmService.sendChangeRequestDecidedNotification(decision(ChangeType.EXPIRES_AT, "FARM", true, "확인했습니다", TS));
+
+            SlackMessageDto dto = queued();
+            assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.CHANNEL);
+            assertThat(dto.getChannelId()).isEqualTo(FARM_REQUEST_CHANNEL_ID);
+            assertThat(dto.getThreadTs()).isEqualTo(TS);
+            assertThat(dto.getWebhookUrl()).isEqualTo(FARM_REQUEST_WEBHOOK);
+            // 댓글의 식별자는 어디에도 적지 않는다 — 접수 알림의 식별자를 덮어쓰면 안 된다.
+            assertThat(dto.getChangeRequestId()).isNull();
+            assertThat(dto.getMessage()).isEqualTo("*[승인] #7 · 사용 기간 연장 · 홍길동*\n\n• *메모:* 확인했습니다");
+        }
+
+        @Test
+        @DisplayName("거절된 공유 그룹 추가는 알림 기록 채널의 접수 알림에 거절 사유와 함께 댓글로 단다")
+        void rejectedGroup_repliesInNotiChannelThread() {
+            useRealMessages();
+            ReflectionTestUtils.setField(alarmService, "notiChannelId", NOTI_CHANNEL_ID);
+
+            alarmService.sendChangeRequestDecidedNotification(decision(ChangeType.GROUP, "FARM", false, "<!channel> 대상 아님", TS));
+
+            SlackMessageDto dto = queued();
+            assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.CHANNEL);
+            assertThat(dto.getChannelId()).isEqualTo(NOTI_CHANNEL_ID);
+            assertThat(dto.getThreadTs()).isEqualTo(TS);
+            assertThat(dto.getMessage()).contains("*[거절] #7 · ", "• *사유:* &lt;!channel&gt; 대상 아님");
+        }
+
+        @Test
+        @DisplayName("접수 알림의 식별자를 모르면 같은 채널에 일반 메시지(webhook)로 보내고, 메모가 없으면 없음으로 적는다")
+        void goesByWebhook_whenMessageUnknown() {
+            useRealMessages();
+
+            alarmService.sendChangeRequestDecidedNotification(decision(ChangeType.PASSWORD, null, true, null, null));
+
+            SlackMessageDto dto = queued();
+            assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.WEBHOOK);
+            assertThat(dto.getWebhookUrl()).isEqualTo(NOTI_WEBHOOK);
+            assertThat(dto.isBlockLayout()).isTrue();
+            assertThat(dto.getMessage()).contains("#7 · 비밀번호 변경", "• *메모:* 없음");
+        }
+
+        @Test
+        @DisplayName("테스트용 계정의 사용 기간 연장 결과는 접수 알림과 같이 알림 기록 채널로 간다")
+        void testAccountExpiry_staysInNotiChannel() {
+            useRealMessages();
+
+            alarmService.sendChangeRequestDecidedNotification(new ChangeRequestDecision(7L, ChangeType.EXPIRES_AT,
+                    "시험", "tester@e2e.local", "FARM", true, "e2e", null));
+
+            assertThat(queued().getWebhookUrl()).isEqualTo(NOTI_WEBHOOK);
+        }
+
+        @Test
+        @DisplayName("거절한 신청은 신청 번호·서버·이름과 거절 사유만 짧게 적어 그 신청서의 스레드 댓글로 단다")
+        void rejectedRequest_repliesInThread() {
+            useRealMessages();
+            Request request = mockRequest("홍길동", "hong@dgu.ac.kr", "FARM");
+            when(request.getRequestId()).thenReturn(42L);
+            when(request.getSlackMessageTs()).thenReturn(TS);
+
+            alarmService.sendRequestRejectedNotification(request, "사용 목적이 불분명합니다");
+
+            SlackMessageDto dto = queued();
+            assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.CHANNEL);
+            assertThat(dto.getChannelId()).isEqualTo(FARM_REQUEST_CHANNEL_ID);
+            assertThat(dto.getThreadTs()).isEqualTo(TS);
+            assertThat(dto.getRequestId()).isNull();
+            assertThat(dto.getMessage()).isEqualTo("*[거절] #42 · FARM · 홍길동*\n\n• *사유:* 사용 목적이 불분명합니다");
+        }
+
+        @Test
+        @DisplayName("신청서 메시지 식별자를 모르면 거절 알림은 신청서 채널에 일반 메시지(webhook)로 간다")
+        void rejectedRequest_goesByWebhook_whenMessageUnknown() {
+            useRealMessages();
+            Request request = mockRequest("홍길동", "hong@dgu.ac.kr", "FARM");
+            when(request.getRequestId()).thenReturn(42L);
+
+            alarmService.sendRequestRejectedNotification(request, null);
+
+            SlackMessageDto dto = queued();
+            assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.WEBHOOK);
+            assertThat(dto.getWebhookUrl()).isEqualTo(FARM_REQUEST_WEBHOOK);
+            assertThat(dto.getMessage()).contains("• *사유:* 없음");
+        }
+
+        @Test
+        @DisplayName("알림을 만들다 실패해도 예외를 밖으로 내지 않는다 — 승인·거절 처리는 이미 끝났다")
+        void swallowsFailure() {
+            when(messageUtils.get(anyString(), any(Object[].class))).thenThrow(new RuntimeException("문구 없음"));
+
+            assertThatCode(() -> alarmService.sendChangeRequestDecidedNotification(
+                    decision(ChangeType.PORT, "FARM", true, "확인", TS))).doesNotThrowAnyException();
+            verify(listOperations, never()).rightPush(anyString(), any());
         }
     }
 

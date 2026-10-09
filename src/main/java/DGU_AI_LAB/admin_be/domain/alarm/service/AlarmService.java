@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
+import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestDecision;
 import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestNotice;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
@@ -39,7 +40,8 @@ import org.springframework.stereotype.Service;
  * <p>어디로 보낼지는 알림의 성격으로만 정한다. 호출부는 채널을 고르지 않고 아래 넷 중 하나를 부른다.
  * <ul>
  *   <li>결정 요청(승인·거절이 필요한 신청) → 신청서 채널: {@link #sendNewRequestNotification},
- *       그 신청의 후속 변화는 신청서 메시지의 스레드 댓글: {@link #prepareRequestCancelledNotification}</li>
+ *       그 신청의 후속 변화(취소·거절·생성 완료, 변경 요청의 승인 완료·거절)는 접수 알림 메시지의 스레드 댓글:
+ *       {@link #prepareRequestCancelledNotification}, {@link #sendChangeRequestDecidedNotification}</li>
  *   <li>조치 필요(실패·멈춤·수동 확인) → 오류 채널 한 곳: {@link #alertNeedsAction}</li>
  *   <li>처리 기록(정상 완료) → 알림 기록(noti) 채널: {@link #recordLog}</li>
  *   <li>사용자 안내 → 메일 + Slack DM + 알림 기록 채널의 발송 기록: {@link #notifyUser}</li>
@@ -249,7 +251,7 @@ public class AlarmService {
                 formatTeamInfo(request),                                   // {19}
                 RECEIVED_AT_FORMAT.format(receivedAt));                    // {20}
 
-        enqueueRequestChannel(message, requestChannel(user, serverName), null, request.getRequestId());
+        enqueueRequestChannel(message, requestChannel(user, serverName), null, request.getRequestId(), null);
     }
 
     /**
@@ -276,6 +278,24 @@ public class AlarmService {
         RequestChannel channel = requestChannel(user, serverName);
         String threadTs = request.getSlackMessageTs();
         return () -> safely("신청 취소 알림", () -> replyToRequest(message, channel, threadTs));
+    }
+
+    /**
+     * 거절한 신청을 신청서 채널에 알린다 — 그 신청서의 스레드 댓글로 달아(모르면 일반 메시지) 채널에 남은 신청서가
+     * 처리되지 않은 것으로 보이지 않게 한다. 호출자가 커밋 뒤에 부른다.
+     */
+    public void sendRequestRejectedNotification(Request request, String adminComment) {
+        safely("신청 거절 알림", () -> {
+            User user = request.getUser();
+            String serverName = request.getResourceGroup().getServerName();
+
+            String message = messageUtils.get("notification.admin.request-rejected",
+                    String.valueOf(request.getRequestId()),                    // {0}
+                    serverName,                                                // {1}
+                    SlackText.line(user.getName()),                            // {2}
+                    SlackText.line(orNone(adminComment)));                     // {3}
+            replyToRequest(message, requestChannel(user, serverName), request.getSlackMessageTs());
+        });
     }
 
     /**
@@ -335,20 +355,43 @@ public class AlarmService {
                     notice.change(),                                           // {9}
                     notice.reason() == null ? "없음" : SlackText.quote(notice.reason())); // {10}
 
-            RequestChannel channel = notice.changeType() == ChangeType.EXPIRES_AT
-                    ? requestChannel(notice.email(), notice.serverName())
-                    : notiChannel();
-            enqueueRequestChannel(message, channel, null, null);
+            enqueueRequestChannel(message, changeRequestChannel(notice.changeType(), notice.email(), notice.serverName()),
+                    null, null, notice.changeRequestId());
         });
     }
 
-    /** 신청서의 후속 알림. 신청서 메시지의 식별자를 알면 그 스레드 댓글로, 모르면(webhook으로 보냈거나 아직 적히기 전) 일반 메시지로 보낸다. */
+    /**
+     * 변경 요청의 결과(승인되어 반영 끝남·거절됨)를 접수 알림과 같은 채널에 알린다 — 접수 알림의 스레드 댓글로 달아
+     * (모르면 일반 메시지) 채널에 남은 접수 알림이 처리되지 않은 것으로 보이지 않게 한다. 작업으로 반영하는 종류는
+     * 승인을 누른 때가 아니라 반영이 끝난 때 부른다. 호출자가 커밋 뒤에 부른다.
+     */
+    public void sendChangeRequestDecidedNotification(ChangeRequestDecision decision) {
+        safely("변경 요청 결과 알림", () -> {
+            String message = messageUtils.get(decision.approved()
+                            ? "notification.admin.change-request.approved"
+                            : "notification.admin.change-request.rejected",
+                    String.valueOf(decision.changeRequestId()),                // {0}
+                    decision.changeType().label(),                             // {1}
+                    SlackText.line(decision.name()),                           // {2}
+                    SlackText.line(orNone(decision.adminComment())));          // {3}
+            replyToRequest(message,
+                    changeRequestChannel(decision.changeType(), decision.email(), decision.serverName()),
+                    decision.slackMessageTs());
+        });
+    }
+
+    /** 변경 요청의 접수 알림과 그 결과가 가는 채널. 승인자가 판단하는 사용 기간 연장만 신청서 채널이고 나머지는 알림 기록 채널이다. */
+    private RequestChannel changeRequestChannel(ChangeType changeType, String email, String serverName) {
+        return changeType == ChangeType.EXPIRES_AT ? requestChannel(email, serverName) : notiChannel();
+    }
+
+    /** 신청서·변경 요청 접수 알림의 후속 알림. 그 메시지의 식별자를 알면 스레드 댓글로, 모르면(webhook으로 보냈거나 아직 적히기 전) 일반 메시지로 보낸다. */
     private void replyToRequest(String message, RequestChannel channel, String threadTs) {
         if (threadTs == null) {
             enqueueWebhook(message, channel.webhookUrl(), true);
             return;
         }
-        enqueueRequestChannel(message, channel, threadTs, null);
+        enqueueRequestChannel(message, channel, threadTs, null, null);
     }
 
     /** 신청서 채널 한 곳. 채널 ID는 봇으로 올릴 때 쓰고, 없거나 봇 전송이 실패하면 webhook으로 보낸다. */
@@ -379,10 +422,12 @@ public class AlarmService {
     }
 
     /**
-     * 신청서 채널로 보낸다. 승인자가 읽고 판단하는 글이라 블록 양식(제목·항목 표·구분선)으로 보낸다. requestId를 주면 올라간 메시지의 식별자를 그 신청에 적어 두고, threadTs를 주면 그 메시지의
+     * 신청서 채널로 보낸다. 승인자가 읽고 판단하는 글이라 블록 양식(제목·항목 표·구분선)으로 보낸다. requestId나
+     * changeRequestId를 주면 올라간 메시지의 식별자를 그 신청·변경 요청에 적어 두고, threadTs를 주면 그 메시지의
      * 스레드 댓글로 단다. 채널 ID가 없는 채널은 둘 다 할 수 없어 webhook으로 보낸다.
      */
-    private void enqueueRequestChannel(String message, RequestChannel channel, String threadTs, Long requestId) {
+    private void enqueueRequestChannel(String message, RequestChannel channel, String threadTs,
+                                       Long requestId, Long changeRequestId) {
         if (channel.channelId() == null) {
             enqueueWebhook(message, channel.webhookUrl(), true);
             return;
@@ -392,6 +437,7 @@ public class AlarmService {
                 .channelId(channel.channelId())
                 .threadTs(threadTs)
                 .requestId(requestId)
+                .changeRequestId(changeRequestId)
                 .webhookUrl(channel.webhookUrl())
                 .message(message)
                 .blockLayout(true)

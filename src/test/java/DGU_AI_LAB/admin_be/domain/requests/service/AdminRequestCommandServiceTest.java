@@ -334,6 +334,8 @@ class AdminRequestCommandServiceTest {
             service.rejectRequest(dto);
 
             verify(alarmService).sendRequestRejectedEmail(request, "신청서 양식 미흡");
+            // 신청서 채널에 남은 신청서에도 거절을 댓글로 남긴다.
+            verify(alarmService).sendRequestRejectedNotification(request, "신청서 양식 미흡");
         }
 
         @Test
@@ -358,6 +360,7 @@ class AdminRequestCommandServiceTest {
                     .isInstanceOf(BusinessException.class);
 
             verify(alarmService, never()).sendRequestRejectedEmail(any(), anyString());
+            verify(alarmService, never()).sendRequestRejectedNotification(any(), any());
         }
 
         @Test

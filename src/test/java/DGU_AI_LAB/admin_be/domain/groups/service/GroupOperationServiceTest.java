@@ -44,6 +44,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
@@ -238,6 +239,9 @@ class GroupOperationServiceTest {
             assertThat(changeRequest.getStatus()).isEqualTo(Status.FULFILLED);
             assertThat(operation.getStatus()).isEqualTo(GroupOperationStatus.APPLIED);
             verify(alarmService).sendGroupAddedEmail(changeRequest, "승인합니다", List.of("teamx"));
+            // 승인을 누른 때가 아니라 반영이 끝난 지금, 접수 알림에 결과를 댓글로 남긴다.
+            verify(alarmService).sendChangeRequestDecidedNotification(argThat(decision -> decision.approved()
+                    && decision.changeType() == ChangeType.GROUP && "승인합니다".equals(decision.adminComment())));
         }
 
         @Test
@@ -253,6 +257,7 @@ class GroupOperationServiceTest {
             assertThat(changeRequest.getStatus()).isEqualTo(Status.PENDING);
             assertThat(operation.getErrorCode()).isEqualTo(GroupOperationService.ERROR_ACCOUNT_CHANGED);
             verify(alarmService, never()).sendGroupAddedEmail(any(), any(), anyList());
+            verify(alarmService, never()).sendChangeRequestDecidedNotification(any());
         }
 
         @Test

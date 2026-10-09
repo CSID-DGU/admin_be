@@ -42,6 +42,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -198,6 +199,9 @@ class PortOperationServiceTest {
         assertThat(changeRequest.getStatus()).isEqualTo(Status.FULFILLED);
         assertThat(operation.getStatus()).isEqualTo(PortOperationStatus.APPLIED);
         verify(alarmService).sendExtraPortsChangedEmail(request);
+        // 승인을 누른 때가 아니라 반영이 끝난 지금, 접수 알림에 결과를 댓글로 남긴다.
+        verify(alarmService).sendChangeRequestDecidedNotification(argThat(decision -> decision.approved()
+                && decision.changeType() == ChangeType.PORT));
     }
 
     @Test

@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestDecision;
 import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestNotice;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.PasswordResetSummaryDTO;
@@ -25,20 +26,23 @@ public class PasswordResetNotifier {
         alarmService.sendChangeRequestNotification(notice);
     }
 
-    public void applied(String email) {
+    /** 새 비밀번호가 적용됐다. 신청자에게 메일을 보내고, 접수 알림의 스레드 댓글로 결과를 남긴다. */
+    public void applied(ChangeRequestDecision applied) {
         try {
-            emailService.sendPasswordChangedNotice(email);
+            emailService.sendPasswordChangedNotice(applied.email());
         } catch (RuntimeException e) {
             log.warn("[passwordReset] 비밀번호 변경 알림 메일 발송 실패", e);
         }
+        alarmService.sendChangeRequestDecidedNotification(applied);
     }
 
-    public void denied(String email) {
+    public void denied(ChangeRequestDecision denied) {
         try {
-            emailService.sendPasswordResetDeniedNotice(email);
+            emailService.sendPasswordResetDeniedNotice(denied.email());
         } catch (RuntimeException e) {
             log.warn("[passwordReset] 재설정 거절 알림 메일 발송 실패", e);
         }
+        alarmService.sendChangeRequestDecidedNotification(denied);
     }
 
     /**

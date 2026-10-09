@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.portRequests.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestDecision;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
@@ -70,6 +71,9 @@ public class PortOperationService {
 
     private record FailureNotice(Long changeRequestId, String serverName, String username) {}
 
+    /** 작업이 끝난 뒤(트랜잭션 밖에서) 보낼 안내. */
+    private record AppliedNotice(Request request, ChangeRequestDecision decision) {}
+
     /**
      * 포트 변경 요청을 승인해 작업으로 등록하고, 변경 요청을 반영 중(PROCESSING)으로 둔다.
      * 호출자의 트랜잭션 안에서 불러야 한다 — 변경 요청과 원본 신청을 잠그고 검증한 그 트랜잭션이다.
@@ -96,7 +100,7 @@ public class PortOperationService {
 
     /** 작업이 성공했다. 결과를 DB 에 반영한다. 이미 끝난 작업이면 아무것도 하지 않는다. */
     public void complete(Long operationId, JobResultResponseDTO.Result result) {
-        Request changed = inTransaction(() -> {
+        AppliedNotice applied = inTransaction(() -> {
             PortOperation operation = lock(operationId);
             if (!operation.isProcessing()) {
                 return null;
@@ -123,12 +127,14 @@ public class PortOperationService {
             // 트랜잭션 종료 후(안내 발송 시점) 사용되는 지연 로딩 필드를 미리 초기화
             request.getUser().getEmail();
             request.getResourceGroup().getServerName();
-            return request;
+            return new AppliedNotice(request, ChangeRequestDecision.of(changeRequest));
         });
         log.info("[portOperation] operationId={} 작업 성공 반영", operationId);
-        if (changed != null) {
-            AfterCommit.run("추가 포트 변경 안내 메일, 요청 ID " + changed.getRequestId(),
-                    () -> alarmService.sendExtraPortsChangedEmail(changed));
+        if (applied != null) {
+            AfterCommit.run("추가 포트 변경 안내 메일·채널 알림, 요청 ID " + applied.request().getRequestId(), () -> {
+                alarmService.sendChangeRequestDecidedNotification(applied.decision());
+                alarmService.sendExtraPortsChangedEmail(applied.request());
+            });
         }
     }
 

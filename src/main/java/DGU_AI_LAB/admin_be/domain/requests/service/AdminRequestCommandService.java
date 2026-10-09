@@ -491,8 +491,10 @@ public class AdminRequestCommandService {
             return null;
         });
         Request rejected = rejectedRef[0];
-        AfterCommit.run("거절 안내 메일, 요청 ID " + requestId,
-                () -> alarmService.sendRequestRejectedEmail(rejected, dto.adminComment()));
+        AfterCommit.run("거절 안내 메일·신청서 채널 알림, 요청 ID " + requestId, () -> {
+            alarmService.sendRequestRejectedNotification(rejected, dto.adminComment());
+            alarmService.sendRequestRejectedEmail(rejected, dto.adminComment());
+        });
         return responseRef[0];
     }
 

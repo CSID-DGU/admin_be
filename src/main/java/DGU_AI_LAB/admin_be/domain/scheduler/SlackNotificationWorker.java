@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.scheduler;
 import DGU_AI_LAB.admin_be.domain.alarm.SlackBlocks;
 import DGU_AI_LAB.admin_be.domain.alarm.dto.SlackMessageDto;
 import DGU_AI_LAB.admin_be.domain.alarm.service.SlackApiService;
+import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -30,6 +31,7 @@ public class SlackNotificationWorker {
     private final SlackApiService slackApiService;
     private final ObjectMapper objectMapper;
     private final RequestRepository requestRepository;
+    private final ChangeRequestRepository changeRequestRepository;
 
     private static final String SLACK_QUEUE_KEY = "slack:notification:queue";
     private static final int MAX_RETRY_COUNT = 3;
@@ -95,7 +97,7 @@ public class SlackNotificationWorker {
             return false;
         }
         log.info("Slack 채널 전송 성공 (Queue)");
-        rememberMessage(dto.getRequestId(), ts);
+        rememberMessage(dto, ts);
         return true;
     }
 
@@ -117,15 +119,23 @@ public class SlackNotificationWorker {
         return dto.isBlockLayout() ? SlackBlocks.fromMrkdwn(dto.getMessage()) : List.of();
     }
 
-    /** 올라간 신청서 메시지의 식별자를 신청에 적어 둔다. 못 적어도 이미 나간 알림은 그대로 두고, 후속 알림만 일반 메시지로 간다. */
-    private void rememberMessage(Long requestId, String ts) {
-        if (requestId == null || ts == null) {
+    /**
+     * 올라간 신청서·변경 요청 접수 알림 메시지의 식별자를 그 신청·변경 요청에 적어 둔다. 못 적어도 이미 나간 알림은
+     * 그대로 두고, 후속 알림만 일반 메시지로 간다.
+     */
+    private void rememberMessage(SlackMessageDto dto, String ts) {
+        if (ts == null) {
             return;
         }
         try {
-            requestRepository.updateSlackMessageTs(requestId, ts);
+            if (dto.getRequestId() != null) {
+                requestRepository.updateSlackMessageTs(dto.getRequestId(), ts);
+            }
+            if (dto.getChangeRequestId() != null) {
+                changeRequestRepository.updateSlackMessageTs(dto.getChangeRequestId(), ts);
+            }
         } catch (Exception e) {
-            log.error("신청서 메시지 식별자를 적지 못함: 요청 ID {}", requestId, e);
+            log.error("알림 메시지 식별자를 적지 못함: 요청 ID {}, 변경 요청 ID {}", dto.getRequestId(), dto.getChangeRequestId(), e);
         }
     }
 
