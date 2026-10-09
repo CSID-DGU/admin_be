@@ -115,6 +115,11 @@ public class ChangeRequest extends BaseTimeEntity {
         this.reviewedAt = LocalDateTime.now();
     }
 
+    /** 신청자가 승인 전에 거둬들였다. 목록에서 사라지고 같은 종류를 다시 낼 수 있다. */
+    public void cancel() {
+        this.status = Status.DELETED;
+    }
+
     /** 신청자가 비활성화·탈퇴돼 검토 없이 닫는다. 검토자가 없는 DENIED로 남는다. */
     public void closeWithoutReview() {
         this.status = Status.DENIED;

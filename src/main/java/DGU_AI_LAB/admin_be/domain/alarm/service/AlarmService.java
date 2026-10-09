@@ -380,6 +380,19 @@ public class AlarmService {
         });
     }
 
+    /** 신청자가 거둔 변경 요청을 접수 알림의 스레드 댓글로 알린다. 호출자가 커밋 뒤에 부른다. */
+    public void sendChangeRequestCancelledNotification(ChangeRequestDecision decision) {
+        safely("변경 요청 취소 알림", () -> {
+            String message = messageUtils.get("notification.admin.change-request.cancelled",
+                    String.valueOf(decision.changeRequestId()),                // {0}
+                    decision.changeType().label(),                             // {1}
+                    SlackText.line(decision.name()));                          // {2}
+            replyToRequest(message,
+                    changeRequestChannel(decision.changeType(), decision.email(), decision.serverName()),
+                    decision.slackMessageTs());
+        });
+    }
+
     /** 변경 요청의 접수 알림과 그 결과가 가는 채널. 승인자가 판단하는 사용 기간 연장만 신청서 채널이고 나머지는 알림 기록 채널이다. */
     private RequestChannel changeRequestChannel(ChangeType changeType, String email, String serverName) {
         return changeType == ChangeType.EXPIRES_AT ? requestChannel(email, serverName) : notiChannel();

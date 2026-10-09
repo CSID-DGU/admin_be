@@ -11,6 +11,7 @@ import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SingleChangeRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
@@ -577,6 +578,71 @@ class RequestCommandServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.TOO_MANY_CONTAINER_REQUESTS);
             verify(requestRepository, never()).saveAndFlush(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("cancelChangeRequest")
+    class CancelChangeRequest {
+
+        private ChangeRequest buildChangeRequest(ChangeType type) {
+            User owner = mock(User.class);
+            when(owner.getUserId()).thenReturn(1L);
+            return ChangeRequest.builder().changeType(type).requestedBy(owner).build();
+        }
+
+        @Test
+        @DisplayName("승인 대기 중인 내 변경 요청은 DELETED로 바뀌고 알림을 커밋 뒤에 보낸다")
+        void cancels_whenPending() {
+            ChangeRequest changeRequest = buildChangeRequest(ChangeType.EXPIRES_AT);
+            when(changeRequestRepository.findByIdForUpdate(5L)).thenReturn(Optional.of(changeRequest));
+
+            TransactionSynchronizationManager.initSynchronization();
+            try {
+                requestCommandService.cancelChangeRequest(1L, 5L);
+                verifyNoInteractions(alarmService);
+                TransactionSynchronizationManager.getSynchronizations()
+                        .forEach(TransactionSynchronization::afterCommit);
+                verify(alarmService).sendChangeRequestCancelledNotification(any());
+            } finally {
+                TransactionSynchronizationManager.clearSynchronization();
+            }
+            assertThat(changeRequest.getStatus()).isEqualTo(Status.DELETED);
+        }
+
+        @Test
+        @DisplayName("남의 변경 요청은 404로 숨긴다")
+        void notFound_whenNotOwner() {
+            ChangeRequest changeRequest = buildChangeRequest(ChangeType.EXPIRES_AT);
+            when(changeRequestRepository.findByIdForUpdate(5L)).thenReturn(Optional.of(changeRequest));
+
+            assertThatThrownBy(() -> requestCommandService.cancelChangeRequest(2L, 5L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.RESOURCE_NOT_FOUND);
+            assertThat(changeRequest.getStatus()).isEqualTo(Status.PENDING);
+        }
+
+        @Test
+        @DisplayName("이미 처리 중이거나 끝난 변경 요청은 취소할 수 없다")
+        void rejects_whenNotPending() {
+            ChangeRequest changeRequest = buildChangeRequest(ChangeType.GROUP);
+            changeRequest.startProcessing(mock(User.class), null);
+            when(changeRequestRepository.findByIdForUpdate(5L)).thenReturn(Optional.of(changeRequest));
+
+            assertThatThrownBy(() -> requestCommandService.cancelChangeRequest(1L, 5L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REQUEST_STATUS);
+        }
+
+        @Test
+        @DisplayName("비밀번호 변경은 취소할 수 없다")
+        void rejects_password() {
+            ChangeRequest changeRequest = buildChangeRequest(ChangeType.PASSWORD);
+            when(changeRequestRepository.findByIdForUpdate(5L)).thenReturn(Optional.of(changeRequest));
+
+            assertThatThrownBy(() -> requestCommandService.cancelChangeRequest(1L, 5L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UNSUPPORTED_CHANGE_TYPE);
         }
     }
 

@@ -154,7 +154,7 @@ class AdminRequestQueryServiceTest {
         @Test
         @DisplayName("모든 변경 요청 목록을 반환한다")
         void getAllChangeRequests_returnsList() {
-            when(changeRequestRepository.findAll()).thenReturn(List.of());
+            when(changeRequestRepository.findAllByStatusNot(Status.DELETED)).thenReturn(List.of());
 
             List<ChangeRequestResponseDTO> result = adminRequestQueryService.getAllChangeRequests();
 

@@ -113,14 +113,14 @@ public class RequestQueryService {
         if (!userRepository.existsById(userId)) {
             throw new BusinessException(ErrorCode.USER_NOT_FOUND);
         }
-        return changeRequestRepository.findAllByRequestedBy_UserId(userId).stream()
+        return changeRequestRepository.findAllByRequestedBy_UserIdAndStatusNot(userId, Status.DELETED).stream()
                 .map(ChangeRequestResponseDTO::fromEntity)
                 .toList();
     }
 
     /** 내 변경 요청 하나. 남의 요청은 있는지조차 알리지 않는다(404). */
     public ChangeRequestResponseDTO getMyChangeRequest(Long userId, Long changeRequestId) {
-        return changeRequestRepository.findByChangeRequestIdAndRequestedBy_UserId(changeRequestId, userId)
+        return changeRequestRepository.findByChangeRequestIdAndRequestedBy_UserIdAndStatusNot(changeRequestId, userId, Status.DELETED)
                 .map(ChangeRequestResponseDTO::fromEntity)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
     }

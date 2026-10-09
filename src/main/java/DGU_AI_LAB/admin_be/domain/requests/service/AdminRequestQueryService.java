@@ -52,7 +52,7 @@ public class AdminRequestQueryService {
     }
 
     public List<ChangeRequestResponseDTO> getAllChangeRequests() {
-        return changeRequestRepository.findAll().stream()
+        return changeRequestRepository.findAllByStatusNot(Status.DELETED).stream()
                 .map(ChangeRequestResponseDTO::fromEntity)
                 .collect(Collectors.toList());
     }

@@ -41,11 +41,11 @@ public class RequestController implements RequestApi {
      * 나의 사용 신청 취소 (PENDING/DENIED 상태만 가능)
      */
     @DeleteMapping("/{requestId}")
-    public ResponseEntity<SuccessResponse<?>> cancelRequest(@AuthenticationPrincipal(expression = "userId") Long userId,
-                                                              @PathVariable Long requestId
+    public ResponseEntity<Void> cancelRequest(@AuthenticationPrincipal(expression = "userId") Long userId,
+                                              @PathVariable Long requestId
     ) {
         requestCommandService.cancelRequest(userId, requestId);
-        return SuccessResponse.ok(null);
+        return ResponseEntity.noContent().build();
     }
 
     /**
