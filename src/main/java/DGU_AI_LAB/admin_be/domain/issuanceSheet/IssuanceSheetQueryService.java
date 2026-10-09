@@ -53,7 +53,7 @@ public class IssuanceSheetQueryService {
     }
 
     /**
-     * 컨테이너에 실제로 열린 포트를 "용도(포트)"로 적는다. 포트는 접속 안내 메일과 같은 번호다
+     * 컨테이너에 실제로 열린 포트를 "용도(내부 포트:외부 포트)"로 적는다. 외부 포트는 접속 안내 메일과 같은 번호다
      * ({@link ServerProfileRegistry#publicPort}). SSH·Jupyter를 앞에, 추가 포트는 내부 포트 순으로 놓는다.
      */
     private Map<Long, List<String>> ports(List<Request> issued) {
@@ -63,7 +63,8 @@ public class IssuanceSheetQueryService {
                 .sorted(Comparator.comparingInt(IssuanceSheetQueryService::portRank)
                         .thenComparing(PodExternalPort::getInternalPort))
                 .collect(Collectors.groupingBy(port -> port.getRequest().getRequestId(),
-                        Collectors.mapping(port -> port.getUsagePurpose() + "(" + serverProfileRegistry.publicPort(
+                        Collectors.mapping(port -> port.getUsagePurpose() + "(" + port.getInternalPort() + ":"
+                                        + serverProfileRegistry.publicPort(
                                         serverByRequest.get(port.getRequest().getRequestId()),
                                         String.valueOf(port.getExternalPort())) + ")",
                                 Collectors.toList())));

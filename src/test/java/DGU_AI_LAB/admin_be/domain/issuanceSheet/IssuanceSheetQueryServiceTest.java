@@ -61,7 +61,7 @@ class IssuanceSheetQueryServiceTest {
     }
 
     @Test
-    @DisplayName("컨테이너가 살아 있는 신청만 읽어 서버마다 표를 나누고, 열린 포트를 안내 메일과 같은 번호로 적는다")
+    @DisplayName("컨테이너가 살아 있는 신청만 읽어 서버마다 표를 나누고, 열린 포트를 내부:외부(안내 메일과 같은 번호)로 적는다")
     void splitsActiveRequestsByServer() {
         Request issued = request(1, Status.FULFILLED, "가", "farm1");
         activeRequests(issued);
@@ -74,7 +74,7 @@ class IssuanceSheetQueryServiceTest {
         assertThat(tables.keySet()).containsExactly("LAB", "FARM");
         assertThat(tables.get("LAB")).containsExactly(IssuanceSheetRows.HEADER);
         assertThat(tables.get("FARM")).hasSize(2);
-        assertThat(tables.get("FARM").get(1)).contains("ssh(9306), jupyter(9307), 웹 서버(9328)", Index.atIndex(7));
+        assertThat(tables.get("FARM").get(1)).contains("ssh(22:9306), jupyter(8888:9307), 웹 서버(3000:9328)", Index.atIndex(7));
     }
 
     @Test
