@@ -3,10 +3,10 @@ package DGU_AI_LAB.admin_be.domain.issuanceSheet;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
-import DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.domain.users.entity.UserGroup;
 import org.assertj.core.data.Index;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -49,14 +49,15 @@ class IssuanceSheetRowsTest {
         when(resourceGroup.getResourceGroupName()).thenReturn("RTX 3090");
         when(resourceGroup.getServerName()).thenReturn(serverName);
 
-        Set<RequestGroup> requestGroups = new LinkedHashSet<>();
+        Set<UserGroup> userGroups = new LinkedHashSet<>();
         for (String groupName : groupNames) {
             Group group = mock(Group.class);
             when(group.getGroupName()).thenReturn(groupName);
-            RequestGroup requestGroup = mock(RequestGroup.class);
-            when(requestGroup.getGroup()).thenReturn(group);
-            requestGroups.add(requestGroup);
+            UserGroup userGroup = mock(UserGroup.class);
+            when(userGroup.getGroup()).thenReturn(group);
+            userGroups.add(userGroup);
         }
+        when(user.getUserGroups()).thenReturn(userGroups);
 
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(id);
@@ -64,7 +65,6 @@ class IssuanceSheetRowsTest {
         when(request.getUser()).thenReturn(user);
         when(request.getContainerImage()).thenReturn(image);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
-        when(request.getRequestGroups()).thenReturn(requestGroups);
         when(request.getNodeName()).thenReturn(nodeName);
         when(request.getPodName()).thenReturn("ailab-user" + userId + "-" + id);
         when(request.getAdminComment()).thenReturn("연구실 과제");
@@ -78,13 +78,13 @@ class IssuanceSheetRowsTest {
     void rowMatchesHeader() {
         List<List<String>> rows = IssuanceSheetRows.of(
                 List.of(request(7, Status.FULFILLED, "홍길동", "farm3", "vision", "nlp")),
-                Map.of(7L, List.of("ssh(30006)", "jupyter(30007)")),
+                Map.of(7L, List.of("ssh(22:30006)", "jupyter(8888:30007)")),
                 Map.of(7L, LocalDate.of(2027, 1, 30)));
 
         assertThat(rows).hasSize(2);
         assertThat(rows.get(0)).isEqualTo(IssuanceSheetRows.HEADER);
         assertThat(rows.get(1)).containsExactly(
-                "7", "홍길동", "user7", "nlp, vision", "farm3", "55007", "56007", "ssh(30006), jupyter(30007)",
+                "7", "홍길동", "user7", "nlp, vision", "farm3", "55007", "56007", "ssh(22:30006), jupyter(8888:30007)",
                 "2026-12-31", "2027-01-30", "2026-10-05", "dguailab/decs:260915", "12.3.0",
                 "ailab-user7-7", "user7@example.test", "01000000000", "연구실 과제", "RTX 3090");
     }

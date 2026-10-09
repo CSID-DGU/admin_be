@@ -13,7 +13,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/** 컨테이너가 살아 있는 신청들을 시트에 적을 표(머리글 + 행)로 바꾼다. 열 순서는 기존 수동 발급 시트를 따른다. */
+/**
+ * 컨테이너가 살아 있는 신청들을 시트에 적을 표(머리글 + 행)로 바꾼다. 열 순서는 기존 수동 발급 시트를 따른다.
+ * 그룹명은 신청서에 적은 그룹이 아니라 계정이 지금 속한 그룹이다. 컨테이너에 실제로 들어가는 것이 계정 그룹이기 때문이다.
+ */
 final class IssuanceSheetRows {
 
     static final List<String> HEADER = List.of(
@@ -51,8 +54,8 @@ final class IssuanceSheetRows {
                 text(request.getRequestId()),
                 text(user.getName()),
                 text(user.getUbuntuUsername()),
-                request.getRequestGroups().stream()
-                        .map(requestGroup -> requestGroup.getGroup().getGroupName())
+                user.getUserGroups().stream()
+                        .map(userGroup -> userGroup.getGroup().getGroupName())
                         .sorted().collect(Collectors.joining(", ")),
                 text(request.getNodeName()),
                 text(user.getUbuntuUid()),
