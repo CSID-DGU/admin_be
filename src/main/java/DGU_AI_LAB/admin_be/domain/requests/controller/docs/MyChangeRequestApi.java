@@ -44,6 +44,16 @@ public interface MyChangeRequestApi {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     ResponseEntity<SuccessResponse<?>> getMyChangeRequest(@Parameter(hidden = true) Long userId, Long changeRequestId);
 
+    @Operation(summary = "내 변경 요청 취소", description = "승인을 기다리는(PENDING) 변경 요청을 취소합니다. 비밀번호 변경은 취소할 수 없습니다.")
+    @ApiResponse(responseCode = "204", description = "취소 성공(본문 없음)")
+    @ApiResponse(responseCode = "400", description = "취소할 수 없는 종류(비밀번호 변경)",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "404", description = "변경 요청이 없거나 본인이 낸 요청이 아님",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "409", description = "이미 처리 중이거나 끝난 변경 요청",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    ResponseEntity<Void> cancelChangeRequest(@Parameter(hidden = true) Long userId, Long changeRequestId);
+
     // 실제 응답은 SuccessResponse<T> 래퍼로 감싸져 나가므로, Swagger 스키마도 래퍼 형태로 노출한다.
     @Schema(name = "SuccessResponseListChangeRequestResponseDTO", description = "변경 요청 목록 응답")
     record ChangeRequestListResponseDoc(int status, String message, List<ChangeRequestResponseDTO> data) {}

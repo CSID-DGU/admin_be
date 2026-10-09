@@ -13,7 +13,9 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.request.SingleChangeRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
+import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestDecision;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
+import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
@@ -99,6 +101,32 @@ public class RequestCommandService {
             return;
         }
         AfterCommit.run("신청 취소 알림, 요청 ID " + request.getRequestId(), send);
+    }
+
+    /**
+     * 승인을 기다리는 내 변경 요청을 거둔다. 승인과 겹치면 반영이 이중으로 도는 것을 막으려고 행을 잠근다.
+     * 비밀번호 변경은 함께 지울 해시가 있어 여기서 다루지 않는다.
+     */
+    @Transactional
+    public void cancelChangeRequest(Long userId, Long changeRequestId) {
+        ChangeRequest changeRequest = changeRequestRepository.findByIdForUpdate(changeRequestId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        // 남의 요청은 있는지조차 알리지 않는다(조회와 같은 404).
+        if (!changeRequest.getRequestedBy().getUserId().equals(userId)) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        if (changeRequest.getChangeType() == ChangeType.PASSWORD) {
+            throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
+        }
+        if (changeRequest.getStatus() != Status.PENDING) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+        }
+
+        changeRequest.cancel();
+        ChangeRequestDecision decision = ChangeRequestDecision.of(changeRequest);
+        AfterCommit.run("변경 요청 취소 알림, changeRequestId " + changeRequestId,
+                () -> alarmService.sendChangeRequestCancelledNotification(decision));
     }
 
     /**

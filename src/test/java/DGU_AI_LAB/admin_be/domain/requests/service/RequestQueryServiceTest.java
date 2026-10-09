@@ -200,7 +200,7 @@ class RequestQueryServiceTest {
         @DisplayName("존재하는 userId로 내 변경 요청 목록을 조회한다")
         void getMyChangeRequests_returnsList() {
             when(userRepository.existsById(1L)).thenReturn(true);
-            when(changeRequestRepository.findAllByRequestedBy_UserId(1L)).thenReturn(List.of());
+            when(changeRequestRepository.findAllByRequestedBy_UserIdAndStatusNot(1L, Status.DELETED)).thenReturn(List.of());
 
             var result = requestQueryService.getMyChangeRequests(1L);
 
@@ -224,7 +224,7 @@ class RequestQueryServiceTest {
         @Test
         @DisplayName("남이 낸 요청이거나 없는 요청이면 RESOURCE_NOT_FOUND")
         void getMyChangeRequest_throwsNotFound_whenNotMine() {
-            when(changeRequestRepository.findByChangeRequestIdAndRequestedBy_UserId(7L, 1L)).thenReturn(Optional.empty());
+            when(changeRequestRepository.findByChangeRequestIdAndRequestedBy_UserIdAndStatusNot(7L, 1L, Status.DELETED)).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> requestQueryService.getMyChangeRequest(1L, 7L))
                     .isInstanceOf(BusinessException.class)

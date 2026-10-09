@@ -45,7 +45,7 @@ public interface RequestApi {
     );
 
     @Operation(summary = "내 신청 취소", description = "PENDING 또는 DENIED 상태인 나의 신청을 취소(삭제)합니다. 이미 승인되어 컨테이너가 떠 있는 신청은 취소할 수 없습니다.")
-    @ApiResponse(responseCode = "200", description = "취소 성공")
+    @ApiResponse(responseCode = "204", description = "취소 성공(본문 없음)")
     @ApiResponse(responseCode = "400", description = "취소할 수 없는 상태(FULFILLED/MIGRATING 등)",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "403", description = "본인 소유의 신청이 아님",
@@ -53,7 +53,7 @@ public interface RequestApi {
     @ApiResponse(responseCode = "404", description = "신청을 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @DeleteMapping("/{requestId}")
-    ResponseEntity<SuccessResponse<?>> cancelRequest(
+    ResponseEntity<Void> cancelRequest(
             @Parameter(hidden = true) Long userId,
             @PathVariable @Parameter(description = "취소할 신청 ID") Long requestId
     );
