@@ -24,10 +24,13 @@ import static org.mockito.Mockito.when;
 
 class SingleChangeRequestDTOTest {
 
+    /** 사유는 100자 이상이어야 받는다. */
+    private static final String REASON = "가".repeat(100);
+
     @Test
     @DisplayName("GROUP 타입에 빈 JSON 배열을 전달하면 BusinessException을 던진다")
     void createValidatedChangeRequest_group_emptyList_throws() {
-        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[]", "reason");
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(1L, ChangeType.GROUP, "[]", REASON);
 
         assertThatThrownBy(() ->
                 SingleChangeRequestDTO.createValidatedChangeRequest(dto, null, null, null))
@@ -37,7 +40,7 @@ class SingleChangeRequestDTOTest {
     @Test
     @DisplayName("GROUP 타입에 gid 없는 그룹(아직 만들어지지 않은 새 그룹)이 섞이면 받을 때 거절한다 — 승인할 때에야 실패하지 않게")
     void createValidatedChangeRequest_group_pendingGroup_throws() {
-        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005,null]", "reason");
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(1L, ChangeType.GROUP, "[1005,null]", REASON);
 
         assertThatThrownBy(() ->
                 SingleChangeRequestDTO.createValidatedChangeRequest(dto, null, null, null))
@@ -48,7 +51,7 @@ class SingleChangeRequestDTOTest {
     @Test
     @DisplayName("GROUP 타입에 잘못된 JSON을 전달하면 BusinessException을 던진다")
     void createValidatedChangeRequest_group_invalidJson_throws() {
-        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "not-json", "reason");
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(1L, ChangeType.GROUP, "not-json", REASON);
 
         assertThatThrownBy(() ->
                 SingleChangeRequestDTO.createValidatedChangeRequest(dto, null, null, null))
@@ -59,7 +62,7 @@ class SingleChangeRequestDTOTest {
     @EnumSource(value = ChangeType.class, names = {"RESOURCE_GROUP", "CONTAINER_IMAGE"})
     @DisplayName("승인해도 떠 있는 Pod에 반영되지 않는 종류는 값이 올바라도 UNSUPPORTED_CHANGE_TYPE으로 거절한다")
     void createValidatedChangeRequest_rejectsTypesThatOnlyChangeDb(ChangeType type) {
-        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(type, "2", "reason");
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(1L, type, "2", REASON);
 
         assertThatThrownBy(() ->
                 SingleChangeRequestDTO.createValidatedChangeRequest(dto, Request.builder().build(), null, new ObjectMapper()))
@@ -79,8 +82,8 @@ class SingleChangeRequestDTOTest {
         Request originalRequest = Request.builder()
                 .expiresAt(LocalDateTime.now().plusDays(1).withNano(0))
                 .build();
-        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(
-                ChangeType.EXPIRES_AT, newExpiresAt.toString(), "reason");
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(1L, 
+                ChangeType.EXPIRES_AT, newExpiresAt.toString(), REASON);
 
         ChangeRequest changeRequest = SingleChangeRequestDTO.createValidatedChangeRequest(
                 dto, originalRequest, null, objectMapper);
@@ -101,7 +104,7 @@ class SingleChangeRequestDTOTest {
         Request originalRequest = Request.builder()
                 .user(User.builder().build())
                 .build();
-        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005,1006]", "reason");
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(1L, ChangeType.GROUP, "[1005,1006]", REASON);
 
         ChangeRequest changeRequest = SingleChangeRequestDTO.createValidatedChangeRequest(
                 dto, originalRequest, null, objectMapper);
@@ -116,8 +119,8 @@ class SingleChangeRequestDTOTest {
         Request originalRequest = Request.builder()
                 .expiresAt(LocalDateTime.now().plusDays(1).withNano(0))
                 .build();
-        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(
-                ChangeType.EXPIRES_AT, LocalDateTime.now().minusDays(1).withNano(0).toString(), "reason");
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(1L, 
+                ChangeType.EXPIRES_AT, LocalDateTime.now().minusDays(1).withNano(0).toString(), REASON);
 
         assertThatThrownBy(() -> SingleChangeRequestDTO.createValidatedChangeRequest(
                 dto, originalRequest, null, objectMapper))
@@ -134,8 +137,8 @@ class SingleChangeRequestDTOTest {
                 .expiresAt(LocalDateTime.now().plusDays(1).withNano(0))
                 .build();
         // 이미 지나간 시점 — 파싱은 되지만 미래가 아니다
-        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(
-                ChangeType.EXPIRES_AT, LocalDateTime.now().minusSeconds(1).withNano(0).toString(), "reason");
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(1L, 
+                ChangeType.EXPIRES_AT, LocalDateTime.now().minusSeconds(1).withNano(0).toString(), REASON);
 
         assertThatThrownBy(() -> SingleChangeRequestDTO.createValidatedChangeRequest(
                 dto, originalRequest, null, objectMapper))
@@ -151,8 +154,8 @@ class SingleChangeRequestDTOTest {
         Request originalRequest = Request.builder()
                 .expiresAt(LocalDateTime.now().plusDays(1).withNano(0))
                 .build();
-        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(
-                ChangeType.EXPIRES_AT, newExpiresAt.toString(), "reason");
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(1L, 
+                ChangeType.EXPIRES_AT, newExpiresAt.toString(), REASON);
 
         // oldValue 추출은 성공시키고, newValue 인코딩 단계에서만 입력값 예외가 발생하도록 만든다
         ObjectMapper objectMapper = mock(ObjectMapper.class);
@@ -174,8 +177,8 @@ class SingleChangeRequestDTOTest {
     @Test
     @DisplayName("PORT - 이전 값은 지금 달린 추가 포트이고(noVNC 제외), 새 값은 보낸 목록 그대로 저장한다")
     void createValidatedChangeRequest_port_storesCurrentAndWantedPorts() {
-        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(
-                ChangeType.PORT, "[{\"internalPort\":3000,\"usagePurpose\":\"web\"}]", "reason");
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(1L, 
+                ChangeType.PORT, "[{\"internalPort\":3000,\"usagePurpose\":\"web\"}]", REASON);
 
         ChangeRequest changeRequest = SingleChangeRequestDTO.createValidatedChangeRequest(
                 dto, Request.builder().build(), null, List.of(port(5000, "api"), port(6080, "novnc")), new ObjectMapper());
@@ -188,7 +191,7 @@ class SingleChangeRequestDTOTest {
     @Test
     @DisplayName("PORT - 빈 목록은 추가 포트를 모두 빼는 요청이다")
     void createValidatedChangeRequest_port_emptyListRemovesAll() {
-        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.PORT, "[]", "reason");
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(1L, ChangeType.PORT, "[]", REASON);
 
         ChangeRequest changeRequest = SingleChangeRequestDTO.createValidatedChangeRequest(
                 dto, Request.builder().build(), null, List.of(port(5000, "api")), new ObjectMapper());
@@ -199,8 +202,8 @@ class SingleChangeRequestDTOTest {
     @Test
     @DisplayName("PORT - 지금 열려 있는 포트와 같으면 받지 않는다")
     void createValidatedChangeRequest_port_unchanged_throws() {
-        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(
-                ChangeType.PORT, "[{\"internalPort\":5000,\"usagePurpose\":\"api\"}]", "reason");
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(1L, 
+                ChangeType.PORT, "[{\"internalPort\":5000,\"usagePurpose\":\"api\"}]", REASON);
 
         assertThatThrownBy(() -> SingleChangeRequestDTO.createValidatedChangeRequest(
                 dto, Request.builder().build(), null, List.of(port(5000, "api"), port(6080, "novnc")), new ObjectMapper()))
@@ -212,8 +215,8 @@ class SingleChangeRequestDTOTest {
     @Test
     @DisplayName("PORT - 기본 포트는 바꿀 수 없다")
     void createValidatedChangeRequest_port_protectedPort_throws() {
-        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(
-                ChangeType.PORT, "[{\"internalPort\":22,\"usagePurpose\":\"ssh2\"}]", "reason");
+        SingleChangeRequestDTO dto = new SingleChangeRequestDTO(1L, 
+                ChangeType.PORT, "[{\"internalPort\":22,\"usagePurpose\":\"ssh2\"}]", REASON);
 
         assertThatThrownBy(() -> SingleChangeRequestDTO.createValidatedChangeRequest(
                 dto, Request.builder().build(), null, List.of(), new ObjectMapper()))

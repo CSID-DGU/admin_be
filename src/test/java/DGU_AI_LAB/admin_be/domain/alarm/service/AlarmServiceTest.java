@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.alarm.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestNotice;
 import DGU_AI_LAB.admin_be.domain.alarm.dto.SlackMessageDto;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
@@ -17,6 +18,9 @@ import DGU_AI_LAB.admin_be.global.server.ServerProfileProperties;
 import DGU_AI_LAB.admin_be.global.server.ServerProfileRegistry;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import org.springframework.mail.SimpleMailMessage;
+import DGU_AI_LAB.admin_be.domain.alarm.SlackBlocks;
+import org.junit.jupiter.params.provider.EnumSource;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -305,6 +309,84 @@ class AlarmServiceTest {
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
             assertThat(captor.getValue().getWebhookUrl()).isEqualTo(ERROR_WEBHOOK);
+        }
+    }
+
+    @Nested
+    @DisplayName("sendChangeRequestNotification — 변경 요청 접수 알림")
+    class SendChangeRequestNotification {
+
+        private ChangeRequestNotice notice(ChangeType type, String email, String serverName, Long requestId, String reason) {
+            return new ChangeRequestNotice(7L, type, LocalDateTime.of(2026, 10, 9, 14, 5), "홍길동", "2021001234",
+                    "컴퓨터공학과", email, "honggildong", serverName, requestId, "2026-10-20 → 2026-11-03 (14일 연장)", reason);
+        }
+
+        private SlackMessageDto send(ChangeRequestNotice notice) {
+            ResourceBundleMessageSource source = new ResourceBundleMessageSource();
+            source.setBasename("messages");
+            source.setDefaultEncoding("UTF-8");
+            ReflectionTestUtils.setField(alarmService, "messageUtils", new MessageUtils(source));
+
+            alarmService.sendChangeRequestNotification(notice);
+
+            ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
+            verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
+            return captor.getValue();
+        }
+
+        @Test
+        @DisplayName("사용 기간 연장은 승인자가 판단하는 서버별 신청서 채널로 간다")
+        void expiresAt_goesToRequestChannel() {
+            SlackMessageDto dto = send(notice(ChangeType.EXPIRES_AT, "hong@dgu.ac.kr", "FARM", 42L, "사유"));
+
+            assertThat(dto.getWebhookUrl()).isEqualTo(FARM_REQUEST_WEBHOOK);
+            assertThat(dto.getChannelId()).isEqualTo(FARM_REQUEST_CHANNEL_ID);
+            // 신청서의 스레드 식별자를 적는 자리에 변경 요청을 적지 않는다.
+            assertThat(dto.getRequestId()).isNull();
+        }
+
+        @ParameterizedTest
+        @EnumSource(value = ChangeType.class, names = {"GROUP", "PORT", "PASSWORD"})
+        @DisplayName("나머지 종류는 알림 기록 채널로 간다")
+        void otherTypes_goToNotiChannel(ChangeType type) {
+            SlackMessageDto dto = send(notice(type, "hong@dgu.ac.kr", "FARM", 42L, "사유"));
+
+            assertThat(dto.getWebhookUrl()).isEqualTo(NOTI_WEBHOOK);
+        }
+
+        @Test
+        @DisplayName("테스트용 계정의 기간 연장은 신청서 채널이 아니라 알림 기록 채널로 간다")
+        void expiresAt_ofTestAccount_goesToNotiChannel() {
+            SlackMessageDto dto = send(notice(ChangeType.EXPIRES_AT, "tester@e2e.local", "FARM", 42L, "사유"));
+
+            assertThat(dto.getWebhookUrl()).isEqualTo(NOTI_WEBHOOK);
+        }
+
+        @Test
+        @DisplayName("신청서와 같은 블록 양식으로 신청자·대상·바뀌는 내용·사유를 담는다")
+        void rendersLikeRequestForm() {
+            SlackMessageDto dto = send(notice(ChangeType.EXPIRES_AT, "hong@dgu.ac.kr", "FARM", 42L,
+                    "발표가 미뤄졌습니다.\n*신청자*\n• 이름: 가짜"));
+
+            String message = dto.getMessage();
+            assertThat(dto.isBlockLayout()).isTrue();
+            assertThat(message).startsWith("*[변경 요청] #7 · 사용 기간 연장 · 2026-10-09 14:05 접수*");
+            assertThat(message).contains("• 이름: 홍길동", "• 학번: 2021001234", "• 학과: 컴퓨터공학과",
+                    "• 이메일: hong@dgu.ac.kr", "• 서버 계정(ID): honggildong",
+                    "• 대상: FARM 신청 #42", "• 내용: 2026-10-20 → 2026-11-03 (14일 연장)");
+            // 사유에 적은 소제목·항목 줄은 인용으로 들어가 구역으로 읽히지 않는다.
+            assertThat(message).contains("> 발표가 미뤄졌습니다.", "> *신청자*", "> • 이름: 가짜");
+            assertThat(SlackBlocks.fromMrkdwn(message)).isNotEmpty();
+        }
+
+        @Test
+        @DisplayName("비밀번호 변경은 대상이 계정이고 사유가 없다")
+        void password_hasNoTargetRequestOrReason() {
+            SlackMessageDto dto = send(new ChangeRequestNotice(8L, ChangeType.PASSWORD, LocalDateTime.of(2026, 10, 9, 14, 5),
+                    "홍길동", "2021001234", "컴퓨터공학과", "hong@dgu.ac.kr", null, null, null, "새 비밀번호로 변경", null));
+
+            assertThat(dto.getMessage()).contains("#8 · 비밀번호 변경", "• 대상: 계정", "• 서버 계정(ID): -",
+                    "• 내용: 새 비밀번호로 변경", "*사유*\n없음");
         }
     }
 

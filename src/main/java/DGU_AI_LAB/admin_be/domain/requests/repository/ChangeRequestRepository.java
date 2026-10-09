@@ -18,6 +18,9 @@ public interface ChangeRequestRepository extends JpaRepository<ChangeRequest, Lo
     List<ChangeRequest> findAllByRequestedBy_UserId(Long userId);
     boolean existsByRequest_RequestIdAndChangeTypeAndStatus(Long requestId, ChangeType changeType, Status status);
 
+    @Query("SELECT c.changeType FROM ChangeRequest c WHERE c.changeRequestId = :changeRequestId")
+    Optional<ChangeType> findChangeTypeById(@Param("changeRequestId") Long changeRequestId);
+
     /**
      * 변경 요청 승인 시 상태 확인 → 반영 사이의 race condition을 막기 위한 행 잠금 조회.
      * RequestRepository.findByIdForUpdate와 동일한 목적.

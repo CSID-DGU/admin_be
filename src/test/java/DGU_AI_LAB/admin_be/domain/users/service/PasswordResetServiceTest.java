@@ -1,14 +1,16 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.PasswordChangeRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
+import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobRegistrationUnconfirmedException;
+import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.PasswordResetSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.PasswordHashes;
 import DGU_AI_LAB.admin_be.domain.users.entity.PasswordResetRequest;
-import DGU_AI_LAB.admin_be.domain.users.entity.PasswordResetStatus;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.PasswordResetRequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
@@ -45,12 +47,15 @@ class PasswordResetServiceTest {
 
     private static final Long USER_ID = 1L;
     private static final Long ADMIN_ID = 9L;
+    /** 작업 기록의 키로 쓰는 번호. 관리자가 가리키는 번호는 변경 요청 번호다. */
     private static final Long RESET_ID = 12L;
+    private static final Long CHANGE_ID = 40L;
     private static final PasswordHashes NEW = new PasswordHashes("newEncodedPw", "$6$new$hash");
 
     @Mock private UserRepository userRepository;
     @Mock private RequestRepository requestRepository;
     @Mock private PasswordResetRequestRepository resetRepository;
+    @Mock private ChangeRequestRepository changeRequestRepository;
     @Mock private JobClient jobClient;
     @Mock private TokenService tokenService;
     @Mock private UserLoginService userLoginService;
@@ -68,6 +73,11 @@ class PasswordResetServiceTest {
         admin = newUser("admin@dgu.ac.kr", ADMIN_ID);
         when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user));
         when(userRepository.getReferenceById(ADMIN_ID)).thenReturn(admin);
+        when(changeRequestRepository.save(any(ChangeRequest.class))).thenAnswer(invocation -> {
+            ChangeRequest saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "changeRequestId", CHANGE_ID);
+            return saved;
+        });
         when(resetRepository.save(any(PasswordResetRequest.class))).thenAnswer(invocation -> {
             PasswordResetRequest saved = invocation.getArgument(0);
             ReflectionTestUtils.setField(saved, "passwordResetRequestId", RESET_ID);
@@ -93,18 +103,25 @@ class PasswordResetServiceTest {
         user.assignUbuntuAccount(21000L, 21000L);
     }
 
+    private PasswordResetRequest newReset(PasswordHashes hashes) {
+        ChangeRequest changeRequest = ChangeRequest.password(user);
+        ReflectionTestUtils.setField(changeRequest, "changeRequestId", CHANGE_ID);
+        PasswordResetRequest reset = PasswordResetRequest.pending(changeRequest, user, hashes);
+        ReflectionTestUtils.setField(reset, "passwordResetRequestId", RESET_ID);
+        return reset;
+    }
+
     /** 저장소에 있는 승인 대기 신청. */
     private PasswordResetRequest pendingReset() {
-        PasswordResetRequest reset = PasswordResetRequest.pending(user, NEW);
-        ReflectionTestUtils.setField(reset, "passwordResetRequestId", RESET_ID);
-        when(resetRepository.findUserIdById(RESET_ID)).thenReturn(Optional.of(USER_ID));
-        when(resetRepository.findByIdForUpdate(RESET_ID)).thenReturn(Optional.of(reset));
+        PasswordResetRequest reset = newReset(NEW);
+        when(resetRepository.findUserIdByChangeRequestId(CHANGE_ID)).thenReturn(Optional.of(USER_ID));
+        when(resetRepository.findByChangeRequestIdForUpdate(CHANGE_ID)).thenReturn(Optional.of(reset));
         return reset;
     }
 
     private PasswordResetRequest processingReset() {
         PasswordResetRequest reset = pendingReset();
-        reset.startProcessing(admin, 77L);
+        reset.startProcessing(admin, "확인", 77L);
         return reset;
     }
 
@@ -121,12 +138,15 @@ class PasswordResetServiceTest {
         @Test
         @DisplayName("열린 신청이 없으면 승인 대기 신청을 만들고, 비밀번호는 아직 바꾸지 않는다")
         void createsPendingRequest() {
-            when(resetRepository.findAllByUser_UserIdAndStatusIn(anyLong(), anyCollection())).thenReturn(List.of());
+            when(resetRepository.findAllByUserIdAndStatusIn(anyLong(), anyCollection())).thenReturn(List.of());
 
             PasswordResetService.Submission submission = service.submit(USER_ID, NEW);
 
             assertThat(submission.created()).isTrue();
-            assertThat(submission.request().passwordResetRequestId()).isEqualTo(RESET_ID);
+            assertThat(submission.request().changeRequestId()).isEqualTo(CHANGE_ID);
+            assertThat(submission.notice().changeType()).isEqualTo(ChangeType.PASSWORD);
+            assertThat(submission.notice().requestId()).isNull();
+            assertThat(submission.notice().reason()).isNull();
             assertThat(submission.request().status()).isEqualTo("PENDING");
             assertThat(submission.request().email()).isEqualTo("test@dgu.ac.kr");
             assertUserUnchanged();
@@ -136,9 +156,8 @@ class PasswordResetServiceTest {
         @Test
         @DisplayName("승인 대기 중인 신청이 있으면 새로 만들지 않고 그 신청의 새 비밀번호만 바꾼다")
         void replacesPasswordOfPendingRequest() {
-            PasswordResetRequest pending = PasswordResetRequest.pending(user, new PasswordHashes("first", "$6$first$hash"));
-            ReflectionTestUtils.setField(pending, "passwordResetRequestId", RESET_ID);
-            when(resetRepository.findAllByUser_UserIdAndStatusIn(anyLong(), anyCollection())).thenReturn(List.of(pending));
+            PasswordResetRequest pending = newReset(new PasswordHashes("first", "$6$first$hash"));
+            when(resetRepository.findAllByUserIdAndStatusIn(anyLong(), anyCollection())).thenReturn(List.of(pending));
 
             PasswordResetService.Submission submission = service.submit(USER_ID, NEW);
 
@@ -146,14 +165,15 @@ class PasswordResetServiceTest {
             assertThat(pending.getPasswordHash()).isEqualTo("newEncodedPw");
             assertThat(pending.getUbuntuPasswordHash()).isEqualTo("$6$new$hash");
             verify(resetRepository, never()).save(any());
+            verify(changeRequestRepository, never()).save(any());
         }
 
         @Test
         @DisplayName("앞선 신청을 컨테이너에 반영하는 중이면 409로 막는다")
         void rejectsWhileProcessing() {
-            PasswordResetRequest processing = PasswordResetRequest.pending(user, new PasswordHashes("first", "$6$first$hash"));
-            processing.startProcessing(admin, 77L);
-            when(resetRepository.findAllByUser_UserIdAndStatusIn(anyLong(), anyCollection())).thenReturn(List.of(processing));
+            PasswordResetRequest processing = newReset(new PasswordHashes("first", "$6$first$hash"));
+            processing.startProcessing(admin, "확인", 77L);
+            when(resetRepository.findAllByUserIdAndStatusIn(anyLong(), anyCollection())).thenReturn(List.of(processing));
 
             assertThatThrownBy(() -> service.submit(USER_ID, NEW))
                     .isInstanceOf(BusinessException.class)
@@ -182,14 +202,15 @@ class PasswordResetServiceTest {
             PasswordResetRequest reset = pendingReset();
             when(jobClient.registerPasswordChange(any())).thenReturn(77L);
 
-            PasswordResetSummaryDTO result = service.approve(RESET_ID, ADMIN_ID);
+            PasswordResetSummaryDTO result = service.approve(CHANGE_ID, ADMIN_ID, "확인");
 
             verify(jobClient).registerPasswordChange(
                     new PasswordChangeRegisterRequestDTO(RESET_ID, "honggildong", "$6$new$hash"));
             assertThat(result.status()).isEqualTo("PROCESSING");
-            assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.PROCESSING);
+            assertThat(reset.getStatus()).isEqualTo(Status.PROCESSING);
             assertThat(reset.getJobId()).isEqualTo(77L);
-            assertThat(reset.getReviewedBy()).isSameAs(admin);
+            assertThat(reset.getChangeRequest().getReviewedBy()).isSameAs(admin);
+            assertThat(reset.getChangeRequest().getAdminComment()).isEqualTo("확인");
             assertUserUnchanged();
             verifyNoInteractions(notifier);
         }
@@ -199,9 +220,9 @@ class PasswordResetServiceTest {
         void appliesImmediatelyWithoutAccount() {
             PasswordResetRequest reset = pendingReset();
 
-            PasswordResetSummaryDTO result = service.approve(RESET_ID, ADMIN_ID);
+            PasswordResetSummaryDTO result = service.approve(CHANGE_ID, ADMIN_ID, "확인");
 
-            assertThat(result.status()).isEqualTo("APPLIED");
+            assertThat(result.status()).isEqualTo("FULFILLED");
             assertThat(user.getPassword()).isEqualTo("newEncodedPw");
             assertThat(user.getUbuntuPasswordHash()).isEqualTo("$6$new$hash");
             assertThat(reset.getPasswordHash()).isNull();
@@ -218,11 +239,11 @@ class PasswordResetServiceTest {
             withAccount();
             pendingReset();
 
-            service.approve(RESET_ID, ADMIN_ID);
+            service.approve(CHANGE_ID, ADMIN_ID, "확인");
 
             InOrder order = inOrder(userRepository, resetRepository, requestRepository, jobClient);
             order.verify(userRepository).findByIdForUpdate(USER_ID);
-            order.verify(resetRepository).findByIdForUpdate(RESET_ID);
+            order.verify(resetRepository).findByChangeRequestIdForUpdate(CHANGE_ID);
             order.verify(requestRepository).existsByUser_UserIdAndStatus(USER_ID, Status.PROCESSING);
             order.verify(jobClient).registerPasswordChange(any());
         }
@@ -234,10 +255,10 @@ class PasswordResetServiceTest {
             PasswordResetRequest reset = pendingReset();
             when(requestRepository.existsByUser_UserIdAndStatus(USER_ID, Status.PROCESSING)).thenReturn(true);
 
-            assertThatThrownBy(() -> service.approve(RESET_ID, ADMIN_ID))
+            assertThatThrownBy(() -> service.approve(CHANGE_ID, ADMIN_ID, "확인"))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_PASSWORD_CHANGE_WHILE_PROVISIONING);
-            assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.PENDING);
+            assertThat(reset.getStatus()).isEqualTo(Status.PENDING);
             verifyNoInteractions(jobClient);
             assertUserUnchanged();
         }
@@ -250,10 +271,10 @@ class PasswordResetServiceTest {
             when(jobClient.registerPasswordChange(any()))
                     .thenThrow(new BusinessException(ErrorCode.UBUNTU_PASSWORD_CHANGE_FAILED));
 
-            assertThatThrownBy(() -> service.approve(RESET_ID, ADMIN_ID))
+            assertThatThrownBy(() -> service.approve(CHANGE_ID, ADMIN_ID, "확인"))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_PASSWORD_CHANGE_FAILED);
-            assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.PENDING);
+            assertThat(reset.getStatus()).isEqualTo(Status.PENDING);
             assertThat(reset.getUbuntuPasswordHash()).isEqualTo("$6$new$hash");
             assertUserUnchanged();
             verify(transactionManager).rollback(any());
@@ -267,12 +288,12 @@ class PasswordResetServiceTest {
             when(jobClient.registerPasswordChange(any())).thenThrow(new JobRegistrationUnconfirmedException(
                     "응답 없음", ErrorCode.UBUNTU_PASSWORD_CHANGE_FAILED, new RuntimeException("read timeout")));
 
-            PasswordResetSummaryDTO result = service.approve(RESET_ID, ADMIN_ID);
+            PasswordResetSummaryDTO result = service.approve(CHANGE_ID, ADMIN_ID, "확인");
 
             assertThat(result.status()).isEqualTo("PROCESSING");
-            assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.PROCESSING);
+            assertThat(reset.getStatus()).isEqualTo(Status.PROCESSING);
             assertThat(reset.getJobId()).isNull();
-            assertThat(reset.getReviewedBy()).isSameAs(admin);
+            assertThat(reset.getChangeRequest().getReviewedBy()).isSameAs(admin);
             assertThat(reset.getUbuntuPasswordHash()).isEqualTo("$6$new$hash");
             assertUserUnchanged();
             verify(transactionManager, never()).rollback(any());
@@ -285,7 +306,7 @@ class PasswordResetServiceTest {
             withAccount();
             processingReset();
 
-            assertThatThrownBy(() -> service.approve(RESET_ID, ADMIN_ID))
+            assertThatThrownBy(() -> service.approve(CHANGE_ID, ADMIN_ID, "확인"))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PASSWORD_RESET_IN_PROGRESS);
             verifyNoInteractions(jobClient);
@@ -295,9 +316,9 @@ class PasswordResetServiceTest {
         @DisplayName("거절된 신청은 승인하지 못한다")
         void rejectsClosed() {
             PasswordResetRequest reset = pendingReset();
-            reset.deny(admin);
+            reset.deny(admin, "거절");
 
-            assertThatThrownBy(() -> service.approve(RESET_ID, ADMIN_ID))
+            assertThatThrownBy(() -> service.approve(CHANGE_ID, ADMIN_ID, "확인"))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PASSWORD_RESET_ALREADY_CLOSED);
             assertUserUnchanged();
@@ -306,9 +327,9 @@ class PasswordResetServiceTest {
         @Test
         @DisplayName("없는 신청이면 404")
         void unknownRequestIsNotFound() {
-            when(resetRepository.findUserIdById(404L)).thenReturn(Optional.empty());
+            when(resetRepository.findUserIdByChangeRequestId(404L)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.approve(404L, ADMIN_ID))
+            assertThatThrownBy(() -> service.approve(404L, ADMIN_ID, "확인"))
                     .isInstanceOf(EntityNotFoundException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PASSWORD_RESET_REQUEST_NOT_FOUND);
         }
@@ -324,11 +345,11 @@ class PasswordResetServiceTest {
             withAccount();
             PasswordResetRequest reset = processingReset();
 
-            service.complete(RESET_ID);
+            service.complete(CHANGE_ID);
 
             assertThat(user.getPassword()).isEqualTo("newEncodedPw");
             assertThat(user.getUbuntuPasswordHash()).isEqualTo("$6$new$hash");
-            assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.APPLIED);
+            assertThat(reset.getStatus()).isEqualTo(Status.FULFILLED);
             assertThat(reset.getPasswordHash()).isNull();
             assertThat(reset.getUbuntuPasswordHash()).isNull();
             verify(tokenService).logout(USER_ID);
@@ -343,7 +364,7 @@ class PasswordResetServiceTest {
             PasswordResetRequest reset = processingReset();
             reset.completeJob();
 
-            service.complete(RESET_ID);
+            service.complete(CHANGE_ID);
 
             assertUserUnchanged();
             verifyNoInteractions(notifier);
@@ -356,9 +377,9 @@ class PasswordResetServiceTest {
             PasswordResetRequest reset = processingReset();
             doThrow(new IllegalStateException("redis down")).when(userLoginService).clearFailedAttempts(any());
 
-            service.complete(RESET_ID);
+            service.complete(CHANGE_ID);
 
-            assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.APPLIED);
+            assertThat(reset.getStatus()).isEqualTo(Status.FULFILLED);
             verify(notifier).applied("test@dgu.ac.kr");
         }
     }
@@ -384,10 +405,10 @@ class PasswordResetServiceTest {
             PasswordResetRequest reset = pendingReset();
             user.deactivate();
 
-            assertThatThrownBy(() -> service.approve(RESET_ID, ADMIN_ID))
+            assertThatThrownBy(() -> service.approve(CHANGE_ID, ADMIN_ID, "확인"))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_ALREADY_INACTIVE);
-            assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.PENDING);
+            assertThat(reset.getStatus()).isEqualTo(Status.PENDING);
             assertUserUnchanged();
         }
 
@@ -395,13 +416,13 @@ class PasswordResetServiceTest {
         @DisplayName("비활성화 때 승인 대기 신청을 검토자 없이 닫고 새 비밀번호를 지운다")
         void closesPending() {
             PasswordResetRequest reset = pendingReset();
-            when(resetRepository.findAllByUserIdAndStatusForShare(USER_ID, PasswordResetStatus.PENDING))
+            when(resetRepository.findAllByUserIdAndStatusForShare(USER_ID, Status.PENDING))
                     .thenReturn(List.of(reset));
 
             service.closePendingOf(USER_ID);
 
-            assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.DENIED);
-            assertThat(reset.getReviewedBy()).isNull();
+            assertThat(reset.getStatus()).isEqualTo(Status.DENIED);
+            assertThat(reset.getChangeRequest().getReviewedBy()).isNull();
             assertThat(reset.getPasswordHash()).isNull();
             assertThat(reset.getUbuntuPasswordHash()).isNull();
             verifyNoInteractions(notifier);
@@ -414,10 +435,10 @@ class PasswordResetServiceTest {
             PasswordResetRequest reset = processingReset();
             user.deactivate();
 
-            Optional<PasswordResetSummaryDTO> returned = service.returnToPending(RESET_ID);
+            Optional<PasswordResetSummaryDTO> returned = service.returnToPending(CHANGE_ID);
 
             assertThat(returned).isPresent();
-            assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.DENIED);
+            assertThat(reset.getStatus()).isEqualTo(Status.DENIED);
             assertThat(reset.getUbuntuPasswordHash()).isNull();
         }
     }
@@ -432,12 +453,12 @@ class PasswordResetServiceTest {
             withAccount();
             PasswordResetRequest reset = processingReset();
 
-            Optional<PasswordResetSummaryDTO> returned = service.returnToPending(RESET_ID);
+            Optional<PasswordResetSummaryDTO> returned = service.returnToPending(CHANGE_ID);
 
             assertThat(returned).isPresent();
             assertThat(returned.get().status()).isEqualTo("PENDING");
             assertThat(reset.getJobId()).isNull();
-            assertThat(reset.getReviewedBy()).isNull();
+            assertThat(reset.getChangeRequest().getReviewedBy()).isNull();
             assertThat(reset.getUbuntuPasswordHash()).isEqualTo("$6$new$hash");
             assertUserUnchanged();
         }
@@ -448,11 +469,11 @@ class PasswordResetServiceTest {
             withAccount();
             processingReset();
 
-            service.returnToPending(RESET_ID);
+            service.returnToPending(CHANGE_ID);
 
             InOrder order = inOrder(userRepository, resetRepository);
             order.verify(userRepository).findByIdForUpdate(USER_ID);
-            order.verify(resetRepository).findByIdForUpdate(RESET_ID);
+            order.verify(resetRepository).findByChangeRequestIdForUpdate(CHANGE_ID);
         }
 
         @Test
@@ -460,8 +481,8 @@ class PasswordResetServiceTest {
         void ignoresOtherStates() {
             PasswordResetRequest reset = pendingReset();
 
-            assertThat(service.returnToPending(RESET_ID)).isEmpty();
-            assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.PENDING);
+            assertThat(service.returnToPending(CHANGE_ID)).isEmpty();
+            assertThat(reset.getStatus()).isEqualTo(Status.PENDING);
         }
     }
 
@@ -474,12 +495,12 @@ class PasswordResetServiceTest {
         void deniesPending() {
             PasswordResetRequest reset = pendingReset();
 
-            PasswordResetSummaryDTO result = service.deny(RESET_ID, ADMIN_ID);
+            PasswordResetSummaryDTO result = service.deny(CHANGE_ID, ADMIN_ID, "거절");
 
             assertThat(result.status()).isEqualTo("DENIED");
             assertThat(reset.getPasswordHash()).isNull();
             assertThat(reset.getUbuntuPasswordHash()).isNull();
-            assertThat(reset.getReviewedBy()).isSameAs(admin);
+            assertThat(reset.getChangeRequest().getReviewedBy()).isSameAs(admin);
             assertUserUnchanged();
             verify(notifier).denied("test@dgu.ac.kr");
         }
@@ -489,11 +510,11 @@ class PasswordResetServiceTest {
         void locksUserBeforeReset() {
             pendingReset();
 
-            service.deny(RESET_ID, ADMIN_ID);
+            service.deny(CHANGE_ID, ADMIN_ID, "거절");
 
             InOrder order = inOrder(userRepository, resetRepository);
             order.verify(userRepository).findByIdForUpdate(USER_ID);
-            order.verify(resetRepository).findByIdForUpdate(RESET_ID);
+            order.verify(resetRepository).findByChangeRequestIdForUpdate(CHANGE_ID);
         }
 
         @Test
@@ -502,24 +523,10 @@ class PasswordResetServiceTest {
             withAccount();
             processingReset();
 
-            assertThatThrownBy(() -> service.deny(RESET_ID, ADMIN_ID))
+            assertThatThrownBy(() -> service.deny(CHANGE_ID, ADMIN_ID, "거절"))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PASSWORD_RESET_IN_PROGRESS);
             verifyNoInteractions(notifier);
         }
-    }
-
-    @Test
-    @DisplayName("처리할 신청 목록은 승인 대기와 반영 중만 담는다")
-    void listsOpenRequests() {
-        PasswordResetRequest reset = PasswordResetRequest.pending(user, NEW);
-        ReflectionTestUtils.setField(reset, "passwordResetRequestId", RESET_ID);
-        when(resetRepository.findAllWithUserByStatusIn(
-                List.of(PasswordResetStatus.PENDING, PasswordResetStatus.PROCESSING))).thenReturn(List.of(reset));
-
-        List<PasswordResetSummaryDTO> open = service.getOpenRequests();
-
-        assertThat(open).extracting(PasswordResetSummaryDTO::passwordResetRequestId).containsExactly(RESET_ID);
-        assertThat(open.get(0).ubuntuUsername()).isEqualTo("honggildong");
     }
 }

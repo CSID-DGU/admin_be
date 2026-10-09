@@ -22,7 +22,6 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
-import DGU_AI_LAB.admin_be.domain.users.entity.PasswordResetStatus;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.PasswordResetRequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
@@ -140,7 +139,7 @@ public class AdminRequestCommandService {
             }
             // 비밀번호 교체 작업이 도는 중이면 이 컨테이너만 옛 비밀번호로 만들어진다. 교체가 끝난 뒤 승인한다.
             if (!passwordResetRequestRepository.findAllByUserIdAndStatusForShare(
-                    owner.getUserId(), PasswordResetStatus.PROCESSING).isEmpty()) {
+                    owner.getUserId(), Status.PROCESSING).isEmpty()) {
                 throw new BusinessException(ErrorCode.PASSWORD_RESET_IN_PROGRESS);
             }
             // 그룹은 신청·사용자 행 다음에 잠근다(교착 방지 순서). 승인 대기 그룹(gid 없음)은 이름만 보내고,

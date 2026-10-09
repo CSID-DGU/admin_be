@@ -1,6 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller;
 
-import DGU_AI_LAB.admin_be.domain.requests.service.AdminModificationCommandService;
+import DGU_AI_LAB.admin_be.domain.requests.service.ChangeRequestDecisionService;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestQueryService;
 import DGU_AI_LAB.admin_be.support.WebMvcTestSupport;
 import org.junit.jupiter.api.DisplayName;
@@ -18,7 +18,7 @@ import static org.mockito.Mockito.doNothing;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 
@@ -32,7 +32,7 @@ class AdminRequestChangeControllerTest extends WebMvcTestSupport {
     private MockMvc mockMvc;
 
     @MockitoBean
-    private AdminModificationCommandService adminModificationCommandService;
+    private ChangeRequestDecisionService changeRequestDecisionService;
 
     @MockitoBean
     private AdminRequestQueryService adminRequestQueryService;
@@ -51,8 +51,7 @@ class AdminRequestChangeControllerTest extends WebMvcTestSupport {
                     .andExpect(jsonPath("$.status").value(200))
                     .andExpect(jsonPath("$.data").isEmpty());
 
-            verify(adminModificationCommandService).approveModification(isNull(),
-                    argThat(dto -> dto.changeRequestId() == 7L && "승인합니다.".equals(dto.adminComment())));
+            verify(changeRequestDecisionService).approve(isNull(), eq(7L), eq("승인합니다."));
         }
 
         @Test
@@ -77,8 +76,7 @@ class AdminRequestChangeControllerTest extends WebMvcTestSupport {
                             .content("{\"adminComment\": \"거절합니다.\"}"))
                     .andExpect(status().isOk());
 
-            verify(adminModificationCommandService).rejectModification(isNull(),
-                    argThat(dto -> dto.changeRequestId() == 8L && "거절합니다.".equals(dto.adminComment())));
+            verify(changeRequestDecisionService).reject(isNull(), eq(8L), eq("거절합니다."));
         }
 
         @Test

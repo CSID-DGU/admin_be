@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestNotice;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.PasswordResetSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.PasswordHashes;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
@@ -110,7 +111,8 @@ class SelfPasswordResetServiceTest {
     void submit_createsRequestAndNotifiesAdmins() {
         when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(user));
         when(passwordEncoder.encode("newPassword1!")).thenReturn("newEncodedPw");
-        when(passwordResetService.submit(eq(1L), any())).thenReturn(new PasswordResetService.Submission(summary(), true));
+        ChangeRequestNotice notice = mock(ChangeRequestNotice.class);
+        when(passwordResetService.submit(eq(1L), any())).thenReturn(new PasswordResetService.Submission(summary(), notice));
 
         service.submit("Test@dgu.ac.kr", "123456", "newPassword1!");
 
@@ -118,7 +120,7 @@ class SelfPasswordResetServiceTest {
         order.verify(emailService).consumePasswordResetCode("test@dgu.ac.kr", "123456");
         ArgumentCaptor<PasswordHashes> hashes = ArgumentCaptor.forClass(PasswordHashes.class);
         order.verify(passwordResetService).submit(eq(1L), hashes.capture());
-        order.verify(notifier).requested(summary());
+        order.verify(notifier).requested(notice);
         assertThat(hashes.getValue().web()).isEqualTo("newEncodedPw");
         assertThat(hashes.getValue().ubuntu()).startsWith("$6$").doesNotContain("newPassword1!");
     }
@@ -128,7 +130,7 @@ class SelfPasswordResetServiceTest {
     void submit_replacement_doesNotNotifyAgain() {
         when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(user));
         when(passwordEncoder.encode("newPassword1!")).thenReturn("newEncodedPw");
-        when(passwordResetService.submit(eq(1L), any())).thenReturn(new PasswordResetService.Submission(summary(), false));
+        when(passwordResetService.submit(eq(1L), any())).thenReturn(new PasswordResetService.Submission(summary(), null));
 
         service.submit("test@dgu.ac.kr", "123456", "newPassword1!");
 

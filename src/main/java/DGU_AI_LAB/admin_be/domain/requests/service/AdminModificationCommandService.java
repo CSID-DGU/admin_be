@@ -55,6 +55,10 @@ public class AdminModificationCommandService {
         if (changeRequest.getStatus() != Status.PENDING) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
+        // 비밀번호 변경은 함께 지울 해시가 있어 PasswordResetService가 거절한다(ChangeRequestDecisionService).
+        if (changeRequest.getChangeType() == ChangeType.PASSWORD) {
+            throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
+        }
 
         User admin = userRepository.findById(adminId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));

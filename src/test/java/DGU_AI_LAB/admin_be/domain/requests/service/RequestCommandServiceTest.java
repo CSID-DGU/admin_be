@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestNotice;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
@@ -28,6 +29,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -48,8 +50,14 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class RequestCommandServiceTest {
 
+    /** 사유는 100자 이상이어야 받는다. */
+    private static final String REASON = "가".repeat(100);
+
     @Mock
     private DGU_AI_LAB.admin_be.domain.home.service.HomeCleanupService homeCleanupService;
+
+    @Mock
+    private ChangeRequestDescriber changeRequestDescriber;
 
     @InjectMocks
     private RequestCommandService requestCommandService;
@@ -270,9 +278,9 @@ class RequestCommandServiceTest {
         void createSingleChangeRequest_throwsException_whenRequestNotFound() {
             when(requestRepository.findByIdForUpdate(99L)).thenReturn(Optional.empty());
 
-            SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005]", "사유");
+            SingleChangeRequestDTO dto = new SingleChangeRequestDTO(99L, ChangeType.GROUP, "[1005]", REASON);
 
-            assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(1L, 99L, dto))
+            assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(1L, dto))
                     .isInstanceOf(BusinessException.class);
         }
 
@@ -286,10 +294,10 @@ class RequestCommandServiceTest {
             when(request.getUser()).thenReturn(owner);
             when(requestRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(request));
 
-            SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005]", "사유");
+            SingleChangeRequestDTO dto = new SingleChangeRequestDTO(10L, ChangeType.GROUP, "[1005]", REASON);
 
             // userId=2 로 요청 → 소유자 userId=1 과 불일치
-            assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(2L, 10L, dto))
+            assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(2L, dto))
                     .isInstanceOf(BusinessException.class);
         }
 
@@ -304,9 +312,9 @@ class RequestCommandServiceTest {
             when(request.getStatus()).thenReturn(Status.PENDING);
             when(requestRepository.findByIdForUpdate(11L)).thenReturn(Optional.of(request));
 
-            SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005]", "사유");
+            SingleChangeRequestDTO dto = new SingleChangeRequestDTO(11L, ChangeType.GROUP, "[1005]", REASON);
 
-            assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(1L, 11L, dto))
+            assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(1L, dto))
                     .isInstanceOf(BusinessException.class);
         }
 
@@ -322,14 +330,14 @@ class RequestCommandServiceTest {
             when(changeRequestRepository.existsByRequest_RequestIdAndChangeTypeAndStatus(12L, ChangeType.GROUP, Status.PENDING))
                     .thenReturn(true);
 
-            SingleChangeRequestDTO dto = new SingleChangeRequestDTO(ChangeType.GROUP, "[1005]", "사유");
+            SingleChangeRequestDTO dto = new SingleChangeRequestDTO(12L, ChangeType.GROUP, "[1005]", REASON);
 
-            assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(1L, 12L, dto))
+            assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(1L, dto))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.CHANGE_REQUEST_ALREADY_PENDING);
             verify(changeRequestRepository, never()).save(any());
-            verify(alarmService, never()).recordLog(any(), any(Object[].class));
+            verify(alarmService, never()).sendChangeRequestNotification(any());
         }
 
         @Test
@@ -347,12 +355,20 @@ class RequestCommandServiceTest {
             when(requestRepository.findByIdForUpdate(13L)).thenReturn(Optional.of(request));
 
             String newValue = LocalDateTime.now().plusDays(30).withNano(0).toString();
+            when(changeRequestDescriber.describe(any())).thenReturn("2026-10-20 → 2026-11-19 (30일 연장)");
+
             requestCommandService.createSingleChangeRequest(
-                    1L, 13L, new SingleChangeRequestDTO(ChangeType.EXPIRES_AT, newValue, "사유"));
+                    1L, new SingleChangeRequestDTO(13L, ChangeType.EXPIRES_AT, newValue, "  " + REASON + "  "));
 
             verify(changeRequestRepository).save(any());
-            verify(alarmService).recordLog("notification.admin.change-request.requested",
-                    "FARM", ChangeType.EXPIRES_AT.label(), "홍길동", "honggildong", null);
+            ArgumentCaptor<ChangeRequestNotice> notice = ArgumentCaptor.forClass(ChangeRequestNotice.class);
+            verify(alarmService).sendChangeRequestNotification(notice.capture());
+            assertThat(notice.getValue().changeType()).isEqualTo(ChangeType.EXPIRES_AT);
+            assertThat(notice.getValue().serverName()).isEqualTo("FARM");
+            assertThat(notice.getValue().name()).isEqualTo("홍길동");
+            assertThat(notice.getValue().ubuntuUsername()).isEqualTo("honggildong");
+            assertThat(notice.getValue().change()).isEqualTo("2026-10-20 → 2026-11-19 (30일 연장)");
+            assertThat(notice.getValue().reason()).isEqualTo(REASON);
         }
     }
 

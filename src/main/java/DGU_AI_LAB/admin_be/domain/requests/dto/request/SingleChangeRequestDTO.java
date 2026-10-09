@@ -25,6 +25,10 @@ import java.util.stream.Collectors;
 @Schema(description = "단일 변경 요청 DTO")
 public record SingleChangeRequestDTO(
 
+        @Schema(description = "변경 대상 신청 ID", example = "42")
+        @NotNull(message = "변경 대상 신청은 필수입니다.")
+        Long requestId,
+
         @Schema(description = "변경 타입", example = "EXPIRES_AT", allowableValues = {"EXPIRES_AT", "GROUP", "PORT"})
         @NotNull(message = "변경 타입은 필수입니다.")
         ChangeType changeType,
@@ -34,12 +38,14 @@ public record SingleChangeRequestDTO(
         @Size(max = 1000, message = "새로운 값은 1000자 이하여야 합니다.")
         String newValue,
 
-        // change_request.reason이 1000자다.
-        @Schema(description = "변경 요청 사유", example = "프로젝트 요구사항 변경으로 인한 용량 증설")
+        // 승인자가 이 글만 보고 판단하므로 100자 이상을 요구한다. 상한은 change_request.reason 컬럼(1000자)이다.
+        @Schema(description = "변경 요청 사유 (100~1000자)", example = "졸업 프로젝트 최종 발표가 12월 중순으로 미뤄져 모델 학습을 그때까지 이어 가야 합니다. 지금까지 학습한 체크포인트로 추가 실험 세 가지(데이터 증강, 학습률 조정, 앙상블)를 돌릴 예정이고 한 번에 6시간쯤 걸립니다.")
         @NotBlank(message = "변경 사유는 필수입니다.")
-        @Size(max = 1000, message = "변경 사유는 1000자 이하여야 합니다.")
+        @Size(min = REASON_MIN_LENGTH, max = 1000, message = "변경 사유는 100자 이상 1000자 이하로 적어 주세요.")
         String reason
 ) {
+
+    static final int REASON_MIN_LENGTH = 100;
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -69,7 +75,7 @@ public record SingleChangeRequestDTO(
                     .changeType(dto.changeType())
                     .oldValue(oldValue)
                     .newValue(storedNewValue)
-                    .reason(dto.reason())
+                    .reason(dto.reason().trim())
                     .requestedBy(requestedBy)
                     .build();
         } catch (BusinessException e) {
@@ -154,15 +160,16 @@ public record SingleChangeRequestDTO(
         }
 
         if (!SUPPORTED_TYPES.contains(changeType)) {
-            throw new BusinessException("기간 연장(EXPIRES_AT), 그룹 추가(GROUP), 추가 포트 변경(PORT)만 변경 요청할 수 있습니다.", ErrorCode.UNSUPPORTED_CHANGE_TYPE);
+            throw new BusinessException("여기서는 기간 연장(EXPIRES_AT), 그룹 추가(GROUP), 추가 포트 변경(PORT)만 요청할 수 있습니다.", ErrorCode.UNSUPPORTED_CHANGE_TYPE);
         }
 
         if (newValue == null || newValue.trim().isEmpty()) {
             throw new BusinessException("새로운 값은 필수입니다.", ErrorCode.INVALID_INPUT_VALUE);
         }
 
-        if (reason == null || reason.trim().isEmpty()) {
-            throw new BusinessException("변경 사유는 필수입니다.", ErrorCode.INVALID_INPUT_VALUE);
+        // 앞뒤 공백으로 글자 수만 채운 사유를 받지 않는다.
+        if (reason == null || reason.trim().length() < REASON_MIN_LENGTH) {
+            throw new BusinessException("변경 사유는 100자 이상 1000자 이하로 적어 주세요.", ErrorCode.INVALID_INPUT_VALUE);
         }
     }
 
