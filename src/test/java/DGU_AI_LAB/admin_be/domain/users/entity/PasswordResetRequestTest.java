@@ -1,5 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.users.entity;
 
+import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
+import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.junit.jupiter.api.DisplayName;
@@ -16,7 +19,7 @@ class PasswordResetRequestTest {
     private final User admin = User.builder().email("admin@dgu.ac.kr").password("p").name("관리자").build();
 
     private PasswordResetRequest pending() {
-        return PasswordResetRequest.pending(user, HASHES);
+        return PasswordResetRequest.pending(ChangeRequest.password(user), user, HASHES);
     }
 
     @Test
@@ -24,8 +27,11 @@ class PasswordResetRequestTest {
     void startsPending() {
         PasswordResetRequest reset = pending();
 
-        assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.PENDING);
+        assertThat(reset.getStatus()).isEqualTo(Status.PENDING);
         assertThat(reset.hashes()).isEqualTo(HASHES);
+        assertThat(reset.getChangeRequest().getChangeType()).isEqualTo(ChangeType.PASSWORD);
+        assertThat(reset.getChangeRequest().getRequestedBy()).isSameAs(user);
+        assertThat(reset.getChangeRequest().getRequest()).isNull();
     }
 
     @Test
@@ -33,13 +39,13 @@ class PasswordResetRequestTest {
     void processingThenApplied() {
         PasswordResetRequest reset = pending();
 
-        reset.startProcessing(admin, 77L);
-        assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.PROCESSING);
+        reset.startProcessing(admin, "확인", 77L);
+        assertThat(reset.getStatus()).isEqualTo(Status.PROCESSING);
         assertThat(reset.getJobId()).isEqualTo(77L);
-        assertThat(reset.getReviewedAt()).isNotNull();
+        assertThat(reset.getChangeRequest().getReviewedAt()).isNotNull();
 
         reset.completeJob();
-        assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.APPLIED);
+        assertThat(reset.getStatus()).isEqualTo(Status.FULFILLED);
         assertThat(reset.getPasswordHash()).isNull();
         assertThat(reset.getUbuntuPasswordHash()).isNull();
     }
@@ -48,17 +54,17 @@ class PasswordResetRequestTest {
     @DisplayName("작업이 실패하면 승인 전으로 돌아가고 해시는 남는다 — 다시 승인하거나 거절할 수 있다")
     void failedJobReturnsToPending() {
         PasswordResetRequest reset = pending();
-        reset.startProcessing(admin, 77L);
+        reset.startProcessing(admin, "확인", 77L);
 
         reset.returnToPending();
 
-        assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.PENDING);
+        assertThat(reset.getStatus()).isEqualTo(Status.PENDING);
         assertThat(reset.getJobId()).isNull();
-        assertThat(reset.getReviewedBy()).isNull();
-        assertThat(reset.getReviewedAt()).isNull();
+        assertThat(reset.getChangeRequest().getReviewedBy()).isNull();
+        assertThat(reset.getChangeRequest().getReviewedAt()).isNull();
         assertThat(reset.hashes()).isEqualTo(HASHES);
 
-        reset.startProcessing(admin, 78L);
+        reset.startProcessing(admin, "확인", 78L);
         assertThat(reset.getJobId()).isEqualTo(78L);
     }
 
@@ -67,11 +73,11 @@ class PasswordResetRequestTest {
     void deniedIsClosed() {
         PasswordResetRequest reset = pending();
 
-        reset.deny(admin);
+        reset.deny(admin, "거절");
 
-        assertThat(reset.getStatus()).isEqualTo(PasswordResetStatus.DENIED);
+        assertThat(reset.getStatus()).isEqualTo(Status.DENIED);
         assertThat(reset.getPasswordHash()).isNull();
-        assertThatThrownBy(() -> reset.startProcessing(admin, 1L))
+        assertThatThrownBy(() -> reset.startProcessing(admin, "확인", 1L))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PASSWORD_RESET_ALREADY_CLOSED);
         assertThatThrownBy(() -> reset.replacePassword(HASHES)).isInstanceOf(BusinessException.class);
@@ -81,12 +87,12 @@ class PasswordResetRequestTest {
     @DisplayName("반영 중에는 새 비밀번호를 바꾸거나 거절하지 못한다")
     void processingIsLocked() {
         PasswordResetRequest reset = pending();
-        reset.startProcessing(admin, 77L);
+        reset.startProcessing(admin, "확인", 77L);
 
         assertThatThrownBy(() -> reset.replacePassword(new PasswordHashes("other", "$6$other$hash")))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PASSWORD_RESET_IN_PROGRESS);
-        assertThatThrownBy(() -> reset.deny(admin))
+        assertThatThrownBy(() -> reset.deny(admin, "거절"))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PASSWORD_RESET_IN_PROGRESS);
         assertThat(reset.hashes()).isEqualTo(HASHES);

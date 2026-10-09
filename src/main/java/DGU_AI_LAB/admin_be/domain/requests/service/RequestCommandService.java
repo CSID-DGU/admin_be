@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestNotice;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.global.util.AfterCommit;
 import DGU_AI_LAB.admin_be.domain.home.service.HomeCleanupService;
@@ -9,6 +10,7 @@ import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.groups.service.PendingGroupService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SingleChangeRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
@@ -48,6 +50,7 @@ public class RequestCommandService {
     private final GroupRepository groupRepository;
     private final ResourceGroupRepository resourceGroupRepository;
     private final ChangeRequestRepository changeRequestRepository;
+    private final ChangeRequestDescriber changeRequestDescriber;
     private final PortRequestService portRequestService;
     private final AlarmService alarmService;
     private final RequestCreateThrottle requestCreateThrottle;
@@ -102,7 +105,8 @@ public class RequestCommandService {
      * 단일 변경 요청 생성 - DTO가 모든 검증을 담당하므로 서비스는 단순히 처리만 함
      */
     @Transactional
-    public void createSingleChangeRequest(Long userId, Long requestId, SingleChangeRequestDTO dto) {
+    public ChangeRequestResponseDTO createSingleChangeRequest(Long userId, SingleChangeRequestDTO dto) {
+        Long requestId = dto.requestId();
         // 행 잠금 조회: 같은 신청에 동시에 들어온 변경 요청이 아래 대기 중 중복 검사를 함께 통과하지 못하게 한다.
         Request originalRequest = requestRepository.findByIdForUpdate(requestId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
@@ -130,21 +134,18 @@ public class RequestCommandService {
                 dto, originalRequest, requestedBy, portRequestService.getPortRequestsByRequestId(requestId), objectMapper);
         changeRequestRepository.save(changeRequest);
 
-        notifyChangeRequestedAfterCommit(changeRequest, originalRequest, requestedBy);
+        notifyChangeRequestedAfterCommit(changeRequest);
+        return ChangeRequestResponseDTO.fromEntity(changeRequest);
     }
 
     /**
-     * 변경 요청이 들어왔음을 알림 기록(noti) 채널에 남긴다 — 신청서 채널이 아니라 사용자 안내 발송 기록이 쌓이는 곳이다.
-     * 값은 지금(트랜잭션 안에서) 읽고 전송만 커밋 뒤로 미룬다. 알림 실패는 접수를 실패시키지 않는다.
+     * 변경 요청이 들어왔음을 알린다. 값은 지금(트랜잭션 안에서) 읽고 전송만 커밋 뒤로 미룬다.
+     * 알림 실패는 접수를 실패시키지 않는다.
      */
-    private void notifyChangeRequestedAfterCommit(ChangeRequest changeRequest, Request originalRequest, User requestedBy) {
-        String serverName = originalRequest.getResourceGroup().getServerName();
-        String changeType = changeRequest.getChangeType().label();
-        String name = requestedBy.getName();
-        String username = originalRequest.getUbuntuUsername();
-        AfterCommit.run("변경 요청 접수 알림, 요청 ID " + originalRequest.getRequestId(),
-                () -> alarmService.recordLog("notification.admin.change-request.requested",
-                        serverName, changeType, name, username, changeRequest.getChangeRequestId()));
+    private void notifyChangeRequestedAfterCommit(ChangeRequest changeRequest) {
+        ChangeRequestNotice notice = ChangeRequestNotice.of(changeRequest, changeRequestDescriber.describe(changeRequest));
+        AfterCommit.run("변경 요청 접수 알림, changeRequestId " + changeRequest.getChangeRequestId(),
+                () -> alarmService.sendChangeRequestNotification(notice));
     }
 
     /**

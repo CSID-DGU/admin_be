@@ -150,8 +150,26 @@ class RequestDtoValidationTest {
         @DisplayName("단건 변경 요청 사유는 1000자까지")
         void singleChangeReason_1000() {
             assertThat(violatedPaths(new SingleChangeRequestDTO(
-                    DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType.EXPIRES_AT, "2030-01-01T00:00:00", "a".repeat(1001))))
+                    1L, DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType.EXPIRES_AT, "2030-01-01T00:00:00", "a".repeat(1001))))
                     .contains("reason");
+        }
+
+        @Test
+        @DisplayName("단건 변경 요청 사유는 100자부터 — 승인자가 이 글만 보고 판단한다")
+        void singleChangeReason_min100() {
+            var type = DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType.EXPIRES_AT;
+            assertThat(violatedPaths(new SingleChangeRequestDTO(1L, type, "2030-01-01T00:00:00", "a".repeat(99))))
+                    .contains("reason");
+            assertThat(violatedPaths(new SingleChangeRequestDTO(1L, type, "2030-01-01T00:00:00", "a".repeat(100))))
+                    .isEmpty();
+        }
+
+        @Test
+        @DisplayName("단건 변경 요청은 대상 신청 번호가 있어야 한다")
+        void singleChange_requiresRequestId() {
+            assertThat(violatedPaths(new SingleChangeRequestDTO(
+                    null, DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType.EXPIRES_AT, "2030-01-01T00:00:00", "a".repeat(100))))
+                    .contains("requestId");
         }
     }
 

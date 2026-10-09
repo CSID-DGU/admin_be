@@ -63,7 +63,7 @@ public class SelfPasswordResetService {
                 passwordResetService.submit(user.getUserId(), PasswordHashes.of(newPassword, passwordEncoder));
         // 승인 전에 다시 낸 신청은 새 비밀번호만 바뀐 것이라 관리자에게 또 알리지 않는다.
         if (submission.created()) {
-            notifier.requested(submission.request());
+            notifier.requested(submission.notice());
         }
     }
 

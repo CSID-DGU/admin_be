@@ -15,7 +15,9 @@ import java.util.stream.Collectors;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
+import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestNotice;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
+import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.server.ServerProfileRegistry;
@@ -306,6 +308,40 @@ public class AlarmService {
         });
     }
 
+    /**
+     * 변경 요청이 들어왔음을 신청서와 같은 블록 양식으로 알린다. 사용 기간 연장은 승인자가 판단하는 신청서 채널로,
+     * 나머지(공유 그룹 추가·추가 포트 변경·비밀번호 변경)는 알림 기록(noti) 채널로 간다. 관리자 화면의
+     * 변경 요청 관리에서 승인·거절한다. 호출자가 커밋 뒤에 부른다.
+     */
+    public void sendChangeRequestNotification(ChangeRequestNotice notice) {
+        safely("변경 요청 접수 알림", () -> {
+            LocalDateTime receivedAt = notice.receivedAt() != null
+                    ? notice.receivedAt()
+                    : LocalDateTime.now(ZoneId.of("Asia/Seoul"));
+            String target = notice.requestId() == null
+                    ? "계정"
+                    : notice.serverName() + " 신청 #" + notice.requestId();
+
+            String message = messageUtils.get("notification.admin.change-request.received",
+                    String.valueOf(notice.changeRequestId()),                  // {0}
+                    notice.changeType().label(),                               // {1}
+                    RECEIVED_AT_FORMAT.format(receivedAt),                     // {2}
+                    SlackText.line(notice.name()),                             // {3}
+                    SlackText.line(notice.studentId()),                        // {4}
+                    SlackText.line(notice.department()),                       // {5}
+                    SlackText.line(notice.email()),                            // {6}
+                    SlackText.line(notice.ubuntuUsername()),                   // {7}
+                    target,                                                    // {8}
+                    notice.change(),                                           // {9}
+                    notice.reason() == null ? "없음" : SlackText.quote(notice.reason())); // {10}
+
+            RequestChannel channel = notice.changeType() == ChangeType.EXPIRES_AT
+                    ? requestChannel(notice.email(), notice.serverName())
+                    : notiChannel();
+            enqueueRequestChannel(message, channel, null, null);
+        });
+    }
+
     /** 신청서의 후속 알림. 신청서 메시지의 식별자를 알면 그 스레드 댓글로, 모르면(webhook으로 보냈거나 아직 적히기 전) 일반 메시지로 보낸다. */
     private void replyToRequest(String message, RequestChannel channel, String threadTs) {
         if (threadTs == null) {
@@ -324,13 +360,22 @@ public class AlarmService {
      * 이 둘 말고 다른 알림을 보내지 않는다. 테스트용 계정의 것은 webhook이든 봇이든 알림 기록 채널로만 돌린다.
      */
     private RequestChannel requestChannel(User user, String serverName) {
-        if (isTestAccount(user.getEmail())) {
-            return new RequestChannel(notiLogWebhookUrl,
-                    notiChannelId == null || notiChannelId.isBlank() ? null : notiChannelId);
+        return requestChannel(user.getEmail(), serverName);
+    }
+
+    private RequestChannel requestChannel(String email, String serverName) {
+        if (isTestAccount(email)) {
+            return notiChannel();
         }
         return new RequestChannel(
                 serverProfileRegistry.requestWebhookUrl(serverName).orElse(errorLogWebhookUrl),
                 serverProfileRegistry.requestChannelId(serverName).orElse(null));
+    }
+
+    /** 알림 기록(noti) 채널. 블록 양식 글을 봇으로 올릴 수 있으면 봇으로, 채널 ID가 없으면 webhook으로 보낸다. */
+    private RequestChannel notiChannel() {
+        return new RequestChannel(notiLogWebhookUrl,
+                notiChannelId == null || notiChannelId.isBlank() ? null : notiChannelId);
     }
 
     /**

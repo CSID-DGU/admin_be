@@ -15,17 +15,17 @@ import java.time.LocalDateTime;
 public record ChangeRequestResponseDTO(
         @Schema(description = "변경 요청 고유 ID", example = "1")
         Long changeRequestId,
-        @Schema(description = "원본 서버 신청 ID", example = "42")
+        @Schema(description = "원본 서버 신청 ID. 계정 단위 변경(PASSWORD)이면 null", example = "42", nullable = true)
         Long originalRequestId,
-        @Schema(description = "변경 타입", example = "EXPIRES_AT", allowableValues = {"EXPIRES_AT", "GROUP", "RESOURCE_GROUP", "CONTAINER_IMAGE", "PORT"})
+        @Schema(description = "변경 타입", example = "EXPIRES_AT", allowableValues = {"EXPIRES_AT", "GROUP", "RESOURCE_GROUP", "CONTAINER_IMAGE", "PORT", "PASSWORD"})
         ChangeType changeType,
         @Schema(description = "변경 전 값 (JSON)", example = "20")
         @JsonRawValue String oldValue,
-        @Schema(description = "변경 후 값 (JSON)", example = "50")
+        @Schema(description = "변경 후 값 (JSON). PASSWORD면 null", example = "50", nullable = true)
         @JsonRawValue String newValue,
-        @Schema(description = "변경 요청 사유", example = "프로젝트 요구사항 변경으로 인한 용량 증설")
+        @Schema(description = "변경 요청 사유. PASSWORD면 null", example = "프로젝트 요구사항 변경으로 인한 용량 증설", nullable = true)
         String reason,
-        @Schema(description = "처리 상태", example = "PENDING", allowableValues = {"PENDING", "FULFILLED", "DENIED", "MODIFICATION_REQUESTED", "MODIFICATION_APPROVED", "MODIFICATION_REJECTED"})
+        @Schema(description = "처리 상태", example = "PENDING", allowableValues = {"PENDING", "PROCESSING", "FULFILLED", "DENIED"})
         Status status,
         @Schema(description = "관리자 코멘트", example = "변경 요청을 승인합니다.", nullable = true)
         String adminComment,
@@ -37,7 +37,7 @@ public record ChangeRequestResponseDTO(
     public static ChangeRequestResponseDTO fromEntity(ChangeRequest changeRequest) {
         return ChangeRequestResponseDTO.builder()
                 .changeRequestId(changeRequest.getChangeRequestId())
-                .originalRequestId(changeRequest.getRequest().getRequestId())
+                .originalRequestId(changeRequest.getRequest() == null ? null : changeRequest.getRequest().getRequestId())
                 .changeType(changeRequest.getChangeType())
                 .oldValue(changeRequest.getOldValue())
                 .newValue(changeRequest.getNewValue())

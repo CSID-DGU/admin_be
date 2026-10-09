@@ -17,8 +17,9 @@ public class ChangeRequest extends BaseTimeEntity {
     @Column(name = "change_request_id")
     private Long changeRequestId;
 
+    /** 바꿀 대상 신청(컨테이너). 계정 단위 변경(PASSWORD)에는 없다. */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "request_id", nullable = false)
+    @JoinColumn(name = "request_id")
     private Request request;
 
     @Enumerated(EnumType.STRING)
@@ -28,10 +29,12 @@ public class ChangeRequest extends BaseTimeEntity {
     @Column(name = "old_value", columnDefinition = "json")
     private String oldValue;
 
-    @Column(name = "new_value", columnDefinition = "json", nullable = false)
+    /** PASSWORD에는 없다 — 새 비밀번호는 해시로만 PasswordResetRequest가 든다. */
+    @Column(name = "new_value", columnDefinition = "json")
     private String newValue;
 
-    @Column(name = "reason", length = 1000, nullable = false)
+    /** PASSWORD에는 없다 — 메일 인증으로 본인만 확인한다. */
+    @Column(name = "reason", length = 1000)
     private String reason;
 
     @Enumerated(EnumType.STRING)
@@ -60,6 +63,11 @@ public class ChangeRequest extends BaseTimeEntity {
         this.newValue = newValue;
         this.reason = reason;
         this.requestedBy = requestedBy;
+    }
+
+    /** 계정 단위 변경이라 대상 신청·새 값·사유가 없다. */
+    public static ChangeRequest password(User requestedBy) {
+        return new ChangeRequest(null, ChangeType.PASSWORD, null, null, null, requestedBy);
     }
 
     // ==== 비즈니스 메서드. ====
@@ -98,5 +106,10 @@ public class ChangeRequest extends BaseTimeEntity {
         this.reviewedBy = admin;
         this.adminComment = comment;
         this.reviewedAt = LocalDateTime.now();
+    }
+
+    /** 신청자가 비활성화·탈퇴돼 검토 없이 닫는다. 검토자가 없는 DENIED로 남는다. */
+    public void closeWithoutReview() {
+        this.status = Status.DENIED;
     }
 }

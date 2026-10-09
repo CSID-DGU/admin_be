@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestNotice;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.PasswordResetSummaryDTO;
 import DGU_AI_LAB.admin_be.global.util.EmailService;
@@ -8,7 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * 비밀번호 재설정 신청의 진행을 알린다 — 신청자에게는 메일, 관리자에게는 Slack.
+ * 비밀번호 변경 요청의 진행을 알린다 — 신청자에게는 메일, 관리자에게는 Slack.
  * 알림은 상태를 바꾼 뒤의 부가 동작이라, 실패해도 예외를 밖으로 내지 않는다.
  */
 @Slf4j
@@ -20,9 +21,8 @@ public class PasswordResetNotifier {
     private final AlarmService alarmService;
 
     /** 승인을 기다리는 신청이 새로 들어왔다. */
-    public void requested(PasswordResetSummaryDTO request) {
-        alarmService.alertNeedsAction("notification.admin.password-reset.requested",
-                request.passwordResetRequestId(), request.name(), request.email());
+    public void requested(ChangeRequestNotice notice) {
+        alarmService.sendChangeRequestNotification(notice);
     }
 
     public void applied(String email) {
@@ -50,6 +50,6 @@ public class PasswordResetNotifier {
         alarmService.alertNeedsAction(mayBePartial
                         ? "notification.admin.password-reset.job-failed.partial"
                         : "notification.admin.password-reset.job-failed.retry",
-                request.passwordResetRequestId(), request.userId(), phase, errorCode);
+                request.changeRequestId(), request.userId(), phase, errorCode);
     }
 }

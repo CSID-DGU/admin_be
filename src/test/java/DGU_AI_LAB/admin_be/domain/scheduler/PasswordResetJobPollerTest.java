@@ -1,11 +1,12 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.PasswordResetSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.PasswordResetRequest;
-import DGU_AI_LAB.admin_be.domain.users.entity.PasswordResetStatus;
 import DGU_AI_LAB.admin_be.domain.users.repository.PasswordResetRequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.service.PasswordResetNotifier;
 import DGU_AI_LAB.admin_be.domain.users.service.PasswordResetService;
@@ -32,7 +33,9 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class PasswordResetJobPollerTest {
 
+    /** 작업 기록의 키. 신청의 상태는 변경 요청 번호로 바꾼다. */
     private static final Long RESET_ID = 12L;
+    private static final Long CHANGE_ID = 40L;
     private static final Long JOB_ID = 77L;
 
     @Mock private PasswordResetRequestRepository resetRepository;
@@ -42,13 +45,22 @@ class PasswordResetJobPollerTest {
     @InjectMocks private PasswordResetJobPoller poller;
 
     private static final PasswordResetSummaryDTO SUMMARY =
-            new PasswordResetSummaryDTO(RESET_ID, 1L, "홍길동", "test@dgu.ac.kr", "honggildong", "PENDING", null, null);
+            new PasswordResetSummaryDTO(CHANGE_ID, 1L, "홍길동", "test@dgu.ac.kr", "honggildong", "PENDING", null, null);
+
+    private static PasswordResetRequest reset(Long changeRequestId, Long resetId, Long jobId, LocalDateTime approvedAt) {
+        ChangeRequest changeRequest = mock(ChangeRequest.class);
+        when(changeRequest.getChangeRequestId()).thenReturn(changeRequestId);
+        lenient().when(changeRequest.getUpdatedAt()).thenReturn(approvedAt);
+        PasswordResetRequest reset = mock(PasswordResetRequest.class);
+        when(reset.getChangeRequest()).thenReturn(changeRequest);
+        lenient().when(reset.getPasswordResetRequestId()).thenReturn(resetId);
+        when(reset.getJobId()).thenReturn(jobId);
+        return reset;
+    }
 
     private void processing(Long resetId, Long jobId) {
-        PasswordResetRequest reset = mock(PasswordResetRequest.class);
-        when(reset.getPasswordResetRequestId()).thenReturn(resetId);
-        when(reset.getJobId()).thenReturn(jobId);
-        when(resetRepository.findAllByStatus(PasswordResetStatus.PROCESSING)).thenReturn(List.of(reset));
+        PasswordResetRequest reset = reset(CHANGE_ID, resetId, jobId, LocalDateTime.now());
+        when(resetRepository.findAllByStatus(Status.PROCESSING)).thenReturn(List.of(reset));
     }
 
     private void result(Long jobId, String phase, String errorCode) {
@@ -64,7 +76,7 @@ class PasswordResetJobPollerTest {
 
         poller.pollPasswordResets();
 
-        verify(passwordResetService).complete(RESET_ID);
+        verify(passwordResetService).complete(CHANGE_ID);
         verify(passwordResetService, never()).returnToPending(anyLong());
         verifyNoInteractions(notifier);
     }
@@ -86,7 +98,7 @@ class PasswordResetJobPollerTest {
     void cleanFailureReturnsToPending() {
         processing(RESET_ID, JOB_ID);
         result(JOB_ID, JobResults.PHASE_FAIL, "POD_PASSWORD_SYNC_FAILED");
-        when(passwordResetService.returnToPending(RESET_ID)).thenReturn(Optional.of(SUMMARY));
+        when(passwordResetService.returnToPending(CHANGE_ID)).thenReturn(Optional.of(SUMMARY));
 
         poller.pollPasswordResets();
 
@@ -99,7 +111,7 @@ class PasswordResetJobPollerTest {
     void degradedIsReportedAsPartial() {
         processing(RESET_ID, JOB_ID);
         result(JOB_ID, JobResults.PHASE_FAIL, JobResults.ERROR_DEGRADED);
-        when(passwordResetService.returnToPending(RESET_ID)).thenReturn(Optional.of(SUMMARY));
+        when(passwordResetService.returnToPending(CHANGE_ID)).thenReturn(Optional.of(SUMMARY));
 
         poller.pollPasswordResets();
 
@@ -112,7 +124,7 @@ class PasswordResetJobPollerTest {
     void unknownReturnsToPending(String phase) {
         processing(RESET_ID, JOB_ID);
         result(JobResults.PHASE_NONE.equals(phase) ? null : JOB_ID, phase, null);
-        when(passwordResetService.returnToPending(RESET_ID)).thenReturn(Optional.of(SUMMARY));
+        when(passwordResetService.returnToPending(CHANGE_ID)).thenReturn(Optional.of(SUMMARY));
 
         poller.pollPasswordResets();
 
@@ -124,7 +136,7 @@ class PasswordResetJobPollerTest {
     void alreadyReturnedIsNotReportedTwice() {
         processing(RESET_ID, JOB_ID);
         result(JOB_ID, JobResults.PHASE_FAIL, "POD_PASSWORD_SYNC_FAILED");
-        when(passwordResetService.returnToPending(RESET_ID)).thenReturn(Optional.empty());
+        when(passwordResetService.returnToPending(CHANGE_ID)).thenReturn(Optional.empty());
 
         poller.pollPasswordResets();
 
@@ -144,11 +156,9 @@ class PasswordResetJobPollerTest {
 
     /** 등록 결과를 확인하지 못해 작업 번호 없이 승인된 신청. */
     private void processingWithoutJob(LocalDateTime approvedAt) {
-        PasswordResetRequest reset = mock(PasswordResetRequest.class);
-        when(reset.getPasswordResetRequestId()).thenReturn(RESET_ID);
-        when(reset.getJobId()).thenReturn(null);
-        when(reset.getUpdatedAt()).thenReturn(approvedAt);
-        when(resetRepository.findAllByStatus(PasswordResetStatus.PROCESSING)).thenReturn(List.of(reset));
+        // 승인 시각은 변경 요청의 고친 시각이다 — 작업 번호 없이 승인되면 이 행은 바뀌지 않는다.
+        PasswordResetRequest reset = reset(CHANGE_ID, RESET_ID, null, approvedAt);
+        when(resetRepository.findAllByStatus(Status.PROCESSING)).thenReturn(List.of(reset));
     }
 
     @Test
@@ -169,7 +179,7 @@ class PasswordResetJobPollerTest {
 
         poller.pollPasswordResets();
 
-        verify(passwordResetService).complete(RESET_ID);
+        verify(passwordResetService).complete(CHANGE_ID);
         verifyNoInteractions(notifier);
     }
 
@@ -178,7 +188,7 @@ class PasswordResetJobPollerTest {
     void unconfirmedRegistrationWithoutJobReturnsToPending() {
         processingWithoutJob(LocalDateTime.now().minus(JobResults.REGISTRATION_GRACE).minusSeconds(1));
         result(null, JobResults.PHASE_NONE, null);
-        when(passwordResetService.returnToPending(RESET_ID)).thenReturn(Optional.of(SUMMARY));
+        when(passwordResetService.returnToPending(CHANGE_ID)).thenReturn(Optional.of(SUMMARY));
 
         poller.pollPasswordResets();
 
@@ -188,18 +198,15 @@ class PasswordResetJobPollerTest {
     @Test
     @DisplayName("한 신청의 조회 실패가 나머지 신청 처리를 막지 않는다")
     void oneFailureDoesNotStopOthers() {
-        PasswordResetRequest broken = mock(PasswordResetRequest.class);
-        when(broken.getPasswordResetRequestId()).thenReturn(11L);
-        PasswordResetRequest fine = mock(PasswordResetRequest.class);
-        when(fine.getPasswordResetRequestId()).thenReturn(RESET_ID);
-        when(fine.getJobId()).thenReturn(JOB_ID);
-        when(resetRepository.findAllByStatus(PasswordResetStatus.PROCESSING)).thenReturn(List.of(broken, fine));
+        PasswordResetRequest broken = reset(39L, 11L, JOB_ID, LocalDateTime.now());
+        PasswordResetRequest fine = reset(CHANGE_ID, RESET_ID, JOB_ID, LocalDateTime.now());
+        when(resetRepository.findAllByStatus(Status.PROCESSING)).thenReturn(List.of(broken, fine));
         when(jobClient.getResult(JobResults.KIND_PASSWORD, 11L)).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
         result(JOB_ID, JobResults.PHASE_SUCCESS, null);
 
         poller.pollPasswordResets();
 
-        verify(passwordResetService).complete(RESET_ID);
+        verify(passwordResetService).complete(CHANGE_ID);
         verify(notifier, never()).jobFailed(any(), any(), any(), anyBoolean());
     }
 }

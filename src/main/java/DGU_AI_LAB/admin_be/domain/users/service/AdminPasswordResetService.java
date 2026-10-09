@@ -23,6 +23,6 @@ public class AdminPasswordResetService {
     public PasswordResetSummaryDTO reset(Long userId, String newPassword, Long adminId) {
         PasswordResetService.Submission submission =
                 passwordResetService.submit(userId, PasswordHashes.of(newPassword, passwordEncoder));
-        return passwordResetService.approve(submission.request().passwordResetRequestId(), adminId);
+        return passwordResetService.approve(submission.request().changeRequestId(), adminId, null);
     }
 }

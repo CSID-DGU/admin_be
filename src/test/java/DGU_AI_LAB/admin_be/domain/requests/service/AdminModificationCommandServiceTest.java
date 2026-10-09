@@ -279,6 +279,21 @@ class AdminModificationCommandServiceTest {
             verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
         }
 
+        @Test
+        @DisplayName("비밀번호 변경은 여기서 승인하지 않는다 — 대상 신청을 찾기 전에 거부한다")
+        void approveModification_passwordType_isUnsupported() {
+            ChangeRequest changeRequest = mock(ChangeRequest.class);
+            when(changeRequest.getStatus()).thenReturn(Status.PENDING);
+            when(changeRequest.getChangeType()).thenReturn(ChangeType.PASSWORD);
+            when(changeRequestRepository.findByIdForUpdate(3L)).thenReturn(Optional.of(changeRequest));
+
+            assertThatThrownBy(() -> service.approveModification(100L, new ApproveModificationDTO(3L, "승인")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
+            verify(changeRequest, never()).getRequest();
+        }
+
         @ParameterizedTest
         @EnumSource(value = ChangeType.class, names = {"RESOURCE_GROUP", "CONTAINER_IMAGE"})
         @DisplayName("DB만 바뀌고 Pod에 반영되지 않는 종류는 예전에 들어온 요청이라도 승인하지 않고 신청을 건드리지 않는다")

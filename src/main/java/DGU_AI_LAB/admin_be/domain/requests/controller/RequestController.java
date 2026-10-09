@@ -2,9 +2,7 @@ package DGU_AI_LAB.admin_be.domain.requests.controller;
 
 import DGU_AI_LAB.admin_be.domain.requests.controller.docs.RequestApi;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RestartPodRequestDTO;
-import DGU_AI_LAB.admin_be.domain.requests.dto.request.SingleChangeRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
-import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodMigrationService;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestCommandService;
@@ -51,18 +49,6 @@ public class RequestController implements RequestApi {
     }
 
     /**
-     * 사용 신청 변경 (단일 변경 요청)
-     */
-    @PostMapping("/{requestId}/change")
-    public ResponseEntity<SuccessResponse<?>> createChangeRequest(@AuthenticationPrincipal(expression = "userId") Long userId,
-                                                                   @PathVariable Long requestId,
-                                                                   @RequestBody @Valid SingleChangeRequestDTO dto
-    ) {
-        requestCommandService.createSingleChangeRequest(userId, requestId, dto);
-        return SuccessResponse.created(null);
-    }
-
-    /**
      * 나의 컨테이너 재시작. 작업만 등록하고 돌아온다 — 결과는 신청 상태와 마지막 재시작 결과로 확인한다.
      */
     @PostMapping("/{requestId}/restarts")
@@ -100,12 +86,4 @@ public class RequestController implements RequestApi {
         return SuccessResponse.ok(body);
     }
 
-    /**
-     * 나의 변경 요청 목록 조회
-     */
-    @GetMapping("/my/changes")
-    public ResponseEntity<SuccessResponse<?>> getMyChangeRequests(@AuthenticationPrincipal CustomUserDetails user) {
-        List<ChangeRequestResponseDTO> changeRequests = requestQueryService.getMyChangeRequests(user.getUserId());
-        return SuccessResponse.ok(changeRequests);
-    }
 }

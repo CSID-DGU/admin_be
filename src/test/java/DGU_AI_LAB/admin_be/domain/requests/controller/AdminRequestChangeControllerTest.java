@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller;
 
-import DGU_AI_LAB.admin_be.domain.requests.service.AdminModificationCommandService;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import DGU_AI_LAB.admin_be.domain.requests.service.ChangeRequestDecisionService;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestQueryService;
 import DGU_AI_LAB.admin_be.support.WebMvcTestSupport;
 import org.junit.jupiter.api.DisplayName;
@@ -18,9 +19,10 @@ import static org.mockito.Mockito.doNothing;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @WebMvcTest(
         value = AdminRequestChangeController.class,
@@ -32,7 +34,7 @@ class AdminRequestChangeControllerTest extends WebMvcTestSupport {
     private MockMvc mockMvc;
 
     @MockitoBean
-    private AdminModificationCommandService adminModificationCommandService;
+    private ChangeRequestDecisionService changeRequestDecisionService;
 
     @MockitoBean
     private AdminRequestQueryService adminRequestQueryService;
@@ -42,8 +44,22 @@ class AdminRequestChangeControllerTest extends WebMvcTestSupport {
     class ApproveModification {
 
         @Test
-        @DisplayName("경로의 변경 요청 번호로 승인하고 200과 SuccessResponse를 반환한다")
+        @DisplayName("반영 작업만 등록한 승인(PROCESSING)은 202를 반환한다")
+        void returns202WhenAppliedByJob() throws Exception {
+            when(changeRequestDecisionService.approve(isNull(), eq(7L), eq("승인합니다."))).thenReturn(Status.PROCESSING);
+
+            mockMvc.perform(post("/api/admin/change-requests/7/approval")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"adminComment\": \"승인합니다.\"}"))
+                    .andExpect(status().isAccepted())
+                    .andExpect(jsonPath("$.status").value(202));
+        }
+
+        @Test
+        @DisplayName("경로의 변경 요청 번호로 승인하고, 바로 반영됐으면 200과 SuccessResponse를 반환한다")
         void approvesByPathId() throws Exception {
+            when(changeRequestDecisionService.approve(isNull(), eq(7L), eq("승인합니다."))).thenReturn(Status.FULFILLED);
+
             mockMvc.perform(post("/api/admin/change-requests/7/approval")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"adminComment\": \"승인합니다.\"}"))
@@ -51,8 +67,7 @@ class AdminRequestChangeControllerTest extends WebMvcTestSupport {
                     .andExpect(jsonPath("$.status").value(200))
                     .andExpect(jsonPath("$.data").isEmpty());
 
-            verify(adminModificationCommandService).approveModification(isNull(),
-                    argThat(dto -> dto.changeRequestId() == 7L && "승인합니다.".equals(dto.adminComment())));
+            verify(changeRequestDecisionService).approve(isNull(), eq(7L), eq("승인합니다."));
         }
 
         @Test
@@ -77,8 +92,7 @@ class AdminRequestChangeControllerTest extends WebMvcTestSupport {
                             .content("{\"adminComment\": \"거절합니다.\"}"))
                     .andExpect(status().isOk());
 
-            verify(adminModificationCommandService).rejectModification(isNull(),
-                    argThat(dto -> dto.changeRequestId() == 8L && "거절합니다.".equals(dto.adminComment())));
+            verify(changeRequestDecisionService).reject(isNull(), eq(8L), eq("거절합니다."));
         }
 
         @Test

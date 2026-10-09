@@ -1,14 +1,16 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestNotice;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.PasswordChangeRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobRegistrationUnconfirmedException;
+import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.PasswordResetSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.PasswordHashes;
 import DGU_AI_LAB.admin_be.domain.users.entity.PasswordResetRequest;
-import DGU_AI_LAB.admin_be.domain.users.entity.PasswordResetStatus;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.PasswordResetRequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
@@ -26,8 +28,8 @@ import java.util.Optional;
 import java.util.function.Supplier;
 
 /**
- * 비밀번호 재설정 신청의 상태를 바꾼다: 신청 → 관리자 승인 → config-server 작업 → 결과 반영
- * (상태는 {@link PasswordResetStatus}).
+ * 비밀번호 변경 요청(변경 요청 종류 PASSWORD)의 상태를 바꾼다: 신청 → 관리자 승인 → config-server 작업 → 결과 반영
+ * (상태 전이는 {@link PasswordResetRequest}). 신청은 변경 요청 번호로 가리킨다.
  *
  * <p>웹 비밀번호가 곧 SSH(Ubuntu) 비밀번호라, 컨테이너에 반영된 것을 확인한 뒤에야 DB의 두 해시를 바꾼다.
  * 반영은 작업으로 등록만 하고 돌아오고, 결과는 PasswordResetJobPoller가 {@link #complete}·
@@ -45,20 +47,27 @@ import java.util.function.Supplier;
 @RequiredArgsConstructor
 public class PasswordResetService {
 
-    private static final List<PasswordResetStatus> OPEN =
-            List.of(PasswordResetStatus.PENDING, PasswordResetStatus.PROCESSING);
+    private static final List<Status> OPEN = List.of(Status.PENDING, Status.PROCESSING);
 
     private final UserRepository userRepository;
     private final RequestRepository requestRepository;
     private final PasswordResetRequestRepository resetRepository;
+    private final ChangeRequestRepository changeRequestRepository;
     private final JobClient jobClient;
     private final TokenService tokenService;
     private final UserLoginService userLoginService;
     private final PasswordResetNotifier notifier;
     private final PlatformTransactionManager transactionManager;
 
-    /** @param created false면 승인을 기다리던 신청의 새 비밀번호만 바꿨다 */
-    public record Submission(PasswordResetSummaryDTO request, boolean created) {}
+    /** 접수 알림의 "바뀌는 내용". 새 비밀번호는 해시로만 있어 적을 값이 없다. */
+    private static final String CHANGE_DESCRIPTION = "새 비밀번호로 변경";
+
+    /** @param notice 새로 만든 신청의 접수 알림 값. 승인을 기다리던 신청의 새 비밀번호만 바꿨으면 null */
+    public record Submission(PasswordResetSummaryDTO request, ChangeRequestNotice notice) {
+        public boolean created() {
+            return notice != null;
+        }
+    }
 
     private record Approval(PasswordResetSummaryDTO request, boolean applied) {}
 
@@ -73,14 +82,16 @@ public class PasswordResetService {
             User user = lockUser(userId);
             requireActive(user);
             Optional<PasswordResetRequest> open =
-                    resetRepository.findAllByUser_UserIdAndStatusIn(userId, OPEN).stream().findFirst();
+                    resetRepository.findAllByUserIdAndStatusIn(userId, OPEN).stream().findFirst();
             if (open.isPresent()) {
                 open.get().replacePassword(hashes);
-                return new Submission(PasswordResetSummaryDTO.fromEntity(open.get()), false);
+                return new Submission(PasswordResetSummaryDTO.fromEntity(open.get()), null);
             }
-            PasswordResetRequest reset = resetRepository.save(PasswordResetRequest.pending(user, hashes));
-            log.info("[passwordReset] resetId={} userId={} 재설정 신청 접수", reset.getPasswordResetRequestId(), userId);
-            return new Submission(PasswordResetSummaryDTO.fromEntity(reset), true);
+            ChangeRequest changeRequest = changeRequestRepository.save(ChangeRequest.password(user));
+            PasswordResetRequest reset = resetRepository.save(PasswordResetRequest.pending(changeRequest, user, hashes));
+            log.info("[passwordReset] changeRequestId={} userId={} 비밀번호 변경 요청 접수", changeRequest.getChangeRequestId(), userId);
+            return new Submission(PasswordResetSummaryDTO.fromEntity(reset),
+                    ChangeRequestNotice.of(changeRequest, CHANGE_DESCRIPTION));
         });
     }
 
@@ -92,11 +103,11 @@ public class PasswordResetService {
      * 이전 작업 결과를 이번 것으로 읽지 않는다. 등록이 실패하면 신청은 승인 대기로 남는다. 등록 결과를 확인하지 못한
      * 경우만 예외다({@link #registerJob}).
      */
-    public PasswordResetSummaryDTO approve(Long resetId, Long adminId) {
-        Long userId = userIdOf(resetId);
+    public PasswordResetSummaryDTO approve(Long changeRequestId, Long adminId, String adminComment) {
+        Long userId = userIdOf(changeRequestId);
         Approval approval = inTransaction(() -> {
             User user = lockUser(userId);
-            PasswordResetRequest reset = lockReset(resetId);
+            PasswordResetRequest reset = lockReset(changeRequestId);
             reset.ensurePending();
             requireActive(user);
             // 생성 작업은 승인 때 읽은 해시로 계정을 만든다. 그 사이 바꾸면 DB만 새 해시가 되고 새 컨테이너는
@@ -107,13 +118,14 @@ public class PasswordResetService {
             User admin = userRepository.getReferenceById(adminId);
             if (!user.hasUbuntuAccount()) {
                 apply(user, reset.hashes());
-                reset.applyWithoutJob(admin);
+                reset.applyWithoutJob(admin, adminComment);
                 return new Approval(PasswordResetSummaryDTO.fromEntity(reset), true);
             }
-            reset.startProcessing(admin, registerJob(resetId, user.getUbuntuUsername(), reset.getUbuntuPasswordHash()));
+            reset.startProcessing(admin, adminComment,
+                    registerJob(reset.getPasswordResetRequestId(), user.getUbuntuUsername(), reset.getUbuntuPasswordHash()));
             return new Approval(PasswordResetSummaryDTO.fromEntity(reset), false);
         });
-        log.info("[passwordReset] resetId={} 승인: adminId={}, status={}", resetId, adminId, approval.request().status());
+        log.info("[passwordReset] changeRequestId={} 승인: adminId={}, status={}", changeRequestId, adminId, approval.request().status());
         if (approval.applied()) {
             afterApplied(approval.request().email());
         }
@@ -138,26 +150,26 @@ public class PasswordResetService {
         }
     }
 
-    public PasswordResetSummaryDTO deny(Long resetId, Long adminId) {
-        Long userId = userIdOf(resetId);
+    public PasswordResetSummaryDTO deny(Long changeRequestId, Long adminId, String adminComment) {
+        Long userId = userIdOf(changeRequestId);
         PasswordResetSummaryDTO denied = inTransaction(() -> {
             lockUser(userId);
-            PasswordResetRequest reset = lockReset(resetId);
-            reset.deny(userRepository.getReferenceById(adminId));
+            PasswordResetRequest reset = lockReset(changeRequestId);
+            reset.deny(userRepository.getReferenceById(adminId), adminComment);
             return PasswordResetSummaryDTO.fromEntity(reset);
         });
-        log.info("[passwordReset] resetId={} 거절: adminId={}", resetId, adminId);
+        log.info("[passwordReset] changeRequestId={} 거절: adminId={}", changeRequestId, adminId);
         notifier.denied(denied.email());
         return denied;
     }
 
     /** 컨테이너 반영 작업이 성공했다. 두 해시를 바꾸고 기존 로그인을 끊는다. 이미 반영된 신청이면 아무것도 하지 않는다. */
-    public void complete(Long resetId) {
-        Long userId = userIdOf(resetId);
+    public void complete(Long changeRequestId) {
+        Long userId = userIdOf(changeRequestId);
         String email = inTransaction(() -> {
             User user = lockUser(userId);
-            PasswordResetRequest reset = lockReset(resetId);
-            if (reset.getStatus() != PasswordResetStatus.PROCESSING) {
+            PasswordResetRequest reset = lockReset(changeRequestId);
+            if (reset.getStatus() != Status.PROCESSING) {
                 return null;
             }
             apply(user, reset.hashes());
@@ -167,7 +179,7 @@ public class PasswordResetService {
         if (email == null) {
             return;
         }
-        log.info("[passwordReset] resetId={} 적용 완료(SSH 포함)", resetId);
+        log.info("[passwordReset] changeRequestId={} 적용 완료(SSH 포함)", changeRequestId);
         afterApplied(email);
     }
 
@@ -176,12 +188,12 @@ public class PasswordResetService {
      *
      * @return 되돌린 신청. 이미 다른 상태면 빈 값
      */
-    public Optional<PasswordResetSummaryDTO> returnToPending(Long resetId) {
-        Long userId = userIdOf(resetId);
+    public Optional<PasswordResetSummaryDTO> returnToPending(Long changeRequestId) {
+        Long userId = userIdOf(changeRequestId);
         return inTransaction(() -> {
             lockUser(userId);
-            PasswordResetRequest reset = lockReset(resetId);
-            if (reset.getStatus() != PasswordResetStatus.PROCESSING) {
+            PasswordResetRequest reset = lockReset(changeRequestId);
+            if (reset.getStatus() != Status.PROCESSING) {
                 return Optional.empty();
             }
             reset.returnToPending();
@@ -201,20 +213,13 @@ public class PasswordResetService {
         int closed = inTransaction(() -> {
             lockUser(userId);
             List<PasswordResetRequest> pending =
-                    resetRepository.findAllByUserIdAndStatusForShare(userId, PasswordResetStatus.PENDING);
+                    resetRepository.findAllByUserIdAndStatusForShare(userId, Status.PENDING);
             pending.forEach(PasswordResetRequest::closeWithoutReview);
             return pending.size();
         });
         if (closed > 0) {
             log.info("[passwordReset] userId={} 비활성화로 승인 대기 신청 {}건을 닫음", userId, closed);
         }
-    }
-
-    /** 관리자가 처리할 신청(승인 대기·반영 중)을 최근 순으로 돌려준다. */
-    public List<PasswordResetSummaryDTO> getOpenRequests() {
-        return resetRepository.findAllWithUserByStatusIn(OPEN).stream()
-                .map(PasswordResetSummaryDTO::fromEntity)
-                .toList();
     }
 
     private void apply(User user, PasswordHashes hashes) {
@@ -241,8 +246,8 @@ public class PasswordResetService {
         }
     }
 
-    private Long userIdOf(Long resetId) {
-        return resetRepository.findUserIdById(resetId)
+    private Long userIdOf(Long changeRequestId) {
+        return resetRepository.findUserIdByChangeRequestId(changeRequestId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.PASSWORD_RESET_REQUEST_NOT_FOUND));
     }
 
@@ -251,8 +256,8 @@ public class PasswordResetService {
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
     }
 
-    private PasswordResetRequest lockReset(Long resetId) {
-        return resetRepository.findByIdForUpdate(resetId)
+    private PasswordResetRequest lockReset(Long changeRequestId) {
+        return resetRepository.findByChangeRequestIdForUpdate(changeRequestId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.PASSWORD_RESET_REQUEST_NOT_FOUND));
     }
 

@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestNotice;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.PasswordResetSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.PasswordHashes;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -37,8 +38,8 @@ class AdminPasswordResetServiceTest {
     void submitsThenApproves() {
         when(passwordEncoder.encode("newPassword1!")).thenReturn("newEncodedPw");
         when(passwordResetService.submit(eq(5L), any()))
-                .thenReturn(new PasswordResetService.Submission(summary("PENDING"), true));
-        when(passwordResetService.approve(12L, 9L)).thenReturn(summary("PROCESSING"));
+                .thenReturn(new PasswordResetService.Submission(summary("PENDING"), mock(ChangeRequestNotice.class)));
+        when(passwordResetService.approve(12L, 9L, null)).thenReturn(summary("PROCESSING"));
 
         PasswordResetSummaryDTO result = service.reset(5L, "newPassword1!", 9L);
 
@@ -46,7 +47,7 @@ class AdminPasswordResetServiceTest {
         InOrder order = inOrder(passwordResetService);
         ArgumentCaptor<PasswordHashes> hashes = ArgumentCaptor.forClass(PasswordHashes.class);
         order.verify(passwordResetService).submit(eq(5L), hashes.capture());
-        order.verify(passwordResetService).approve(12L, 9L);
+        order.verify(passwordResetService).approve(12L, 9L, null);
         assertThat(hashes.getValue().web()).isEqualTo("newEncodedPw");
         assertThat(hashes.getValue().ubuntu()).startsWith("$6$").doesNotContain("newPassword1!");
     }
@@ -60,6 +61,6 @@ class AdminPasswordResetServiceTest {
 
         assertThatThrownBy(() -> service.reset(5L, "newPassword1!", 9L)).isInstanceOf(BusinessException.class);
 
-        verify(passwordResetService, never()).approve(anyLong(), anyLong());
+        verify(passwordResetService, never()).approve(anyLong(), anyLong(), any());
     }
 }

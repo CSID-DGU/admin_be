@@ -34,7 +34,6 @@ import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.repository.ResourceGroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.entity.PasswordResetRequest;
-import DGU_AI_LAB.admin_be.domain.users.entity.PasswordResetStatus;
 import DGU_AI_LAB.admin_be.domain.users.repository.PasswordResetRequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -517,7 +516,7 @@ class AdminRequestCommandServiceTest {
         void rejectsWhilePasswordResetInProgress() {
             Long requestId = 207L;
             buildMockedRequest(requestId);
-            when(passwordResetRequestRepository.findAllByUserIdAndStatusForShare(100L, PasswordResetStatus.PROCESSING))
+            when(passwordResetRequestRepository.findAllByUserIdAndStatusForShare(100L, Status.PROCESSING))
                     .thenReturn(List.of(mock(PasswordResetRequest.class)));
 
             assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))

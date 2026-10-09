@@ -118,4 +118,11 @@ public class RequestQueryService {
                 .toList();
     }
 
+    /** 내 변경 요청 하나. 남의 요청은 있는지조차 알리지 않는다(404). */
+    public ChangeRequestResponseDTO getMyChangeRequest(Long userId, Long changeRequestId) {
+        return changeRequestRepository.findByChangeRequestIdAndRequestedBy_UserId(changeRequestId, userId)
+                .map(ChangeRequestResponseDTO::fromEntity)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+    }
+
 }
