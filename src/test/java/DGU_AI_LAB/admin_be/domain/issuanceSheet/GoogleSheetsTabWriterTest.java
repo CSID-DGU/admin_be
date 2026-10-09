@@ -60,13 +60,13 @@ class GoogleSheetsTabWriterTest {
     }
 
     @Test
-    @DisplayName("있는 탭은 덮어쓴 뒤 그 아래 남은 행만 지운다")
-    void overwritesExistingTabThenClearsBelow() {
+    @DisplayName("있는 탭은 덮어쓴 뒤 그 아래와 오른쪽에 남은 칸만 지운다")
+    void overwritesExistingTabThenClearsLeftovers() {
         server.expect(requestTo(startsWith(BASE + "?fields="))).andExpect(method(HttpMethod.GET))
                 .andExpect(header("Authorization", "Bearer token-1"))
                 .andRespond(withSuccess("""
                         {"sheets":[{"properties":{"sheetId":0,"title":"LAB"}},
-                                   {"properties":{"sheetId":5,"title":"LAB(자동화)","gridProperties":{"rowCount":1000}}}]}
+                                   {"properties":{"sheetId":5,"title":"LAB(자동화)","gridProperties":{"rowCount":1000,"columnCount":26}}}]}
                         """, MediaType.APPLICATION_JSON));
         server.expect(request -> assertThat(decodedPath(request)).endsWith("/sheet-1/values/'LAB(자동화)'!A1"))
                 .andExpect(method(HttpMethod.PUT))
@@ -74,6 +74,9 @@ class GoogleSheetsTabWriterTest {
                 .andExpect(content().json("{\"values\":[[\"상태\",\"이름\"],[\"사용 중\",\"홍길동\"]]}"))
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
         server.expect(request -> assertThat(decodedPath(request)).endsWith("/values/'LAB(자동화)'!A3:ZZ:clear"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+        server.expect(request -> assertThat(decodedPath(request)).endsWith("/values/'LAB(자동화)'!C1:ZZ2:clear"))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
 
@@ -102,6 +105,7 @@ class GoogleSheetsTabWriterTest {
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
         server.expect(method(HttpMethod.PUT)).andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
         server.expect(method(HttpMethod.POST)).andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+        server.expect(method(HttpMethod.POST)).andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
 
         writer().replaceTab("FARM(자동화)", ROWS);
 
@@ -109,16 +113,25 @@ class GoogleSheetsTabWriterTest {
     }
 
     @Test
-    @DisplayName("내용이 탭의 행 수 이상이면 아래를 지우지 않는다")
+    @DisplayName("내용이 탭 크기 이상이면 지우지 않는다")
     void skipsClearWhenTabGrew() {
         server.expect(method(HttpMethod.GET)).andRespond(withSuccess("""
-                {"sheets":[{"properties":{"sheetId":5,"title":"LAB(자동화)","gridProperties":{"rowCount":2}}}]}
+                {"sheets":[{"properties":{"sheetId":5,"title":"LAB(자동화)","gridProperties":{"rowCount":2,"columnCount":2}}}]}
                 """, MediaType.APPLICATION_JSON));
         server.expect(method(HttpMethod.PUT)).andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
 
         writer().replaceTab("LAB(자동화)", ROWS);
 
         server.verify();
+    }
+
+    @Test
+    @DisplayName("열 번호를 시트 열 표기로 바꾼다")
+    void columnLetters() {
+        assertThat(GoogleSheetsTabWriter.columnLetters(1)).isEqualTo("A");
+        assertThat(GoogleSheetsTabWriter.columnLetters(19)).isEqualTo("S");
+        assertThat(GoogleSheetsTabWriter.columnLetters(26)).isEqualTo("Z");
+        assertThat(GoogleSheetsTabWriter.columnLetters(27)).isEqualTo("AA");
     }
 
     @Test

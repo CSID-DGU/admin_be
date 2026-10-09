@@ -78,27 +78,26 @@ class IssuanceSheetRowsTest {
     void rowMatchesHeader() {
         List<List<String>> rows = IssuanceSheetRows.of(
                 List.of(request(7, Status.FULFILLED, "홍길동", "farm3", "vision", "nlp")),
-                Map.of(7L, List.of(8888, 22)),
+                Map.of(7L, List.of("ssh(30006)", "jupyter(30007)")),
                 Map.of(7L, LocalDate.of(2027, 1, 30)));
 
         assertThat(rows).hasSize(2);
         assertThat(rows.get(0)).isEqualTo(IssuanceSheetRows.HEADER);
         assertThat(rows.get(1)).containsExactly(
-                "사용 중", "홍길동", "user7", "nlp, vision", "farm3", "55007", "56007", "22, 8888",
+                "7", "홍길동", "user7", "nlp, vision", "farm3", "55007", "56007", "ssh(30006), jupyter(30007)",
                 "2026-12-31", "2027-01-30", "2026-10-05", "dguailab/decs:260915", "12.3.0",
-                "ailab-user7-7", "user7@example.test", "01000000000", "연구실 과제", "RTX 3090", "7");
+                "ailab-user7-7", "user7@example.test", "01000000000", "연구실 과제", "RTX 3090");
     }
 
     @Test
-    @DisplayName("노드·이름 순으로 놓이고, 이동·회수 중인 것은 그렇게 적힌다")
-    void orderedByNodeThenName() {
+    @DisplayName("신청 번호 순으로 놓인다")
+    void orderedByRequestId() {
         List<List<String>> rows = IssuanceSheetRows.of(List.of(
-                request(2, Status.FULFILLED, "나", "farm2"),
+                request(12, Status.FULFILLED, "나", "farm2"),
                 request(3, Status.EXPIRING, "다", "farm1"),
                 request(4, Status.MIGRATING, "가", "farm1")), Map.of(), Map.of());
 
-        assertThat(rows.stream().skip(1).map(row -> row.get(18))).containsExactly("4", "3", "2");
-        assertThat(rows.stream().skip(1).map(row -> row.get(0))).containsExactly("이동 중", "회수 중", "사용 중");
+        assertThat(rows.stream().skip(1).map(row -> row.get(0))).containsExactly("3", "4", "12");
     }
 
     @Test
