@@ -838,7 +838,7 @@ class RequestCommandServiceTest {
                 .build();
         when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
         org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.USER_SUSPENDED))
-                .when(suspensionGuard).requireNotSuspended(1L);
+                .when(suspensionGuard).requireNotSuspendedLocked(1L);
 
         assertThatThrownBy(() -> requestCommandService.createRequest(1L, mock(SaveRequestRequestDTO.class)))
                 .isInstanceOf(BusinessException.class)

@@ -215,7 +215,7 @@ public class RequestCommandService {
         // 자체도 같은 사용자 기준으로 일관되게 잠그고 시작한다.
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-        suspensionGuard.requireNotSuspended(userId);
+        suspensionGuard.requireNotSuspendedLocked(userId);
 
         ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));

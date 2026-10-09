@@ -60,20 +60,28 @@ public class AccessEnforcementService {
     }
 
     /**
-     * 정지 중인 사용자의 차단을 다시 건다. 정지가 시작될 때 돌고 있던 재시작·노드 이동은 차단을 모르고 접속 포트를
-     * 새로 만들므로, 그 작업이 끝난 뒤 한 번 더 막는다. 정지 중이 아니면 {@link #enforce}와 같다.
+     * 정지 중인 사용자의 차단을 다시 건다. 정지가 시작될 때 돌고 있던 생성·재시작·노드 이동·포트 변경은 차단을
+     * 모르고 접속 포트를 새로 만들므로, 그 작업이 끝난 뒤와 주기 점검 때 한 번 더 막는다. 정지 중이 아니면
+     * {@link #enforce}와 같다.
      */
     public void reapply(Long userId) {
         align(userId, true);
     }
 
-    /** 정지 중인 사용자와 접속이 막혀 있는 사용자를 모두 다시 맞춘다. 정지 만료와 실패한 작업의 재시도가 여기서 일어난다. */
+    /**
+     * 정지 중인 사용자와 접속이 막혀 있는 사용자를 모두 다시 맞춘다. 정지 만료와 실패한 작업의 재시도가 여기서 일어난다.
+     *
+     * <p>정지 중인 사용자는 이미 막혀 있다고 기록돼 있어도 매번 다시 막는다. 기록은 마지막 차단 작업이 성공했다는
+     * 것만 말하고, 그 뒤에 열린 채로 만들어진 포트(정지 시작과 겹친 생성·이동·포트 변경)는 알지 못한다. 이미 막힌
+     * 포트는 작업이 그대로 두므로 다시 막는 비용은 조회 한 번이다.
+     */
     public void enforceAll() {
-        Set<Long> userIds = new LinkedHashSet<>(suspensionRepository.findSuspendedUserIds(LocalDateTime.now()));
+        Set<Long> suspended = new LinkedHashSet<>(suspensionRepository.findSuspendedUserIds(LocalDateTime.now()));
+        Set<Long> userIds = new LinkedHashSet<>(suspended);
         userIds.addAll(operationRepository.findBlockedUserIds(AccessOperationStatus.APPLIED));
         for (Long userId : userIds) {
             try {
-                enforce(userId);
+                align(userId, suspended.contains(userId));
             } catch (Exception e) {
                 // 한 사용자의 실패가 나머지를 막지 않게 한다. 다음 점검 때 다시 맞춘다.
                 log.warn("[access] 접속 상태를 맞추지 못함 - 다음 점검 때 다시 본다: userId={}", userId, e);

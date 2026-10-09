@@ -275,4 +275,17 @@ class AccessEnforcementServiceTest {
         verify(userRepository, times(1)).findByIdForUpdate(9L);
         verify(jobClient, never()).registerAccessChange(new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", false));
     }
+
+    @Test
+    @DisplayName("주기 점검은 정지 중인 사용자를 이미 막혀 있다고 기록돼 있어도 다시 막는다")
+    void periodicCheckReblocksSuspendedUser() {
+        when(suspensionRepository.findSuspendedUserIds(any())).thenReturn(List.of(USER_ID));
+        when(operationRepository.findBlockedUserIds(AccessOperationStatus.APPLIED)).thenReturn(List.of(USER_ID));
+        suspended(true);
+        applied(true);
+
+        service.enforceAll();
+
+        verify(jobClient).registerAccessChange(new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", true));
+    }
 }

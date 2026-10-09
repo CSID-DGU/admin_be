@@ -686,6 +686,8 @@ class AdminRequestCommandServiceTest {
             verify(podExternalPortRepository, times(2)).save(any(PodExternalPort.class));
             verify(alarmService).sendContainerCreatedEmail(request, "32001", "32002");
             verify(alarmService).sendContainerCreatedNotification(request, "32001", "32002");
+            // 승인과 겹쳐 시작된 이용 정지가 새 컨테이너의 포트에도 걸리게 한다.
+            verify(suspensionGuard).reblockAfterPortsCreated(mockUser.getUserId());
         }
 
         @Test
@@ -1210,7 +1212,7 @@ class AdminRequestCommandServiceTest {
         when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
         when(userRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(mockUser));
         org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.USER_SUSPENDED))
-                .when(suspensionGuard).requireNotSuspended(100L);
+                .when(suspensionGuard).requireNotSuspendedLocked(100L);
 
         assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(14L, 1L, 1, "승인")))
                 .isInstanceOf(BusinessException.class)

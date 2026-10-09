@@ -197,6 +197,8 @@ class PortOperationServiceTest {
         verify(podExternalPortRepository, times(3)).save(external.capture());
         assertThat(external.getAllValues()).extracting(PodExternalPort::getExternalPort)
                 .containsExactly(30001, 30002, 30100);
+        // 작업과 겹쳐 시작된 이용 정지가 새 포트에도 걸리게 한다.
+        verify(suspensionGuard).reblockAfterPortsCreated(owner.getUserId());
 
         assertThat(changeRequest.getStatus()).isEqualTo(Status.FULFILLED);
         assertThat(operation.getStatus()).isEqualTo(PortOperationStatus.APPLIED);

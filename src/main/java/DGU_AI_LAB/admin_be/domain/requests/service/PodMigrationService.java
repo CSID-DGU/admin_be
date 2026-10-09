@@ -18,7 +18,6 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
-import DGU_AI_LAB.admin_be.domain.warnings.service.AccessEnforcementService;
 import DGU_AI_LAB.admin_be.domain.warnings.service.SuspensionGuard;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -55,7 +54,6 @@ public class PodMigrationService {
 
     private final RequestRepository requestRepository;
     private final SuspensionGuard suspensionGuard;
-    private final AccessEnforcementService accessEnforcementService;
     private final PodExternalPortRepository podExternalPortRepository;
     private final NodeRepository nodeRepository;
     private final JobClient jobClient;
@@ -131,20 +129,6 @@ public class PodMigrationService {
     private static MigrateRegisterRequestDTO restartJob(Request req, RestartPodRequestDTO dto) {
         return MigrateRegisterRequestDTO.restart(req.getRequestId(), req.getPodName(), req.getUbuntuUsername(),
                 dto == null || dto.keepsChanges());
-    }
-
-    /**
-     * 작업이 도는 사이 이용 정지가 시작됐으면 새 Pod 의 접속 포트는 열린 채로 만들어졌다. 한 번 더 막는다.
-     * 실패해도 옮긴 결과는 그대로 둔다 — 접속 상태는 주기 점검이 다시 맞춘다.
-     */
-    private void reapplySuspension(Long userId) {
-        try {
-            if (suspensionGuard.isSuspended(userId)) {
-                accessEnforcementService.reapply(userId);
-            }
-        } catch (Exception e) {
-            log.error("새 Pod 에 이용 정지를 다시 걸지 못함 - userId={}", userId, e);
-        }
     }
 
     private static void requireOwner(Request req, Long userId) {
@@ -338,7 +322,7 @@ public class PodMigrationService {
         if (made != null && made.isMigrated()) {
             log.info("Pod 마이그레이션 완료: requestId={}, from={}, to={}, newPod={}",
                     requestId, made.fromNode(), made.toNode(), made.podName());
-            reapplySuspension(ownerId[0]);
+            suspensionGuard.reblockAfterPortsCreated(ownerId[0]);
             if ("failed".equals(made.oldPodCleanup())) {
                 alert(null, "notification.admin.migration.old-pod-cleanup-failed",
                         requestId, made.oldPodName(), made.fromNode());

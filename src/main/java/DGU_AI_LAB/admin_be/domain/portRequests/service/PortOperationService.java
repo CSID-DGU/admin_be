@@ -134,6 +134,8 @@ public class PortOperationService {
         });
         log.info("[portOperation] operationId={} 작업 성공 반영", operationId);
         if (applied != null) {
+            // 작업이 도는 사이 이용 정지가 시작됐으면 새 포트는 열린 채로 만들어졌다.
+            suspensionGuard.reblockAfterPortsCreated(applied.request().getUser().getUserId());
             AfterCommit.run("추가 포트 변경 안내 메일·채널 알림, 요청 ID " + applied.request().getRequestId(), () -> {
                 alarmService.sendChangeRequestDecidedNotification(applied.decision());
                 alarmService.sendExtraPortsChangedEmail(applied.request());
