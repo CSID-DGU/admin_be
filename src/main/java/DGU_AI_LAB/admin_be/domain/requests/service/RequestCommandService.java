@@ -56,6 +56,7 @@ public class RequestCommandService {
     private final PortRequestService portRequestService;
     private final AlarmService alarmService;
     private final RequestCreateThrottle requestCreateThrottle;
+    private final SlackMembershipGate slackMembershipGate;
     private final PendingGroupService pendingGroupService;
     private final HomeCleanupService homeCleanupService;
 
@@ -248,6 +249,8 @@ public class RequestCommandService {
         }
 
         List<Group> groups = findChosenGroups(dto);
+
+        slackMembershipGate.requireMember(user.getName());
 
         // 입력이 잘못돼 거절된 요청은 하루 한도에서 빼려고 모든 검증 뒤에 센다. Redis 카운터는 트랜잭션과 함께
         // 되돌아가지 않으므로, 이 아래에는 입력 때문에 실패하는 검증을 두지 않는다.

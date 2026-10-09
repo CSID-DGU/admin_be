@@ -94,6 +94,9 @@ class RequestCommandServiceTest {
     private RequestCreateThrottle requestCreateThrottle;
 
     @Mock
+    private SlackMembershipGate slackMembershipGate;
+
+    @Mock
     private PendingGroupService pendingGroupService;
 
     /** 가입 시 우분투 계정명이 정해진 사용자 — 신청은 이 값을 그대로 복사해 쓴다. */

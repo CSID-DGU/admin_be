@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestTemplate;
 
+import java.net.URI;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -67,7 +68,7 @@ class SlackApiServiceTest {
 
         when(valueOperations.get(anyString())).thenReturn(null);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(), eq(Map.class)))
+        when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(), eq(Map.class)))
                 .thenReturn(responseEntity);
     }
 
@@ -209,6 +210,66 @@ class SlackApiServiceTest {
                 assertThatThrownBy(() -> slackApiService.postToChannel("C0REQ", "신청서", null))
                         .isInstanceOf(DGU_AI_LAB.admin_be.error.exception.BusinessException.class);
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("hasMemberNamed")
+    class HasMemberNamed {
+
+        private Map<String, Object> member(String displayName, String flag) {
+            Map<String, Object> profile = new HashMap<>();
+            profile.put("display_name", displayName);
+            Map<String, Object> member = new HashMap<>();
+            member.put("id", "U-" + displayName);
+            member.put("name", "account-" + displayName);
+            member.put("profile", profile);
+            if (flag != null) {
+                member.put(flag, true);
+            }
+            return member;
+        }
+
+        private ResponseEntity<Map> page(String nextCursor, Map<String, Object> member) {
+            Map<String, Object> body = new HashMap<>();
+            body.put("ok", true);
+            body.put("members", List.of(member));
+            body.put("response_metadata", Map.of("next_cursor", nextCursor));
+            return new ResponseEntity<>(body, HttpStatus.OK);
+        }
+
+        @BeforeEach
+        void noCache() {
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.get(anyString())).thenReturn(null);
+        }
+
+        @Test
+        @DisplayName("다음 쪽에 있는 회원도 찾고, 탈퇴한 회원과 봇은 세지 않는다")
+        void readsEveryPageAndSkipsInactive() {
+            when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(), eq(Map.class)))
+                    .thenReturn(page("abc=", member("탈퇴자", "deleted")))
+                    .thenReturn(page("def=", member("알림봇", "is_bot")))
+                    .thenReturn(page("", member("홍길동", null)));
+
+            assertThat(slackApiService.hasMemberNamed("홍길동")).isTrue();
+            assertThat(slackApiService.hasMemberNamed("탈퇴자")).isFalse();
+            assertThat(slackApiService.hasMemberNamed("알림봇")).isFalse();
+
+            ArgumentCaptor<URI> urls = ArgumentCaptor.forClass(URI.class);
+            verify(restTemplate, atLeast(3)).exchange(urls.capture(), eq(HttpMethod.GET), any(), eq(Map.class));
+            assertThat(urls.getAllValues().subList(0, 3)).extracting(URI::getRawQuery)
+                    .containsExactly("limit=1000", "limit=1000&cursor=abc%3D", "limit=1000&cursor=def%3D");
+        }
+
+        @Test
+        @DisplayName("회원 목록을 받지 못하면 없다고 답하지 않고 예외를 낸다")
+        void lookupFailureThrows() {
+            when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(), eq(Map.class)))
+                    .thenThrow(new RuntimeException("timeout"));
+
+            assertThatThrownBy(() -> slackApiService.hasMemberNamed("홍길동"))
+                    .isInstanceOf(RuntimeException.class);
         }
     }
 }
