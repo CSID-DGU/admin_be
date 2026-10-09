@@ -3,6 +3,11 @@ name: CI
 # PR과 main에 들어온 변경의 단위·통합 테스트를 돌린다. 테스트는 H2 메모리 DB와 가짜 설정값
 # (src/test/resources/application.yml)만 쓰고 외부 서비스에 닿지 않는다.
 # 공개 저장소라 로그에 인프라 주소·계정·설정값을 출력하는 단계를 두지 않는다.
+#
+# main에 들어온 커밋은 테스트를 통과한 그 jar로 이미지를 만들어 올려 둔다. 배포(admin_infra의
+# Deploy Proposed Stack)는 같은 커밋의 이미지가 있으면 빌드를 건너뛰므로, 같은 코드를 두 번 빌드하지 않는다.
+# 이미지 이름·태그(admin-prod-exp:<커밋 12자리>)는 그 워크플로의 backend 작업과 같아야 한다.
+# 설정 파일(application.yml)은 저장소에 없어 이미지에 들어가지 않는다 — 스택이 Secret으로 마운트한다.
 
 on:
   pull_request:
@@ -23,4 +28,31 @@ jobs:
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v6
       - name: Test
-        run: ./gradlew test --no-daemon
+        run: ./gradlew build --no-daemon
+
+      - name: 커밋 확인
+        id: image
+        if: github.event_name == 'push'
+        run: echo "sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Docker Hub 로그인
+        if: github.event_name == 'push'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: 빌더 준비
+        if: github.event_name == 'push'
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: 이미지 빌드
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/admin-prod-exp:${{ steps.image.outputs.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
