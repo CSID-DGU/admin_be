@@ -3,11 +3,13 @@ package DGU_AI_LAB.admin_be.domain.portRequests.entity;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
+import DGU_AI_LAB.admin_be.global.event.RequestRowChangeListener;
 import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
 @Table(name = "port_requests")
+@EntityListeners(RequestRowChangeListener.class)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PortRequests extends BaseTimeEntity {
