@@ -59,6 +59,7 @@ class PortOperationServiceTest {
     private static final Long REQUEST_ID = 42L;
     private static final Long CHANGE_REQUEST_ID = 9L;
     private static final Long OPERATION_ID = 7L;
+    private static final Long OWNER_ID = 5L;
     private static final Long JOB_ID = 77L;
     private static final String POD = "ailab-alice-7f3a9c21";
 
@@ -88,6 +89,7 @@ class PortOperationServiceTest {
                 transactionManager);
 
         owner = User.builder().email("alice@dgu.ac.kr").name("alice").ubuntuUsername("alice").build();
+        ReflectionTestUtils.setField(owner, "userId", OWNER_ID);
         admin = User.builder().email("admin@dgu.ac.kr").name("admin").build();
         when(resourceGroup.getServerName()).thenReturn("FARM");
         when(request.getRequestId()).thenReturn(REQUEST_ID);
@@ -198,7 +200,7 @@ class PortOperationServiceTest {
         assertThat(external.getAllValues()).extracting(PodExternalPort::getExternalPort)
                 .containsExactly(30001, 30002, 30100);
         // 작업과 겹쳐 시작된 이용 정지가 새 포트에도 걸리게 한다.
-        verify(suspensionGuard).reblockAfterPortsCreated(owner.getUserId());
+        verify(suspensionGuard).reblockAfterPortsCreated(OWNER_ID);
 
         assertThat(changeRequest.getStatus()).isEqualTo(Status.FULFILLED);
         assertThat(operation.getStatus()).isEqualTo(PortOperationStatus.APPLIED);
@@ -265,6 +267,8 @@ class PortOperationServiceTest {
         PortOperation operation = processing();
 
         service.fail(OPERATION_ID, "POD_NOT_FOUND");
+        // 실패한 작업도 포트를 만들었을 수 있다.
+        verify(suspensionGuard).reblockAfterPortsCreated(OWNER_ID);
 
         assertThat(operation.getStatus()).isEqualTo(PortOperationStatus.FAILED);
         assertThat(operation.getErrorCode()).isEqualTo("POD_NOT_FOUND");

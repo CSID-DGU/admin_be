@@ -21,6 +21,8 @@ public interface AccessOperationRepository extends JpaRepository<AccessOperation
 
     boolean existsByUser_UserIdAndStatus(Long userId, AccessOperationStatus status);
 
+    boolean existsByUser_UserIdAndStatusAndBlocked(Long userId, AccessOperationStatus status, boolean blocked);
+
     /** 그 사용자에게 마지막으로 성공한 작업. 이 작업의 blocked 가 지금 실제로 적용된 상태다. */
     Optional<AccessOperation> findFirstByUser_UserIdAndStatusOrderByAccessOperationIdDesc(
             Long userId, AccessOperationStatus status);

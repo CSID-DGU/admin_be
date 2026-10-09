@@ -156,6 +156,32 @@ class AccessEnforcementServiceTest {
     }
 
     @Test
+    @DisplayName("다시 걸기는 차단 작업이 도는 중이어도 등록한다 — 도는 작업은 방금 만들어진 포트를 못 봤을 수 있다")
+    void reapplyOverlapsRunningBlock() {
+        suspended(true);
+        when(operationRepository.existsByUser_UserIdAndStatus(USER_ID, AccessOperationStatus.PROCESSING)).thenReturn(true);
+        when(operationRepository.existsByUser_UserIdAndStatusAndBlocked(USER_ID, AccessOperationStatus.PROCESSING, false))
+                .thenReturn(false);
+
+        service.reapply(USER_ID);
+
+        verify(jobClient).registerAccessChange(new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", true));
+    }
+
+    @Test
+    @DisplayName("다시 걸기도 해제 작업이 도는 중이면 기다린다 — 순서가 뒤바뀌면 열린 채로 끝난다")
+    void reapplyWaitsForRunningUnblock() {
+        suspended(true);
+        when(operationRepository.existsByUser_UserIdAndStatus(USER_ID, AccessOperationStatus.PROCESSING)).thenReturn(true);
+        when(operationRepository.existsByUser_UserIdAndStatusAndBlocked(USER_ID, AccessOperationStatus.PROCESSING, false))
+                .thenReturn(true);
+
+        service.reapply(USER_ID);
+
+        verifyNoInteractions(jobClient);
+    }
+
+    @Test
     @DisplayName("리눅스 계정을 정한 적이 없는 사용자는 막을 포트가 없어 작업을 등록하지 않는다")
     void userWithoutLinuxAccountHasNothingToBlock() {
         ReflectionTestUtils.setField(user, "ubuntuUsername", null);

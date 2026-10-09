@@ -30,6 +30,8 @@ import java.util.function.Supplier;
  *
  * <p>"지금 어때야 하는가"(끝나지 않은 정지가 있는가)와 "지금 어떤가"(마지막으로 성공한 접속 작업)를 비교해 다를 때만
  * config-server 작업을 등록한다. 정지 시작·경고 취소·정지 만료·실패한 작업의 재시도가 모두 이 비교 하나로 처리된다.
+ * 예외는 하나다 — 기록은 그 뒤에 새로 만들어진 포트를 모르므로, 정지 중인 계정은 포트가 만들어진 뒤와 주기 점검 때
+ * 기록과 상관없이 다시 막는다({@link #reapply}).
  * 결과는 AccessOperationJobPoller 가 {@link #complete}·{@link #fail}로 반영한다.
  *
  * <p>작업 등록은 트랜잭션 안에서 한다. PROCESSING 이 보이는 시점에는 그 작업이 이미 등록돼 있어, 폴러가 등록 전의
@@ -94,12 +96,18 @@ public class AccessEnforcementService {
             // 같은 사용자의 작업 등록을 사용자 행 잠금으로 줄 세운다.
             User user = userRepository.findByIdForUpdate(userId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-            if (operationRepository.existsByUser_UserIdAndStatus(userId, AccessOperationStatus.PROCESSING)) {
-                // 도는 작업이 끝나면 complete 가 다시 맞춘다.
-                return null;
-            }
             boolean wanted = suspensionRepository
                     .findFirstByUser_UserIdAndEndsAtAfterOrderByEndsAtDesc(userId, LocalDateTime.now()).isPresent();
+            if (operationRepository.existsByUser_UserIdAndStatus(userId, AccessOperationStatus.PROCESSING)) {
+                // 도는 작업이 끝나면 complete 가 다시 맞춘다. 다시 걸기만은 기다리지 않는다 — 도는 차단 작업은 방금
+                // 만들어진 포트를 못 봤을 수 있고, 차단끼리는 겹쳐도 결과가 같다. 해제가 도는 중이면 순서가 뒤바뀌어
+                // 열린 채로 끝날 수 있으므로 기다린다(해제가 끝난 뒤의 차단이 그 포트까지 막는다).
+                boolean overlapSafe = wanted && reapplyBlock && !operationRepository
+                        .existsByUser_UserIdAndStatusAndBlocked(userId, AccessOperationStatus.PROCESSING, false);
+                if (!overlapSafe) {
+                    return null;
+                }
+            }
             boolean applied = operationRepository
                     .findFirstByUser_UserIdAndStatusOrderByAccessOperationIdDesc(userId, AccessOperationStatus.APPLIED)
                     .map(AccessOperation::isBlocked).orElse(false);
