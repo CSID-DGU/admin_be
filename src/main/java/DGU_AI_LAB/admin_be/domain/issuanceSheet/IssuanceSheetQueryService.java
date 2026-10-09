@@ -1,17 +1,19 @@
 package DGU_AI_LAB.admin_be.domain.issuanceSheet;
 
 import DGU_AI_LAB.admin_be.domain.home.service.HomeRetentionPolicy;
-import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
-import DGU_AI_LAB.admin_be.domain.portRequests.repository.PortRequestRepository;
+import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
+import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.global.server.ServerProfileProperties;
+import DGU_AI_LAB.admin_be.global.server.ServerProfileRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,8 +25,9 @@ import java.util.stream.Collectors;
 public class IssuanceSheetQueryService {
 
     private final RequestRepository requestRepository;
-    private final PortRequestRepository portRequestRepository;
+    private final PodExternalPortRepository podExternalPortRepository;
     private final ServerProfileProperties serverProfiles;
+    private final ServerProfileRegistry serverProfileRegistry;
     private final HomeRetentionPolicy retentionPolicy;
 
     /**
@@ -35,11 +38,7 @@ public class IssuanceSheetQueryService {
     @Transactional(readOnly = true)
     public Map<String, List<List<String>>> rowsByServer() {
         List<Request> issued = requestRepository.findAllByStatusInWithAssociations(Status.activeStatuses());
-        Map<Long, List<Integer>> activePorts = portRequestRepository
-                .findByRequestRequestIdIn(issued.stream().map(Request::getRequestId).toList()).stream()
-                .filter(port -> Boolean.TRUE.equals(port.getIsActive()))
-                .collect(Collectors.groupingBy(port -> port.getRequest().getRequestId(),
-                        Collectors.mapping(PortRequests::getInternalPort, Collectors.toList())));
+        Map<Long, List<String>> ports = ports(issued);
 
         Map<Long, LocalDate> homeDeletionDates = homeDeletionDates(issued);
 
@@ -48,9 +47,33 @@ public class IssuanceSheetQueryService {
             List<Request> ofServer = issued.stream()
                     .filter(request -> serverName.equalsIgnoreCase(request.getResourceGroup().getServerName()))
                     .toList();
-            tables.put(serverName, IssuanceSheetRows.of(ofServer, activePorts, homeDeletionDates));
+            tables.put(serverName, IssuanceSheetRows.of(ofServer, ports, homeDeletionDates));
         }
         return tables;
+    }
+
+    /**
+     * 컨테이너에 실제로 열린 포트를 "용도(포트)"로 적는다. 포트는 접속 안내 메일과 같은 번호다
+     * ({@link ServerProfileRegistry#publicPort}). SSH·Jupyter를 앞에, 추가 포트는 내부 포트 순으로 놓는다.
+     */
+    private Map<Long, List<String>> ports(List<Request> issued) {
+        Map<Long, String> serverByRequest = issued.stream().collect(Collectors.toMap(
+                Request::getRequestId, request -> request.getResourceGroup().getServerName()));
+        return podExternalPortRepository.findByRequestRequestIdIn(serverByRequest.keySet()).stream()
+                .sorted(Comparator.comparingInt(IssuanceSheetQueryService::portRank)
+                        .thenComparing(PodExternalPort::getInternalPort))
+                .collect(Collectors.groupingBy(port -> port.getRequest().getRequestId(),
+                        Collectors.mapping(port -> port.getUsagePurpose() + "(" + serverProfileRegistry.publicPort(
+                                        serverByRequest.get(port.getRequest().getRequestId()),
+                                        String.valueOf(port.getExternalPort())) + ")",
+                                Collectors.toList())));
+    }
+
+    private static int portRank(PodExternalPort port) {
+        if ("ssh".equalsIgnoreCase(port.getUsagePurpose())) {
+            return 0;
+        }
+        return "jupyter".equalsIgnoreCase(port.getUsagePurpose()) ? 1 : 2;
     }
 
     /**

@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.pod.entity;
 
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
+import DGU_AI_LAB.admin_be.global.event.RequestRowChangeListener;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -12,6 +13,7 @@ import lombok.NoArgsConstructor;
 
 @Entity
 @Table(name = "pod_external_ports")
+@EntityListeners(RequestRowChangeListener.class)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PodExternalPort extends BaseTimeEntity {
