@@ -146,6 +146,16 @@ public enum ErrorCode {
     GROUP_OPERATION_NOT_FOUND(HttpStatus.NOT_FOUND, "그룹 작업을 찾을 수 없습니다."),
     PORT_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "포트 변경 작업을 등록하지 못했어요. 잠시 후 다시 시도해 주세요."),
     PORT_OPERATION_IN_PROGRESS(HttpStatus.CONFLICT, "이 컨테이너의 포트를 바꾸는 중이에요. 끝난 뒤 다시 시도해 주세요."),
+    ACCESS_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "접속 차단·해제 작업을 등록하지 못했어요. 잠시 후 다시 시도해 주세요."),
+
+    /**
+     * Warning Error
+     */
+    USER_SUSPENDED(HttpStatus.FORBIDDEN, "이용이 정지된 계정이에요. 정지가 끝난 뒤 다시 시도해 주세요."),
+    WARNING_TARGET_IS_ADMIN(HttpStatus.BAD_REQUEST, "관리자에게는 경고를 줄 수 없어요."),
+    WARNING_NOT_DEDUCTIBLE(HttpStatus.CONFLICT, "경고가 3회 이상 쌓인 적이 있고 횟수가 남아 있을 때만 차감할 수 있어요."),
+    WARNING_NOT_FOUND(HttpStatus.NOT_FOUND, "이 사용자에게 준 경고가 아니에요."),
+    WARNING_ALREADY_CANCELED(HttpStatus.CONFLICT, "이미 취소된 경고예요."),
     // 같은 새 그룹을 두 신청이 동시에 만들면 gid 가 두 번 발급된다. 앞 신청이 끝나면 그룹이 생겨 그대로 승인된다.
     PENDING_GROUP_IN_PROGRESS(HttpStatus.CONFLICT, "같은 새 그룹을 만드는 다른 신청을 반영하는 중이에요. 끝난 뒤 다시 승인해 주세요."),
 

@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.portRequests.service;
 
+import DGU_AI_LAB.admin_be.domain.warnings.service.SuspensionGuard;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
@@ -67,6 +68,7 @@ class PortOperationServiceTest {
     @Mock private RequestRepository requestRepository;
     @Mock private ChangeRequestRepository changeRequestRepository;
     @Mock private JobClient jobClient;
+    @Mock private SuspensionGuard suspensionGuard;
     @Mock private AlarmService alarmService;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
@@ -82,7 +84,7 @@ class PortOperationServiceTest {
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         service = new PortOperationService(operationRepository, portRequestRepository, podExternalPortRepository,
-                requestRepository, changeRequestRepository, jobClient, alarmService, new ObjectMapper(),
+                requestRepository, changeRequestRepository, jobClient, suspensionGuard, alarmService, new ObjectMapper(),
                 transactionManager);
 
         owner = User.builder().email("alice@dgu.ac.kr").name("alice").ubuntuUsername("alice").build();
@@ -142,7 +144,7 @@ class PortOperationServiceTest {
         ArgumentCaptor<PortChangeRegisterRequestDTO> body = ArgumentCaptor.forClass(PortChangeRegisterRequestDTO.class);
         verify(jobClient).registerPortChange(body.capture());
         assertThat(body.getValue()).isEqualTo(new PortChangeRegisterRequestDTO(OPERATION_ID, "alice", POD,
-                List.of(new PortChangeRegisterRequestDTO.Port(3000, "web"))));
+                List.of(new PortChangeRegisterRequestDTO.Port(3000, "web")), null));
         assertThat(changeRequest.getStatus()).isEqualTo(Status.PROCESSING);
         assertThat(changeRequest.getAdminComment()).isEqualTo("승인합니다");
         verifyNoInteractions(portRequestRepository, podExternalPortRepository);
@@ -288,5 +290,18 @@ class PortOperationServiceTest {
     @DisplayName("PortOperation 은 mock 이 아닌 신청의 컨테이너 이름을 등록 시점 값으로 담는다")
     void operationKeepsThePodNameAtRegistration() {
         assertThat(new PortOperation(changeRequest, request, mock(User.class)).getPodName()).isEqualTo(POD);
+    }
+
+    @Test
+    @DisplayName("이용 정지 중인 사용자의 포트 변경은 새 포트를 막힌 채로 열게 한다")
+    void startForSuspendedUserKeepsNewPortsBlocked() {
+        ReflectionTestUtils.setField(owner, "userId", 5L);
+        when(suspensionGuard.isSuspended(5L)).thenReturn(true);
+
+        service.start(changeRequest, request, admin, "승인합니다");
+
+        ArgumentCaptor<PortChangeRegisterRequestDTO> body = ArgumentCaptor.forClass(PortChangeRegisterRequestDTO.class);
+        verify(jobClient).registerPortChange(body.capture());
+        assertThat(body.getValue().accessBlocked()).isTrue();
     }
 }

@@ -60,6 +60,9 @@ class RequestCommandServiceTest {
     @Mock
     private ChangeRequestDescriber changeRequestDescriber;
 
+    @Mock
+    private DGU_AI_LAB.admin_be.domain.warnings.service.SuspensionGuard suspensionGuard;
+
     @InjectMocks
     private RequestCommandService requestCommandService;
 
@@ -824,5 +827,22 @@ class RequestCommandServiceTest {
             verify(requestRepository).findByIdForUpdate(17L);
             verify(requestRepository, never()).findById(17L);
         }
+    }
+
+    @Test
+    @DisplayName("이용 정지 중에는 새 신청을 받지 않는다")
+    void createRequest_rejected_whileSuspended() {
+        User user = User.builder()
+                .email("test@dgu.ac.kr").password("pw").name("홍길동").ubuntuUsername("hong")
+                .studentId("2021001234").phone("010-0000-0000").department("컴퓨터공학과")
+                .build();
+        when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
+        org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.USER_SUSPENDED))
+                .when(suspensionGuard).requireNotSuspended(1L);
+
+        assertThatThrownBy(() -> requestCommandService.createRequest(1L, mock(SaveRequestRequestDTO.class)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_SUSPENDED);
+        verify(requestRepository, never()).saveAndFlush(any());
     }
 }

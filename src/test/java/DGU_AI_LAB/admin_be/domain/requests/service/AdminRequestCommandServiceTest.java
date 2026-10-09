@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.warnings.service.SuspensionGuard;
 import DGU_AI_LAB.admin_be.support.Alerts;
 import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
@@ -101,6 +102,8 @@ class AdminRequestCommandServiceTest {
     @Mock private ResourceGroup mockRg;
     @Mock private User mockUser;
 
+    @Mock private SuspensionGuard suspensionGuard;
+
     private AdminRequestCommandService service;
 
     @BeforeEach
@@ -109,7 +112,7 @@ class AdminRequestCommandServiceTest {
 
         // @RequiredArgsConstructor 생성자 필드 선언 순서대로 주입
         service = new AdminRequestCommandService(
-                alarmService, requestRepository, userRepository, passwordResetRequestRepository,
+                alarmService, requestRepository, userRepository, suspensionGuard, passwordResetRequestRepository,
                 containerImageRepository,
                 resourceGroupRepository, podExternalPortRepository, jobClient,
                 new PendingGroupService(groupRepository, requestGroupRepository, mock(EntityManager.class)),
@@ -1194,5 +1197,25 @@ class AdminRequestCommandServiceTest {
             assertThat(service.approveRequest(new ApproveRequestDTO(341L, 1L, 1, null))).isNotNull();
             verify(jobClient, times(1)).registerProvision(any());
         }
+    }
+
+    @Test
+    @DisplayName("이용 정지 중인 사용자의 신청은 승인하지 않는다 — 작업을 등록하지 않고 신청은 대기로 남는다")
+    void approveRequest_refusedWhileOwnerSuspended() {
+        Request request = mock(Request.class);
+        when(request.getStatus()).thenReturn(Status.PENDING);
+        when(request.getUser()).thenReturn(mockUser);
+        when(requestRepository.findByIdForUpdate(14L)).thenReturn(Optional.of(request));
+        when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
+        when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
+        when(userRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(mockUser));
+        org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.USER_SUSPENDED))
+                .when(suspensionGuard).requireNotSuspended(100L);
+
+        assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(14L, 1L, 1, "승인")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_SUSPENDED);
+        verifyNoInteractions(jobClient);
     }
 }

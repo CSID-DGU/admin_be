@@ -21,6 +21,7 @@ import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.domain.warnings.service.SuspensionGuard;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
@@ -65,6 +66,7 @@ public class PortOperationService {
     private final RequestRepository requestRepository;
     private final ChangeRequestRepository changeRequestRepository;
     private final JobClient jobClient;
+    private final SuspensionGuard suspensionGuard;
     private final AlarmService alarmService;
     private final ObjectMapper objectMapper;
     private final PlatformTransactionManager transactionManager;
@@ -92,7 +94,8 @@ public class PortOperationService {
                 .toList();
         PortOperation operation = operationRepository.save(new PortOperation(changeRequest, originalRequest, admin));
         operation.registered(jobClient.registerPortChange(new PortChangeRegisterRequestDTO(
-                operation.getPortOperationId(), originalRequest.getUbuntuUsername(), originalRequest.getPodName(), ports)));
+                operation.getPortOperationId(), originalRequest.getUbuntuUsername(), originalRequest.getPodName(), ports,
+                suspensionGuard.isSuspended(originalRequest.getUser().getUserId()) ? Boolean.TRUE : null)));
         changeRequest.startProcessing(admin, adminComment);
         log.info("[portOperation] operationId={} 포트 변경 등록: changeRequestId={}, pod={}",
                 operation.getPortOperationId(), changeRequest.getChangeRequestId(), originalRequest.getPodName());
