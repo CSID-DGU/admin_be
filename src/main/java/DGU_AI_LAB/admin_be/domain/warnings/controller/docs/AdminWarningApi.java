@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.ResponseEntity;
 
 @Tag(name = "3. 관리자 유저 관리", description = "사용자 계정 조회 및 삭제 API")
@@ -47,5 +48,5 @@ public interface AdminWarningApi {
     ResponseEntity<SuccessResponse<?>> cancelWarning(@Parameter(description = "사용자 ID") Long userId,
                                                      @Parameter(description = "취소할 경고(부여) 번호") Long warningId,
                                                      Long adminId,
-                                                     @Parameter(description = "취소 사유") String reason);
+                                                     @ParameterObject WarningReasonRequestDTO dto);
 }
