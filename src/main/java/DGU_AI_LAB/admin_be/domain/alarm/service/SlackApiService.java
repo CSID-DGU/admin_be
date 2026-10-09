@@ -12,7 +12,11 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +47,8 @@ public class SlackApiService {
 
     private static final String SLACK_USERS_CACHE_KEY = "slack:cache:users:list";
     private static final long CACHE_TTL_HOURS = 1;
+    private static final String USERS_LIST_URL = "https://slack.com/api/users.list?limit=1000";
+    private static final int MAX_USER_LIST_PAGES = 20;
 
     // =========================================================================
     // 1. Webhook 전송
@@ -127,6 +133,17 @@ public class SlackApiService {
         log.info("Slack User Cache 강제 초기화 완료");
     }
 
+    /**
+     * 워크스페이스에 그 이름의 회원이 있는가. DM을 보낼 사람을 찾을 때와 같은 이름 규칙으로 본다. 탈퇴 처리된 회원과
+     * 봇은 세지 않는다. 회원 목록을 받지 못하면 예외를 낸다 — "없다"와 "확인하지 못했다"를 호출자가 구분할 수 있다.
+     */
+    public boolean hasMemberNamed(String username) {
+        return getSlackMembersWithCache().stream()
+                .filter(member -> !Boolean.TRUE.equals(member.get("deleted"))
+                        && !Boolean.TRUE.equals(member.get("is_bot")))
+                .anyMatch(member -> hasName(member, username));
+    }
+
     // --- Private Helper Methods ---
 
     @SuppressWarnings("unchecked") // IDE에서 Redis 캐스팅 경고를 억제하기 위해서 추가 (깔끔함용)
@@ -142,19 +159,29 @@ public class SlackApiService {
         }
 
         log.info("Slack User List: API 직접 호출 (Refresh)");
-        String url = "https://slack.com/api/users.list?limit=1000";
 
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(botToken);
         HttpEntity<Void> request = new HttpEntity<>(headers);
 
         try {
-            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, request, Map.class);
-            if (!Boolean.TRUE.equals(response.getBody().get("ok"))) {
-                throw new BusinessException(ErrorCode.SLACK_USER_NOT_FOUND);
+            // 한 번에 다 오지 않으면 다음 쪽 표시(next_cursor)가 온다. 첫 쪽만 읽으면 뒤쪽 회원은 없는 사람이 된다.
+            List<Map<String, Object>> members = new ArrayList<>();
+            String cursor = "";
+            for (int page = 0; page < MAX_USER_LIST_PAGES; page++) {
+                // 문자열 주소로 넘기면 RestTemplate이 한 번 더 인코딩해 cursor가 깨진다. 완성된 URI로 넘긴다.
+                URI url = URI.create(USERS_LIST_URL + (cursor.isEmpty() ? "" : "&cursor=" + cursor));
+                ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, request, Map.class);
+                Map<?, ?> body = response.getBody();
+                if (body == null || !Boolean.TRUE.equals(body.get("ok"))) {
+                    throw new BusinessException(ErrorCode.SLACK_USER_NOT_FOUND);
+                }
+                members.addAll((List<Map<String, Object>>) body.get("members"));
+                cursor = nextCursor(body);
+                if (cursor.isEmpty()) {
+                    break;
+                }
             }
-
-            List<Map<String, Object>> members = (List<Map<String, Object>>) response.getBody().get("members");
 
             // Redis 저장
             try {
@@ -171,23 +198,37 @@ public class SlackApiService {
         }
     }
 
+    private static String nextCursor(Map<?, ?> body) {
+        if (body.get("response_metadata") instanceof Map<?, ?> metadata
+                && metadata.get("next_cursor") instanceof String cursor) {
+            // 값 끝의 '='가 그대로 가면 Slack이 invalid_cursor로 거절한다.
+            return URLEncoder.encode(cursor, StandardCharsets.UTF_8);
+        }
+        return "";
+    }
+
+    /** 표시 이름·실명·계정 이름 가운데 하나가 정확히 같은가. */
+    @SuppressWarnings("unchecked")
+    private static boolean hasName(Map<String, Object> user, String username) {
+        Map<String, Object> profile = (Map<String, Object>) user.get("profile");
+        if (profile == null) return false;
+
+        String displayName = (String) profile.get("display_name");
+        String realName = (String) profile.get("real_name");
+        String name = (String) user.get("name");
+
+        return (displayName != null && displayName.equals(username)) ||
+                (realName != null && realName.equals(username)) ||
+                (name != null && name.equals(username));
+    }
+
     private String getSlackUserId(String username, String email) {
         List<Map<String, Object>> members = getSlackMembersWithCache();
 
         // 1차: 이름 매칭
         List<Map<String, Object>> matchedUsers = members.stream()
-                .filter(user -> {
-                    Map<String, Object> profile = (Map<String, Object>) user.get("profile");
-                    if (profile == null) return false;
-
-                    String displayName = (String) profile.get("display_name");
-                    String realName = (String) profile.get("real_name");
-                    String name = (String) user.get("name");
-
-                    return (displayName != null && displayName.equals(username)) ||
-                            (realName != null && realName.equals(username)) ||
-                            (name != null && name.equals(username));
-                }).collect(Collectors.toList());
+                .filter(user -> hasName(user, username))
+                .collect(Collectors.toList());
 
         if (matchedUsers.isEmpty()) return null;
         if (matchedUsers.size() == 1) return (String) matchedUsers.get(0).get("id");
