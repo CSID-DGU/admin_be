@@ -17,6 +17,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -133,15 +134,37 @@ public class SlackApiService {
         log.info("Slack User Cache 강제 초기화 완료");
     }
 
+    /** {@link #findMembership}의 답. */
+    public enum Membership {
+        /** 이름과 이메일이 모두 같은 회원이 있다. */
+        CONFIRMED,
+        /** 이름이 같은 회원은 있으나, Slack이 회원 이메일을 주지 않아 이메일은 보지 못했다. */
+        NAME_ONLY,
+        NOT_FOUND
+    }
+
     /**
-     * 워크스페이스에 그 이름의 회원이 있는가. DM을 보낼 사람을 찾을 때와 같은 이름 규칙으로 본다. 탈퇴 처리된 회원과
-     * 봇은 세지 않는다. 회원 목록을 받지 못하면 예외를 낸다 — "없다"와 "확인하지 못했다"를 호출자가 구분할 수 있다.
+     * 워크스페이스에 그 이름과 이메일의 회원이 있는가. 이름은 DM을 보낼 사람을 찾을 때와 같은 규칙으로 보고, 이메일은
+     * 주어진 것 가운데 하나와 같으면 된다(대소문자 무시). 탈퇴 처리된 회원과 봇은 세지 않는다.
+     *
+     * <p>봇에 이메일 조회 권한(users:read.email)이 없으면 Slack은 어느 회원의 이메일도 주지 않는다. 그때는 이름만 보고
+     * {@link Membership#NAME_ONLY}로 알린다. 회원 목록을 받지 못하면 예외를 낸다 — "없다"와 "확인하지 못했다"를
+     * 호출자가 구분할 수 있다.
      */
-    public boolean hasMemberNamed(String username) {
-        return getSlackMembersWithCache().stream()
+    public Membership findMembership(String username, Collection<String> emails) {
+        List<Map<String, Object>> active = getSlackMembersWithCache().stream()
                 .filter(member -> !Boolean.TRUE.equals(member.get("deleted"))
                         && !Boolean.TRUE.equals(member.get("is_bot")))
-                .anyMatch(member -> hasName(member, username));
+                .toList();
+        List<Map<String, Object>> named = active.stream().filter(member -> hasName(member, username)).toList();
+        if (named.isEmpty()) {
+            return Membership.NOT_FOUND;
+        }
+        if (active.stream().noneMatch(member -> emailOf(member) != null)) {
+            return Membership.NAME_ONLY;
+        }
+        return named.stream().anyMatch(member -> hasEmail(member, emails))
+                ? Membership.CONFIRMED : Membership.NOT_FOUND;
     }
 
     // --- Private Helper Methods ---
@@ -220,6 +243,20 @@ public class SlackApiService {
         return (displayName != null && displayName.equals(username)) ||
                 (realName != null && realName.equals(username)) ||
                 (name != null && name.equals(username));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String emailOf(Map<String, Object> user) {
+        Map<String, Object> profile = (Map<String, Object>) user.get("profile");
+        if (profile == null || !(profile.get("email") instanceof String email) || email.isBlank()) {
+            return null;
+        }
+        return email;
+    }
+
+    private static boolean hasEmail(Map<String, Object> user, Collection<String> emails) {
+        String email = emailOf(user);
+        return email != null && emails.stream().anyMatch(email::equalsIgnoreCase);
     }
 
     private String getSlackUserId(String username, String email) {

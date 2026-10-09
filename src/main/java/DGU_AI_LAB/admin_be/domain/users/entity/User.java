@@ -60,6 +60,13 @@ public class User extends BaseTimeEntity {
     private String department;
 
     /**
+     * 학교 이메일 말고 평소에 쓰는 이메일. Slack에 이 주소로 가입한 사람을 같은 사람으로 알아보는 데 쓴다.
+     * 비어 있으면 학교 이메일과 같다는 뜻이다.
+     */
+    @Column(name = "contact_email", length = 100)
+    private String contactEmail;
+
+    /**
      * 웹 계정 하나당 우분투 계정 하나. 회원가입 시 사용자가 직접 고르며, 이후 이 사용자의
      * 모든 컨테이너가 같은 유저네임/UID/GID를 쓴다 — 홈 디렉터리(/home/&lt;username&gt;)가
      * NFS에서 유저네임으로만 결정되므로, 유저네임이 고정되면 컨테이너를 새로 받아도
@@ -116,7 +123,8 @@ public class User extends BaseTimeEntity {
     private Set<UserGroup> userGroups = new HashSet<>();
 
     @Builder
-    public User(String email, String password, String name, String studentId, String phone, String department, String ubuntuUsername) {
+    public User(String email, String password, String name, String studentId, String phone, String department,
+                String ubuntuUsername, String contactEmail) {
         this.email = email;
         this.password = password;
         this.name = name;
@@ -124,6 +132,7 @@ public class User extends BaseTimeEntity {
         this.phone = phone;
         this.department = department;
         this.ubuntuUsername = ubuntuUsername;
+        this.contactEmail = distinctContactEmail(contactEmail);
         this.lastLoginAt = LocalDateTime.now();
     }
 
@@ -145,6 +154,23 @@ public class User extends BaseTimeEntity {
 
     public void updatePhone(String newPhone) {
         this.phone = newPhone;
+    }
+
+    /** 빈 값이나 학교 이메일과 같은 값은 "따로 없음"으로 둔다. */
+    public void updateContactEmail(String newContactEmail) {
+        this.contactEmail = distinctContactEmail(newContactEmail);
+    }
+
+    /** 이 사람의 것으로 아는 이메일 — 학교 이메일과, 있으면 자주 사용하는 이메일. */
+    public List<String> knownEmails() {
+        return contactEmail == null ? List.of(email) : List.of(email, contactEmail);
+    }
+
+    private String distinctContactEmail(String candidate) {
+        if (candidate == null || candidate.isBlank() || candidate.trim().equalsIgnoreCase(email)) {
+            return null;
+        }
+        return candidate.trim();
     }
 
     public void withdraw() {

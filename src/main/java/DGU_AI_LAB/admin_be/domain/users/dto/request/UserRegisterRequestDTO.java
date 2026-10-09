@@ -50,7 +50,12 @@ public record UserRegisterRequestDTO(
         // 쓰므로 홈 디렉터리(/home/<username>)가 그대로 이어진다. 규칙은 @UbuntuUsername 참고.
         @Schema(description = "Ubuntu 계정명 (3~32자, 소문자로 시작, 소문자·숫자·하이픈)", example = "hongildong")
         @UbuntuUsername
-        String ubuntuUsername
+        String ubuntuUsername,
+
+        // Slack에 학교 이메일이 아닌 주소로 가입한 사람을 알아보는 데 쓴다. 비우거나 학교 이메일과 같게 적으면 저장하지 않는다.
+        @Schema(description = "자주 사용하는 이메일 (없거나 학교 이메일과 같으면 생략)", example = "user@gmail.com")
+        @Email @Size(max = 100)
+        String contactEmail
 ) {
         /** 비밀번호는 서비스에서 암호화한 값을 넘겨서 처리 */
         public User toEntity(String encodedPassword) {
@@ -62,6 +67,7 @@ public record UserRegisterRequestDTO(
                         .studentId(studentId)
                         .phone(PhoneNumbers.normalize(phone))
                         .ubuntuUsername(ubuntuUsername)
+                        .contactEmail(contactEmail)
                         // role, isActive는 엔티티의 @Builder.Default 로 기본값 사용
                         .build();
         }

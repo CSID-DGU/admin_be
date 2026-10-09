@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.users.controller;
 
 import DGU_AI_LAB.admin_be.domain.users.controller.docs.UserApi;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PhoneUpdateRequestDTO;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.ContactEmailUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuUsernameRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.service.UserService;
@@ -42,6 +43,27 @@ public class UserController implements UserApi {
     ) {
         UserResponseDTO updatedUser = userService.updatePhone(principal.getUserId(), request);
         return SuccessResponse.ok(updatedUser);
+    }
+
+    /**
+     * 내 Slack 가입 확인 결과 API — 신청하기 전에 화면이 미리 알려 주는 데 쓴다.
+     * GET /api/users/me/slack-membership
+     */
+    @GetMapping("/me/slack-membership")
+    public ResponseEntity<SuccessResponse<?>> getSlackMembership(@AuthenticationPrincipal CustomUserDetails principal) {
+        return SuccessResponse.ok(userService.getSlackMembership(principal.getUserId()));
+    }
+
+    /**
+     * 자주 사용하는 이메일 변경 API
+     * PATCH /api/users/me/contact-email
+     */
+    @PatchMapping("/me/contact-email")
+    public ResponseEntity<SuccessResponse<?>> updateContactEmail(
+            @AuthenticationPrincipal CustomUserDetails principal,
+            @RequestBody @Valid ContactEmailUpdateRequestDTO request
+    ) {
+        return SuccessResponse.ok(userService.updateContactEmail(principal.getUserId(), request));
     }
 
     /**
