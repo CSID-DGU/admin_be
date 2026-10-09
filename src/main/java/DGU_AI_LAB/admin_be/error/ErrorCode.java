@@ -115,7 +115,7 @@ public enum ErrorCode {
     ACCOUNT_DISABLED(HttpStatus.UNAUTHORIZED, "비활성화된 유저입니다. 관리자에게 문의하세요."),
 
     SLACK_USER_NOT_FOUND(HttpStatus.NOT_FOUND, "Slack 사용자를 찾을 수 없습니다."),
-    SLACK_MEMBERSHIP_REQUIRED(HttpStatus.CONFLICT, "Slack 워크스페이스에서 회원 정보의 이름과 같은 이름을 찾지 못했어요. Slack에 가입하고 이름(표시 이름 또는 실명)을 회원 정보의 이름과 똑같이 맞춘 뒤 다시 신청해 주세요."),
+    SLACK_MEMBERSHIP_REQUIRED(HttpStatus.CONFLICT, "Slack 워크스페이스에서 회원 정보와 이름·이메일이 같은 회원을 찾지 못했어요. Slack에 가입하고 이름(표시 이름 또는 실명)을 회원 정보의 이름과 똑같이 맞춰 주세요. Slack에 학교 이메일이 아닌 주소로 가입했다면 내 정보의 \"자주 사용하는 이메일\"에 그 주소를 적은 뒤 다시 신청해 주세요."),
     SLACK_USER_EMAIL_NOT_MATCH(HttpStatus.NOT_FOUND, "이메일이 일치하는 Slack 사용자를 찾을 수 없습니다."),
 
     // 로그인한 사용자가 변경 폼에 적은 현재 비밀번호가 틀린 것이라 인증 실패(401)가 아니다. 401이면 화면이

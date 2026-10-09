@@ -1,10 +1,13 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.ContactEmailUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PhoneUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.global.validation.PhoneNumbers;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuUsernameRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.service.SlackMembershipGate;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.MyInfoResponseDTO;
+import DGU_AI_LAB.admin_be.domain.users.dto.response.SlackMembershipResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
@@ -25,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final SlackMembershipGate slackMembershipGate;
     private final GroupRepository groupRepository;
     private final ReservedLinuxNames reservedLinuxNames;
 
@@ -59,6 +63,25 @@ public class UserService {
         user.updatePhone(PhoneNumbers.normalize(request.newPhone()));
         log.info("[updatePhone] userId={} 연락처 변경 완료", userId);
         return UserResponseDTO.fromEntity(user);
+    }
+
+    /** 지금 신청하면 Slack 가입 확인에 걸리는지 미리 알려 준다. */
+    @Transactional(readOnly = true)
+    public SlackMembershipResponseDTO getSlackMembership(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
+        return new SlackMembershipResponseDTO(slackMembershipGate.check(user));
+    }
+
+    /**
+     * 자주 사용하는 이메일 변경
+     */
+    public MyInfoResponseDTO updateContactEmail(Long userId, ContactEmailUpdateRequestDTO request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
+        user.updateContactEmail(request.contactEmail());
+        log.info("[updateContactEmail] userId={} 자주 사용하는 이메일 변경 완료", userId);
+        return MyInfoResponseDTO.fromEntity(user);
     }
 
     /**

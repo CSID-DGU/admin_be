@@ -627,6 +627,16 @@ public class AlarmService {
         mailWithReceipt(user.getName(), user.getEmail(), subject, body);
     }
 
+    /** Slack 회원이 아니라서 신청을 받지 않았을 때, 무엇을 고쳐야 하는지 알린다. 신청이 만들어지지 않았으므로 사람만 받는다. */
+    public void sendSlackMembershipRequiredEmail(String name, String email) {
+        String subject = messageUtils.get("email.request.slack-required.subject");
+        String body = messageUtils.get("email.request.slack-required.body",
+                name,   // {0}
+                email); // {1}
+
+        mailWithReceipt(name, email, subject, body);
+    }
+
     public void sendRequestRejectedEmail(Request request, String adminComment) {
         User user = request.getUser();
         String serverName = request.getResourceGroup().getServerName();

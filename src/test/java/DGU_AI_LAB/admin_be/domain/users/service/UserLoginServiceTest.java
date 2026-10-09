@@ -101,7 +101,7 @@ class UserLoginServiceTest {
             when(passwordEncoder.encode(anyString())).thenReturn("encodedPw");
 
             UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
-                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong"
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null
             );
 
             userLoginService.register(dto);
@@ -124,7 +124,7 @@ class UserLoginServiceTest {
             when(userRepository.existsByUbuntuUsername("honggildong")).thenReturn(true);
 
             UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
-                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong"
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null
             );
 
             assertThatThrownBy(() -> userLoginService.register(dto))
@@ -142,7 +142,7 @@ class UserLoginServiceTest {
             when(reservedLinuxNames.contains("www-data")).thenReturn(true);
 
             UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
-                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "www-data"
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "www-data", null
             );
 
             assertThatThrownBy(() -> userLoginService.register(dto))
@@ -161,7 +161,7 @@ class UserLoginServiceTest {
             when(groupRepository.existsByGroupName("developers")).thenReturn(true);
 
             UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
-                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "developers"
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "developers", null
             );
 
             assertThatThrownBy(() -> userLoginService.register(dto))
@@ -182,7 +182,7 @@ class UserLoginServiceTest {
                             new RuntimeException("Duplicate entry 'honggildong' for key 'uk_users_ubuntu_username'")));
 
             UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
-                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong"
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null
             );
 
             assertThatThrownBy(() -> userLoginService.register(dto))
@@ -203,7 +203,7 @@ class UserLoginServiceTest {
                     .thenThrow(new DataIntegrityViolationException("uk_users_email"));
 
             UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
-                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong"
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null
             );
 
             assertThatThrownBy(() -> userLoginService.register(dto))
@@ -220,7 +220,7 @@ class UserLoginServiceTest {
             when(redisTemplate.hasKey("VERIFIED:test@dgu.ac.kr")).thenReturn(false);
 
             UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
-                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong"
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null
             );
 
             assertThatThrownBy(() -> userLoginService.register(dto))
@@ -234,7 +234,7 @@ class UserLoginServiceTest {
             when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
 
             UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
-                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong"
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null
             );
 
             assertThatThrownBy(() -> userLoginService.register(dto))

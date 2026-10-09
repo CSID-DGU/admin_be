@@ -12,6 +12,8 @@ public record MyInfoResponseDTO(
         Long userId,
         @Schema(description = "이메일 주소", example = "yukyum6@gmail.com")
         String email,
+        @Schema(description = "자주 사용하는 이메일 — 없으면 학교 이메일과 같다는 뜻", example = "user@gmail.com")
+        String contactEmail,
         @Schema(description = "학번", example = "202312345")
         String studentId,
         @Schema(description = "이름", example = "이수아")
@@ -37,6 +39,7 @@ public record MyInfoResponseDTO(
         return new MyInfoResponseDTO(
                 u.getUserId(),
                 u.getEmail(),
+                u.getContactEmail(),
                 u.getStudentId(),
                 u.getName(),
                 u.getPhone(),

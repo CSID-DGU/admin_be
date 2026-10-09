@@ -214,12 +214,17 @@ class SlackApiServiceTest {
     }
 
     @Nested
-    @DisplayName("hasMemberNamed")
-    class HasMemberNamed {
+    @DisplayName("findMembership")
+    class FindMembership {
 
-        private Map<String, Object> member(String displayName, String flag) {
+        private static final List<String> EMAILS = List.of("hong@dgu.ac.kr", "hong@gmail.com");
+
+        private Map<String, Object> member(String displayName, String email, String flag) {
             Map<String, Object> profile = new HashMap<>();
             profile.put("display_name", displayName);
+            if (email != null) {
+                profile.put("email", email);
+            }
             Map<String, Object> member = new HashMap<>();
             member.put("id", "U-" + displayName);
             member.put("name", "account-" + displayName);
@@ -230,12 +235,17 @@ class SlackApiServiceTest {
             return member;
         }
 
-        private ResponseEntity<Map> page(String nextCursor, Map<String, Object> member) {
+        @SafeVarargs
+        private ResponseEntity<Map> page(String nextCursor, Map<String, Object>... members) {
             Map<String, Object> body = new HashMap<>();
             body.put("ok", true);
-            body.put("members", List.of(member));
+            body.put("members", List.of(members));
             body.put("response_metadata", Map.of("next_cursor", nextCursor));
             return new ResponseEntity<>(body, HttpStatus.OK);
+        }
+
+        private void members(ResponseEntity<Map> onlyPage) {
+            when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(), eq(Map.class))).thenReturn(onlyPage);
         }
 
         @BeforeEach
@@ -248,13 +258,13 @@ class SlackApiServiceTest {
         @DisplayName("다음 쪽에 있는 회원도 찾고, 탈퇴한 회원과 봇은 세지 않는다")
         void readsEveryPageAndSkipsInactive() {
             when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(), eq(Map.class)))
-                    .thenReturn(page("abc=", member("탈퇴자", "deleted")))
-                    .thenReturn(page("def=", member("알림봇", "is_bot")))
-                    .thenReturn(page("", member("홍길동", null)));
+                    .thenReturn(page("abc=", member("탈퇴자", "hong@dgu.ac.kr", "deleted")))
+                    .thenReturn(page("def=", member("알림봇", "hong@dgu.ac.kr", "is_bot")))
+                    .thenReturn(page("", member("홍길동", "hong@dgu.ac.kr", null)));
 
-            assertThat(slackApiService.hasMemberNamed("홍길동")).isTrue();
-            assertThat(slackApiService.hasMemberNamed("탈퇴자")).isFalse();
-            assertThat(slackApiService.hasMemberNamed("알림봇")).isFalse();
+            assertThat(slackApiService.findMembership("홍길동", EMAILS)).isEqualTo(SlackApiService.Membership.CONFIRMED);
+            assertThat(slackApiService.findMembership("탈퇴자", EMAILS)).isEqualTo(SlackApiService.Membership.NOT_FOUND);
+            assertThat(slackApiService.findMembership("알림봇", EMAILS)).isEqualTo(SlackApiService.Membership.NOT_FOUND);
 
             ArgumentCaptor<URI> urls = ArgumentCaptor.forClass(URI.class);
             verify(restTemplate, atLeast(3)).exchange(urls.capture(), eq(HttpMethod.GET), any(), eq(Map.class));
@@ -263,12 +273,37 @@ class SlackApiServiceTest {
         }
 
         @Test
+        @DisplayName("이메일은 주어진 것 가운데 하나와 같으면 되고 대소문자를 가리지 않는다")
+        void matchesAnyGivenEmailIgnoringCase() {
+            members(page("", member("홍길동", "Hong@Gmail.com", null)));
+
+            assertThat(slackApiService.findMembership("홍길동", EMAILS)).isEqualTo(SlackApiService.Membership.CONFIRMED);
+        }
+
+        @Test
+        @DisplayName("이름이 같아도 이메일이 다르면 없는 사람이고, 이메일이 같아도 이름이 다르면 없는 사람이다")
+        void needsBothNameAndEmail() {
+            members(page("", member("홍길동", "other@dgu.ac.kr", null), member("김철수", "hong@dgu.ac.kr", null)));
+
+            assertThat(slackApiService.findMembership("홍길동", EMAILS)).isEqualTo(SlackApiService.Membership.NOT_FOUND);
+        }
+
+        @Test
+        @DisplayName("Slack이 어느 회원의 이메일도 주지 않으면 이름만 보고 그 사실을 알린다")
+        void nameOnlyWhenSlackGivesNoEmails() {
+            members(page("", member("홍길동", null, null), member("김철수", null, null)));
+
+            assertThat(slackApiService.findMembership("홍길동", EMAILS)).isEqualTo(SlackApiService.Membership.NAME_ONLY);
+            assertThat(slackApiService.findMembership("이영희", EMAILS)).isEqualTo(SlackApiService.Membership.NOT_FOUND);
+        }
+
+        @Test
         @DisplayName("회원 목록을 받지 못하면 없다고 답하지 않고 예외를 낸다")
         void lookupFailureThrows() {
             when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(), eq(Map.class)))
                     .thenThrow(new RuntimeException("timeout"));
 
-            assertThatThrownBy(() -> slackApiService.hasMemberNamed("홍길동"))
+            assertThatThrownBy(() -> slackApiService.findMembership("홍길동", EMAILS))
                     .isInstanceOf(RuntimeException.class);
         }
     }
