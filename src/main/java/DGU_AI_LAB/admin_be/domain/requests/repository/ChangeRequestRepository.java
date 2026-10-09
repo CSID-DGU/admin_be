@@ -6,8 +6,10 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -29,4 +31,10 @@ public interface ChangeRequestRepository extends JpaRepository<ChangeRequest, Lo
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT c FROM ChangeRequest c WHERE c.changeRequestId = :changeRequestId")
     Optional<ChangeRequest> findByIdForUpdate(@Param("changeRequestId") Long changeRequestId);
+
+    /** 접수 알림 메시지의 Slack 식별자만 적는다(RequestRepository#updateSlackMessageTs와 같은 쓰임). */
+    @Modifying
+    @Transactional
+    @Query("UPDATE ChangeRequest c SET c.slackMessageTs = :ts WHERE c.changeRequestId = :changeRequestId")
+    int updateSlackMessageTs(@Param("changeRequestId") Long changeRequestId, @Param("ts") String ts);
 }

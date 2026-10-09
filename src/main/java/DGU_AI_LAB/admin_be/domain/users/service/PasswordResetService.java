@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestDecision;
 import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestNotice;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.PasswordChangeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
@@ -69,7 +70,8 @@ public class PasswordResetService {
         }
     }
 
-    private record Approval(PasswordResetSummaryDTO request, boolean applied) {}
+    /** @param decision 이 자리에서 끝났으면(적용·거절) 그 결과 알림 값. 반영 작업만 등록했으면 null */
+    private record Outcome(PasswordResetSummaryDTO request, ChangeRequestDecision decision) {}
 
     /**
      * 재설정 신청을 낸다. 아무것도 바꾸지 않고 승인 대기로 둔다. 사용자당 열린 신청은 하나라, 승인 전에 다시 내면
@@ -105,7 +107,7 @@ public class PasswordResetService {
      */
     public PasswordResetSummaryDTO approve(Long changeRequestId, Long adminId, String adminComment) {
         Long userId = userIdOf(changeRequestId);
-        Approval approval = inTransaction(() -> {
+        Outcome approval = inTransaction(() -> {
             User user = lockUser(userId);
             PasswordResetRequest reset = lockReset(changeRequestId);
             reset.ensurePending();
@@ -119,15 +121,15 @@ public class PasswordResetService {
             if (!user.hasUbuntuAccount()) {
                 apply(user, reset.hashes());
                 reset.applyWithoutJob(admin, adminComment);
-                return new Approval(PasswordResetSummaryDTO.fromEntity(reset), true);
+                return new Outcome(PasswordResetSummaryDTO.fromEntity(reset), ChangeRequestDecision.of(reset.getChangeRequest()));
             }
             reset.startProcessing(admin, adminComment,
                     registerJob(reset.getPasswordResetRequestId(), user.getUbuntuUsername(), reset.getUbuntuPasswordHash()));
-            return new Approval(PasswordResetSummaryDTO.fromEntity(reset), false);
+            return new Outcome(PasswordResetSummaryDTO.fromEntity(reset), null);
         });
         log.info("[passwordReset] changeRequestId={} 승인: adminId={}, status={}", changeRequestId, adminId, approval.request().status());
-        if (approval.applied()) {
-            afterApplied(approval.request().email());
+        if (approval.decision() != null) {
+            afterApplied(approval.decision());
         }
         return approval.request();
     }
@@ -152,21 +154,21 @@ public class PasswordResetService {
 
     public PasswordResetSummaryDTO deny(Long changeRequestId, Long adminId, String adminComment) {
         Long userId = userIdOf(changeRequestId);
-        PasswordResetSummaryDTO denied = inTransaction(() -> {
+        Outcome denied = inTransaction(() -> {
             lockUser(userId);
             PasswordResetRequest reset = lockReset(changeRequestId);
             reset.deny(userRepository.getReferenceById(adminId), adminComment);
-            return PasswordResetSummaryDTO.fromEntity(reset);
+            return new Outcome(PasswordResetSummaryDTO.fromEntity(reset), ChangeRequestDecision.of(reset.getChangeRequest()));
         });
         log.info("[passwordReset] changeRequestId={} 거절: adminId={}", changeRequestId, adminId);
-        notifier.denied(denied.email());
-        return denied;
+        notifier.denied(denied.decision());
+        return denied.request();
     }
 
     /** 컨테이너 반영 작업이 성공했다. 두 해시를 바꾸고 기존 로그인을 끊는다. 이미 반영된 신청이면 아무것도 하지 않는다. */
     public void complete(Long changeRequestId) {
         Long userId = userIdOf(changeRequestId);
-        String email = inTransaction(() -> {
+        ChangeRequestDecision applied = inTransaction(() -> {
             User user = lockUser(userId);
             PasswordResetRequest reset = lockReset(changeRequestId);
             if (reset.getStatus() != Status.PROCESSING) {
@@ -174,13 +176,13 @@ public class PasswordResetService {
             }
             apply(user, reset.hashes());
             reset.completeJob();
-            return user.getEmail();
+            return ChangeRequestDecision.of(reset.getChangeRequest());
         });
-        if (email == null) {
+        if (applied == null) {
             return;
         }
         log.info("[passwordReset] changeRequestId={} 적용 완료(SSH 포함)", changeRequestId);
-        afterApplied(email);
+        afterApplied(applied);
     }
 
     /**
@@ -230,14 +232,14 @@ public class PasswordResetService {
     }
 
     /** 비밀번호는 이미 바뀌었으므로 뒤처리가 실패해도 적용을 실패로 돌리지 않는다. */
-    private void afterApplied(String email) {
+    private void afterApplied(ChangeRequestDecision applied) {
         try {
             // 잊은 비밀번호로 실패를 쌓아 잠긴 사용자가 새 비밀번호로 바로 들어올 수 있게 한다.
-            userLoginService.clearFailedAttempts(email);
+            userLoginService.clearFailedAttempts(applied.email());
         } catch (RuntimeException e) {
             log.warn("[passwordReset] 로그인 실패 횟수 삭제 실패", e);
         }
-        notifier.applied(email);
+        notifier.applied(applied);
     }
 
     private static void requireActive(User user) {

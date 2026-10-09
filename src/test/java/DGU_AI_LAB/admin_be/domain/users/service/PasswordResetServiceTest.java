@@ -39,6 +39,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -230,7 +231,8 @@ class PasswordResetServiceTest {
             verifyNoInteractions(jobClient);
             verify(tokenService).logout(USER_ID);
             verify(userLoginService).clearFailedAttempts("test@dgu.ac.kr");
-            verify(notifier).applied("test@dgu.ac.kr");
+            verify(notifier).applied(argThat(decision -> decision.approved()
+                    && decision.changeRequestId().equals(CHANGE_ID) && decision.email().equals("test@dgu.ac.kr")));
         }
 
         @Test
@@ -354,7 +356,8 @@ class PasswordResetServiceTest {
             assertThat(reset.getUbuntuPasswordHash()).isNull();
             verify(tokenService).logout(USER_ID);
             verify(userLoginService).clearFailedAttempts("test@dgu.ac.kr");
-            verify(notifier).applied("test@dgu.ac.kr");
+            verify(notifier).applied(argThat(decision -> decision.approved()
+                    && decision.changeRequestId().equals(CHANGE_ID) && decision.email().equals("test@dgu.ac.kr")));
         }
 
         @Test
@@ -380,7 +383,8 @@ class PasswordResetServiceTest {
             service.complete(CHANGE_ID);
 
             assertThat(reset.getStatus()).isEqualTo(Status.FULFILLED);
-            verify(notifier).applied("test@dgu.ac.kr");
+            verify(notifier).applied(argThat(decision -> decision.approved()
+                    && decision.changeRequestId().equals(CHANGE_ID) && decision.email().equals("test@dgu.ac.kr")));
         }
     }
 
@@ -502,7 +506,8 @@ class PasswordResetServiceTest {
             assertThat(reset.getUbuntuPasswordHash()).isNull();
             assertThat(reset.getChangeRequest().getReviewedBy()).isSameAs(admin);
             assertUserUnchanged();
-            verify(notifier).denied("test@dgu.ac.kr");
+            verify(notifier).denied(argThat(decision -> !decision.approved() && "거절".equals(decision.adminComment())
+                    && decision.changeRequestId().equals(CHANGE_ID) && decision.email().equals("test@dgu.ac.kr")));
         }
 
         @Test

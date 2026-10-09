@@ -33,6 +33,8 @@ public class SlackMessageDto implements Serializable {
     private String threadTs;
     /** 있으면 올라간 메시지의 식별자(ts)를 이 신청에 적어 둔다. */
     private Long requestId;
+    /** 있으면 올라간 메시지의 식별자(ts)를 이 변경 요청에 적어 둔다. */
+    private Long changeRequestId;
 
     // DM용 필드
     private String username;

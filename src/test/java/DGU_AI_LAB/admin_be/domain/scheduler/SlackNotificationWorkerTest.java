@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.dto.SlackMessageDto;
 import DGU_AI_LAB.admin_be.domain.alarm.service.SlackApiService;
+import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -39,6 +40,9 @@ class SlackNotificationWorkerTest {
 
     @Mock
     private RequestRepository requestRepository;
+
+    @Mock
+    private ChangeRequestRepository changeRequestRepository;
 
     @Mock
     private ListOperations<String, Object> listOperations;
@@ -249,6 +253,19 @@ class SlackNotificationWorkerTest {
         }
 
         @Test
+        @DisplayName("변경 요청 접수 알림을 봇으로 올리면 돌려받은 메시지 식별자를 그 변경 요청에 적는다")
+        void storesTs_afterPostingChangeRequest() {
+            queue(channelMessage().changeRequestId(7L).build());
+            when(slackApiService.postToChannel("C0REQ", "신청서", null)).thenReturn("1728200000.000100");
+
+            worker.processSlackQueue();
+
+            verify(changeRequestRepository).updateSlackMessageTs(7L, "1728200000.000100");
+            verifyNoInteractions(requestRepository);
+            verify(slackApiService, never()).sendWebhook(anyString(), anyString());
+        }
+
+        @Test
         @DisplayName("스레드 댓글은 원래 메시지 식별자를 넘겨 올리고 신청에는 아무것도 적지 않는다")
         void repliesInThread_withoutStoringTs() {
             queue(channelMessage().threadTs("1728200000.000100").message("취소 알림").build());
@@ -256,7 +273,7 @@ class SlackNotificationWorkerTest {
 
             worker.processSlackQueue();
 
-            verifyNoInteractions(requestRepository);
+            verifyNoInteractions(requestRepository, changeRequestRepository);
             verify(slackApiService, never()).sendWebhook(anyString(), anyString());
         }
 

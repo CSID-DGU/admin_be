@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.groups.service;
 
+import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestDecision;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupOperationResponseDTO;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
@@ -71,7 +72,7 @@ public class GroupOperationService {
     private final PlatformTransactionManager transactionManager;
 
     /** 작업이 끝난 뒤(트랜잭션 밖에서) 보낼 안내. */
-    private record AddedNotice(ChangeRequest changeRequest, List<String> groupNames) {}
+    private record AddedNotice(ChangeRequest changeRequest, List<String> groupNames, ChangeRequestDecision decision) {}
 
     private record FailureNotice(Long changeRequestId, String serverName, String username) {}
 
@@ -223,7 +224,8 @@ public class GroupOperationService {
         operation.markApplied();
         // 트랜잭션 종료 후(안내 발송 시점) 사용되는 지연 로딩 필드를 미리 초기화
         changeRequest.getRequestedBy().getEmail();
-        return new AddedNotice(changeRequest, groups.stream().map(Group::getGroupName).sorted().toList());
+        return new AddedNotice(changeRequest, groups.stream().map(Group::getGroupName).sorted().toList(),
+                ChangeRequestDecision.of(changeRequest));
     }
 
     private FailureNotice returnChangeRequestToPending(GroupOperation operation) {
@@ -263,8 +265,10 @@ public class GroupOperationService {
 
     private void notifyAdded(AddedNotice notice) {
         ChangeRequest changeRequest = notice.changeRequest();
-        AfterCommit.run("그룹 추가 승인 안내 메일, changeRequestId " + changeRequest.getChangeRequestId(),
-                () -> alarmService.sendGroupAddedEmail(changeRequest, changeRequest.getAdminComment(), notice.groupNames()));
+        AfterCommit.run("그룹 추가 승인 안내 메일·채널 알림, changeRequestId " + changeRequest.getChangeRequestId(), () -> {
+            alarmService.sendChangeRequestDecidedNotification(notice.decision());
+            alarmService.sendGroupAddedEmail(changeRequest, changeRequest.getAdminComment(), notice.groupNames());
+        });
     }
 
     private void notifyAddFailed(FailureNotice notice, String errorCode) {
