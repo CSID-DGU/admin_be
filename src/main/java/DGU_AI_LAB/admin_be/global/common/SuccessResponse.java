@@ -4,6 +4,8 @@ import lombok.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import java.net.URI;
+
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Builder
@@ -20,6 +22,12 @@ public class SuccessResponse<T> {
 
     public static <T> ResponseEntity<SuccessResponse<?>> created(T data) {
         return ResponseEntity.status(HttpStatus.CREATED)
+                .body(SuccessResponse.of(SuccessCode.CREATED, data));
+    }
+
+    /** 새로 만든 자원의 주소를 Location 머리말로 함께 알린다. */
+    public static <T> ResponseEntity<SuccessResponse<?>> created(URI location, T data) {
+        return ResponseEntity.created(location)
                 .body(SuccessResponse.of(SuccessCode.CREATED, data));
     }
 

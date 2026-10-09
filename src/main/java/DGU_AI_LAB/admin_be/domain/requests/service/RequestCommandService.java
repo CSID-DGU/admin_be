@@ -10,6 +10,7 @@ import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.groups.service.PendingGroupService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SingleChangeRequestDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SaveRequestRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeRequest;
@@ -104,7 +105,7 @@ public class RequestCommandService {
      * 단일 변경 요청 생성 - DTO가 모든 검증을 담당하므로 서비스는 단순히 처리만 함
      */
     @Transactional
-    public void createSingleChangeRequest(Long userId, SingleChangeRequestDTO dto) {
+    public ChangeRequestResponseDTO createSingleChangeRequest(Long userId, SingleChangeRequestDTO dto) {
         Long requestId = dto.requestId();
         // 행 잠금 조회: 같은 신청에 동시에 들어온 변경 요청이 아래 대기 중 중복 검사를 함께 통과하지 못하게 한다.
         Request originalRequest = requestRepository.findByIdForUpdate(requestId)
@@ -134,6 +135,7 @@ public class RequestCommandService {
         changeRequestRepository.save(changeRequest);
 
         notifyChangeRequestedAfterCommit(changeRequest);
+        return ChangeRequestResponseDTO.fromEntity(changeRequest);
     }
 
     /**

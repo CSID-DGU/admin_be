@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.requests.controller;
 import DGU_AI_LAB.admin_be.domain.requests.controller.docs.AdminRequestChangeApi;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ChangeDecisionRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.service.ChangeRequestDecisionService;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestQueryService;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
@@ -38,8 +39,9 @@ public class AdminRequestChangeController implements AdminRequestChangeApi {
             @PathVariable Long changeRequestId,
             @RequestBody @Valid ChangeDecisionRequestDTO dto
     ) {
-        changeRequestDecisionService.approve(adminId, changeRequestId, dto.adminComment());
-        return SuccessResponse.ok(null);
+        Status status = changeRequestDecisionService.approve(adminId, changeRequestId, dto.adminComment());
+        // 반영 작업만 등록하고 돌아온 승인은 아직 끝나지 않았다 — 결과는 목록을 다시 읽어 확인한다.
+        return status == Status.PROCESSING ? SuccessResponse.accepted(null) : SuccessResponse.ok(null);
     }
 
     @PostMapping("/{changeRequestId}/rejection")

@@ -3,7 +3,9 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
+import DGU_AI_LAB.admin_be.domain.users.dto.response.PasswordResetSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.service.PasswordResetService;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -18,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -38,8 +41,10 @@ class ChangeRequestDecisionServiceTest {
     @DisplayName("비밀번호 변경의 승인·거절은 해시를 함께 다루는 비밀번호 처리로 넘긴다")
     void passwordGoesToPasswordResetService() {
         when(changeRequestRepository.findChangeTypeById(CHANGE_ID)).thenReturn(Optional.of(ChangeType.PASSWORD));
+        when(passwordResetService.approve(CHANGE_ID, ADMIN_ID, "확인")).thenReturn(
+                new PasswordResetSummaryDTO(CHANGE_ID, 5L, "홍길동", "a@dgu.ac.kr", "hong", "PROCESSING", null, null));
 
-        service.approve(ADMIN_ID, CHANGE_ID, "확인");
+        assertThat(service.approve(ADMIN_ID, CHANGE_ID, "확인")).isEqualTo(Status.PROCESSING);
         service.reject(ADMIN_ID, CHANGE_ID, "거절");
 
         verify(passwordResetService).approve(CHANGE_ID, ADMIN_ID, "확인");
@@ -52,8 +57,10 @@ class ChangeRequestDecisionServiceTest {
     @DisplayName("신청 단위 변경의 승인·거절은 기존 처리로 넘긴다")
     void requestScopedTypesGoToModificationService(ChangeType type) {
         when(changeRequestRepository.findChangeTypeById(CHANGE_ID)).thenReturn(Optional.of(type));
+        when(adminModificationCommandService.approveModification(ADMIN_ID, new ApproveModificationDTO(CHANGE_ID, "확인")))
+                .thenReturn(Status.FULFILLED);
 
-        service.approve(ADMIN_ID, CHANGE_ID, "확인");
+        assertThat(service.approve(ADMIN_ID, CHANGE_ID, "확인")).isEqualTo(Status.FULFILLED);
         service.reject(ADMIN_ID, CHANGE_ID, "거절");
 
         verify(adminModificationCommandService).approveModification(ADMIN_ID, new ApproveModificationDTO(CHANGE_ID, "확인"));

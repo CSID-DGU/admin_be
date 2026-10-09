@@ -16,6 +16,7 @@ public interface ChangeRequestRepository extends JpaRepository<ChangeRequest, Lo
     List<ChangeRequest> findAllByStatus(Status status);
     List<ChangeRequest> findAllByRequestedBy_UserIdAndStatus(Long userId, Status status);
     List<ChangeRequest> findAllByRequestedBy_UserId(Long userId);
+    Optional<ChangeRequest> findByChangeRequestIdAndRequestedBy_UserId(Long changeRequestId, Long userId);
     boolean existsByRequest_RequestIdAndChangeTypeAndStatus(Long requestId, ChangeType changeType, Status status);
 
     @Query("SELECT c.changeType FROM ChangeRequest c WHERE c.changeRequestId = :changeRequestId")

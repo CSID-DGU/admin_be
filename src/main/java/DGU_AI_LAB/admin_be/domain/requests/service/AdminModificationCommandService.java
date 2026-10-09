@@ -77,9 +77,11 @@ public class AdminModificationCommandService {
      *
      * <p>PORT 도 같은 흐름이다 — 떠 있는 컨테이너의 포트를 작업으로 바꾸고, 포트 기록·승인 완료·안내 메일은
      * {@link PortOperationService#complete}가 한다.
+     *
+     * @return 승인 뒤의 상태 — 반영 작업만 등록했으면 PROCESSING, 이 자리에서 끝났으면 FULFILLED
      */
     @Transactional
-    public void approveModification(Long adminId, ApproveModificationDTO dto) {
+    public Status approveModification(Long adminId, ApproveModificationDTO dto) {
         // 행 잠금 조회: 동시에 같은 변경 요청을 승인 시도하는 두 번째 트랜잭션은 첫 트랜잭션 커밋까지 대기하다가
         // PENDING 이 아닌 상태를 보고 실패한다 (GROUP 작업 등록 등 부수 효과의 중복 실행 방지)
         ChangeRequest changeRequest = changeRequestRepository.findByIdForUpdate(dto.changeRequestId())
@@ -87,6 +89,10 @@ public class AdminModificationCommandService {
 
         if (changeRequest.getStatus() != Status.PENDING) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
+        }
+        // 비밀번호 변경은 대상 신청이 없고 PasswordResetService가 승인한다(ChangeRequestDecisionService).
+        if (changeRequest.getChangeType() == ChangeType.PASSWORD) {
+            throw new BusinessException(ErrorCode.UNSUPPORTED_CHANGE_TYPE);
         }
         User admin = userRepository.findById(adminId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
@@ -110,11 +116,11 @@ public class AdminModificationCommandService {
 
         if (changeRequest.getChangeType() == ChangeType.GROUP) {
             groupOperationService.startAdd(changeRequest, originalRequest, admin, dto.adminComment());
-            return;
+            return changeRequest.getStatus();
         }
         if (changeRequest.getChangeType() == ChangeType.PORT) {
             portOperationService.start(changeRequest, originalRequest, admin, dto.adminComment());
-            return;
+            return changeRequest.getStatus();
         }
 
         ChangeApplier applier = changeAppliers().get(changeRequest.getChangeType());
@@ -144,6 +150,7 @@ public class AdminModificationCommandService {
                 log.info("사용자 '{}'에게 변경 요청 승인 안내 메일을 발송했습니다.", originalRequest.getUser().getName());
             });
         }
+        return changeRequest.getStatus();
     }
 
     // ── approveModification: ChangeType별 적용 로직 ──────────────────────

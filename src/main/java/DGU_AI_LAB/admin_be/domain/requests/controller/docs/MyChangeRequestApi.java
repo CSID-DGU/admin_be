@@ -20,7 +20,8 @@ public interface MyChangeRequestApi {
     @Operation(summary = "변경 요청 생성", description = "승인된 신청(FULFILLED)의 사용 기간 연장(EXPIRES_AT)·공유 그룹 추가(GROUP)·"
             + "추가 포트 변경(PORT)을 요청합니다. 사유는 100자 이상이어야 합니다. "
             + "비밀번호 변경(PASSWORD)은 메일 인증이 필요해 POST /api/auth/password-resets 로 냅니다.")
-    @ApiResponse(responseCode = "201", description = "변경 요청 생성 성공")
+    @ApiResponse(responseCode = "201", description = "변경 요청 생성 성공. Location 머리말에 만든 변경 요청의 주소가 담깁니다.",
+            content = @Content(schema = @Schema(implementation = ChangeRequestResponseDoc.class)))
     @ApiResponse(responseCode = "400", description = "FULFILLED 상태가 아닌 신청이거나 값·사유가 올바르지 않음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "403", description = "본인 소유의 신청이 아님",
@@ -36,7 +37,17 @@ public interface MyChangeRequestApi {
             content = @Content(schema = @Schema(implementation = ChangeRequestListResponseDoc.class)))
     ResponseEntity<SuccessResponse<?>> getMyChangeRequests(@Parameter(hidden = true) Long userId);
 
+    @Operation(summary = "내 변경 요청 단건 조회", description = "로그인된 사용자가 낸 변경 요청 하나를 조회합니다.")
+    @ApiResponse(responseCode = "200", description = "조회 성공",
+            content = @Content(schema = @Schema(implementation = ChangeRequestResponseDoc.class)))
+    @ApiResponse(responseCode = "404", description = "변경 요청이 없거나 본인이 낸 요청이 아님",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    ResponseEntity<SuccessResponse<?>> getMyChangeRequest(@Parameter(hidden = true) Long userId, Long changeRequestId);
+
     // 실제 응답은 SuccessResponse<T> 래퍼로 감싸져 나가므로, Swagger 스키마도 래퍼 형태로 노출한다.
     @Schema(name = "SuccessResponseListChangeRequestResponseDTO", description = "변경 요청 목록 응답")
     record ChangeRequestListResponseDoc(int status, String message, List<ChangeRequestResponseDTO> data) {}
+
+    @Schema(name = "SuccessResponseChangeRequestResponseDTO", description = "변경 요청 응답")
+    record ChangeRequestResponseDoc(int status, String message, ChangeRequestResponseDTO data) {}
 }

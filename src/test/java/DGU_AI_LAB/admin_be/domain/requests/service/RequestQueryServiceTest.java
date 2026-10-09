@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import java.util.Optional;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.portRequests.repository.PortRequestRepository;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
@@ -212,6 +214,21 @@ class RequestQueryServiceTest {
 
             assertThatThrownBy(() -> requestQueryService.getMyChangeRequests(99L))
                     .isInstanceOf(BusinessException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("getMyChangeRequest")
+    class GetMyChangeRequest {
+
+        @Test
+        @DisplayName("남이 낸 요청이거나 없는 요청이면 RESOURCE_NOT_FOUND")
+        void getMyChangeRequest_throwsNotFound_whenNotMine() {
+            when(changeRequestRepository.findByChangeRequestIdAndRequestedBy_UserId(7L, 1L)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> requestQueryService.getMyChangeRequest(1L, 7L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.RESOURCE_NOT_FOUND);
         }
     }
 

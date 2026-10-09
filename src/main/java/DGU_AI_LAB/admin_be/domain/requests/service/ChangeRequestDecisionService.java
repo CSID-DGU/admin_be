@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.requests.service;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectModificationDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.service.PasswordResetService;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -25,12 +26,12 @@ public class ChangeRequestDecisionService {
     private final AdminModificationCommandService adminModificationCommandService;
     private final PasswordResetService passwordResetService;
 
-    public void approve(Long adminId, Long changeRequestId, String adminComment) {
+    /** @return 승인 뒤의 상태 — 반영 작업만 등록했으면 PROCESSING, 이 자리에서 끝났으면 FULFILLED */
+    public Status approve(Long adminId, Long changeRequestId, String adminComment) {
         if (typeOf(changeRequestId) == ChangeType.PASSWORD) {
-            passwordResetService.approve(changeRequestId, adminId, adminComment);
-            return;
+            return Status.valueOf(passwordResetService.approve(changeRequestId, adminId, adminComment).status());
         }
-        adminModificationCommandService.approveModification(adminId, new ApproveModificationDTO(changeRequestId, adminComment));
+        return adminModificationCommandService.approveModification(adminId, new ApproveModificationDTO(changeRequestId, adminComment));
     }
 
     public void reject(Long adminId, Long changeRequestId, String adminComment) {

@@ -21,7 +21,8 @@ public interface AdminRequestChangeApi {
             + "공유 그룹 추가(GROUP)·추가 포트 변경(PORT)·비밀번호 변경(PASSWORD)은 반영 작업을 등록하고 변경 요청을 "
             + "PROCESSING으로 둔 채 돌아옵니다 — 작업이 성공하면 FULFILLED가 되고, 실패하면 PENDING으로 돌아와 다시 승인할 수 있습니다. "
             + "비밀번호 변경은 리눅스 계정이 없으면 바로 FULFILLED가 됩니다.")
-    @ApiResponse(responseCode = "200", description = "성공")
+    @ApiResponse(responseCode = "200", description = "승인하고 바로 반영함(FULFILLED)")
+    @ApiResponse(responseCode = "202", description = "승인하고 반영 작업을 등록함(PROCESSING) — 결과는 목록 조회로 확인")
     @ApiResponse(responseCode = "400", description = "PENDING 상태가 아닌 변경 요청",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "404", description = "변경 요청 또는 관리자 계정을 찾을 수 없음",
