@@ -52,6 +52,8 @@ public record SaveRequestResponseDTO(
         LocalDateTime expiresAt,
         @Schema(description = "처리 상태", example = "PENDING", allowableValues = {"PENDING", "FULFILLED", "DENIED", "MODIFICATION_REQUESTED", "MODIFICATION_APPROVED", "MODIFICATION_REJECTED"})
         Status status,
+        @Schema(description = "컨테이너가 올라간 노드. 아직 배정 전이거나 정리된 신청이면 null", example = "farm1", nullable = true)
+        String nodeName,
         @Schema(description = "승인 일시", example = "2026-03-02T15:36:29", nullable = true)
         LocalDateTime approvedAt,
         @Schema(description = "관리자 코멘트", example = "사용 목적에 따라 리소스를 할당함", nullable = true)
@@ -193,6 +195,7 @@ public record SaveRequestResponseDTO(
                 .formAnswers(request.getFormAnswers())
                 .expiresAt(request.getExpiresAt())
                 .status(request.getStatus())
+                .nodeName(request.getNodeName())
                 .approvedAt(request.getApprovedAt())
                 .comment(request.getAdminComment())
                 .portMappings(portMappings)
