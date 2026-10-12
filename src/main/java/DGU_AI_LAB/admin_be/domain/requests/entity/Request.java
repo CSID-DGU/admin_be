@@ -23,7 +23,7 @@ import java.util.Set;
 public class Request extends BaseTimeEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @IssuedRequestNumber
     @Column(name = "request_id")
     private Long requestId;
 
