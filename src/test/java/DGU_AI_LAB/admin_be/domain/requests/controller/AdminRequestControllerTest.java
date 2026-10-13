@@ -30,6 +30,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.ProvisioningStatusResponseDTO;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -87,6 +88,18 @@ class AdminRequestControllerTest extends WebMvcTestSupport {
         mockMvc.perform(get("/api/admin/requests/status-counts"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.PENDING").value(2));
+    }
+
+    @Test
+    @DisplayName("GET /{id}/provisioning-status: 실행기가 준 진행 단계를 그대로 전한다")
+    void provisioningStatus() throws Exception {
+        when(jobHistoryService.getProvisioningStatus(12L))
+                .thenReturn(new ProvisioningStatusResponseDTO("pulling_image", "이미지 다운로드 중"));
+
+        mockMvc.perform(get("/api/admin/requests/12/provisioning-status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.stage").value("pulling_image"))
+                .andExpect(jsonPath("$.data.message").value("이미지 다운로드 중"));
     }
 
     @Test

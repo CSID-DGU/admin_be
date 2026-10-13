@@ -4,6 +4,7 @@ import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.service.SelfPasswordResetService;
+import DGU_AI_LAB.admin_be.domain.users.service.TokenService;
 import DGU_AI_LAB.admin_be.domain.users.service.UserLoginService;
 import DGU_AI_LAB.admin_be.domain.users.service.UserService;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -45,6 +46,50 @@ class AuthControllerTest extends WebMvcTestSupport {
 
     @MockitoBean
     private SelfPasswordResetService selfPasswordResetService;
+
+    @MockitoBean
+    private TokenService tokenService;
+
+    @Nested
+    @DisplayName("POST /api/auth/token-refresh")
+    class TokenRefresh {
+
+        @Test
+        @DisplayName("리프레시 토큰을 내면 새 토큰 한 쌍을 200으로 반환한다")
+        void returnsNewTokens() throws Exception {
+            when(tokenService.refresh("oldRefresh")).thenReturn(UserTokenResponseDTO.of("newAccess", "newRefresh"));
+
+            mockMvc.perform(post("/api/auth/token-refresh")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"refreshToken\": \"oldRefresh\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.accessToken").value("newAccess"))
+                    .andExpect(jsonPath("$.refreshToken").value("newRefresh"));
+        }
+
+        @Test
+        @DisplayName("리프레시 토큰이 비어 있으면 400이고 갱신하지 않는다")
+        void rejectsBlankToken() throws Exception {
+            mockMvc.perform(post("/api/auth/token-refresh")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"refreshToken\": \" \"}"))
+                    .andExpect(status().isBadRequest());
+            verifyNoInteractions(tokenService);
+        }
+
+        @Test
+        @DisplayName("거절된 토큰이면 401과 오류 코드를 반환한다")
+        void returns401WhenRejected() throws Exception {
+            when(tokenService.refresh("stale"))
+                    .thenThrow(new DGU_AI_LAB.admin_be.error.exception.UnauthorizedException(ErrorCode.NOT_MATCH_REFRESH_TOKEN));
+
+            mockMvc.perform(post("/api/auth/token-refresh")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"refreshToken\": \"stale\"}"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value("NOT_MATCH_REFRESH_TOKEN"));
+        }
+    }
 
     @Nested
     @DisplayName("POST /api/auth/register")

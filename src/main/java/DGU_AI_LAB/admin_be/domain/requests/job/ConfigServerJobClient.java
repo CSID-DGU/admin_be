@@ -10,6 +10,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.request.ProvisionRegisterRequestD
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobStepsResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.ProvisioningStatusResponseDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.webclient.WebClientErrorHandler;
@@ -147,6 +148,32 @@ public class ConfigServerJobClient implements JobClient {
         Long jobId = response != null && response.get("job_id") instanceof Number n ? n.longValue() : null;
         log.info("작업 등록 완료: {}, requestId: {}, jobId: {}", uri, requestId, jobId);
         return jobId;
+    }
+
+    @Override
+    public ProvisioningStatusResponseDTO getProvisioningStatus(Long requestId) {
+        try {
+            ProvisioningStatusResponseDTO response = WebClientErrorHandler.onError(
+                            webClient.get()
+                                    .uri("/requests/" + requestId + "/status")
+                                    .retrieve(),
+                            (status, body) -> new BusinessException("생성 진행 상황 조회 실패: " + body,
+                                    ErrorCode.EXTERNAL_API_ERROR))
+                    .bodyToMono(ProvisioningStatusResponseDTO.class)
+                    .timeout(READ_TIMEOUT)
+                    .block();
+
+            if (response == null || response.stage() == null) {
+                log.error("생성 진행 상황 조회 API가 빈 응답을 반환했습니다. requestId: {}", requestId);
+                throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+            }
+            return response;
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("생성 진행 상황 조회 중 예기치 않은 오류. requestId: {}", requestId, e);
+            throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+        }
     }
 
     @Override

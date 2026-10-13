@@ -56,6 +56,22 @@ public class JwtProvider {
         return claims;
     }
 
+    /** 서명·만료·종류(refresh)를 확인하고 클레임을 돌려준다. */
+    public Claims parseRefreshToken(String refreshToken) {
+        Claims claims;
+        try {
+            claims = getJwtParser().parseClaimsJws(refreshToken).getBody();
+        } catch (ExpiredJwtException e) {
+            throw new UnauthorizedException(ErrorCode.EXPIRED_REFRESH_TOKEN);
+        } catch (Exception e) {
+            throw new UnauthorizedException(ErrorCode.INVALID_REFRESH_TOKEN_VALUE);
+        }
+        if (!REFRESH.equals(claims.get(TOKEN_TYPE_CLAIM, String.class))) {
+            throw new UnauthorizedException(ErrorCode.INVALID_REFRESH_TOKEN_VALUE);
+        }
+        return claims;
+    }
+
     public void validateAccessToken(String accessToken) {
         parseAccessToken(accessToken);
     }

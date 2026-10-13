@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.users.controller.docs;
 
 import DGU_AI_LAB.admin_be.domain.users.dto.request.EmailSendRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PasswordResetRequestDTO;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.TokenRefreshRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
@@ -32,6 +33,13 @@ public interface AuthApi {
     @ApiResponse(responseCode = "401", description = "이메일 미존재, 비밀번호 불일치 또는 비활성화된 계정",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     ResponseEntity<UserTokenResponseDTO> login(UserLoginRequestDTO request);
+
+    @Operation(summary = "토큰 갱신", description = "리프레시 토큰으로 Access 토큰을 다시 받습니다. 리프레시 토큰도 새것으로 바뀌므로 낸 토큰은 다시 쓸 수 없습니다.")
+    @ApiResponse(responseCode = "200", description = "갱신 성공 — 새 Access/Refresh 토큰 반환",
+            content = @Content(schema = @Schema(implementation = UserTokenResponseDTO.class)))
+    @ApiResponse(responseCode = "401", description = "리프레시 토큰이 만료·변조됐거나 이미 교체·폐기됨, 또는 비활성화된 계정",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    ResponseEntity<UserTokenResponseDTO> refreshToken(TokenRefreshRequestDTO request);
 
     @Operation(summary = "비밀번호 재설정 인증번호 발송", description = "가입된 이메일이면 재설정 인증번호를 보냅니다(제한시간 5분). 가입 여부가 드러나지 않게 가입되지 않은 이메일에도 200을 반환합니다.")
     @ApiResponse(responseCode = "200", description = "요청 접수 — 가입된 이메일이면 인증번호 발송")

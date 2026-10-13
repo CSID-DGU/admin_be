@@ -102,6 +102,11 @@ public class AdminRequestController implements AdminRequestApi {
                 requestId, adminRequestQueryService.getRequestCreatedAt(requestId)));
     }
 
+    @GetMapping("/{requestId}/provisioning-status")
+    public ResponseEntity<SuccessResponse<?>> getProvisioningStatus(@PathVariable Long requestId) {
+        return SuccessResponse.ok(jobHistoryService.getProvisioningStatus(requestId));
+    }
+
     @PostMapping("/{requestId}/migrations")
     public ResponseEntity<SuccessResponse<?>> startMigration(@PathVariable Long requestId,
                                                              @RequestBody @Valid MigratePodRequestDTO dto) {
