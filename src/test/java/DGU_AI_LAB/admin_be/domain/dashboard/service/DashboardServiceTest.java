@@ -50,31 +50,31 @@ class DashboardServiceTest {
 
             assertThat(result).isEmpty();
             verify(requestRepository).findAllByUser_UserId(1L);
-            verify(requestRepository, never()).findByUserUserIdAndStatus(anyLong(), any());
+            verify(requestRepository, never()).findAllByUser_UserIdAndStatus(anyLong(), any());
         }
 
         @Test
         @DisplayName("StatusFilter.FULFILLED이면 FULFILLED 요청만 반환한다")
         void getUserServers_returnsFulfilledRequests_whenStatusFulfilled() {
-            when(requestRepository.findByUserUserIdAndStatus(1L, Status.FULFILLED)).thenReturn(List.of());
+            when(requestRepository.findAllByUser_UserIdAndStatus(1L, Status.FULFILLED)).thenReturn(List.of());
             when(nodeRepository.findAllByResourceGroupIn(anySet())).thenReturn(List.of());
 
             List<UserServerResponseDTO> result = dashboardService.getUserServers(1L, StatusFilter.FULFILLED);
 
             assertThat(result).isEmpty();
-            verify(requestRepository).findByUserUserIdAndStatus(1L, Status.FULFILLED);
+            verify(requestRepository).findAllByUser_UserIdAndStatus(1L, Status.FULFILLED);
         }
 
         @Test
         @DisplayName("StatusFilter.PENDING이면 PENDING 요청만 반환한다")
         void getUserServers_returnsPendingRequests_whenStatusPending() {
-            when(requestRepository.findByUserUserIdAndStatus(1L, Status.PENDING)).thenReturn(List.of());
+            when(requestRepository.findAllByUser_UserIdAndStatus(1L, Status.PENDING)).thenReturn(List.of());
             when(nodeRepository.findAllByResourceGroupIn(anySet())).thenReturn(List.of());
 
             List<UserServerResponseDTO> result = dashboardService.getUserServers(1L, StatusFilter.PENDING);
 
             assertThat(result).isEmpty();
-            verify(requestRepository).findByUserUserIdAndStatus(1L, Status.PENDING);
+            verify(requestRepository).findAllByUser_UserIdAndStatus(1L, Status.PENDING);
         }
 
         @Test

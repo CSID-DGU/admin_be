@@ -15,7 +15,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
@@ -35,7 +34,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtProvider jwtProvider;
     private final CustomUserDetailsService customUserDetailsService;
-    private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private static final AntPathMatcher pathMatcher = new AntPathMatcher();
 
@@ -58,7 +56,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 throw new UnauthorizedException(ErrorCode.INVALID_ACCESS_TOKEN_VALUE);
             }
 
-            CustomUserDetails userDetails = new CustomUserDetails(user, null);
+            CustomUserDetails userDetails = new CustomUserDetails(user);
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

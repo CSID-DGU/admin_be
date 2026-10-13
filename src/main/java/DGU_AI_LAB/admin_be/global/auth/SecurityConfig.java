@@ -9,7 +9,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -31,7 +30,6 @@ public class SecurityConfig {
     private final CorsConfig corsConfig;
     private final JwtProvider jwtProvider;
     private final CustomUserDetailsService customUserDetailsService;
-    private final RedisTemplate<String, String> redisTemplate;
 
     @Value("${config.api-token:}")
     private String internalApiToken;
@@ -55,7 +53,7 @@ public class SecurityConfig {
                 )
                 .addFilter(corsConfig.corsFilter())
                 .addFilterBefore(
-                        new JwtAuthenticationFilter(jwtProvider, customUserDetailsService, redisTemplate),
+                        new JwtAuthenticationFilter(jwtProvider, customUserDetailsService),
                         UsernamePasswordAuthenticationFilter.class
                 )
                 .addFilterBefore(new ExceptionHandlerFilter(), JwtAuthenticationFilter.class)

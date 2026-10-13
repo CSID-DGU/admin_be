@@ -40,7 +40,7 @@ public class DashboardService {
             requests = requestRepository.findAllByUser_UserId(userId);
         } else {
             Status status = Status.valueOf(statusFilter.name());
-            requests = requestRepository.findByUserUserIdAndStatus(userId, status);
+            requests = requestRepository.findAllByUser_UserIdAndStatus(userId, status);
         }
 
         Set<ResourceGroup> resourceGroups = requests.stream()
@@ -55,8 +55,6 @@ public class DashboardService {
 
         return requests.stream()
                 .map(request -> {
-                    String serverAddress = Status.activeStatuses().contains(request.getStatus()) ? "TBD (서버 할당 후 표시)" : null;
-
                     Integer cpuCoreCount = null;
                     Integer memoryGB = null;
                     String resourceGroupName = null;
@@ -80,7 +78,6 @@ public class DashboardService {
 
                     return UserServerResponseDTO.fromEntity(
                             request,
-                            serverAddress,
                             cpuCoreCount,
                             memoryGB,
                             resourceGroupName,

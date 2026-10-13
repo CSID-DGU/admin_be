@@ -13,8 +13,6 @@ import java.time.LocalDateTime;
 public record UserServerResponseDTO(
         @Schema(description = "서버 신청 고유 ID", example = "1")
         Long requestId,
-        @Schema(description = "할당된 서버 주소 (승인 후 유효)", example = "192.168.1.100", nullable = true)
-        String serverAddress,
         @Schema(description = "서버 사용 만료일", example = "2025-12-31T23:59:59")
         LocalDateTime expiresAt,
         @Schema(description = "할당된 CPU 코어 수", example = "8")
@@ -29,10 +27,9 @@ public record UserServerResponseDTO(
         @Schema(description = "서버 신청 상태", example = "FULFILLED", allowableValues = {"PENDING", "FULFILLED", "DENIED", "MODIFICATION_REQUESTED", "MODIFICATION_APPROVED", "MODIFICATION_REJECTED"})
         Status status
 ) {
-    public static UserServerResponseDTO fromEntity(Request request, String serverAddress, Integer cpuCoreCount, Integer memoryGB, String resourceGroupName, ContainerImageResponseDTO containerImage) {
+    public static UserServerResponseDTO fromEntity(Request request, Integer cpuCoreCount, Integer memoryGB, String resourceGroupName, ContainerImageResponseDTO containerImage) {
         return UserServerResponseDTO.builder()
                 .requestId(request.getRequestId())
-                .serverAddress(serverAddress)
                 .expiresAt(request.getExpiresAt())
                 .cpuCoreCount(cpuCoreCount)
                 .memoryGB(memoryGB)

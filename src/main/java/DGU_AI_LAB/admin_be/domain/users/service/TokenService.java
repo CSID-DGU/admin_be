@@ -16,7 +16,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 @Service
 @Transactional(readOnly = true)
@@ -51,26 +50,6 @@ public class TokenService {
 
     public String issueNewRefreshToken(Long userId) {
         return jwtProvider.getIssueToken(userId, false);
-    }
-
-    public UserTokenResponseDTO issueTempToken(Long userId) {
-        String accessToken = issueNewAccessToken(userId);
-        String refreshToken = issueNewRefreshToken(userId);
-        return UserTokenResponseDTO.of(accessToken, refreshToken);
-    }
-
-    public UserTokenResponseDTO issueToken(Long userId) {
-        String accessToken = issueNewAccessToken(userId);
-
-        String redisKey = "RT:" + userId;
-        String storedRefreshToken = redisTemplate.opsForValue().get(redisKey);
-
-        if (storedRefreshToken == null) {
-            storedRefreshToken = issueNewRefreshToken(userId);
-            redisTemplate.opsForValue().set(redisKey, storedRefreshToken, REFRESH_TOKEN_EXPIRE_TIME, TimeUnit.MILLISECONDS);
-        }
-
-        return UserTokenResponseDTO.of(accessToken, storedRefreshToken);
     }
 
     /**

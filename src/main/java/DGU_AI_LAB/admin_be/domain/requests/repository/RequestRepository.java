@@ -2,7 +2,6 @@ package DGU_AI_LAB.admin_be.domain.requests.repository;
 
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
-import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -29,11 +28,9 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     @Query("UPDATE Request r SET r.slackMessageTs = :ts WHERE r.requestId = :requestId")
     int updateSlackMessageTs(@Param("requestId") Long requestId, @Param("ts") String ts);
 
-    List<Request> findAllByUser(User user);
     List<Request> findAllByUser_UserId(Long userId);
     List<Request> findAllByStatus(Status status);
 
-    List<Request> findByUserUserIdAndStatus(Long userId, Status status);
     List<Request> findAllByUser_UserIdAndStatus(Long userId, Status status);
     boolean existsByUser_UbuntuUsernameAndUser_UserId(String ubuntuUsername, Long userId);
     boolean existsByPodName(String podName);

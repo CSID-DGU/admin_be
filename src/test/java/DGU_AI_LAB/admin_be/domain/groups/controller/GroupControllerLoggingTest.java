@@ -49,7 +49,7 @@ class GroupControllerLoggingTest {
                 .phone("010-1111-2222")
                 .department("컴퓨터공학과")
                 .build();
-        CustomUserDetails principal = new CustomUserDetails(user, null);
+        CustomUserDetails principal = new CustomUserDetails(user);
 
         when(groupService.createGroup(any(CreateGroupRequestDTO.class), nullable(Long.class)))
                 .thenReturn(new GroupResponseDTO(7L, null, "ai-lab-team"));
