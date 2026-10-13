@@ -7,11 +7,13 @@ import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.support.EncodedResource;
 import org.springframework.core.io.support.PropertiesLoaderUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.text.MessageFormat;
 import java.util.*;
 
@@ -108,9 +110,15 @@ public class MessageTemplateService {
      *
      * DB row만 지우면 끝 — MessageSourceConfig의 resolveCode()가 DB에서 못 찾으면
      * 자동으로 parent(ResourceBundleMessageSource -> messages.properties)로 위임함.
+     *
+     * 기본값이 없는 키(DB에만 있는 email.* 등)는 지우면 되돌아갈 값이 없어 그 키를 쓰는 발송이 실패하므로 거절한다.
      */
     @Transactional
     public void reset(String key) {
+        if (!loadDefaults().containsKey(key)) {
+            throw new BusinessException("기본값이 없는 메시지는 초기화할 수 없습니다. 내용을 직접 수정하세요.",
+                    ErrorCode.INVALID_INPUT_VALUE);
+        }
         repository.deleteById(key);
     }
 
@@ -133,10 +141,12 @@ public class MessageTemplateService {
      * ClassPathResource: src/main/resources 아래 파일을 읽는 Spring 유틸.
      * JAR로 패키징되어도 잘 동작함 (파일시스템이 아니라 클래스패스에서 읽으니까).
      * IOException 시 빈 Properties 반환 : 파일 없으면 DB 값만 보이게 됨.
+     * 파일은 UTF-8이다. 인코딩을 주지 않으면 ISO-8859-1로 읽혀 한글 기본값이 깨진다(발송 경로는 UTF-8로 읽는다).
      */
     private Properties loadDefaults() {
         try {
-            return PropertiesLoaderUtils.loadProperties(new ClassPathResource("messages.properties"));
+            return PropertiesLoaderUtils.loadProperties(
+                    new EncodedResource(new ClassPathResource("messages.properties"), StandardCharsets.UTF_8));
         } catch (IOException e) {
             return new Properties();
         }

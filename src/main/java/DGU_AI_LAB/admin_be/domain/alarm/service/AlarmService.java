@@ -90,6 +90,7 @@ public class AlarmService {
     private final MessageUtils messageUtils;
     private final PodExternalPortRepository podExternalPortRepository;
     private final ServerProfileRegistry serverProfileRegistry;
+    private final DmRecipientEmails dmRecipientEmails;
 
     private static final String SLACK_QUEUE_KEY = "slack:notification:queue";
 
@@ -723,7 +724,7 @@ public class AlarmService {
 
         try {
             if (dto.getType() == SlackMessageDto.MessageType.DM) {
-                slackApiService.sendDM(dto.getUsername(), dto.getEmail(), fullMessage);
+                slackApiService.sendDM(dto.getUsername(), dmRecipientEmails.of(dto.getEmail()), fullMessage);
             } else {
                 // 봇으로 올릴 글(CHANNEL)도 큐가 죽은 동안에는 webhook으로 보낸다 — 스레드는 포기하고 전달만 지킨다.
                 slackApiService.sendWebhook(dto.getWebhookUrl(), fullMessage);

@@ -76,6 +76,9 @@ class AlarmServiceTest {
     private PodExternalPortRepository podExternalPortRepository;
 
     @Mock
+    private DmRecipientEmails dmRecipientEmails;
+
+    @Mock
     private ListOperations<String, Object> listOperations;
 
     private static final String QUEUE_KEY = "slack:notification:queue";
@@ -239,9 +242,11 @@ class AlarmServiceTest {
             when(redisTemplate.opsForList()).thenThrow(new RuntimeException("Redis 연결 실패"));
             when(messageUtils.get("notification.error.redis-fallback")).thenReturn(" (직접 전송)");
 
+            when(dmRecipientEmails.of("hong@dgu.ac.kr")).thenReturn(List.of("hong@dgu.ac.kr", "hong@gmail.com"));
+
             alarmService.notifyUser("홍길동", "hong@dgu.ac.kr", "제목", "내용");
 
-            verify(slackApiService).sendDM("홍길동", "hong@dgu.ac.kr", "내용 (직접 전송)");
+            verify(slackApiService).sendDM("홍길동", List.of("hong@dgu.ac.kr", "hong@gmail.com"), "내용 (직접 전송)");
         }
     }
 

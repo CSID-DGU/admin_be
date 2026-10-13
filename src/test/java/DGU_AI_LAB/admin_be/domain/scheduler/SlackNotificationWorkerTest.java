@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.dto.SlackMessageDto;
+import DGU_AI_LAB.admin_be.domain.alarm.service.DmRecipientEmails;
 import DGU_AI_LAB.admin_be.domain.alarm.service.SlackApiService;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -20,6 +21,8 @@ import org.springframework.data.redis.core.ListOperations;
 import org.springframework.data.redis.core.RedisTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import java.util.List;
+
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -34,6 +37,9 @@ class SlackNotificationWorkerTest {
 
     @Mock
     private SlackApiService slackApiService;
+
+    @Mock
+    private DmRecipientEmails dmRecipientEmails;
 
     @Mock
     private ObjectMapper objectMapper;
@@ -66,7 +72,7 @@ class SlackNotificationWorkerTest {
             worker.processSlackQueue();
 
             verify(slackApiService, never()).sendWebhook(anyString(), anyString());
-            verify(slackApiService, never()).sendDM(anyString(), anyString(), anyString());
+            verify(slackApiService, never()).sendDM(anyString(), any(), anyString());
             verify(listOperations, never()).rightPush(anyString(), any());
         }
 
@@ -85,7 +91,7 @@ class SlackNotificationWorkerTest {
             worker.processSlackQueue();
 
             verify(slackApiService).sendWebhook("https://hooks.slack.com/test", "관리자 알림");
-            verify(slackApiService, never()).sendDM(anyString(), anyString(), anyString());
+            verify(slackApiService, never()).sendDM(anyString(), any(), anyString());
         }
 
         @Test
@@ -100,10 +106,11 @@ class SlackNotificationWorkerTest {
 
             when(listOperations.leftPop(QUEUE_KEY)).thenReturn(dto);
             when(objectMapper.convertValue(dto, SlackMessageDto.class)).thenReturn(dto);
+            when(dmRecipientEmails.of("hong@dgu.ac.kr")).thenReturn(List.of("hong@dgu.ac.kr", "hong@gmail.com"));
 
             worker.processSlackQueue();
 
-            verify(slackApiService).sendDM("홍길동", "hong@dgu.ac.kr", "승인 알림");
+            verify(slackApiService).sendDM("홍길동", List.of("hong@dgu.ac.kr", "hong@gmail.com"), "승인 알림");
             verify(slackApiService, never()).sendWebhook(anyString(), anyString());
         }
 
@@ -180,7 +187,7 @@ class SlackNotificationWorkerTest {
             when(listOperations.leftPop(QUEUE_KEY)).thenReturn(dto);
             when(objectMapper.convertValue(dto, SlackMessageDto.class)).thenReturn(dto);
             doThrow(new BusinessException(ErrorCode.USER_NOT_FOUND))
-                    .when(slackApiService).sendDM(anyString(), anyString(), anyString());
+                    .when(slackApiService).sendDM(anyString(), any(), anyString());
 
             worker.processSlackQueue();
 
@@ -217,7 +224,7 @@ class SlackNotificationWorkerTest {
             worker.processSlackQueue();
 
             verify(slackApiService, never()).sendWebhook(anyString(), anyString());
-            verify(slackApiService, never()).sendDM(anyString(), anyString(), anyString());
+            verify(slackApiService, never()).sendDM(anyString(), any(), anyString());
             verify(listOperations, never()).rightPush(anyString(), any());
         }
     }

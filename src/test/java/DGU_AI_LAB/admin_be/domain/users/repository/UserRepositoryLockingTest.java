@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.users.repository;
 
 import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,6 +40,9 @@ class UserRepositoryLockingTest {
     @Autowired
     private PlatformTransactionManager transactionManager;
 
+    @Autowired
+    private EntityManager entityManager;
+
     private Long firstAdminId;
     private Long secondAdminId;
 
@@ -51,6 +55,23 @@ class UserRepositoryLockingTest {
     @AfterEach
     void tearDown() {
         userRepository.deleteAllById(List.of(firstAdminId, secondAdminId));
+    }
+
+    @Test
+    @DisplayName("잠금 없이 먼저 읽은 사용자는 떼어 내야(detach) 잠가 읽을 때 그 사이 바뀐 값이 보인다 — 떼지 않으면 먼저 읽은 값이 그대로 남는다")
+    void findByIdForUpdate_afterPlainRead_needsDetachToSeeConcurrentChange() {
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        TransactionTemplate otherTx = new TransactionTemplate(transactionManager);
+        otherTx.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
+
+        Role seen = tx.execute(status -> {
+            entityManager.detach(userRepository.findById(firstAdminId).orElseThrow());
+            otherTx.executeWithoutResult(inner ->
+                    userRepository.findById(firstAdminId).orElseThrow().changeRole(Role.USER));
+            return userRepository.findByIdForUpdate(firstAdminId).orElseThrow().getRole();
+        });
+
+        assertThat(seen).isEqualTo(Role.USER);
     }
 
     @Test

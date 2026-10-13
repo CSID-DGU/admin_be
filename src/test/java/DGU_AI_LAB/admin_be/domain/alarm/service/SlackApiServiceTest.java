@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.alarm.service;
 
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -97,7 +99,7 @@ class SlackApiServiceTest {
                     .thenReturn(new ResponseEntity<>(postMessageResponse, HttpStatus.OK));
 
             // act & assert - should not throw
-            slackApiService.sendDM("testuser", "test@example.com", "hello");
+            slackApiService.sendDM("testuser", List.of("test@example.com"), "hello");
         }
 
         @Test
@@ -110,7 +112,7 @@ class SlackApiServiceTest {
                     .thenReturn(new ResponseEntity<>(null, HttpStatus.OK));
 
             // act & assert
-            assertThatThrownBy(() -> slackApiService.sendDM("testuser", "test@example.com", "hello"))
+            assertThatThrownBy(() -> slackApiService.sendDM("testuser", List.of("test@example.com"), "hello"))
                     .isNotInstanceOf(NullPointerException.class);
         }
 
@@ -128,7 +130,7 @@ class SlackApiServiceTest {
                     .thenReturn(new ResponseEntity<>(openChannelResponse, HttpStatus.OK));
 
             // act & assert
-            assertThatThrownBy(() -> slackApiService.sendDM("testuser", "test@example.com", "hello"))
+            assertThatThrownBy(() -> slackApiService.sendDM("testuser", List.of("test@example.com"), "hello"))
                     .isNotInstanceOf(NullPointerException.class);
         }
 
@@ -145,7 +147,7 @@ class SlackApiServiceTest {
                     .thenReturn(new ResponseEntity<>(openChannelResponse, HttpStatus.OK));
 
             // act & assert
-            assertThatThrownBy(() -> slackApiService.sendDM("testuser", "test@example.com", "hello"))
+            assertThatThrownBy(() -> slackApiService.sendDM("testuser", List.of("test@example.com"), "hello"))
                     .isNotInstanceOf(NullPointerException.class);
         }
     }
@@ -286,6 +288,62 @@ class SlackApiServiceTest {
             members(page("", member("홍길동", "other@dgu.ac.kr", null), member("김철수", "hong@dgu.ac.kr", null)));
 
             assertThat(slackApiService.findMembership("홍길동", EMAILS)).isEqualTo(SlackApiService.Membership.NOT_FOUND);
+        }
+
+        private void dmChannelOpens() {
+            Map<String, Object> opened = new HashMap<>();
+            opened.put("ok", true);
+            opened.put("channel", Map.of("id", "D1"));
+            Map<String, Object> posted = new HashMap<>();
+            posted.put("ok", true);
+            when(restTemplate.postForEntity(contains("conversations.open"), any(), eq(Map.class)))
+                    .thenReturn(new ResponseEntity<>(opened, HttpStatus.OK));
+            when(restTemplate.postForEntity(contains("chat.postMessage"), any(), eq(Map.class)))
+                    .thenReturn(new ResponseEntity<>(posted, HttpStatus.OK));
+        }
+
+        @SuppressWarnings("unchecked")
+        private String dmRecipient() {
+            ArgumentCaptor<HttpEntity<Map<String, Object>>> request = ArgumentCaptor.forClass(HttpEntity.class);
+            verify(restTemplate).postForEntity(contains("conversations.open"), request.capture(), eq(Map.class));
+            return (String) request.getValue().getBody().get("users");
+        }
+
+        @Test
+        @DisplayName("DM은 이름과 이메일이 모두 같은 회원에게 보낸다 — 이름이 같은 사람이 한 명뿐이어도 이메일이 다르면 보내지 않는다")
+        void dmNeedsBothNameAndEmail() {
+            members(page("", member("홍길동", "other@dgu.ac.kr", null)));
+
+            assertThatThrownBy(() -> slackApiService.sendDM("홍길동", EMAILS, "안내"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.SLACK_USER_NOT_FOUND);
+            verify(restTemplate, never()).postForEntity(anyString(), any(), eq(Map.class));
+        }
+
+        @Test
+        @DisplayName("DM은 탈퇴한 회원과 봇을 건너뛰고 같은 이름의 활동 회원에게 보낸다")
+        void dmSkipsInactiveMembers() {
+            Map<String, Object> active = member("홍길동", "hong@gmail.com", null);
+            active.put("id", "U-active");
+            members(page("", member("홍길동", "hong@dgu.ac.kr", "deleted"), active));
+            dmChannelOpens();
+
+            slackApiService.sendDM("홍길동", EMAILS, "안내");
+
+            assertThat(dmRecipient()).isEqualTo("U-active");
+        }
+
+        @Test
+        @DisplayName("Slack이 이메일을 주지 않으면 그 이름의 회원이 한 명일 때만 DM을 보낸다")
+        void dmByNameOnlyWhenSlackGivesNoEmails() {
+            members(page("", member("홍길동", null, null), member("김철수", null, null), member("김철수", null, null)));
+            dmChannelOpens();
+
+            slackApiService.sendDM("홍길동", EMAILS, "안내");
+            assertThatThrownBy(() -> slackApiService.sendDM("김철수", EMAILS, "안내"))
+                    .isInstanceOf(BusinessException.class);
+
+            verify(restTemplate, times(1)).postForEntity(contains("conversations.open"), any(), eq(Map.class));
         }
 
         @Test

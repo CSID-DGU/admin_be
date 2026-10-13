@@ -83,7 +83,7 @@ class SlackApiServiceLoggingTest {
         when(valueOperations.get(any())).thenReturn(List.of());
 
         try (LogCaptor logCaptor = LogCaptor.forClass(SlackApiService.class)) {
-            assertThatThrownBy(() -> slackApiService.sendDM(username, email, "메시지"))
+            assertThatThrownBy(() -> slackApiService.sendDM(username, List.of(email), "메시지"))
                     .isInstanceOf(BusinessException.class);
 
             String logs = logCaptor.joined();

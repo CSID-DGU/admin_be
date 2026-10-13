@@ -30,6 +30,7 @@ import DGU_AI_LAB.admin_be.domain.warnings.service.SuspensionGuard;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -59,6 +60,7 @@ public class RequestCommandService {
     private final AlarmService alarmService;
     private final RequestCreateThrottle requestCreateThrottle;
     private final SlackMembershipGate slackMembershipGate;
+    private final EntityManager entityManager;
     private final PendingGroupService pendingGroupService;
     private final HomeCleanupService homeCleanupService;
 
@@ -211,6 +213,15 @@ public class RequestCommandService {
     /** 신청 생성 */
     @Transactional
     public SaveRequestResponseDTO createRequest(Long userId, SaveRequestRequestDTO dto) {
+        // Slack 회원 확인은 외부 호출(회원 목록 조회)이라 User 행을 잠그기 전에 한다 — 잠근 채로 하면 Slack이
+        // 느린 동안 같은 사용자의 승인·신청이 함께 멈춘다. 이름·이메일만 보므로 잠금 없이 읽은 값으로 충분하다.
+        // 확인이 끝나면 떼어 낸다: 남겨 두면 아래 잠금 조회가 새로 읽지 않고 이 객체를 그대로 돌려줘, 확인하는
+        // 사이 다른 트랜잭션이 바꾼 값을 보지 못한다(UserRepositoryLockingTest).
+        User unlocked = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        slackMembershipGate.requireMember(unlocked);
+        entityManager.detach(unlocked);
+
         // 행 잠금 조회: 계정 배정(승인 시점)이 User 행 잠금으로 직렬화되므로, 신청 생성
         // 자체도 같은 사용자 기준으로 일관되게 잠그고 시작한다.
         User user = userRepository.findByIdForUpdate(userId)
@@ -253,8 +264,6 @@ public class RequestCommandService {
         }
 
         List<Group> groups = findChosenGroups(dto);
-
-        slackMembershipGate.requireMember(user);
 
         // 입력이 잘못돼 거절된 요청은 하루 한도에서 빼려고 모든 검증 뒤에 센다. Redis 카운터는 트랜잭션과 함께
         // 되돌아가지 않으므로, 이 아래에는 입력 때문에 실패하는 검증을 두지 않는다.

@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.alarm.dto; // 패키지 위치 확인
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -7,6 +8,8 @@ import lombok.NoArgsConstructor;
 
 import java.io.Serializable;
 
+// 큐에는 이전·다음 버전이 넣은 항목이 섞일 수 있다. 모르는 필드 때문에 꺼낸 알림을 버리지 않게 한다.
+@JsonIgnoreProperties(ignoreUnknown = true)
 @Data
 @Builder
 @NoArgsConstructor

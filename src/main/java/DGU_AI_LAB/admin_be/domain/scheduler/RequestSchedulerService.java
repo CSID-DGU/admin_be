@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * Business Trigger
@@ -69,14 +70,20 @@ public class RequestSchedulerService {
         LocalDateTime staleBefore = LocalDateTime.now(ZoneId.of("Asia/Seoul"))
                 .minusMinutes(staleInFlightThresholdMinutes);
 
-        for (Request request : requestRepository.findAllByStatusAndUpdatedAtBefore(Status.PROCESSING, staleBefore)) {
-            reconcileStaleProcessing(request);
-        }
-        for (Request request : requestRepository.findAllByStatusAndUpdatedAtBefore(Status.MIGRATING, staleBefore)) {
-            alertStaleMigrating(request);
-        }
-        for (Request request : requestRepository.findAllByStatusAndUpdatedAtBefore(Status.EXPIRING, staleBefore)) {
-            reconcileStaleExpiring(request);
+        reconcileEach(Status.PROCESSING, staleBefore, this::reconcileStaleProcessing);
+        reconcileEach(Status.MIGRATING, staleBefore, this::alertStaleMigrating);
+        reconcileEach(Status.EXPIRING, staleBefore, this::reconcileStaleExpiring);
+    }
+
+    /** 신청 하나의 처리 실패가 같은 회차의 나머지 신청을 막지 않게 건별로 격리한다. */
+    private void reconcileEach(Status status, LocalDateTime staleBefore, Consumer<Request> action) {
+        for (Request request : requestRepository.findAllByStatusAndUpdatedAtBefore(status, staleBefore)) {
+            try {
+                action.accept(request);
+            } catch (Exception e) {
+                log.error("🔧 [재조정] {} 요청 처리 실패, 다음 회차에 다시 본다: requestId={}",
+                        status, request.getRequestId(), e);
+            }
         }
     }
 

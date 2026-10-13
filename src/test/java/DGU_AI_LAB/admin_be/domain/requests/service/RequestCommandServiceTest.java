@@ -30,6 +30,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import jakarta.persistence.EntityManager;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -100,6 +101,9 @@ class RequestCommandServiceTest {
     private SlackMembershipGate slackMembershipGate;
 
     @Mock
+    private EntityManager entityManager;
+
+    @Mock
     private PendingGroupService pendingGroupService;
 
     /** 가입 시 우분투 계정명이 정해진 사용자 — 신청은 이 값을 그대로 복사해 쓴다. */
@@ -133,6 +137,7 @@ class RequestCommandServiceTest {
             Request savedReq = Request.builder()
                     .expiresAt(LocalDateTime.now().plusDays(30)).usagePurpose("연구").formAnswers("{}")
                     .user(user).resourceGroup(rg).containerImage(img).build();
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
             when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
             when(containerImageRepository.findById(any())).thenReturn(Optional.of(img));
@@ -156,6 +161,21 @@ class RequestCommandServiceTest {
         }
 
         @Test
+        @DisplayName("Slack 회원 확인은 사용자 행을 잠그기 전에 한다 — 회원이 아니면 잠그지 않고 거절한다")
+        void createRequest_checksSlackMembershipBeforeLockingUser() {
+            User user = userWithUbuntuUsername("honggildong");
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+            doThrow(new BusinessException(ErrorCode.SLACK_MEMBERSHIP_REQUIRED))
+                    .when(slackMembershipGate).requireMember(user);
+
+            assertThatThrownBy(() -> requestCommandService.createRequest(1L, mock(SaveRequestRequestDTO.class)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.SLACK_MEMBERSHIP_REQUIRED);
+
+            verify(userRepository, never()).findByIdForUpdate(any());
+        }
+
+        @Test
         @DisplayName("사용 중인 컨테이너가 있어도 새 신청을 막지 않는다 — 승인 대기·처리 중인 신청만 센다")
         void createRequest_succeeds_evenWhenUserAlreadyHasActiveContainer() {
             User user = userWithUbuntuUsername("honggildong");
@@ -172,6 +192,7 @@ class RequestCommandServiceTest {
                     .containerImage(img)
                     .build();
 
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
             when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
             when(containerImageRepository.findById(any())).thenReturn(Optional.of(img));
@@ -192,6 +213,7 @@ class RequestCommandServiceTest {
         void createRequest_rejected_whenUserHasRequestAwaitingDecision() {
             User user = userWithUbuntuUsername("honggildong");
             ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
             when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
             when(requestRepository.existsByUser_UserIdAndStatusIn(1L, List.of(Status.PENDING, Status.PROCESSING)))
@@ -212,6 +234,7 @@ class RequestCommandServiceTest {
         void createRequest_homeCleanupInProgress_rejects() {
             User user = userWithUbuntuUsername("honggildong");
             ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
             when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
             when(homeCleanupService.isDeleting(1L)).thenReturn(true);
@@ -235,6 +258,7 @@ class RequestCommandServiceTest {
                     .build();
             ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
 
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
             when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
 
@@ -249,7 +273,7 @@ class RequestCommandServiceTest {
         @Test
         @DisplayName("유저가 없으면 BusinessException을 던진다")
         void createRequest_throwsException_whenUserNotFound() {
-            when(userRepository.findByIdForUpdate(99L)).thenReturn(Optional.empty());
+            when(userRepository.findById(99L)).thenReturn(Optional.empty());
 
             SaveRequestRequestDTO dto = mock(SaveRequestRequestDTO.class);
 
@@ -265,6 +289,7 @@ class RequestCommandServiceTest {
                     .studentId("2021001234").phone("010-0000-0000").department("컴퓨터공학과")
                     .build();
 
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
             when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.empty());
 
@@ -389,6 +414,7 @@ class RequestCommandServiceTest {
             User user = userWithUbuntuUsername("newuser");
             ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
 
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
             when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
             when(containerImageRepository.findById(any())).thenReturn(Optional.empty());
@@ -411,6 +437,7 @@ class RequestCommandServiceTest {
 
             Request savedReq = mock(Request.class);
 
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
             when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
             when(containerImageRepository.findById(any())).thenReturn(Optional.of(img));
@@ -434,6 +461,7 @@ class RequestCommandServiceTest {
             ContainerImage img = ContainerImage.builder()
                     .imageName("cuda").imageVersion("11.8").cudaVersion("11.8").description("test").build();
 
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
             when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
             when(containerImageRepository.findById(any())).thenReturn(Optional.of(img));
@@ -463,7 +491,8 @@ class RequestCommandServiceTest {
             ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
             ContainerImage img = ContainerImage.builder()
                     .imageName("cuda").imageVersion("11.8").cudaVersion("11.8").description("test").build();
-            lenient().when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
+            lenient().when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+            when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             lenient().when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
             lenient().when(containerImageRepository.findById(any())).thenReturn(Optional.of(img));
             Request savedReq = Request.builder()
@@ -836,7 +865,8 @@ class RequestCommandServiceTest {
                 .email("test@dgu.ac.kr").password("pw").name("홍길동").ubuntuUsername("hong")
                 .studentId("2021001234").phone("010-0000-0000").department("컴퓨터공학과")
                 .build();
-        when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+            when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
         org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.USER_SUSPENDED))
                 .when(suspensionGuard).requireNotSuspendedLocked(1L);
 
