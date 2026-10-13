@@ -3,7 +3,6 @@ package DGU_AI_LAB.admin_be.domain.issuanceSheet;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import org.springframework.http.MediaType;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -71,12 +70,13 @@ class GoogleServiceAccountTokens {
     private String assertion(Instant now) {
         JsonNode key = readKey();
         return Jwts.builder()
-                .setIssuer(required(key, "client_email"))
-                .setAudience(TOKEN_URI)
+                .issuer(required(key, "client_email"))
+                // 배열이 아니라 문자열 하나로 싣는다 — 토큰 발급 주소가 받는 형식을 이전과 같게 둔다.
+                .audience().single(TOKEN_URI)
                 .claim("scope", SCOPE)
-                .setIssuedAt(Date.from(now))
-                .setExpiration(Date.from(now.plusSeconds(ASSERTION_LIFETIME_SECONDS)))
-                .signWith(privateKey(required(key, "private_key")), SignatureAlgorithm.RS256)
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(now.plusSeconds(ASSERTION_LIFETIME_SECONDS)))
+                .signWith(privateKey(required(key, "private_key")), Jwts.SIG.RS256)
                 .compact();
     }
 

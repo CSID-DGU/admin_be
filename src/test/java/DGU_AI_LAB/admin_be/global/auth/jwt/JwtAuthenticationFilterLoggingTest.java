@@ -113,10 +113,7 @@ class JwtAuthenticationFilterLoggingTest {
     }
 
     private static Claims claims(Date issuedAt) {
-        Claims claims = Jwts.claims();
-        claims.setSubject("1");
-        claims.setIssuedAt(issuedAt);
-        return claims;
+        return Jwts.claims().subject("1").issuedAt(issuedAt).build();
     }
 
     @Test

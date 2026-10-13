@@ -2,7 +2,6 @@ package DGU_AI_LAB.admin_be.global.auth.jwt;
 
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -10,7 +9,9 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.security.Key;
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Date;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,26 +38,26 @@ class JwtProviderTest {
 
     // ─── 헬퍼: 이미 만료된 토큰 직접 생성 ───────────────────────────────────────
     private String buildExpiredToken(Long userId) {
-        Key key = Keys.hmacShaKeyFor(SECRET.getBytes());
+        SecretKey key = Keys.hmacShaKeyFor(SECRET.getBytes());
         Date past = new Date(System.currentTimeMillis() - 10_000);
         return Jwts.builder()
-                .setSubject(String.valueOf(userId))
-                .setIssuedAt(past)
-                .setExpiration(past)
-                .signWith(key, SignatureAlgorithm.HS256)
+                .subject(String.valueOf(userId))
+                .issuedAt(past)
+                .expiration(past)
+                .signWith(key, Jwts.SIG.HS256)
                 .compact();
     }
 
     // ─── 헬퍼: 완전히 다른 키로 서명된 위조 토큰 생성 ────────────────────────────
     private String buildTokenWithDifferentKey(Long userId) {
         String fakeSecret = "completely-different-secret-key-abcdefghijklmnop-xyz";
-        Key key = Keys.hmacShaKeyFor(fakeSecret.getBytes());
+        SecretKey key = Keys.hmacShaKeyFor(fakeSecret.getBytes());
         Date now = new Date();
         return Jwts.builder()
-                .setSubject(String.valueOf(userId))
-                .setIssuedAt(now)
-                .setExpiration(new Date(now.getTime() + ACCESS_TTL))
-                .signWith(key, SignatureAlgorithm.HS256)
+                .subject(String.valueOf(userId))
+                .issuedAt(now)
+                .expiration(new Date(now.getTime() + ACCESS_TTL))
+                .signWith(key, Jwts.SIG.HS256)
                 .compact();
     }
 
@@ -113,13 +114,13 @@ class JwtProviderTest {
         @Test
         @DisplayName("종류가 적히지 않은(이전 방식) 토큰은 액세스 토큰으로 받지 않는다")
         void throwsUnauthorized_whenTokenTypeIsMissing() {
-            Key key = Keys.hmacShaKeyFor(SECRET.getBytes());
+            SecretKey key = Keys.hmacShaKeyFor(SECRET.getBytes());
             Date now = new Date();
             String untyped = Jwts.builder()
-                    .setSubject("1")
-                    .setIssuedAt(now)
-                    .setExpiration(new Date(now.getTime() + ACCESS_TTL))
-                    .signWith(key, SignatureAlgorithm.HS256)
+                    .subject("1")
+                    .issuedAt(now)
+                    .expiration(new Date(now.getTime() + ACCESS_TTL))
+                    .signWith(key, Jwts.SIG.HS256)
                     .compact();
 
             assertThatThrownBy(() -> jwtProvider.validateAccessToken(untyped))
@@ -152,6 +153,29 @@ class JwtProviderTest {
             Long subject = jwtProvider.getSubject(token);
 
             assertThat(subject).isEqualTo(7L);
+        }
+
+        @Test
+        @DisplayName("헤더는 HS256·JWT로 나간다 — 이미 발급된 토큰과 형식이 같아야 한다")
+        void header_isHs256Jwt() {
+            String token = jwtProvider.getIssueToken(7L, true);
+
+            String header = new String(Base64.getUrlDecoder().decode(token.split("\\.")[0]), StandardCharsets.UTF_8);
+
+            assertThat(header).contains("\"alg\":\"HS256\"").contains("\"typ\":\"JWT\"");
+        }
+
+        @Test
+        @DisplayName("비밀값이 64바이트 이상이어도 HS256으로 발급하고 검증한다")
+        void longSecret_stillUsesHs256() {
+            ReflectionTestUtils.setField(jwtProvider, "secretKey", SECRET.repeat(2));
+            ReflectionTestUtils.invokeMethod(jwtProvider, "initSigningKey");
+
+            String token = jwtProvider.getIssueToken(7L, true);
+
+            String header = new String(Base64.getUrlDecoder().decode(token.split("\\.")[0]), StandardCharsets.UTF_8);
+            assertThat(header).contains("\"alg\":\"HS256\"");
+            assertThat(jwtProvider.getSubject(token)).isEqualTo(7L);
         }
     }
 

@@ -166,10 +166,13 @@ class GoogleSheetsTabWriterTest {
 
         server.verify();
         String assertion = URLDecoder.decode(form.get(), StandardCharsets.UTF_8).replaceFirst(".*assertion=", "");
-        Claims claims = Jwts.parserBuilder().setSigningKey(keyPair.getPublic()).build()
-                .parseClaimsJws(assertion).getBody();
+        Claims claims = Jwts.parser().verifyWith(keyPair.getPublic()).build()
+                .parseSignedClaims(assertion).getPayload();
         assertThat(claims.getIssuer()).isEqualTo("sync@example.test");
-        assertThat(claims.getAudience()).isEqualTo(GoogleServiceAccountTokens.TOKEN_URI);
+        assertThat(claims.getAudience()).containsExactly(GoogleServiceAccountTokens.TOKEN_URI);
+        // 배열이 아니라 문자열 하나로 실려야 한다.
+        String payload = new String(Base64.getUrlDecoder().decode(assertion.split("\\.")[1]), StandardCharsets.UTF_8);
+        assertThat(payload).contains("\"aud\":\"" + GoogleServiceAccountTokens.TOKEN_URI + "\"");
         assertThat(claims.get("scope")).isEqualTo(GoogleServiceAccountTokens.SCOPE);
     }
 
