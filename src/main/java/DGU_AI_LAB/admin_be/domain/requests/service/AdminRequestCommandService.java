@@ -42,8 +42,23 @@ import java.util.List;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@Transactional
+// 모든 공개 메서드가 config-server 호출이나 알림 전송을 끼고 있어 바깥 트랜잭션을 열지 않는다. 상태를 바꾸는
+// 구간만 TransactionTemplate으로 짧게 묶는다.
+@Transactional(propagation = Propagation.NOT_SUPPORTED)
 public class AdminRequestCommandService {
+
+    /** 승인 첫 트랜잭션이 정한 것. 트랜잭션이 끝난 뒤 등록 요청과 응답에 쓴다. */
+    private record ApprovalPreparation(Long userId, String username, String serverName,
+                                       UserCreationRequestDTO creation, SaveRequestResponseDTO response) {
+    }
+
+    /** 생성 결과 반영 트랜잭션의 결과. saved가 null이고 groupProblem도 null이면 상태가 바뀌어 반영하지 않은 것이다. */
+    private record ApprovalOutcome(Request saved, String groupProblem) {
+        static final ApprovalOutcome SKIPPED = new ApprovalOutcome(null, null);
+    }
+
+    private record Rejection(Request request, SaveRequestResponseDTO response) {
+    }
 
     private final AlarmService alarmService;
 
@@ -108,16 +123,10 @@ public class AdminRequestCommandService {
      * uid를 요청)의 경우 config-server가 "번호가 같으니 이어받기"로 보고 둘 다 성공시켜, 계정 하나에
      * 컨테이너 두 개가 붙는 상태가 될 수 있다.
      */
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SaveRequestResponseDTO approveRequest(ApproveRequestDTO dto) {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
 
-        final Long[] userIdRef = {null};
-        final String[] usernameRef = {null};
-        final String[] serverNameRef = {null};
-        final UserCreationRequestDTO[] creationDtoRef = {null};
-        final SaveRequestResponseDTO[] responseRef = {null};
-        tx.execute(status -> {
+        ApprovalPreparation prepared = tx.execute(status -> {
             Request req = requestRepository.findByIdForUpdate(dto.requestId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
             if (req.getStatus() != Status.PENDING) {
@@ -152,7 +161,7 @@ public class AdminRequestCommandService {
                     .stream()
                     .map(g -> new UserCreationRequestDTO.SupplementaryGroup(g.getGroupName(), g.getUbuntuGid()))
                     .toList();
-            creationDtoRef[0] = new UserCreationRequestDTO(
+            UserCreationRequestDTO creation = new UserCreationRequestDTO(
                     dto.requestId(),
                     req.getUbuntuUsername(),
                     owner.getUbuntuPasswordHash(),
@@ -162,18 +171,15 @@ public class AdminRequestCommandService {
                     supplementaryGroups,
                     previousUbuntuUid(req.getUser())
             );
-            userIdRef[0] = req.getUser().getUserId();
-            usernameRef[0] = req.getUbuntuUsername();
-            serverNameRef[0] = req.getResourceGroup().getServerName();
             // 응답은 트랜잭션 안에서 만든다. 밖에서 만들면 DTO가 새로 읽는 lazy 연관(예: user.userGroups)마다
             // 초기화 목록을 따로 맞춰야 하고, 빠뜨리면 승인은 진행됐는데 관리자는 500을 받는다.
-            responseRef[0] = SaveRequestResponseDTO.fromEntity(req);
-            return null;
+            return new ApprovalPreparation(req.getUser().getUserId(), req.getUbuntuUsername(),
+                    req.getResourceGroup().getServerName(), creation, SaveRequestResponseDTO.fromEntity(req));
         });
         Long requestId = dto.requestId();
-        Long userId = userIdRef[0];
-        String username = usernameRef[0];
-        String serverName = serverNameRef[0];
+        Long userId = prepared.userId();
+        String username = prepared.username();
+        String serverName = prepared.serverName();
 
         // 이미 리눅스 계정이 있는 사용자면 계정 정보를 빼고 등록한다 — 그래야 제어기가 계정 단계를
         // 건너뛰고 컨테이너만 만들어, 기존 홈 디렉터리를 그대로 물려받는다.
@@ -183,7 +189,7 @@ public class AdminRequestCommandService {
         // 등록을 보낼 수 있다. 처음 계정을 만드는 사용자는 config-server가 뒤쪽을 거절해 안전하지만,
         // 돌아온 사용자(expected_uid로 예전 uid를 요청)는 번호가 같아 "이어받기"로 보고 둘 다 성공시켜
         // 계정 하나에 컨테이너 두 개가 붙을 수 있다.
-        final Long[] jobIdRef = {null};
+        Long jobId;
         synchronized (approvalLockFor(userId)) {
             // 내 차례가 왔을 때, 같은 사용자의 다른 신청이 이미 등록 중(PROCESSING)이면 나는 등록을
             // 보내지 않고 물러난다 — 앞선 신청이 끝난 뒤 다시 승인하면 그때는 계정이 생겨 있어 정상적으로
@@ -207,14 +213,13 @@ public class AdminRequestCommandService {
             // 재사용 계정의 경우, config-server의 provision 제어기가 Pod 생성 후 그룹을 추가하므로
             // 여기서는 그룹 정보를 구성만 하고 로컬 호출은 하지 않는다.
             List<UserCreationRequestDTO.SupplementaryGroup> requestGroupsToAdd =
-                    creationDtoRef[0].supplementaryGroups();
+                    prepared.creation().supplementaryGroups();
 
             ProvisionRegisterRequestDTO body = reuseAccount
                     ? ProvisionRegisterRequestDTO.podOnly(requestId, username, requestGroupsToAdd)
-                    : ProvisionRegisterRequestDTO.withAccount(creationDtoRef[0]);
-            jobIdRef[0] = registerProvisionJob(body, requestId, username, serverName);
+                    : ProvisionRegisterRequestDTO.withAccount(prepared.creation());
+            jobId = registerProvisionJob(body, requestId, username, serverName);
         }
-        Long jobId = jobIdRef[0];
         // 결과 폴러가 이 번호의 결과만 반영하게 남긴다. 그 사이 상태가 바뀌었으면(거절 등) 건드리지 않는다.
         new TransactionTemplate(transactionManager).execute(status -> {
             requestRepository.findByIdForUpdate(requestId)
@@ -223,7 +228,7 @@ public class AdminRequestCommandService {
             return null;
         });
 
-        return responseRef[0];
+        return prepared.response();
     }
 
     private Long registerProvisionJob(ProvisionRegisterRequestDTO body, Long requestId, String username, String serverName) {
@@ -291,7 +296,6 @@ public class AdminRequestCommandService {
     /**
      * 등록해 둔 생성 작업이 성공했을 때 신청에 반영하고 안내 메일을 보낸다. 작업 결과 폴러가 호출한다.
      */
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void completeApprovalJob(Long requestId, JobResultResponseDTO.Result made) {
         if (made == null || made.podName() == null) {
             // 작업은 성공했는데 만든 자원을 받지 못했다(결과 보관 기간이 지난 경우 등). 그대로 확정하면
@@ -306,16 +310,14 @@ public class AdminRequestCommandService {
             return;
         }
 
-        final Request[] savedRequestRef = {null};
-        final String[] groupProblemRef = {null};
-        new TransactionTemplate(transactionManager).execute(status -> {
+        ApprovalOutcome outcome = new TransactionTemplate(transactionManager).execute(status -> {
             Request req = requestRepository.findByIdForUpdate(requestId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
             if (req.getStatus() != Status.PROCESSING) {
                 // 작업이 도는 동안 다른 관리자가 거절했을 수 있다. 덮어쓰지 않는다.
                 log.warn("생성 작업 성공을 반영하려 했으나 상태가 변경됨 - requestId={}, 현재 상태={}",
                         requestId, req.getStatus());
-                return null;
+                return ApprovalOutcome.SKIPPED;
             }
             User owner = userRepository.findByIdForUpdate(req.getUser().getUserId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
@@ -323,9 +325,8 @@ public class AdminRequestCommandService {
             // 계정에 넣은 것으로 기록하면 이후 컨테이너 재생성·이동이 그 그룹을 빼고 만들어진다.
             String groupProblem = pendingGroupService.assignFromResult(req, made.groups());
             if (groupProblem != null) {
-                groupProblemRef[0] = groupProblem;
                 status.setRollbackOnly();
-                return null;
+                return new ApprovalOutcome(null, groupProblem);
             }
             if (!owner.hasUbuntuAccount() && made.uid() != null && made.gid() != null) {
                 // 작업이 계정을 새로 만들었거나 원장에 남은 계정을 이어받은 경우다. 이미 기록이 있으면
@@ -355,21 +356,20 @@ public class AdminRequestCommandService {
             req.getContainerImage().getImageName();
             req.getResourceGroup().getServerName();
             req.getRequestGroups().size();
-            savedRequestRef[0] = req;
-            return null;
+            return new ApprovalOutcome(req, null);
         });
 
-        if (groupProblemRef[0] != null) {
+        if (outcome.groupProblem() != null) {
             // 신청은 PROCESSING 에 남고 폴러가 매 바퀴 다시 부르므로 알림은 작업마다 한 번만 보낸다.
             if (alertDeduplicator.firstOccurrence("provision-pending-group:" + requestId + ":" + jobIdOf(requestId))) {
                 log.error("생성 작업 결과로 새 그룹의 gid 를 채우지 못해 신청에 반영하지 못함: requestId={}, {}",
-                        requestId, groupProblemRef[0]);
+                        requestId, outcome.groupProblem());
                 alarmService.alertNeedsAction("notification.admin.approval.group-gid-missing",
-                serverNameOf(requestId), requestId, groupProblemRef[0]);
+                serverNameOf(requestId), requestId, outcome.groupProblem());
             }
             return;
         }
-        Request savedRequest = savedRequestRef[0];
+        Request savedRequest = outcome.saved();
         if (savedRequest == null) {
             return;
         }
@@ -388,7 +388,6 @@ public class AdminRequestCommandService {
      * 제어기가 이미 수행했으므로(노드를 모르거나 그 계정의 다른 컨테이너가 남아 있으면 보류), 여기서는
      * 신청 상태만 되돌리고 알린다.
      */
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void failApprovalJob(Long requestId, JobResultResponseDTO result) {
         String serverName = serverNameOf(requestId);
         alarmService.alertNeedsAction("notification.admin.approval.job-failed",
@@ -401,7 +400,6 @@ public class AdminRequestCommandService {
      * 되돌리면 실제로는 만들어진 자원이 남은 채 신청만 PENDING이 되어, 재승인 때 중복 생성으로
      * 이어질 수 있다. 신청은 PROCESSING에 둔 채 관리자 점검 대상으로 남긴다.
      */
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void reportUnknownApprovalJob(Long requestId, JobResultResponseDTO result) {
         alarmService.alertNeedsAction("notification.admin.approval.job-unknown",
                 serverNameOf(requestId), requestId, result.errorCode());
@@ -412,7 +410,6 @@ public class AdminRequestCommandService {
      * 있으므로 되돌리지 않는다 — 되돌리면 재승인 때 컨테이너가 하나 더 만들어진다. 신청은 PROCESSING에 둔 채
      * 관리자가 원인을 확인하고 정리하도록 넘긴다.
      */
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void reportDegradedApprovalJob(Long requestId, JobResultResponseDTO result) {
         alarmService.alertNeedsAction("notification.admin.approval.job-degraded",
                 serverNameOf(requestId), requestId, result.jobId());
@@ -425,7 +422,6 @@ public class AdminRequestCommandService {
      * 되풀이하므로, 신청 상태는 건드리지 않고(원인을 모르는 채 되돌리면 이미 만들어진 자원과 어긋난다)
      * 작업마다 한 번만 관리자에게 알린다. {@code JobResultPoller#onApplyFailed}가 호출한다.
      */
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void reportApplyFailure(Long requestId, String detail) {
         alarmService.alertNeedsAction("notification.admin.approval.apply-failed",
                 serverNameOf(requestId), requestId, detail);
@@ -468,7 +464,6 @@ public class AdminRequestCommandService {
      * 성공을 아직 반영하지 않았으면 거절하는 순간 그 작업이 만든 컨테이너를 어떤 신청도 가리키지 않게 된다.
      * 성공했지만 결과가 사라져 반영하지 못한 신청은 갇혀 있으므로 거절을 허용한다.
      */
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SaveRequestResponseDTO rejectRequest(RejectRequestDTO dto) {
         Long requestId = dto.requestId();
         Status current = new TransactionTemplate(transactionManager).execute(status ->
@@ -479,9 +474,7 @@ public class AdminRequestCommandService {
             ensureProvisionJobFinished(requestId);
         }
 
-        final Request[] rejectedRef = {null};
-        final SaveRequestResponseDTO[] responseRef = {null};
-        new TransactionTemplate(transactionManager).execute(status -> {
+        Rejection rejection = new TransactionTemplate(transactionManager).execute(status -> {
             // 행 잠금 + 상태 재확인: 위 조회 뒤에 폴러가 승인을 확정했다면 FULFILLED가 되어 여기서 막힌다.
             Request request = requestRepository.findByIdForUpdate(requestId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
@@ -492,16 +485,14 @@ public class AdminRequestCommandService {
             // 이 신청이 승인 대기 그룹을 고른 마지막 신청이었다면 그 그룹도 지운다 — 인프라에는 아직 없다.
             pendingGroupService.deleteAbandoned(request);
             // 응답은 트랜잭션 안에서 만든다(승인과 같은 이유). 메일이 쓰는 사용자·서버 정보도 이때 읽힌다.
-            responseRef[0] = SaveRequestResponseDTO.fromEntity(request);
-            rejectedRef[0] = request;
-            return null;
+            return new Rejection(request, SaveRequestResponseDTO.fromEntity(request));
         });
-        Request rejected = rejectedRef[0];
+        Request rejected = rejection.request();
         AfterCommit.run("거절 안내 메일·신청서 채널 알림, 요청 ID " + requestId, () -> {
             alarmService.sendRequestRejectedNotification(rejected, dto.adminComment());
             alarmService.sendRequestRejectedEmail(rejected, dto.adminComment());
         });
-        return responseRef[0];
+        return rejection.response();
     }
 
     /** 생성 작업이 아직 돌거나 성공 결과를 반영하기 전이면 거절을 막는다. 작업 상태를 모르면 막는다. */
@@ -532,7 +523,6 @@ public class AdminRequestCommandService {
     // 상태 확인 없이 덮어쓰면 ①에서 다른 관리자의 거절 결정을 지우고, ②를 그대로 두면 신청이 재승인도
     // 거절도 못 하는 PROCESSING에 갇힌다. 그래서 락 + 상태 재확인을 거친다. 작업 등록 실패, 작업 실패
     // (작업 결과 폴러), 작업 없이 오래 멈춘 신청(RequestSchedulerService 재조정)에서 쓴다.
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void revertToPendingIfStillProcessing(Long requestId, String serverName) {
         try {
             new TransactionTemplate(transactionManager).execute(status -> {
