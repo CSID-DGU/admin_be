@@ -88,6 +88,16 @@ class EmailServiceTest {
         }
 
         @Test
+        @DisplayName("대소문자를 섞어 요청해도 코드는 소문자 주소 키에 저장된다")
+        void sendEmailVerificationCode_mixedCase_usesLowercaseKey() {
+            when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+
+            emailService.sendEmailVerificationCode(" Test@Example.com ");
+
+            verify(valueOperations).set(eq("email:verify:test@example.com"), anyString(), anyLong(), any());
+        }
+
+        @Test
         @DisplayName("메일 본문 양식에는 Redis에 저장한 것과 같은 인증번호를 넘긴다")
         void sendEmailVerificationCode_passesStoredCodeToBodyTemplate() throws Exception {
             when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
@@ -171,6 +181,17 @@ class EmailServiceTest {
                     .doesNotThrowAnyException();
 
             verify(redisTemplate).delete("email:verify:test@example.com");
+            verify(valueOperations).set(eq("VERIFIED:test@example.com"), eq("true"), anyLong(), any());
+        }
+
+        @Test
+        @DisplayName("코드를 받을 때와 대소문자가 달라도 같은 코드로 인증되고 VERIFIED: 키는 소문자 주소다")
+        void confirmAuthCode_mixedCase_usesLowercaseKeys() {
+            when(valueOperations.get("email:verify:test@example.com")).thenReturn("123456");
+            when(redisTemplate.delete("email:verify:test@example.com")).thenReturn(true);
+
+            emailService.confirmAuthCode("TEST@example.com", "123456");
+
             verify(valueOperations).set(eq("VERIFIED:test@example.com"), eq("true"), anyLong(), any());
         }
 

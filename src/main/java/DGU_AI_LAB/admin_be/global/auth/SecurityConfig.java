@@ -49,6 +49,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(SecurityWhitelist.UNPROTECTED_PATHS.toArray(new String[0])).permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        // health·info 말고는 운영 정보(지표·환경 값)라, 설정에서 노출 대상이 늘어도 관리자만 본다.
+                        .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilter(corsConfig.corsFilter())

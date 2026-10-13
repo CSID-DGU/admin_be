@@ -22,6 +22,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.ChangeType;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.server.ServerProfileRegistry;
+import DGU_AI_LAB.admin_be.global.util.EmailAddresses;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -196,14 +197,7 @@ public class AlarmService {
     }
 
     private static String maskEmail(String email) {
-        if (email == null) {
-            return "unknown";
-        }
-        int at = email.indexOf('@');
-        if (at <= 1) {
-            return "***";
-        }
-        return email.charAt(0) + "***" + email.substring(at);
+        return EmailAddresses.mask(email);
     }
 
     // --- 결정 요청(신청서 채널) ---

@@ -94,6 +94,21 @@ class UserLoginServiceTest {
     class Register {
 
         @Test
+        @DisplayName("인증할 때와 대소문자가 다른 주소로 가입해도 인증 표시를 찾고 지운다")
+        void register_mixedCaseEmail_usesLowercaseVerifiedKey() {
+            when(redisTemplate.hasKey("VERIFIED:test@dgu.ac.kr")).thenReturn(true);
+            when(userRepository.findByEmail("Test@dgu.ac.kr")).thenReturn(Optional.empty());
+            when(passwordEncoder.encode(anyString())).thenReturn("encodedPw");
+
+            userLoginService.register(new UserRegisterRequestDTO(
+                    "Test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null
+            ));
+
+            verify(userRepository).saveAndFlush(any(User.class));
+            verify(redisTemplate).delete("VERIFIED:test@dgu.ac.kr");
+        }
+
+        @Test
         @DisplayName("이메일 인증이 완료되고 중복이 없으면 회원가입에 성공한다")
         void register_success() {
             when(redisTemplate.hasKey("VERIFIED:test@dgu.ac.kr")).thenReturn(true);

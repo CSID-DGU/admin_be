@@ -61,7 +61,7 @@ public class EmailService {
         }
         emailSendThrottle.acquire(email);
 
-        String authCode = issueCode(CodePurpose.SIGNUP, email);
+        String authCode = issueCode(CodePurpose.SIGNUP, EmailAddresses.normalize(email));
         log.info("이메일 인증번호 저장 완료");
 
         sendEmail(email, messageUtils.get("email.verify.subject"),
@@ -69,9 +69,15 @@ public class EmailService {
     }
 
     public void confirmAuthCode(String email, String code) {
-        consumeCode(CodePurpose.SIGNUP, email, code);
-        redisTemplate.opsForValue().set("VERIFIED:" + email, "true", 10, TimeUnit.MINUTES); // 인증 상태 저장
-        log.info("이메일 [{}] 인증 성공. VERIFIED:{} 키 저장 완료", email, email);
+        String key = EmailAddresses.normalize(email);
+        consumeCode(CodePurpose.SIGNUP, key, code);
+        redisTemplate.opsForValue().set(verifiedKey(email), "true", 10, TimeUnit.MINUTES); // 인증 상태 저장
+        log.info("이메일 [{}] 인증 성공", EmailAddresses.mask(key));
+    }
+
+    /** 가입 전 이메일 인증을 마쳤다는 표시의 Redis 키. 인증할 때와 가입할 때 대소문자가 달라도 같은 키다. */
+    public static String verifiedKey(String email) {
+        return "VERIFIED:" + EmailAddresses.normalize(email);
     }
 
     /**
@@ -144,7 +150,7 @@ public class EmailService {
 
             mailSender.send(message);
         } catch (MessagingException | RuntimeException e) {
-            log.error("이메일 전송 실패: 수신자={}", to, e);
+            log.error("이메일 전송 실패: 수신자={}", EmailAddresses.mask(to), e);
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
     }

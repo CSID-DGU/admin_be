@@ -5,6 +5,7 @@ import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.util.EmailAddresses;
 import DGU_AI_LAB.admin_be.global.util.EmailSendThrottle;
 import DGU_AI_LAB.admin_be.global.util.EmailService;
 import lombok.RequiredArgsConstructor;
@@ -12,7 +13,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -39,7 +39,7 @@ public class SelfPasswordResetService {
      * 발송 횟수는 가입 여부와 무관하게 센다. 메일은 응답과 따로 보내 응답 시간과 발송 실패로도 드러나지 않게 한다.
      */
     public void requestCode(String email) {
-        String address = normalize(email);
+        String address = EmailAddresses.normalize(email);
         emailSendThrottle.acquire(address);
 
         Optional<User> user = findActiveUser(address);
@@ -52,7 +52,7 @@ public class SelfPasswordResetService {
     }
 
     public void submit(String email, String code, String newPassword) {
-        String address = normalize(email);
+        String address = EmailAddresses.normalize(email);
         emailService.consumePasswordResetCode(address, code);
 
         // 코드를 받은 뒤 탈퇴·비활성화된 계정. 코드가 틀린 경우와 구분해 알리지 않는다.
@@ -69,10 +69,5 @@ public class SelfPasswordResetService {
 
     private Optional<User> findActiveUser(String address) {
         return userRepository.findByEmail(address).filter(User::getIsActive);
-    }
-
-    // DB가 이메일 대소문자를 구분하지 않으므로(로그인 잠금 키와 같은 기준) 코드·발송 제한도 한 표기로 묶는다.
-    private static String normalize(String email) {
-        return email.trim().toLowerCase(Locale.ROOT);
     }
 }

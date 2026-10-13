@@ -12,6 +12,8 @@ import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.error.exception.UnauthorizedException;
 import DGU_AI_LAB.admin_be.global.auth.jwt.JwtProvider;
 import DGU_AI_LAB.admin_be.global.validation.ReservedLinuxNames;
+import DGU_AI_LAB.admin_be.global.util.EmailAddresses;
+import DGU_AI_LAB.admin_be.global.util.EmailService;
 import DGU_AI_LAB.admin_be.global.util.LinuxPasswordHasher;
 import DGU_AI_LAB.admin_be.global.util.RedisWindowCounter;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -58,7 +59,7 @@ public class UserLoginService {
     @Transactional
     public void register(UserRegisterRequestDTO request) {
         emailDomainPolicy.requireAllowed(request.email());
-        String redisKey = "VERIFIED:" + request.email();
+        String redisKey = EmailService.verifiedKey(request.email());
 
         if (!Boolean.TRUE.equals(redisTemplate.hasKey(redisKey))) {
             throw new UnauthorizedException(ErrorCode.EMAIL_NOT_VERIFIED);
@@ -187,7 +188,7 @@ public class UserLoginService {
     }
 
     private static String loginAttemptKey(String email) {
-        return "LOGIN_FAIL:" + email.trim().toLowerCase(Locale.ROOT);
+        return "LOGIN_FAIL:" + EmailAddresses.normalize(email);
     }
 
     /** 이메일당 15분 내 5회 실패 시 잠금 — 브루트포스 방지 */
