@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -29,6 +30,9 @@ public class PodQueryService {
 
     private static final int LOG_TAIL_LINES = 500;
     private static final int EVENT_LIMIT = 50;
+    // config-server가 사용자 컨테이너에만 붙이는 라벨. 같은 네임스페이스에 admin_be·DB·config-server도 함께 뜬다.
+    private static final String USER_POD_LABEL = "app";
+    private static final String USER_POD_LABEL_VALUE = "ailab-guest";
 
     private final KubernetesClient client;
     // 사용자 Pod가 만들어지는 네임스페이스. 설치 환경·스택마다 다르므로 기본값 없이 설정으로만 받는다 —
@@ -104,7 +108,9 @@ public class PodQueryService {
             log.error("[PodQuery] 로그 조회 대상 pod 확인 실패: podName={}", podName, e);
             throw e;
         }
-        if (pod == null) {
+        // 사용자 컨테이너가 아니면 없는 것으로 답한다. 이름만 알면 DB·admin_be·config-server의 로그(쿼리, 계정 이름,
+        // 내부 주소가 섞여 있다)까지 화면으로 읽을 수 있었다.
+        if (pod == null || !isUserPod(pod)) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
 
@@ -122,6 +128,11 @@ public class PodQueryService {
                     podName, containerName, e);
             return "";
         }
+    }
+
+    private static boolean isUserPod(Pod pod) {
+        Map<String, String> labels = pod.getMetadata() == null ? null : pod.getMetadata().getLabels();
+        return labels != null && USER_POD_LABEL_VALUE.equals(labels.get(USER_POD_LABEL));
     }
 
     public List<PodEventDTO> getPodEvents(String podName) {

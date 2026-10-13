@@ -12,6 +12,8 @@ FROM eclipse-temurin:17-jre-jammy
 
 WORKDIR /app
 
+# root로 돌릴 이유가 없다 — 8080을 열고 /app만 읽는다. 번호로 적어 두면 쿠버네티스가 runAsNonRoot를 확인할 수 있다.
+RUN groupadd --system --gid 10001 app && useradd --system --uid 10001 --gid app --no-create-home app
 COPY --from=extract /extract/extracted/dependencies/ ./
 COPY --from=extract /extract/extracted/spring-boot-loader/ ./
 COPY --from=extract /extract/extracted/snapshot-dependencies/ ./
@@ -20,5 +22,7 @@ COPY --from=extract /extract/extracted/application/ ./
 EXPOSE 8080
 
 ENV TZ=Asia/Seoul
+
+USER 10001:10001
 
 ENTRYPOINT ["java", "-jar", "app.jar"]

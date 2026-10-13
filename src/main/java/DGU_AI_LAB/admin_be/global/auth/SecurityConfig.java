@@ -45,6 +45,8 @@ public class SecurityConfig {
                         .authenticationEntryPoint(jwtAuthenticationEntryPoint)
                         .accessDeniedHandler(jwtAccessDeniedHandler))
                 .authorizeHttpRequests(auth -> auth
+                        // 먼저 맞은 규칙이 이기므로, 화이트리스트 범위 안의 로그인 필요 경로를 그 앞에 둔다.
+                        .requestMatchers(SecurityWhitelist.USERNAME_CHECK_PATH).authenticated()
                         .requestMatchers(SecurityWhitelist.UNPROTECTED_PATHS.toArray(new String[0])).permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         // health·info 말고는 운영 정보(지표·환경 값)라, 설정에서 노출 대상이 늘어도 관리자만 본다.
