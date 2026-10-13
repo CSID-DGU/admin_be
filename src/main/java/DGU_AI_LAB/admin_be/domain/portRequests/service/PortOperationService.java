@@ -35,8 +35,10 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -184,7 +186,10 @@ public class PortOperationService {
         }
     }
 
-    /** 신청서의 추가 포트를 바뀐 목록에 맞춘다. 그대로인 포트와 바꿀 수 없는 포트의 행은 건드리지 않는다. */
+    /**
+     * 신청서의 추가 포트를 바뀐 목록에 맞춘다. 남는 포트의 행은 지우고 다시 만들지 않고 용도만 맞추며,
+     * 바꿀 수 없는 포트의 행은 건드리지 않는다.
+     */
     private void replaceRequestedPorts(Request request, List<PortRequestDTO> wanted) {
         Set<Integer> wantedNumbers = PortChangeValue.numbers(wanted);
         List<PortRequests> current = portRequestRepository.findByRequestRequestId(request.getRequestId());
@@ -192,16 +197,21 @@ public class PortOperationService {
                 .filter(port -> !PortChangeValue.isProtected(port.getInternalPort())
                         && !wantedNumbers.contains(port.getInternalPort()))
                 .toList());
-        Set<Integer> existing = current.stream().map(PortRequests::getInternalPort).collect(Collectors.toSet());
+        Map<Integer, PortRequests> existing = current.stream()
+                .collect(Collectors.toMap(PortRequests::getInternalPort, Function.identity(), (first, second) -> first));
         for (PortRequestDTO port : wanted) {
-            if (!existing.contains(port.internalPort())) {
-                portRequestRepository.save(PortRequests.builder()
-                        .request(request)
-                        .resourceGroup(request.getResourceGroup())
-                        .internalPort(port.internalPort())
-                        .usagePurpose(port.usagePurpose())
-                        .build());
+            PortRequests kept = existing.get(port.internalPort());
+            if (kept != null) {
+                // 외부 포트 기록은 결과로 통째로 바뀌어 새 용도를 갖는다. 신청서 행만 옛 용도로 남으면 둘이 어긋난다.
+                kept.changeUsagePurpose(port.usagePurpose());
+                continue;
             }
+            portRequestRepository.save(PortRequests.builder()
+                    .request(request)
+                    .resourceGroup(request.getResourceGroup())
+                    .internalPort(port.internalPort())
+                    .usagePurpose(port.usagePurpose())
+                    .build());
         }
     }
 

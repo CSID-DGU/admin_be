@@ -9,6 +9,14 @@ import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.global.alert.AlertDeduplicator;
 import lombok.extern.slf4j.Slf4j;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
 /**
  * 작업을 기다리는 상태의 신청마다 작업 결과를 조회해 반영하는 폴러의 공통 뼈대. 생성(PROCESSING)·마이그레이션
  * (MIGRATING)·컨테이너 회수(EXPIRING)가 같은 규칙을 따르고, 결과를 신청에 어떻게 반영할지만 다르다.
@@ -17,7 +25,9 @@ import lombok.extern.slf4j.Slf4j;
  *   <li>작업 번호가 아직 없는 직후의 신청은 건너뛴다 — 이전 작업의 결과가 보인다</li>
  *   <li>이번에 등록한 작업이 아닌 결과는 반영하지 않는다</li>
  *   <li>SUCCESS → {@link #onSuccess}, 일반 FAIL → {@link #onFailure}</li>
- *   <li>DEGRADED·UNKNOWN → 자원이 남았을 수 있어 신청을 그대로 두고 {@link #onUnresolved}를 작업마다 한 번만 부른다</li>
+ *   <li>DEGRADED·UNKNOWN → 자원이 남았을 수 있어 신청을 그대로 두고 {@link #onUnresolved}를 작업마다 한 번만 부른다.
+ *       사람이 풀 때까지 신청이 그 상태로 남으므로, 그동안은 매 바퀴가 아니라 {@link #UNRESOLVED_RECHECK_INTERVAL}마다
+ *       다시 조회한다(결과가 바뀌면 그때 반영된다)</li>
  *   <li>START·RETRY·none → 다음 바퀴에 다시 본다(오래 방치되면 RequestSchedulerService 재조정이 판단한다)</li>
  *   <li>한 신청의 조회·반영 실패가 나머지 신청 처리를 막지 않는다. 결과 조회 자체의 실패(네트워크 순단 등
  *       흔하고 대개 다음 바퀴에 스스로 회복됨)는 로그만 남기고 조용히 넘어간다 — 조회 실패마다 알리면 소음이 된다.
@@ -35,6 +45,12 @@ public abstract class JobResultPoller {
     // 미해결 결과는 신청 상태를 그대로 두므로 다음 바퀴에도 계속 잡힌다. 같은 작업의 알림이 반복되지 않게 한다.
     private final AlertDeduplicator alertDeduplicator;
 
+    /** 미해결로 확인된 작업을 다시 조회하는 간격. 폴링 주기(초 단위)로 계속 물으면 풀릴 때까지 실행기를 쉬지 않고 부른다. */
+    static final Duration UNRESOLVED_RECHECK_INTERVAL = Duration.ofMinutes(1);
+    // 미해결 작업(신청 번호:작업 번호)별 다음 조회 시각. 신청이 감시 상태를 벗어나거나 새 작업이 등록되면 지운다.
+    private final Map<String, Instant> recheckAfter = new ConcurrentHashMap<>();
+    Clock clock = Clock.systemUTC();
+
     protected JobResultPoller(RequestRepository requestRepository, JobClient jobClient, AlertDeduplicator alertDeduplicator,
                               Status watchedStatus, String kind) {
         this.requestRepository = requestRepository;
@@ -46,9 +62,16 @@ public abstract class JobResultPoller {
 
     /** 하위 클래스의 {@code @Scheduled} 메서드가 부른다. 주기는 작업 종류마다 설정으로 따로 둔다. */
     protected final void pollOnce() {
+        Set<String> watchedJobs = new HashSet<>();
         for (Request request : requestRepository.findAllByStatus(watchedStatus)) {
             Long requestId = request.getRequestId();
             if (JobResults.awaitingRegistration(request.getJobId(), request.getUpdatedAt())) {
+                continue;
+            }
+            String jobKey = requestId + ":" + request.getJobId();
+            watchedJobs.add(jobKey);
+            Instant recheckAt = recheckAfter.get(jobKey);
+            if (recheckAt != null && clock.instant().isBefore(recheckAt)) {
                 continue;
             }
             JobResultResponseDTO result;
@@ -64,7 +87,11 @@ public abstract class JobResultPoller {
                 continue;
             }
             try {
-                dispatch(request, result);
+                if (dispatch(request, result)) {
+                    recheckAfter.put(jobKey, clock.instant().plus(UNRESOLVED_RECHECK_INTERVAL));
+                } else {
+                    recheckAfter.remove(jobKey);
+                }
             } catch (Exception e) {
                 // 조회는 됐지만 반영(onSuccess/onFailure/onUnresolved) 중 예외가 났다 — 예: 계정에 이미 다른
                 // uid가 배정됨. 원인이 해소되지 않으면 다음 바퀴에도 같은 예외가 반복될 수 있어 작업마다 한 번은 알린다.
@@ -74,23 +101,29 @@ public abstract class JobResultPoller {
                 }
             }
         }
+        recheckAfter.keySet().retainAll(watchedJobs);
     }
 
-    private void dispatch(Request request, JobResultResponseDTO result) {
+    /** @return 결과가 미해결(DEGRADED·UNKNOWN)이라 신청을 그대로 두었는가 */
+    private boolean dispatch(Request request, JobResultResponseDTO result) {
         switch (result.phase()) {
             case JobResults.PHASE_SUCCESS -> onSuccess(request, result);
             case JobResults.PHASE_FAIL -> {
                 if (JobResults.isDegraded(result)) {
                     reportOnce(request, result);
-                    return;
+                    return true;
                 }
                 onFailure(request, result);
             }
-            case JobResults.PHASE_UNKNOWN -> reportOnce(request, result);
+            case JobResults.PHASE_UNKNOWN -> {
+                reportOnce(request, result);
+                return true;
+            }
             default -> {
                 // START: 아직 실행 중. none: 등록 이력 없음.
             }
         }
+        return false;
     }
 
     /** 작업 번호까지 키에 넣는다 — 같은 신청을 다시 처리하다 또 미해결이 되면 새 작업이라 다시 알린다. */

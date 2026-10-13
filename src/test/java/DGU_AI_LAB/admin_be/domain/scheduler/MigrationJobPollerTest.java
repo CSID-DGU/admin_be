@@ -74,6 +74,42 @@ class MigrationJobPollerTest {
     }
 
     @Test
+    @DisplayName("미해결로 확인된 작업은 다시 볼 시각까지 실행기에 묻지 않고, 그 뒤에는 다시 물어 바뀐 결과를 반영한다")
+    void unresolvedIsRecheckedOnlyAfterInterval() {
+        java.time.Instant start = java.time.Instant.parse("2026-10-13T00:00:00Z");
+        poller.clock = java.time.Clock.fixed(start, java.time.ZoneOffset.UTC);
+        given("UNKNOWN", null, null);
+        poller.pollMigrationJobs();
+        poller.pollMigrationJobs();
+        verify(jobClient, times(1)).getResult("migrate", 1L);
+
+        JobResultResponseDTO.Result made = new JobResultResponseDTO.Result(null, null, "p", "farm7", List.of());
+        given("SUCCESS", null, made);
+        poller.clock = java.time.Clock.fixed(start.plus(JobResultPoller.UNRESOLVED_RECHECK_INTERVAL), java.time.ZoneOffset.UTC);
+        poller.pollMigrationJobs();
+        verify(jobClient, times(2)).getResult("migrate", 1L);
+        verify(podMigrationService).completeMigrationJob(1L, made);
+    }
+
+    @Test
+    @DisplayName("미해결이던 신청에 새 작업이 등록되면 기다리지 않고 바로 묻는다")
+    void newJobIsPolledImmediately() {
+        given("FAIL", "DEGRADED", null);
+        poller.pollMigrationJobs();
+
+        Request retried = mock(Request.class);
+        when(retried.getRequestId()).thenReturn(1L);
+        when(retried.getJobId()).thenReturn(6L);
+        when(requestRepository.findAllByStatus(Status.MIGRATING)).thenReturn(List.of(retried));
+        when(jobClient.getResult("migrate", 1L))
+                .thenReturn(new JobResultResponseDTO("1", "migrate", 6L, "FAIL", "POD_NOT_FOUND", null, null));
+        poller.pollMigrationJobs();
+
+        verify(jobClient, times(2)).getResult("migrate", 1L);
+        verify(podMigrationService).failMigrationJob(any(), any());
+    }
+
+    @Test
     @DisplayName("실행 중이면 아무것도 하지 않는다")
     void running() {
         given("START", null, null);

@@ -47,4 +47,8 @@ public class PortRequests extends BaseTimeEntity {
     public void activate() {
         this.isActive = true;
     }
+
+    public void changeUsagePurpose(String usagePurpose) {
+        this.usagePurpose = usagePurpose;
+    }
 }
