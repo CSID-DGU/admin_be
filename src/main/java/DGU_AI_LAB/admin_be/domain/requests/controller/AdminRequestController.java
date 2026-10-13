@@ -16,6 +16,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestQueryService;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodMigrationService;
@@ -23,9 +24,11 @@ import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
@@ -45,9 +48,22 @@ public class AdminRequestController implements AdminRequestApi {
      * 모든 상태의 Request 목록을 반환합니다.
      */
     @GetMapping
-    public ResponseEntity<SuccessResponse<?>> getAllRequests() {
-        List<SaveRequestResponseDTO> requests = adminRequestQueryService.getAllRequests();
+    public ResponseEntity<SuccessResponse<?>> getRequests(
+            @RequestParam(required = false) List<Status> status,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime createdFrom) {
+        List<SaveRequestResponseDTO> requests = adminRequestQueryService.getRequests(status, createdFrom);
         return SuccessResponse.ok(requests);
+    }
+
+    @GetMapping("/status-counts")
+    public ResponseEntity<SuccessResponse<?>> getRequestStatusCounts(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime createdFrom) {
+        return SuccessResponse.ok(adminRequestQueryService.getRequestStatusCounts(createdFrom));
+    }
+
+    @GetMapping("/{requestId}")
+    public ResponseEntity<SuccessResponse<?>> getRequest(@PathVariable Long requestId) {
+        return SuccessResponse.ok(adminRequestQueryService.getRequest(requestId));
     }
 
     @GetMapping("/usage")

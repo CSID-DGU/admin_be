@@ -20,7 +20,9 @@ import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -69,33 +71,89 @@ class AdminRequestQueryServiceTest {
     }
 
     @Nested
-    @DisplayName("getAllRequests")
-    class GetAllRequests {
+    @DisplayName("getRequests")
+    class GetRequests {
 
         @Test
-        @DisplayName("모든 요청 목록을 반환한다")
-        void getAllRequests_returnsList() {
-            when(requestRepository.findAllWithAssociations()).thenReturn(List.of());
+        @DisplayName("상태와 시작 시각을 주지 않으면 모든 상태·전체 기간을 읽는다")
+        void withoutFilters_readsEveryStatusFromEarliest() {
+            when(requestRepository.findAllForAdminList(any(), any())).thenReturn(List.of());
 
-            List<SaveRequestResponseDTO> result = adminRequestQueryService.getAllRequests();
+            List<SaveRequestResponseDTO> result = adminRequestQueryService.getRequests(null, null);
 
             assertThat(result).isEmpty();
-            verify(requestRepository).findAllWithAssociations();
+            verify(requestRepository).findAllForAdminList(
+                    EnumSet.allOf(Status.class), LocalDateTime.of(1970, 1, 1, 0, 0));
         }
 
         @Test
-        @DisplayName("요청 목록을 RequestQueryService에 위임하여 반환한다")
-        void getAllRequests_delegatesToRequestQueryService() {
+        @DisplayName("빈 상태 목록도 모든 상태로 본다")
+        void emptyStatuses_readsEveryStatus() {
+            when(requestRepository.findAllForAdminList(any(), any())).thenReturn(List.of());
+
+            adminRequestQueryService.getRequests(List.of(), null);
+
+            verify(requestRepository).findAllForAdminList(eq(EnumSet.allOf(Status.class)), any());
+        }
+
+        @Test
+        @DisplayName("준 상태와 시작 시각으로 좁혀 읽고 응답 변환을 맡긴다")
+        void withFilters_narrowsAndDelegates() {
             Request request = mock(Request.class);
             SaveRequestResponseDTO dto = mock(SaveRequestResponseDTO.class);
-
-            when(requestRepository.findAllWithAssociations()).thenReturn(List.of(request));
+            LocalDateTime from = LocalDateTime.of(2026, 7, 13, 0, 0);
+            when(requestRepository.findAllForAdminList(List.of(Status.PENDING), from)).thenReturn(List.of(request));
             when(requestQueryService.toResponseDTOs(List.of(request))).thenReturn(List.of(dto));
 
-            List<SaveRequestResponseDTO> result = adminRequestQueryService.getAllRequests();
+            List<SaveRequestResponseDTO> result = adminRequestQueryService.getRequests(List.of(Status.PENDING), from);
 
-            assertThat(result).hasSize(1);
-            verify(requestQueryService, times(1)).toResponseDTOs(List.of(request));
+            assertThat(result).containsExactly(dto);
+        }
+    }
+
+    @Nested
+    @DisplayName("getRequest")
+    class GetRequest {
+
+        @Test
+        @DisplayName("신청 하나를 응답으로 돌려준다")
+        void returnsOne() {
+            Request request = mock(Request.class);
+            SaveRequestResponseDTO dto = mock(SaveRequestResponseDTO.class);
+            when(requestRepository.findByIdForAdminView(7L)).thenReturn(Optional.of(request));
+            when(requestQueryService.toResponseDTOs(List.of(request))).thenReturn(List.of(dto));
+
+            assertThat(adminRequestQueryService.getRequest(7L)).isSameAs(dto);
+        }
+
+        @Test
+        @DisplayName("없는 신청이면 리소스 없음으로 실패한다")
+        void failsWhenMissing() {
+            when(requestRepository.findByIdForAdminView(99L)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> adminRequestQueryService.getRequest(99L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.RESOURCE_NOT_FOUND);
+        }
+    }
+
+    @Nested
+    @DisplayName("getRequestStatusCounts")
+    class GetRequestStatusCounts {
+
+        @Test
+        @DisplayName("건수가 없는 상태도 0으로 채워 돌려준다")
+        void fillsMissingStatusesWithZero() {
+            RequestRepository.StatusCount pending = mock(RequestRepository.StatusCount.class);
+            when(pending.getStatus()).thenReturn(Status.PENDING);
+            when(pending.getCount()).thenReturn(3L);
+            when(requestRepository.countByStatusCreatedFrom(any())).thenReturn(List.of(pending));
+
+            Map<Status, Long> counts = adminRequestQueryService.getRequestStatusCounts(null);
+
+            assertThat(counts).hasSize(Status.values().length)
+                    .containsEntry(Status.PENDING, 3L)
+                    .containsEntry(Status.DELETED, 0L);
         }
     }
 

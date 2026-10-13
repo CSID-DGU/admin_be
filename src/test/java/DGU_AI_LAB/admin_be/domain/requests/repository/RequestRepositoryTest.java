@@ -187,21 +187,62 @@ class RequestRepositoryTest {
     }
 
     @Nested
-    @DisplayName("findAllWithAssociations")
-    class FindAllWithAssociations {
+    @DisplayName("findAllForAdminList")
+    class FindAllForAdminList {
+
+        private final LocalDateTime earliest = LocalDateTime.of(1970, 1, 1, 0, 0);
 
         @Test
-        @DisplayName("모든 상태의 신청을 최신순으로 사용자·서버·이미지와 함께 읽는다")
-        void loadsAllStatusesNewestFirstWithAssociations() {
-            List<Request> result = requestRepository.findAllWithAssociations();
+        @DisplayName("고른 상태의 신청을 최신순으로 사용자·서버·이미지와 함께 읽는다")
+        void loadsChosenStatusesNewestFirstWithAssociations() {
+            List<Request> result = requestRepository.findAllForAdminList(java.util.EnumSet.allOf(Status.class), earliest);
 
-            assertThat(result).isNotEmpty();
+            assertThat(result).hasSize((int) requestRepository.count());
             assertThat(result).extracting(Request::getRequestId).isSortedAccordingTo(java.util.Comparator.reverseOrder());
             Request first = result.get(0);
             assertThat(org.hibernate.Hibernate.isInitialized(first.getUser())).isTrue();
             assertThat(org.hibernate.Hibernate.isInitialized(first.getResourceGroup())).isTrue();
             assertThat(org.hibernate.Hibernate.isInitialized(first.getContainerImage())).isTrue();
-            assertThat(org.hibernate.Hibernate.isInitialized(first.getRequestGroups())).isTrue();
+        }
+
+        @Test
+        @DisplayName("다른 상태의 신청은 빠진다")
+        void excludesOtherStatuses() {
+            List<Request> result = requestRepository.findAllForAdminList(List.of(Status.FULFILLED), earliest);
+
+            assertThat(result).extracting(Request::getRequestId).containsExactly(fulfilledRequest.getRequestId());
+        }
+
+        @Test
+        @DisplayName("시작 시각보다 먼저 만들어진 신청은 빠진다")
+        void excludesRequestsCreatedBeforeFrom() {
+            List<Request> result = requestRepository.findAllForAdminList(
+                    java.util.EnumSet.allOf(Status.class), LocalDateTime.now().plusDays(1));
+
+            assertThat(result).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("countByStatusCreatedFrom")
+    class CountByStatusCreatedFrom {
+
+        @Test
+        @DisplayName("상태별 건수를 센다")
+        void countsPerStatus() {
+            List<RequestRepository.StatusCount> rows =
+                    requestRepository.countByStatusCreatedFrom(LocalDateTime.of(1970, 1, 1, 0, 0));
+
+            java.util.Map<Status, Long> counts = rows.stream().collect(java.util.stream.Collectors.toMap(
+                    RequestRepository.StatusCount::getStatus, RequestRepository.StatusCount::getCount));
+            assertThat(counts).containsEntry(Status.PENDING, 1L).containsEntry(Status.FULFILLED, 1L);
+            assertThat(counts.values().stream().mapToLong(Long::longValue).sum()).isEqualTo(requestRepository.count());
+        }
+
+        @Test
+        @DisplayName("시작 시각 뒤에 만들어진 신청이 없으면 비어 있다")
+        void emptyWhenNothingAfterFrom() {
+            assertThat(requestRepository.countByStatusCreatedFrom(LocalDateTime.now().plusDays(1))).isEmpty();
         }
     }
 

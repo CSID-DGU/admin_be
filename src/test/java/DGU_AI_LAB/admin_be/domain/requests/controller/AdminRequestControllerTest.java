@@ -27,6 +27,12 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 @WebMvcTest(
         value = AdminRequestController.class,
@@ -42,6 +48,55 @@ class AdminRequestControllerTest extends WebMvcTestSupport {
     @MockitoBean private PodMigrationService podMigrationService;
     @MockitoBean private JobHistoryService jobHistoryService;
     @MockitoBean private RequestExpiryService requestExpiryService;
+
+    @Test
+    @DisplayName("GET /: 조건 없이 부르면 모든 상태·전체 기간으로 조회한다")
+    void listWithoutFilters() throws Exception {
+        mockMvc.perform(get("/api/admin/requests"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray());
+
+        verify(adminRequestQueryService).getRequests(null, null);
+    }
+
+    @Test
+    @DisplayName("GET /: 상태와 시작 시각을 조회 조건으로 넘긴다")
+    void listWithFilters() throws Exception {
+        mockMvc.perform(get("/api/admin/requests")
+                        .param("status", "PENDING", "PROCESSING")
+                        .param("createdFrom", "2026-07-13T00:00:00"))
+                .andExpect(status().isOk());
+
+        verify(adminRequestQueryService).getRequests(
+                List.of(Status.PENDING, Status.PROCESSING), LocalDateTime.of(2026, 7, 13, 0, 0));
+    }
+
+    @Test
+    @DisplayName("GET /: 없는 상태 이름이면 400이고 조회하지 않는다")
+    void listRejectsUnknownStatus() throws Exception {
+        mockMvc.perform(get("/api/admin/requests").param("status", "NOPE"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(adminRequestQueryService);
+    }
+
+    @Test
+    @DisplayName("GET /status-counts: 상태별 건수를 반환한다")
+    void statusCounts() throws Exception {
+        when(adminRequestQueryService.getRequestStatusCounts(null)).thenReturn(Map.of(Status.PENDING, 2L));
+
+        mockMvc.perform(get("/api/admin/requests/status-counts"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.PENDING").value(2));
+    }
+
+    @Test
+    @DisplayName("GET /{id}: 경로의 신청 번호로 한 건을 조회한다")
+    void getOne() throws Exception {
+        mockMvc.perform(get("/api/admin/requests/12"))
+                .andExpect(status().isOk());
+
+        verify(adminRequestQueryService).getRequest(12L);
+    }
 
     @Test
     @DisplayName("POST /{id}/approval: 경로의 신청 번호로 생성 작업을 등록하고 202를 반환한다")

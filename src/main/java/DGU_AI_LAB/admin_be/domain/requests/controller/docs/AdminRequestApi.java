@@ -9,23 +9,38 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RestartPodRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.error.dto.ErrorResponse;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Tag(name = "3. 관리자 신청 관리", description = "서버 사용 신청 승인·거절 및 컨테이너 현황 조회 API")
 public interface AdminRequestApi {
 
-    @Operation(summary = "전체 신청 목록 조회", description = "모든 상태의 서버 사용 신청 목록을 조회합니다.")
+    @Operation(summary = "신청 목록 조회", description = "서버 사용 신청 목록을 최신순으로 조회합니다. 상태를 주지 않으면 모든 상태, 시작 시각을 주지 않으면 전체 기간입니다.")
     @ApiResponse(responseCode = "200", description = "성공")
-    ResponseEntity<SuccessResponse<?>> getAllRequests();
+    ResponseEntity<SuccessResponse<?>> getRequests(
+            @Parameter(description = "조회할 상태(여러 개 가능)", example = "PENDING") List<Status> status,
+            @Parameter(description = "이 시각 이후에 만들어진 신청만", example = "2026-07-13T00:00:00") LocalDateTime createdFrom);
+
+    @Operation(summary = "상태별 신청 건수 조회", description = "상태별 신청 건수를 조회합니다. 건수가 없는 상태도 0으로 포함합니다.")
+    @ApiResponse(responseCode = "200", description = "성공")
+    ResponseEntity<SuccessResponse<?>> getRequestStatusCounts(
+            @Parameter(description = "이 시각 이후에 만들어진 신청만", example = "2026-07-13T00:00:00") LocalDateTime createdFrom);
+
+    @Operation(summary = "신청 단건 조회", description = "신청 하나의 상세를 조회합니다.")
+    @ApiResponse(responseCode = "200", description = "성공")
+    @ApiResponse(responseCode = "404", description = "신청 없음")
+    ResponseEntity<SuccessResponse<?>> getRequest(@Parameter(description = "신청 ID", example = "42") Long requestId);
 
     @Operation(summary = "전체 리소스 사용량 조회", description = "FULFILLED 상태인 모든 서버의 리소스 사용량을 조회합니다.")
     @ApiResponse(responseCode = "200", description = "성공")
