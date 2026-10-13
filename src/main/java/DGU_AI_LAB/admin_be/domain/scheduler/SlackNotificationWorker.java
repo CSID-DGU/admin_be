@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.SlackBlocks;
 import DGU_AI_LAB.admin_be.domain.alarm.dto.SlackMessageDto;
+import DGU_AI_LAB.admin_be.domain.alarm.service.DmRecipientEmails;
 import DGU_AI_LAB.admin_be.domain.alarm.service.SlackApiService;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -29,6 +30,7 @@ public class SlackNotificationWorker {
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final SlackApiService slackApiService;
+    private final DmRecipientEmails dmRecipientEmails;
     private final ObjectMapper objectMapper;
     private final RequestRepository requestRepository;
     private final ChangeRequestRepository changeRequestRepository;
@@ -60,7 +62,7 @@ public class SlackNotificationWorker {
                 log.info("Slack Webhook 전송 성공 (Queue)");
 
             } else if (dto.getType() == SlackMessageDto.MessageType.DM) {
-                slackApiService.sendDM(dto.getUsername(), dto.getEmail(), dto.getMessage());
+                slackApiService.sendDM(dto.getUsername(), dmRecipientEmails.of(dto.getEmail()), dto.getMessage());
                 log.info("Slack DM 전송 성공 (Queue): {}", dto.getUsername());
             }
 

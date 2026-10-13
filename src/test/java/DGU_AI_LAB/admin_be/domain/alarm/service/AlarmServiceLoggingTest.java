@@ -47,6 +47,9 @@ class AlarmServiceLoggingTest {
     @Mock
     private PodExternalPortRepository podExternalPortRepository;
 
+    @Mock
+    private DmRecipientEmails dmRecipientEmails;
+
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(alarmService, "from", "noreply@dgu.ac.kr");

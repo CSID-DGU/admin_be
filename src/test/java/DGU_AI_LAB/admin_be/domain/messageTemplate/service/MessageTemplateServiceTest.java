@@ -56,6 +56,20 @@ class MessageTemplateServiceTest {
             assertThat(overridden.overridden()).isTrue();
             assertThat(overridden.defaultValue()).isNotEqualTo("수정된 값");
         }
+
+        @Test
+        @DisplayName("기본값의 한글을 깨지지 않게 읽는다")
+        void getAll_readsDefaultsAsUtf8() {
+            when(repository.findAll()).thenReturn(List.of());
+
+            String def = messageTemplateService.getAll().stream()
+                    .filter(v -> v.key().equals("notification.admin.delete.success"))
+                    .findFirst()
+                    .orElseThrow()
+                    .defaultValue();
+
+            assertThat(def).contains("컨테이너 정리 완료");
+        }
     }
 
     @Nested
@@ -121,6 +135,16 @@ class MessageTemplateServiceTest {
             messageTemplateService.reset(KNOWN_KEY);
 
             verify(repository).deleteById(KNOWN_KEY);
+        }
+
+        @Test
+        @DisplayName("기본값이 없는 키는 지우면 되돌아갈 값이 없으므로 거절한다")
+        void reset_rejectsKeyWithoutDefault() {
+            assertThatThrownBy(() -> messageTemplateService.reset("email.db.only"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_INPUT_VALUE);
+
+            verify(repository, never()).deleteById(any());
         }
     }
 }

@@ -7,10 +7,13 @@ import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.autoconfigure.mail.MailSenderAutoConfiguration;
 import org.springframework.boot.autoconfigure.task.TaskSchedulingAutoConfiguration;
+import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,8 +43,25 @@ class RuntimeDefaultsTest {
             assertThat(props.getProperty("mail.smtp.timeout")).isEqualTo("10000");
             assertThat(props.getProperty("mail.smtp.writetimeout")).isEqualTo("10000");
             assertThat(ctx.getBean(ThreadPoolTaskScheduler.class).getScheduledThreadPoolExecutor().getCorePoolSize())
-                    .isEqualTo(11);
+                    .isEqualTo(18);
         }
+    }
+
+    @Test
+    @DisplayName("스케줄러 스레드 수 기본값은 예약 작업(@Scheduled) 개수와 같다")
+    void schedulingPoolSizeMatchesScheduledMethodCount() {
+        var scanner = new ClassPathScanningCandidateComponentProvider(false);
+        scanner.addIncludeFilter((reader, factory) ->
+                reader.getAnnotationMetadata().hasAnnotatedMethods(Scheduled.class.getName()));
+
+        long scheduledMethods = scanner.findCandidateComponents("DGU_AI_LAB.admin_be").stream()
+                .map(AnnotatedBeanDefinition.class::cast)
+                .mapToLong(def -> def.getMetadata().getAnnotatedMethods(Scheduled.class.getName()).size())
+                .sum();
+
+        assertThat(scheduledMethods).isPositive();
+        assertThat(RuntimeDefaults.values())
+                .containsEntry("spring.task.scheduling.pool.size", String.valueOf(scheduledMethods));
     }
 
     @Test

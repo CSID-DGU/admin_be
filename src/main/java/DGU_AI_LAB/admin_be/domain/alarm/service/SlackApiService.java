@@ -21,7 +21,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * 실제 Slack API와 통신하는 transport 담당입니다.
@@ -108,8 +107,9 @@ public class SlackApiService {
     // 2. DM 전송
     // =========================================================================
 
-    public void sendDM(String username, String email, String message) {
-        String userId = getSlackUserId(username, email);
+    /** emails: 받는 사람의 것으로 아는 이메일. 그중 하나로 Slack에 가입한 같은 이름의 회원에게 보낸다. */
+    public void sendDM(String username, Collection<String> emails, String message) {
+        String userId = getSlackUserId(username, emails);
 
         if (userId == null) {
             log.warn("Slack User Not Found: username={}", username);
@@ -152,15 +152,12 @@ public class SlackApiService {
      * 호출자가 구분할 수 있다.
      */
     public Membership findMembership(String username, Collection<String> emails) {
-        List<Map<String, Object>> active = getSlackMembersWithCache().stream()
-                .filter(member -> !Boolean.TRUE.equals(member.get("deleted"))
-                        && !Boolean.TRUE.equals(member.get("is_bot")))
-                .toList();
+        List<Map<String, Object>> active = activeMembers();
         List<Map<String, Object>> named = active.stream().filter(member -> hasName(member, username)).toList();
         if (named.isEmpty()) {
             return Membership.NOT_FOUND;
         }
-        if (active.stream().noneMatch(member -> emailOf(member) != null)) {
+        if (!emailsVisible(active)) {
             return Membership.NAME_ONLY;
         }
         return named.stream().anyMatch(member -> hasEmail(member, emails))
@@ -259,26 +256,34 @@ public class SlackApiService {
         return email != null && emails.stream().anyMatch(email::equalsIgnoreCase);
     }
 
-    private String getSlackUserId(String username, String email) {
-        List<Map<String, Object>> members = getSlackMembersWithCache();
+    /**
+     * DM을 받을 회원. {@link #findMembership}과 같은 규칙으로 찾는다 — 이름만 같은 다른 사람에게 가지 않게 이메일도 본다.
+     * Slack이 이메일을 주지 않을 때는 이름만 볼 수 있으므로, 그 이름의 회원이 한 명일 때만 보낸다.
+     */
+    private String getSlackUserId(String username, Collection<String> emails) {
+        List<Map<String, Object>> active = activeMembers();
+        List<Map<String, Object>> named = active.stream().filter(member -> hasName(member, username)).toList();
+        if (!emailsVisible(active)) {
+            return named.size() == 1 ? (String) named.get(0).get("id") : null;
+        }
+        return named.stream()
+                .filter(member -> hasEmail(member, emails))
+                .findFirst()
+                .map(member -> (String) member.get("id"))
+                .orElse(null);
+    }
 
-        // 1차: 이름 매칭
-        List<Map<String, Object>> matchedUsers = members.stream()
-                .filter(user -> hasName(user, username))
-                .collect(Collectors.toList());
+    /** 탈퇴 처리된 회원과 봇을 뺀 회원. */
+    private List<Map<String, Object>> activeMembers() {
+        return getSlackMembersWithCache().stream()
+                .filter(member -> !Boolean.TRUE.equals(member.get("deleted"))
+                        && !Boolean.TRUE.equals(member.get("is_bot")))
+                .toList();
+    }
 
-        if (matchedUsers.isEmpty()) return null;
-        if (matchedUsers.size() == 1) return (String) matchedUsers.get(0).get("id");
-
-        // 2차: 이메일 매칭
-        Map<String, Object> selectedUser = matchedUsers.stream()
-                .filter(user -> {
-                    Map<String, Object> profile = (Map<String, Object>) user.get("profile");
-                    String userEmail = (String) profile.get("email");
-                    return userEmail != null && userEmail.equalsIgnoreCase(email);
-                }).findFirst().orElse(null);
-
-        return selectedUser != null ? (String) selectedUser.get("id") : null;
+    /** 봇에 이메일 조회 권한이 없으면 어느 회원의 이메일도 오지 않는다. */
+    private static boolean emailsVisible(List<Map<String, Object>> members) {
+        return members.stream().anyMatch(member -> emailOf(member) != null);
     }
 
     private String openDMChannel(String userId, String token) {
