@@ -7,7 +7,6 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
-import java.util.Locale;
 
 /**
  * 인증 메일 발송 횟수 제한. 막지 않으면 같은 주소로 메일을 끝없이 보내게 만들 수 있고(메일 폭탄·발송 계정 평판),
@@ -28,7 +27,7 @@ public class EmailSendThrottle {
     private final RedisWindowCounter windowCounter;
 
     public void acquire(String email) {
-        String key = email.toLowerCase(Locale.ROOT);
+        String key = EmailAddresses.normalize(email);
         if (!Boolean.TRUE.equals(redisTemplate.opsForValue().setIfAbsent(COOLDOWN_PREFIX + key, "1", COOLDOWN))) {
             throw new BusinessException(ErrorCode.TOO_MANY_EMAIL_SENDS);
         }

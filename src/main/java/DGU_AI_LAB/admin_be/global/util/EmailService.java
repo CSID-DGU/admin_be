@@ -51,7 +51,10 @@ public class EmailService {
         }
     }
 
-    public void sendEmailVerificationCode(String email) {
+    public void sendEmailVerificationCode(String rawEmail) {
+        // 발송 횟수 제한, 코드 저장, 메일 수신 주소를 모두 같은 표기로 쓴다. 표기가 갈리면 공백·대소문자만
+        // 바꿔 횟수 제한을 피하거나, 코드가 묶인 주소와 메일이 가는 주소가 달라질 수 있다.
+        String email = EmailAddresses.normalize(rawEmail);
         emailDomainPolicy.requireAllowed(email);
         // 이미 가입된 이메일이면 인증 메일 자체를 보내지 않는다 — 어차피 register()에서도
         // 막히지만, 그 전에 걸러야 이미 가입된 사람에게 혼란만 주는 인증 메일 발송과
@@ -61,7 +64,7 @@ public class EmailService {
         }
         emailSendThrottle.acquire(email);
 
-        String authCode = issueCode(CodePurpose.SIGNUP, EmailAddresses.normalize(email));
+        String authCode = issueCode(CodePurpose.SIGNUP, email);
         log.info("이메일 인증번호 저장 완료");
 
         sendEmail(email, messageUtils.get("email.verify.subject"),

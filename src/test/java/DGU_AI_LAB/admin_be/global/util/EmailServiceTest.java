@@ -98,6 +98,19 @@ class EmailServiceTest {
         }
 
         @Test
+        @DisplayName("공백·대소문자를 바꿔 요청해도 발송 제한·가입 여부 확인·수신 주소는 모두 같은 소문자 주소다")
+        void sendEmailVerificationCode_variantSpelling_usesOneAddressEverywhere() throws Exception {
+            when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+
+            emailService.sendEmailVerificationCode(" Test@Example.com ");
+
+            verify(emailSendThrottle).acquire("test@example.com");
+            verify(userRepository).existsByEmail("test@example.com");
+            verify(mimeMessage).setRecipient(eq(jakarta.mail.Message.RecipientType.TO),
+                    eq(new jakarta.mail.internet.InternetAddress("test@example.com")));
+        }
+
+        @Test
         @DisplayName("메일 본문 양식에는 Redis에 저장한 것과 같은 인증번호를 넘긴다")
         void sendEmailVerificationCode_passesStoredCodeToBodyTemplate() throws Exception {
             when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
