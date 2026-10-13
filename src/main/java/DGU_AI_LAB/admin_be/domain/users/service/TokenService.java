@@ -30,11 +30,16 @@ public class TokenService {
     /**
      * 저장된 리프레시 토큰이 낸 것과 같을 때만 새것으로 바꾼다. 확인과 교체를 따로 하면 같은 토큰으로 동시에 온
      * 두 요청이 모두 통과해, 한쪽이 받은 새 토큰이 곧바로 죽은 토큰이 된다.
+     *
+     * <p>다르면 저장된 토큰을 지운다. 서명이 맞는데 저장된 것과 다른 토큰은 이미 한 번 쓰인 토큰이다 — 본인과
+     * 토큰을 빼돌린 쪽 가운데 누가 먼저 썼는지 알 수 없으므로, 양쪽 모두 다시 로그인해야 이어 갈 수 있게 한다.
+     * 지우지 않으면 빼돌린 쪽이 먼저 갱신한 뒤로는 본인만 거절되고 그쪽 세션은 계속 이어진다.
      */
     static final RedisScript<Long> REPLACE_IF_MATCHES = new DefaultRedisScript<>(
             "if redis.call('GET', KEYS[1]) == ARGV[1] then "
                     + "redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3]) return 1 "
-                    + "end return 0",
+                    + "end "
+                    + "redis.call('DEL', KEYS[1]) return 0",
             Long.class);
 
     @Value("${jwt.refresh-token-expire-time}")
@@ -70,7 +75,8 @@ public class TokenService {
 
     /**
      * 리프레시 토큰으로 액세스 토큰을 다시 받는다. 리프레시 토큰도 함께 새것으로 바꾸므로(교체 발급), 낸 토큰은
-     * 이번 한 번만 통한다 — 빼돌린 토큰을 나중에 다시 내면 저장된 것과 달라 거절된다.
+     * 이번 한 번만 통한다. 이미 쓰인 토큰이 다시 오면 거절하고 저장된 토큰까지 지워, 그 계정의 세션은 다시
+     * 로그인해야 이어진다.
      *
      * @throws UnauthorizedException 토큰이 만료·변조됐거나, 저장된 것과 다르거나(로그아웃·다른 곳에서 로그인·이미 교체됨),
      *                               비밀번호를 바꾸기 전에 발급됐거나, 계정이 비활성화된 경우

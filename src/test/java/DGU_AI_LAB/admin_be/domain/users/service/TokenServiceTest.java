@@ -155,6 +155,14 @@ class TokenServiceTest {
         }
 
         @Test
+        @DisplayName("교체 스크립트는 낸 토큰이 저장된 것과 다르면 저장된 토큰을 지운다")
+        void scriptRevokesStoredTokenOnMismatch() {
+            String script = TokenService.REPLACE_IF_MATCHES.getScriptAsString();
+
+            assertThat(script).contains("redis.call('DEL', KEYS[1]) return 0");
+        }
+
+        @Test
         @DisplayName("비밀번호를 바꾸기 전에 발급된 토큰이면 거절하고 저장된 토큰을 건드리지 않는다")
         void rejectsTokenIssuedBeforePasswordChange() {
             stubValidToken("oldRefresh", true);
