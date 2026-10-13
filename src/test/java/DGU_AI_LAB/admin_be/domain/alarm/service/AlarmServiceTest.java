@@ -31,7 +31,6 @@ import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -57,8 +56,12 @@ import static org.mockito.Mockito.*;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class AlarmServiceTest {
 
-    @InjectMocks
+    // 전송 큐·메일 발송까지 실제 객체로 이어, 호출부터 큐에 실리는 글·보내는 메일까지 한 번에 본다.
     private AlarmService alarmService;
+    private RequestChannelNotifier requestChannelNotifier;
+    private UserGuideMailer userGuideMailer;
+    private NotificationChannels channels;
+    private SlackNotificationQueue queue;
 
     @Mock
     private JavaMailSender mailSender;
@@ -104,10 +107,23 @@ class AlarmServiceTest {
 
     @BeforeEach
     void setUp() {
-        ReflectionTestUtils.setField(alarmService, "notiLogWebhookUrl", NOTI_WEBHOOK);
-        ReflectionTestUtils.setField(alarmService, "errorLogWebhookUrl", ERROR_WEBHOOK);
-        ReflectionTestUtils.setField(alarmService, "from", "noreply@dgu.ac.kr");
+        channels = new NotificationChannels();
+        ReflectionTestUtils.setField(channels, "notiLogWebhookUrl", NOTI_WEBHOOK);
+        ReflectionTestUtils.setField(channels, "errorLogWebhookUrl", ERROR_WEBHOOK);
+        queue = new SlackNotificationQueue(redisTemplate, slackApiService, messageUtils, dmRecipientEmails, channels);
+        NotificationMailer mailer = new NotificationMailer(mailSender);
+        ReflectionTestUtils.setField(mailer, "from", "noreply@dgu.ac.kr");
+        alarmService = new AlarmService(queue, mailer, channels, messageUtils);
+        requestChannelNotifier = new RequestChannelNotifier(messageUtils, serverProfileRegistry, queue, channels);
+        userGuideMailer = new UserGuideMailer(messageUtils, podExternalPortRepository, serverProfileRegistry, alarmService);
         when(redisTemplate.opsForList()).thenReturn(listOperations);
+    }
+
+    /** 문구를 읽는 모든 객체가 같은 문구 원본을 쓰게 바꾼다. */
+    private void useMessages(MessageUtils messages) {
+        for (Object target : List.of(alarmService, requestChannelNotifier, userGuideMailer, queue)) {
+            ReflectionTestUtils.setField(target, "messageUtils", messages);
+        }
     }
 
     @Nested
@@ -260,7 +276,7 @@ class AlarmServiceTest {
             Request request = mockRequest("홍길동", "FARM");
             when(messageUtils.get(anyString(), any(), any())).thenReturn("새 신청");
 
-            alarmService.sendNewRequestNotification(request, List.of(), 0);
+            requestChannelNotifier.sendNewRequestNotification(request, List.of(), 0);
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
@@ -274,7 +290,7 @@ class AlarmServiceTest {
             when(request.getUser().getEmail()).thenReturn("Tester@E2E.local");
             when(messageUtils.get(anyString(), any(), any())).thenReturn("새 신청");
 
-            alarmService.sendNewRequestNotification(request, List.of(), 0);
+            requestChannelNotifier.sendNewRequestNotification(request, List.of(), 0);
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
@@ -284,11 +300,11 @@ class AlarmServiceTest {
         @Test
         @DisplayName("테스트용 계정 판정은 도메인만 본다 — 아이디가 e2e로 시작하는 학교 메일은 실제 사용자다")
         void isTestAccount_looksAtDomainOnly() {
-            assertThat(AlarmService.isTestAccount("hc1006@e2e.local")).isTrue();
-            assertThat(AlarmService.isTestAccount("e2e@dgu.ac.kr")).isFalse();
-            assertThat(AlarmService.isTestAccount("2022112431@dgu.ac.kr")).isFalse();
-            assertThat(AlarmService.isTestAccount("no-at-sign")).isFalse();
-            assertThat(AlarmService.isTestAccount(null)).isFalse();
+            assertThat(RequestChannelNotifier.isTestAccount("hc1006@e2e.local")).isTrue();
+            assertThat(RequestChannelNotifier.isTestAccount("e2e@dgu.ac.kr")).isFalse();
+            assertThat(RequestChannelNotifier.isTestAccount("2022112431@dgu.ac.kr")).isFalse();
+            assertThat(RequestChannelNotifier.isTestAccount("no-at-sign")).isFalse();
+            assertThat(RequestChannelNotifier.isTestAccount(null)).isFalse();
         }
 
         @Test
@@ -297,7 +313,7 @@ class AlarmServiceTest {
             Request request = mockRequest("이순신", "LAB");
             when(messageUtils.get(anyString(), any(), any())).thenReturn("새 신청");
 
-            alarmService.sendNewRequestNotification(request, List.of(), 0);
+            requestChannelNotifier.sendNewRequestNotification(request, List.of(), 0);
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
@@ -310,7 +326,7 @@ class AlarmServiceTest {
             Request request = mockRequest("김철수", "UNKNOWN_SERVER");
             when(messageUtils.get(anyString(), any(), any())).thenReturn("새 신청");
 
-            alarmService.sendNewRequestNotification(request, List.of(), 0);
+            requestChannelNotifier.sendNewRequestNotification(request, List.of(), 0);
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
@@ -331,9 +347,9 @@ class AlarmServiceTest {
             ResourceBundleMessageSource source = new ResourceBundleMessageSource();
             source.setBasename("messages");
             source.setDefaultEncoding("UTF-8");
-            ReflectionTestUtils.setField(alarmService, "messageUtils", new MessageUtils(source));
+            useMessages(new MessageUtils(source));
 
-            alarmService.sendChangeRequestNotification(notice);
+            requestChannelNotifier.sendChangeRequestNotification(notice);
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
@@ -406,9 +422,9 @@ class AlarmServiceTest {
             ResourceBundleMessageSource source = new ResourceBundleMessageSource();
             source.setBasename("messages");
             source.setDefaultEncoding("UTF-8");
-            ReflectionTestUtils.setField(alarmService, "messageUtils", new MessageUtils(source));
+            useMessages(new MessageUtils(source));
 
-            alarmService.sendNewRequestNotification(request, ports, activeContainers);
+            requestChannelNotifier.sendNewRequestNotification(request, ports, activeContainers);
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
@@ -500,7 +516,7 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any(), any()))
                     .thenReturn("배정 안내 본문 (추가 포트: 없음)");
 
-            alarmService.sendContainerCreatedEmail(request, "9100", "9104");
+            userGuideMailer.sendContainerCreatedEmail(request, "9100", "9104");
 
             ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
             verify(mailSender).send(captor.capture());
@@ -520,7 +536,7 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any(), any()))
                     .thenReturn("배정 안내 본문 (추가 포트: tensorboard(9200))");
 
-            alarmService.sendContainerCreatedEmail(request, "9100", "9104");
+            userGuideMailer.sendContainerCreatedEmail(request, "9100", "9104");
 
             // ssh, jupyter 필터링 후 tensorboard만 {7}로 전달되는지 검증
             verify(messageUtils).get(eq("email.container.created.body"),
@@ -539,7 +555,7 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any(), any()))
                     .thenReturn("본문");
 
-            alarmService.sendContainerCreatedEmail(request, "9100", "9104");
+            userGuideMailer.sendContainerCreatedEmail(request, "9100", "9104");
 
             verify(messageUtils).get(eq("email.container.created.body"),
                     any(), any(), any(), any(), any(), any(), any(), eq("없음"));
@@ -553,7 +569,7 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any(), any()))
                     .thenReturn("본문");
 
-            alarmService.sendContainerCreatedEmail(request, "30022", "30888");
+            userGuideMailer.sendContainerCreatedEmail(request, "30022", "30888");
 
             verify(messageUtils).get(eq("email.container.created.body"),
                     any(), any(), any(), eq("9322"), eq("30888"), eq("farm.example.org"), any(), any());
@@ -568,8 +584,8 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any(), any()))
                     .thenReturn("본문");
 
-            alarmService.sendContainerCreatedEmail(lab, "30022", "30888");
-            alarmService.sendContainerCreatedEmail(unknown, "30022", "30888");
+            userGuideMailer.sendContainerCreatedEmail(lab, "30022", "30888");
+            userGuideMailer.sendContainerCreatedEmail(unknown, "30022", "30888");
 
             verify(messageUtils).get(eq("email.container.created.body"),
                     any(), any(), any(), eq("30022"), eq("30888"), eq("lab.example.org"), any(), any());
@@ -587,7 +603,7 @@ class AlarmServiceTest {
                     .thenReturn("본문");
             when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("로그");
 
-            alarmService.sendContainerCreatedEmail(request, "9100", "9104");
+            userGuideMailer.sendContainerCreatedEmail(request, "9100", "9104");
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
@@ -605,7 +621,7 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("로그");
             doThrow(new RuntimeException("SMTP 오류")).when(mailSender).send(any(SimpleMailMessage.class));
 
-            alarmService.sendContainerCreatedEmail(request, "9100", "9104");
+            userGuideMailer.sendContainerCreatedEmail(request, "9100", "9104");
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations, atLeastOnce()).rightPush(eq(QUEUE_KEY), captor.capture());
@@ -629,7 +645,7 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any())).thenReturn("제목");
             when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
 
-            alarmService.sendContainerPortsChangedEmail(request);
+            userGuideMailer.sendContainerPortsChangedEmail(request);
 
             verify(messageUtils).get(eq("email.container.ports-changed.body"),
                     eq("이순신"), eq("testuser"), eq("9310"), eq("9311"), eq("farm.example.org"), eq("tensorboard(30012)"));
@@ -647,7 +663,7 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any())).thenReturn("제목");
             when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
 
-            alarmService.sendContainerPortsChangedEmail(request);
+            userGuideMailer.sendContainerPortsChangedEmail(request);
 
             verify(messageUtils).get(eq("email.container.ports-changed.body"),
                     any(), any(), eq("30010"), eq(""), eq("lab.example.org"), eq("없음"));
@@ -669,7 +685,7 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any())).thenReturn("제목");
             when(messageUtils.get(anyString(), any(), any(), any(), any())).thenReturn("본문");
 
-            alarmService.sendExtraPortsChangedEmail(request);
+            userGuideMailer.sendExtraPortsChangedEmail(request);
 
             verify(messageUtils).get(eq("email.container.extra-ports-changed.body"),
                     eq("이순신"), eq("testuser"), eq("farm.example.org"), eq("web(9312)"));
@@ -687,7 +703,7 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any())).thenReturn("제목");
             when(messageUtils.get(anyString(), any(), any(), any(), any())).thenReturn("본문");
 
-            alarmService.sendExtraPortsChangedEmail(request);
+            userGuideMailer.sendExtraPortsChangedEmail(request);
 
             verify(messageUtils).get(eq("email.container.extra-ports-changed.body"),
                     any(), any(), eq("lab.example.org"), eq("없음"));
@@ -711,7 +727,7 @@ class AlarmServiceTest {
             when(request.getRequestId()).thenReturn(42L);
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("새 신청");
 
-            alarmService.sendNewRequestNotification(request, List.of(), 0);
+            requestChannelNotifier.sendNewRequestNotification(request, List.of(), 0);
 
             SlackMessageDto dto = queued();
             assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.CHANNEL);
@@ -728,7 +744,7 @@ class AlarmServiceTest {
             Request request = mockRequest("홍길동", "LAB");
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("새 신청");
 
-            alarmService.sendNewRequestNotification(request, List.of(), 0);
+            requestChannelNotifier.sendNewRequestNotification(request, List.of(), 0);
 
             SlackMessageDto dto = queued();
             assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.WEBHOOK);
@@ -738,12 +754,12 @@ class AlarmServiceTest {
         @Test
         @DisplayName("테스트용 계정의 신청서는 봇으로 올릴 때도 서버 신청서 채널이 아니라 알림 기록 채널로만 간다")
         void newRequest_ofTestAccount_neverReachesServerChannel() {
-            ReflectionTestUtils.setField(alarmService, "notiChannelId", NOTI_CHANNEL_ID);
+            ReflectionTestUtils.setField(channels, "notiChannelId", NOTI_CHANNEL_ID);
             Request request = mockRequest("tester", "FARM");
             when(request.getUser().getEmail()).thenReturn("tester@e2e.local");
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("새 신청");
 
-            alarmService.sendNewRequestNotification(request, List.of(), 0);
+            requestChannelNotifier.sendNewRequestNotification(request, List.of(), 0);
 
             SlackMessageDto dto = queued();
             assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.CHANNEL);
@@ -758,7 +774,7 @@ class AlarmServiceTest {
             when(request.getSlackMessageTs()).thenReturn("1728200000.000100");
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("취소 알림");
 
-            alarmService.prepareRequestCancelledNotification(request).run();
+            requestChannelNotifier.prepareRequestCancelledNotification(request).run();
 
             SlackMessageDto dto = queued();
             assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.CHANNEL);
@@ -774,7 +790,7 @@ class AlarmServiceTest {
             Request request = mockRequest("홍길동", "FARM");
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("취소 알림");
 
-            alarmService.prepareRequestCancelledNotification(request).run();
+            requestChannelNotifier.prepareRequestCancelledNotification(request).run();
 
             SlackMessageDto dto = queued();
             assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.WEBHOOK);
@@ -790,7 +806,7 @@ class AlarmServiceTest {
             when(messageUtils.get("notification.error.redis-fallback")).thenReturn("(직접 전송)");
             when(listOperations.rightPush(any(), any())).thenThrow(new RuntimeException("redis down"));
 
-            alarmService.sendNewRequestNotification(request, List.of(), 0);
+            requestChannelNotifier.sendNewRequestNotification(request, List.of(), 0);
 
             verify(slackApiService).sendWebhook(FARM_REQUEST_WEBHOOK, "새 신청(직접 전송)");
             verify(slackApiService, never()).postToChannel(any(), any(), any());
@@ -821,7 +837,7 @@ class AlarmServiceTest {
                     "1234", "FARM", "2026-10-06 13:05", "홍길동", "testuser", "farm6", "-", "9502", "9503", "10148", "10148"))
                     .thenReturn("생성 완료");
 
-            alarmService.sendContainerCreatedNotification(request, "9502", "9503");
+            requestChannelNotifier.sendContainerCreatedNotification(request, "9502", "9503");
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
@@ -840,7 +856,7 @@ class AlarmServiceTest {
             Request request = fulfilledRequest("FARM");
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("생성 완료");
 
-            alarmService.sendContainerCreatedNotification(request, "9502", "9503");
+            requestChannelNotifier.sendContainerCreatedNotification(request, "9502", "9503");
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
@@ -854,7 +870,7 @@ class AlarmServiceTest {
             Request request = fulfilledRequest("FARM");
             when(messageUtils.get(anyString(), any(Object[].class))).thenThrow(new IllegalStateException("양식 없음"));
 
-            alarmService.sendContainerCreatedNotification(request, "9502", "9503");
+            requestChannelNotifier.sendContainerCreatedNotification(request, "9502", "9503");
 
             verify(listOperations, never()).rightPush(any(), any());
         }
@@ -873,7 +889,7 @@ class AlarmServiceTest {
             when(messageUtils.get("notification.admin.request-cancelled",
                     "FARM", "2026-10-06 13:05", "홍길동", "1234")).thenReturn("취소 알림");
 
-            Runnable send = alarmService.prepareRequestCancelledNotification(request);
+            Runnable send = requestChannelNotifier.prepareRequestCancelledNotification(request);
             verify(listOperations, never()).rightPush(any(), any());
 
             send.run();
@@ -891,7 +907,7 @@ class AlarmServiceTest {
             when(request.getUser().getEmail()).thenReturn("tester@e2e.local");
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("취소 알림");
 
-            alarmService.prepareRequestCancelledNotification(request).run();
+            requestChannelNotifier.prepareRequestCancelledNotification(request).run();
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
@@ -909,7 +925,7 @@ class AlarmServiceTest {
             ResourceBundleMessageSource source = new ResourceBundleMessageSource();
             source.setBasename("messages");
             source.setDefaultEncoding("UTF-8");
-            ReflectionTestUtils.setField(alarmService, "messageUtils", new MessageUtils(source));
+            useMessages(new MessageUtils(source));
         }
 
         private SlackMessageDto queued() {
@@ -927,7 +943,7 @@ class AlarmServiceTest {
         void approvedExpiry_repliesInRequestChannelThread() {
             useRealMessages();
 
-            alarmService.sendChangeRequestDecidedNotification(decision(ChangeType.EXPIRES_AT, "FARM", true, "확인했습니다", TS));
+            requestChannelNotifier.sendChangeRequestDecidedNotification(decision(ChangeType.EXPIRES_AT, "FARM", true, "확인했습니다", TS));
 
             SlackMessageDto dto = queued();
             assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.CHANNEL);
@@ -943,9 +959,9 @@ class AlarmServiceTest {
         @DisplayName("거절된 공유 그룹 추가는 알림 기록 채널의 접수 알림에 거절 사유와 함께 댓글로 단다")
         void rejectedGroup_repliesInNotiChannelThread() {
             useRealMessages();
-            ReflectionTestUtils.setField(alarmService, "notiChannelId", NOTI_CHANNEL_ID);
+            ReflectionTestUtils.setField(channels, "notiChannelId", NOTI_CHANNEL_ID);
 
-            alarmService.sendChangeRequestDecidedNotification(decision(ChangeType.GROUP, "FARM", false, "<!channel> 대상 아님", TS));
+            requestChannelNotifier.sendChangeRequestDecidedNotification(decision(ChangeType.GROUP, "FARM", false, "<!channel> 대상 아님", TS));
 
             SlackMessageDto dto = queued();
             assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.CHANNEL);
@@ -959,7 +975,7 @@ class AlarmServiceTest {
         void goesByWebhook_whenMessageUnknown() {
             useRealMessages();
 
-            alarmService.sendChangeRequestDecidedNotification(decision(ChangeType.PASSWORD, null, true, null, null));
+            requestChannelNotifier.sendChangeRequestDecidedNotification(decision(ChangeType.PASSWORD, null, true, null, null));
 
             SlackMessageDto dto = queued();
             assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.WEBHOOK);
@@ -973,7 +989,7 @@ class AlarmServiceTest {
         void testAccountExpiry_staysInNotiChannel() {
             useRealMessages();
 
-            alarmService.sendChangeRequestDecidedNotification(new ChangeRequestDecision(7L, ChangeType.EXPIRES_AT,
+            requestChannelNotifier.sendChangeRequestDecidedNotification(new ChangeRequestDecision(7L, ChangeType.EXPIRES_AT,
                     "시험", "tester@e2e.local", "FARM", true, "e2e", null));
 
             assertThat(queued().getWebhookUrl()).isEqualTo(NOTI_WEBHOOK);
@@ -987,7 +1003,7 @@ class AlarmServiceTest {
             when(request.getRequestId()).thenReturn(42L);
             when(request.getSlackMessageTs()).thenReturn(TS);
 
-            alarmService.sendRequestRejectedNotification(request, "사용 목적이 불분명합니다");
+            requestChannelNotifier.sendRequestRejectedNotification(request, "사용 목적이 불분명합니다");
 
             SlackMessageDto dto = queued();
             assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.CHANNEL);
@@ -1004,7 +1020,7 @@ class AlarmServiceTest {
             Request request = mockRequest("홍길동", "hong@dgu.ac.kr", "FARM");
             when(request.getRequestId()).thenReturn(42L);
 
-            alarmService.sendRequestRejectedNotification(request, null);
+            requestChannelNotifier.sendRequestRejectedNotification(request, null);
 
             SlackMessageDto dto = queued();
             assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.WEBHOOK);
@@ -1017,7 +1033,7 @@ class AlarmServiceTest {
         void swallowsFailure() {
             when(messageUtils.get(anyString(), any(Object[].class))).thenThrow(new RuntimeException("문구 없음"));
 
-            assertThatCode(() -> alarmService.sendChangeRequestDecidedNotification(
+            assertThatCode(() -> requestChannelNotifier.sendChangeRequestDecidedNotification(
                     decision(ChangeType.PORT, "FARM", true, "확인", TS))).doesNotThrowAnyException();
             verify(listOperations, never()).rightPush(anyString(), any());
         }
@@ -1034,7 +1050,7 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any())).thenReturn("[DGU AILab] 서버 신청 거절 안내 (FARM)");
             when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("거절 안내 본문");
 
-            alarmService.sendRequestRejectedEmail(request, "신청서 양식 미흡");
+            userGuideMailer.sendRequestRejectedEmail(request, "신청서 양식 미흡");
 
             ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
             verify(mailSender).send(captor.capture());
@@ -1049,7 +1065,7 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any())).thenReturn("제목");
             when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("로그");
 
-            alarmService.sendRequestRejectedEmail(request, "신청서 양식 미흡");
+            userGuideMailer.sendRequestRejectedEmail(request, "신청서 양식 미흡");
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
@@ -1065,7 +1081,7 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("로그");
             doThrow(new RuntimeException("SMTP 오류")).when(mailSender).send(any(SimpleMailMessage.class));
 
-            alarmService.sendRequestRejectedEmail(request, "신청서 양식 미흡");
+            userGuideMailer.sendRequestRejectedEmail(request, "신청서 양식 미흡");
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations, atLeastOnce()).rightPush(eq(QUEUE_KEY), captor.capture());
@@ -1088,7 +1104,7 @@ class AlarmServiceTest {
             when(messageUtils.get(eq("email.modification.approved.group.body"), any(), any(), any(), any()))
                     .thenReturn("본문");
 
-            alarmService.sendGroupAddedEmail(changeRequest, "승인", List.of("teama", "teamb"));
+            userGuideMailer.sendGroupAddedEmail(changeRequest, "승인", List.of("teama", "teamb"));
 
             verify(messageUtils).get("email.modification.approved.group.body", "이순신", "공유 그룹 추가", "승인",
                     "- teama 경로\n- teamb 경로");
@@ -1104,10 +1120,10 @@ class AlarmServiceTest {
             ResourceBundleMessageSource source = new ResourceBundleMessageSource();
             source.setBasename("messages");
             source.setDefaultEncoding("UTF-8");
-            ReflectionTestUtils.setField(alarmService, "messageUtils", new MessageUtils(source));
+            useMessages(new MessageUtils(source));
             ChangeRequest changeRequest = mockChangeRequest("이순신", "lee@dgu.ac.kr", ChangeType.GROUP);
 
-            alarmService.sendGroupAddedEmail(changeRequest, "승인", List.of("teama", "teamb"));
+            userGuideMailer.sendGroupAddedEmail(changeRequest, "승인", List.of("teama", "teamb"));
 
             ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
             verify(mailSender).send(captor.capture());
@@ -1130,7 +1146,7 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any())).thenReturn("[DGU AILab] 서버 변경 요청 거절 안내 (EXPIRES_AT)");
             when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("변경 거절 안내 본문");
 
-            alarmService.sendModificationRejectedEmail(changeRequest, "변경 사유 불충분");
+            userGuideMailer.sendModificationRejectedEmail(changeRequest, "변경 사유 불충분");
 
             ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
             verify(mailSender).send(captor.capture());
@@ -1145,7 +1161,7 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any())).thenReturn("제목");
             when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("로그");
 
-            alarmService.sendModificationRejectedEmail(changeRequest, "변경 사유 불충분");
+            userGuideMailer.sendModificationRejectedEmail(changeRequest, "변경 사유 불충분");
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations).rightPush(eq(QUEUE_KEY), captor.capture());
@@ -1160,7 +1176,7 @@ class AlarmServiceTest {
                     .thenReturn("[DGU AI LAB] GPU 변경 요청이 승인되지 않았어요");
             when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("본문");
 
-            alarmService.sendModificationRejectedEmail(changeRequest, "리소스 그룹 변경 불가");
+            userGuideMailer.sendModificationRejectedEmail(changeRequest, "리소스 그룹 변경 불가");
 
             ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
             verify(mailSender).send(captor.capture());
@@ -1175,7 +1191,7 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any(), any(), any())).thenReturn("로그");
             doThrow(new RuntimeException("SMTP 오류")).when(mailSender).send(any(SimpleMailMessage.class));
 
-            alarmService.sendModificationRejectedEmail(changeRequest, "변경 사유 불충분");
+            userGuideMailer.sendModificationRejectedEmail(changeRequest, "변경 사유 불충분");
 
             ArgumentCaptor<SlackMessageDto> captor = ArgumentCaptor.forClass(SlackMessageDto.class);
             verify(listOperations, atLeastOnce()).rightPush(eq(QUEUE_KEY), captor.capture());
@@ -1196,7 +1212,7 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any())).thenReturn("제목");
             when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
 
-            alarmService.sendContainerExtendedEmail(request, null,
+            userGuideMailer.sendContainerExtendedEmail(request, null,
                     java.time.LocalDateTime.of(2027, 12, 31, 23, 59, 59));
 
             verify(messageUtils).get(eq("email.container.extended.body"),
@@ -1211,7 +1227,7 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any())).thenReturn("제목");
             when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
 
-            alarmService.sendContainerExtendedEmail(request,
+            userGuideMailer.sendContainerExtendedEmail(request,
                     java.time.LocalDateTime.of(2026, 6, 30, 0, 0),
                     java.time.LocalDateTime.of(2027, 12, 31, 23, 59, 59));
 
@@ -1227,7 +1243,7 @@ class AlarmServiceTest {
             when(messageUtils.get(anyString(), any())).thenReturn("제목");
             when(messageUtils.get(anyString(), any(), any(), any(), any(), any(), any(), any())).thenReturn("본문");
 
-            alarmService.sendContainerExtendedEmail(request,
+            userGuideMailer.sendContainerExtendedEmail(request,
                     java.time.LocalDateTime.of(2026, 6, 30, 0, 0),
                     java.time.LocalDateTime.of(2027, 12, 31, 23, 59, 59));
 

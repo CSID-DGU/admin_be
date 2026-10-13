@@ -1,6 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
-import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.alarm.service.UserGuideMailer;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.util.AfterTransaction;
 import DGU_AI_LAB.admin_be.global.util.RedisWindowCounter;
@@ -21,7 +21,7 @@ public class SlackMembershipRefusalNotice {
     private static final String COUNT_PREFIX = "request:slack-refusal-mail:";
 
     private final RedisWindowCounter windowCounter;
-    private final AlarmService alarmService;
+    private final UserGuideMailer userGuideMailer;
 
     /** 신청 트랜잭션이 끝난 뒤에 보낸다 — 거절이라 롤백되므로 커밋을 기다리면 보내지지 않는다. */
     public void send(User user) {
@@ -30,7 +30,7 @@ public class SlackMembershipRefusalNotice {
         String email = user.getEmail();
         AfterTransaction.run("Slack 가입 안내 메일", () -> {
             if (windowCounter.increment(COUNT_PREFIX + userId, INTERVAL) == 1) {
-                alarmService.sendSlackMembershipRequiredEmail(name, email);
+                userGuideMailer.sendSlackMembershipRequiredEmail(name, email);
             }
         });
     }

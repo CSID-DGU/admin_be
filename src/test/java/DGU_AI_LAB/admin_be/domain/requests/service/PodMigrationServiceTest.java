@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.alarm.service.UserGuideMailer;
 import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
 import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
@@ -58,6 +59,7 @@ class PodMigrationServiceTest {
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
     @Mock private AlarmService alarmService;
+    @Mock private UserGuideMailer userGuideMailer;
     @Mock private ContainerRestartThrottle restartThrottle;
     @Mock private SuspensionGuard suspensionGuard;
     @Mock private Request request;
@@ -70,7 +72,7 @@ class PodMigrationServiceTest {
     void setUp() {
         when(request.getJobId()).thenReturn(10L); // result()의 작업 번호와 같다
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
-        service = new PodMigrationService(requestRepository, suspensionGuard, podExternalPortRepository, nodeRepository, jobClient, transactionManager, alarmService,
+        service = new PodMigrationService(requestRepository, suspensionGuard, podExternalPortRepository, nodeRepository, jobClient, transactionManager, alarmService, userGuideMailer,
                 restartThrottle, new InMemoryAlertDeduplicator());
         when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of(node("FARM2"), node("FARM7")));
         when(request.getUbuntuUsername()).thenReturn("testuser");
@@ -343,9 +345,9 @@ class PodMigrationServiceTest {
 
         service.completeMigrationJob(1L, migrated(null));
 
-        var order = inOrder(request, alarmService);
+        var order = inOrder(request, userGuideMailer);
         order.verify(request).endMigration();
-        order.verify(alarmService).sendContainerPortsChangedEmail(request);
+        order.verify(userGuideMailer).sendContainerPortsChangedEmail(request);
     }
 
     @Test
@@ -357,7 +359,7 @@ class PodMigrationServiceTest {
         service.completeMigrationJob(1L, migrated(null));
 
         verify(request).endMigration();
-        verify(alarmService, never()).sendContainerPortsChangedEmail(any());
+        verify(userGuideMailer, never()).sendContainerPortsChangedEmail(any());
     }
 
     @Test
@@ -371,19 +373,19 @@ class PodMigrationServiceTest {
         service.completeMigrationJob(1L, noPorts);
 
         verify(request).endMigration();
-        verify(alarmService, never()).sendContainerPortsChangedEmail(any());
+        verify(userGuideMailer, never()).sendContainerPortsChangedEmail(any());
     }
 
     @Test
     @DisplayName("안내 메일 발송이 실패해도 반영된 결과는 그대로 두고 예외를 올리지 않는다")
     void completeMigratedMailFailureDoesNotPropagate() {
         when(request.getStatus()).thenReturn(Status.MIGRATING);
-        doThrow(new RuntimeException("smtp down")).when(alarmService).sendContainerPortsChangedEmail(request);
+        doThrow(new RuntimeException("smtp down")).when(userGuideMailer).sendContainerPortsChangedEmail(request);
 
         service.completeMigrationJob(1L, migrated(null));
 
         verify(request).endMigration();
-        verify(alarmService).sendContainerPortsChangedEmail(request);
+        verify(userGuideMailer).sendContainerPortsChangedEmail(request);
     }
 
     @Test
@@ -393,7 +395,7 @@ class PodMigrationServiceTest {
 
         service.completeMigrationJob(1L, migrated(null));
 
-        verify(alarmService, never()).sendContainerPortsChangedEmail(any());
+        verify(userGuideMailer, never()).sendContainerPortsChangedEmail(any());
     }
 
     @Test

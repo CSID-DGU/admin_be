@@ -6,6 +6,8 @@ import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.alarm.service.RequestChannelNotifier;
+import DGU_AI_LAB.admin_be.domain.alarm.service.UserGuideMailer;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
@@ -81,6 +83,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 class AdminRequestCommandServiceTest {
 
     @Mock private AlarmService alarmService;
+    @Mock private RequestChannelNotifier requestChannelNotifier;
+    @Mock private UserGuideMailer userGuideMailer;
     @Mock private RequestRepository requestRepository;
     @Mock private UserRepository userRepository;
     @Mock private PasswordResetRequestRepository passwordResetRequestRepository;
@@ -112,7 +116,7 @@ class AdminRequestCommandServiceTest {
 
         // @RequiredArgsConstructor 생성자 필드 선언 순서대로 주입
         service = new AdminRequestCommandService(
-                alarmService, requestRepository, userRepository, suspensionGuard, passwordResetRequestRepository,
+                alarmService, requestChannelNotifier, userGuideMailer, requestRepository, userRepository, suspensionGuard, passwordResetRequestRepository,
                 containerImageRepository,
                 resourceGroupRepository, podExternalPortRepository, jobClient,
                 new PendingGroupService(groupRepository, requestGroupRepository, mock(EntityManager.class)),
@@ -336,9 +340,9 @@ class AdminRequestCommandServiceTest {
 
             service.rejectRequest(dto);
 
-            verify(alarmService).sendRequestRejectedEmail(request, "신청서 양식 미흡");
+            verify(userGuideMailer).sendRequestRejectedEmail(request, "신청서 양식 미흡");
             // 신청서 채널에 남은 신청서에도 거절을 댓글로 남긴다.
-            verify(alarmService).sendRequestRejectedNotification(request, "신청서 양식 미흡");
+            verify(requestChannelNotifier).sendRequestRejectedNotification(request, "신청서 양식 미흡");
         }
 
         @Test
@@ -350,7 +354,7 @@ class AdminRequestCommandServiceTest {
 
             service.rejectRequest(dto);
 
-            verify(alarmService).sendRequestRejectedEmail(request, comment);
+            verify(userGuideMailer).sendRequestRejectedEmail(request, comment);
         }
 
         @Test
@@ -362,8 +366,8 @@ class AdminRequestCommandServiceTest {
             assertThatThrownBy(() -> service.rejectRequest(dto))
                     .isInstanceOf(BusinessException.class);
 
-            verify(alarmService, never()).sendRequestRejectedEmail(any(), anyString());
-            verify(alarmService, never()).sendRequestRejectedNotification(any(), any());
+            verify(userGuideMailer, never()).sendRequestRejectedEmail(any(), anyString());
+            verify(requestChannelNotifier, never()).sendRequestRejectedNotification(any(), any());
         }
 
         @Test
@@ -371,7 +375,7 @@ class AdminRequestCommandServiceTest {
         void rejectRequest_emailFailure_doesNotPropagateException() {
             Request request = buildMockedRequestWithStatus(38L, Status.PENDING);
             doThrow(new RuntimeException("SMTP 연결 실패"))
-                    .when(alarmService).sendRequestRejectedEmail(any(), anyString());
+                    .when(userGuideMailer).sendRequestRejectedEmail(any(), anyString());
 
             RejectRequestDTO dto = new RejectRequestDTO(38L, "신청서 양식 미흡");
 
@@ -386,7 +390,7 @@ class AdminRequestCommandServiceTest {
         void rejectRequest_emailFailure_stillReturnsResponseDTO() {
             buildMockedRequestWithStatus(39L, Status.PENDING);
             doThrow(new RuntimeException("MessageUtils 키 없음"))
-                    .when(alarmService).sendRequestRejectedEmail(any(), anyString());
+                    .when(userGuideMailer).sendRequestRejectedEmail(any(), anyString());
 
             RejectRequestDTO dto = new RejectRequestDTO(39L, "사유");
 
@@ -684,8 +688,8 @@ class AdminRequestCommandServiceTest {
             verify(request).assignPodInfo("ailab-testuser-abcd", "farm2");
             verify(request).completeApproval();
             verify(podExternalPortRepository, times(2)).save(any(PodExternalPort.class));
-            verify(alarmService).sendContainerCreatedEmail(request, "32001", "32002");
-            verify(alarmService).sendContainerCreatedNotification(request, "32001", "32002");
+            verify(userGuideMailer).sendContainerCreatedEmail(request, "32001", "32002");
+            verify(requestChannelNotifier).sendContainerCreatedNotification(request, "32001", "32002");
             // 승인과 겹쳐 시작된 이용 정지가 새 컨테이너의 포트에도 걸리게 한다.
             verify(suspensionGuard).reblockAfterPortsCreated(mockUser.getUserId());
         }
@@ -729,8 +733,8 @@ class AdminRequestCommandServiceTest {
 
             // Then
             verify(request, never()).completeApproval();
-            verify(alarmService, never()).sendContainerCreatedEmail(any(), any(), any());
-            verify(alarmService, never()).sendContainerCreatedNotification(any(), any(), any());
+            verify(userGuideMailer, never()).sendContainerCreatedEmail(any(), any(), any());
+            verify(requestChannelNotifier, never()).sendContainerCreatedNotification(any(), any(), any());
         }
 
         @Test
@@ -921,7 +925,7 @@ class AdminRequestCommandServiceTest {
             verify(mockUser, never()).assignUbuntuAccount(any(), any());
             verify(transactionStatus, times(2)).setRollbackOnly();
             assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("vision-lab")).hasSize(1);
-            verify(alarmService, never()).sendContainerCreatedEmail(any(), any(), any());
+            verify(userGuideMailer, never()).sendContainerCreatedEmail(any(), any(), any());
         }
 
         @Test

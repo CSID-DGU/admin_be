@@ -4,6 +4,7 @@ import DGU_AI_LAB.admin_be.global.alert.AlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.alarm.service.UserGuideMailer;
 import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
 import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
@@ -59,6 +60,7 @@ public class PodMigrationService {
     private final JobClient jobClient;
     private final PlatformTransactionManager transactionManager;
     private final AlarmService alarmService;
+    private final UserGuideMailer userGuideMailer;
     private final ContainerRestartThrottle restartThrottle;
 
     // 성공 결과를 받지 못해 반영을 멈춘 신청은 폴러가 매 바퀴 다시 부른다. 같은 알림이 반복되지 않게 한다.
@@ -372,7 +374,7 @@ public class PodMigrationService {
     /** 새 Pod에 다른 포트가 배정되면 사용자에게 새 접속 정보를 알린다. 메일 실패가 반영된 결과를 되돌리지 않는다. */
     private void notifyPortsChanged(Request request) {
         AfterCommit.run("마이그레이션 포트 변경 안내 메일, 요청 ID " + request.getRequestId(),
-                () -> alarmService.sendContainerPortsChangedEmail(request));
+                () -> userGuideMailer.sendContainerPortsChangedEmail(request));
     }
 
     private static Set<String> portKeys(List<PodExternalPort> ports) {

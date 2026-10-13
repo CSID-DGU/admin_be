@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.users.service;
 import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestDecision;
 import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestNotice;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.alarm.service.RequestChannelNotifier;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.PasswordResetSummaryDTO;
 import DGU_AI_LAB.admin_be.global.util.EmailService;
 import lombok.RequiredArgsConstructor;
@@ -20,10 +21,11 @@ public class PasswordResetNotifier {
 
     private final EmailService emailService;
     private final AlarmService alarmService;
+    private final RequestChannelNotifier requestChannelNotifier;
 
     /** 승인을 기다리는 신청이 새로 들어왔다. */
     public void requested(ChangeRequestNotice notice) {
-        alarmService.sendChangeRequestNotification(notice);
+        requestChannelNotifier.sendChangeRequestNotification(notice);
     }
 
     /** 새 비밀번호가 적용됐다. 신청자에게 메일을 보내고, 접수 알림의 스레드 댓글로 결과를 남긴다. */
@@ -33,7 +35,7 @@ public class PasswordResetNotifier {
         } catch (RuntimeException e) {
             log.warn("[passwordReset] 비밀번호 변경 알림 메일 발송 실패", e);
         }
-        alarmService.sendChangeRequestDecidedNotification(applied);
+        requestChannelNotifier.sendChangeRequestDecidedNotification(applied);
     }
 
     public void denied(ChangeRequestDecision denied) {
@@ -42,7 +44,7 @@ public class PasswordResetNotifier {
         } catch (RuntimeException e) {
             log.warn("[passwordReset] 재설정 거절 알림 메일 발송 실패", e);
         }
-        alarmService.sendChangeRequestDecidedNotification(denied);
+        requestChannelNotifier.sendChangeRequestDecidedNotification(denied);
     }
 
     /**

@@ -2,6 +2,8 @@ package DGU_AI_LAB.admin_be.domain.groups.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestDecision;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.alarm.service.RequestChannelNotifier;
+import DGU_AI_LAB.admin_be.domain.alarm.service.UserGuideMailer;
 import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupOperationResponseDTO;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.entity.GroupOperation;
@@ -68,6 +70,8 @@ public class GroupOperationService {
     private final ChangeRequestRepository changeRequestRepository;
     private final JobClient jobClient;
     private final AlarmService alarmService;
+    private final RequestChannelNotifier requestChannelNotifier;
+    private final UserGuideMailer userGuideMailer;
     private final ObjectMapper objectMapper;
     private final PlatformTransactionManager transactionManager;
 
@@ -266,8 +270,8 @@ public class GroupOperationService {
     private void notifyAdded(AddedNotice notice) {
         ChangeRequest changeRequest = notice.changeRequest();
         AfterCommit.run("그룹 추가 승인 안내 메일·채널 알림, changeRequestId " + changeRequest.getChangeRequestId(), () -> {
-            alarmService.sendChangeRequestDecidedNotification(notice.decision());
-            alarmService.sendGroupAddedEmail(changeRequest, changeRequest.getAdminComment(), notice.groupNames());
+            requestChannelNotifier.sendChangeRequestDecidedNotification(notice.decision());
+            userGuideMailer.sendGroupAddedEmail(changeRequest, changeRequest.getAdminComment(), notice.groupNames());
         });
     }
 

@@ -1,7 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestDecision;
-import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.alarm.service.RequestChannelNotifier;
+import DGU_AI_LAB.admin_be.domain.alarm.service.UserGuideMailer;
 import DGU_AI_LAB.admin_be.domain.groups.service.GroupOperationService;
 import DGU_AI_LAB.admin_be.domain.portRequests.service.PortOperationService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveModificationDTO;
@@ -37,7 +38,8 @@ import java.util.Map;
 @Transactional
 public class AdminModificationCommandService {
 
-    private final AlarmService alarmService;
+    private final RequestChannelNotifier requestChannelNotifier;
+    private final UserGuideMailer userGuideMailer;
 
     private final RequestRepository requestRepository;
     private final UserRepository userRepository;
@@ -67,8 +69,8 @@ public class AdminModificationCommandService {
         changeRequest.deny(admin, dto.adminComment());
         ChangeRequestDecision decision = ChangeRequestDecision.of(changeRequest);
         AfterCommit.run("변경 요청 거절 메일·채널 알림, changeRequestId " + dto.changeRequestId(), () -> {
-            alarmService.sendChangeRequestDecidedNotification(decision);
-            alarmService.sendModificationRejectedEmail(changeRequest, dto.adminComment());
+            requestChannelNotifier.sendChangeRequestDecidedNotification(decision);
+            userGuideMailer.sendModificationRejectedEmail(changeRequest, dto.adminComment());
         });
     }
 
@@ -145,15 +147,15 @@ public class AdminModificationCommandService {
 
         // 메일·채널 알림은 커밋 뒤에 보낸다 — 두 행을 잠근 채 보내지 않고, 롤백된 승인을 알리지 않는다.
         AfterCommit.run("변경 요청 승인 채널 알림, changeRequestId " + dto.changeRequestId(),
-                () -> alarmService.sendChangeRequestDecidedNotification(decision));
+                () -> requestChannelNotifier.sendChangeRequestDecidedNotification(decision));
         if (expiryChange != null) {
             AfterCommit.run("기간 연장 안내 메일, changeRequestId " + dto.changeRequestId(), () -> {
-                alarmService.sendContainerExtendedEmail(originalRequest, expiryChange.oldExpiresAt(), expiryChange.newExpiresAt());
+                userGuideMailer.sendContainerExtendedEmail(originalRequest, expiryChange.oldExpiresAt(), expiryChange.newExpiresAt());
                 log.info("사용자 '{}'에게 기간 연장 안내 메일을 발송했습니다.", originalRequest.getUser().getName());
             });
         } else {
             AfterCommit.run("변경 요청 승인 안내 메일, changeRequestId " + dto.changeRequestId(), () -> {
-                alarmService.sendModificationApprovedEmail(changeRequest, dto.adminComment());
+                userGuideMailer.sendModificationApprovedEmail(changeRequest, dto.adminComment());
                 log.info("사용자 '{}'에게 변경 요청 승인 안내 메일을 발송했습니다.", originalRequest.getUser().getName());
             });
         }
