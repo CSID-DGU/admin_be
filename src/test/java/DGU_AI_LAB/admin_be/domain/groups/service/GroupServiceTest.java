@@ -112,12 +112,12 @@ class GroupServiceTest {
     }
 
     @Test
-    @DisplayName("하루 한도를 넘으면 만들지 않는다")
+    @DisplayName("하루 한도를 넘으면 예외로 끝나 저장이 되돌려진다")
     void throttledRequestIsNotCreated() {
+        when(groupRepository.saveAndFlush(any(Group.class))).thenAnswer(inv -> inv.getArgument(0));
         doThrow(new BusinessException(ErrorCode.TOO_MANY_GROUP_CREATIONS)).when(groupCreateThrottle).acquire(USER_ID);
 
         assertRejected("vision-lab", ErrorCode.TOO_MANY_GROUP_CREATIONS);
-        verify(groupRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -126,6 +126,7 @@ class GroupServiceTest {
         when(groupRepository.saveAndFlush(any(Group.class))).thenThrow(new DataIntegrityViolationException("dup"));
 
         assertRejected("vision-lab", ErrorCode.DUPLICATE_GROUP_NAME);
+        verifyNoInteractions(groupCreateThrottle);
     }
 
     private void assertRejected(String groupName, ErrorCode expected) {

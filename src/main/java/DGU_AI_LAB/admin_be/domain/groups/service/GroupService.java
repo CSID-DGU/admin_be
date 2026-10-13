@@ -80,9 +80,6 @@ public class GroupService {
                 GroupOperationKind.CREATE, name, GroupOperationStatus.PROCESSING)) {
             throw new BusinessException(ErrorCode.GROUP_OPERATION_IN_PROGRESS);
         }
-        // 검증을 통과한 요청만 센다 — 이름 중복 같은 실패로 한도를 쓰지 않게 한다.
-        groupCreateThrottle.acquire(userId);
-
         Group group;
         try {
             group = groupRepository.saveAndFlush(Group.builder().groupName(name).build());
@@ -90,6 +87,8 @@ public class GroupService {
             // 같은 이름을 동시에 만든 다른 요청이 먼저 저장했다.
             throw new BusinessException(ErrorCode.DUPLICATE_GROUP_NAME);
         }
+        // 저장까지 된 요청만 센다 — 이름 중복 같은 실패로 한도를 쓰지 않게 한다. 한도를 넘으면 예외로 저장이 되돌려진다.
+        groupCreateThrottle.acquire(userId);
         log.info("[createGroup] 승인 대기 그룹 생성: groupId={}, groupName={}, userId={}", group.getGroupId(), name, userId);
         return GroupResponseDTO.fromEntity(group);
     }
