@@ -56,13 +56,15 @@ public class EmailService {
         // 바꿔 횟수 제한을 피하거나, 코드가 묶인 주소와 메일이 가는 주소가 달라질 수 있다.
         String email = EmailAddresses.normalize(rawEmail);
         emailDomainPolicy.requireAllowed(email);
-        // 이미 가입된 이메일이면 인증 메일 자체를 보내지 않는다 — 어차피 register()에서도
-        // 막히지만, 그 전에 걸러야 이미 가입된 사람에게 혼란만 주는 인증 메일 발송과
-        // 5분짜리 인증 코드 발급을 아낀다.
-        if (userRepository.existsByEmail(email)) {
-            throw new BusinessException(ErrorCode.USER_ALREADY_EXISTS);
-        }
         emailSendThrottle.acquire(email);
+        // 이미 가입된 이메일에도 응답은 똑같이 한다. 여기서 "이미 가입됨"으로 답하면 로그인 없이 누구나 어떤
+        // 주소가 가입돼 있는지 알아낼 수 있다. 인증 코드는 만들지 않고, 주소 주인에게만 메일로 알린다.
+        if (userRepository.existsByEmail(email)) {
+            log.info("이미 가입된 이메일의 가입 인증 요청: {}", EmailAddresses.mask(email));
+            sendEmail(email, messageUtils.get("email.already-registered.subject"),
+                    messageUtils.get("email.already-registered.body"));
+            return;
+        }
 
         String authCode = issueCode(CodePurpose.SIGNUP, email);
         log.info("이메일 인증번호 저장 완료");

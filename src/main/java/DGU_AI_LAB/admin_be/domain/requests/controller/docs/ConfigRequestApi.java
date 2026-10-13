@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 @RequestMapping("/api/requests/config")
 public interface ConfigRequestApi {
 
-    @Operation(summary = "우분투 계정명 사용 가능 여부 확인", description = "지정된 우분투 계정명이 현재 시스템에서 사용 가능한지 확인합니다.")
+    @Operation(summary = "우분투 계정명 사용 가능 여부 확인", description = "지정된 우분투 계정명이 현재 시스템에서 사용 가능한지 확인합니다. 로그인(JWT)이 필요합니다.")
     @ApiResponse(responseCode = "200", description = "사용 가능 여부 반환 — {\"available\": true/false}")
     @GetMapping("/check-username")
     ResponseEntity<?> checkUbuntuUsername(

@@ -15,4 +15,16 @@ public class SecurityWhitelist {
             "/api/requests/config/**", // JWT 대신 InternalTokenFilter(X-Internal-Token)로 보호
             "/api/internal/**"         // JWT 대신 InternalTokenFilter(X-Internal-Token)로 보호
     );
+
+    // 신청 화면의 이름 중복 확인. 위의 /api/requests/config/** 범위 안에 있지만 내부 토큰이 아니라 로그인(JWT)으로
+    // 확인한다 — 로그인 없이 열어 두면 누구나 어떤 계정 이름이 쓰이고 있는지 횟수 제한 없이 알아낼 수 있다.
+    public static final String USERNAME_CHECK_PATH = "/api/requests/config/check-username";
+
+    /** JWT 없이 지나가는 경로인지. 판정은 라우팅과 같은 풀린(퍼센트 디코딩된) 경로로 한다. */
+    public static boolean isUnprotected(String path, org.springframework.util.PathMatcher matcher) {
+        if (USERNAME_CHECK_PATH.equals(path)) {
+            return false;
+        }
+        return UNPROTECTED_PATHS.stream().anyMatch(pattern -> matcher.match(pattern, path));
+    }
 }

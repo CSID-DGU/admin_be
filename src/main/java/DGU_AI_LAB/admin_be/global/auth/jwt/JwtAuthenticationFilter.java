@@ -101,13 +101,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String path = UrlPathHelper.defaultInstance.getPathWithinApplication(request);
         log.debug("[JwtAuthFilter] 현재 요청 URI = {}", path);
 
-        for (String pattern : SecurityWhitelist.UNPROTECTED_PATHS) {
-            if (pathMatcher.match(pattern, path)) {
-                log.debug("[JwtAuthFilter] 인증 불필요한 경로: {}", pattern);
-                return true;
-            }
-        }
-        return false;
+        return SecurityWhitelist.isUnprotected(path, pathMatcher);
     }
 
 }

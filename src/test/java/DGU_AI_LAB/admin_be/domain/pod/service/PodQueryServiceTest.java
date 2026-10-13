@@ -73,7 +73,7 @@ class PodQueryServiceTest {
 
     private Pod podNamed(String name) {
         return new PodBuilder()
-                .withMetadata(new ObjectMetaBuilder().withName(name).build())
+                .withMetadata(new ObjectMetaBuilder().withName(name).addToLabels("app", "ailab-guest").build())
                 .build();
     }
 
@@ -231,6 +231,22 @@ class PodQueryServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+
+        @Test
+        @DisplayName("사용자 컨테이너가 아닌 Pod(DB·admin_be 등)는 없는 것으로 답하고 로그를 읽지 않는다")
+        void throwsBusinessException_whenPodIsNotUserContainer() {
+            Pod database = new PodBuilder()
+                    .withMetadata(new ObjectMetaBuilder().withName("mysql-0").addToLabels("app", "mysql").build())
+                    .build();
+            when(inNamespace.withName("mysql-0")).thenReturn(podResource);
+            when(podResource.get()).thenReturn(database);
+
+            assertThatThrownBy(() -> podQueryService.getPodLogs("mysql-0", null))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
+            verify(podResource, never()).tailingLines(anyInt());
         }
 
         @Test

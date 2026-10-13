@@ -168,15 +168,34 @@ class EmailServiceTest {
         }
 
         @Test
-        @DisplayName("이미 가입된 이메일이면 인증 메일을 보내지 않고 즉시 실패한다")
-        void sendEmailVerificationCode_alreadyRegisteredEmail_doesNotSendMail() {
+        @DisplayName("이미 가입된 이메일에도 똑같이 성공으로 답하고, 인증 코드 없이 안내 메일만 보낸다")
+        void sendEmailVerificationCode_alreadyRegisteredEmail_answersTheSameAndSendsNoticeOnly() throws Exception {
             when(userRepository.existsByEmail("test@example.com")).thenReturn(true);
+            when(messageUtils.get("email.already-registered.subject")).thenReturn("이미 가입됨");
+            when(messageUtils.get("email.already-registered.body")).thenReturn("안내");
+            when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+
+            assertThatCode(() -> emailService.sendEmailVerificationCode("test@example.com"))
+                    .doesNotThrowAnyException();
+
+            verify(mimeMessage).setSubject("이미 가입됨", "UTF-8");
+            verify(mailSender).send(mimeMessage);
+            verifyNoInteractions(valueOperations);
+        }
+
+        @Test
+        @DisplayName("이미 가입된 이메일도 발송 횟수 제한을 먼저 거친다")
+        void sendEmailVerificationCode_alreadyRegisteredEmail_isThrottledLikeAnyOther() {
+            lenient().when(userRepository.existsByEmail("test@example.com")).thenReturn(true);
+            doThrow(new BusinessException(ErrorCode.TOO_MANY_EMAIL_SENDS))
+                    .when(emailSendThrottle).acquire("test@example.com");
 
             assertThatThrownBy(() -> emailService.sendEmailVerificationCode("test@example.com"))
-                    .isInstanceOf(BusinessException.class);
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.TOO_MANY_EMAIL_SENDS);
 
-            verifyNoInteractions(mailSender);
-            verifyNoInteractions(valueOperations);
+            verifyNoInteractions(mailSender, valueOperations);
         }
     }
 

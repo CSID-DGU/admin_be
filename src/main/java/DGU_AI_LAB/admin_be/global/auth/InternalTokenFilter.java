@@ -28,8 +28,8 @@ public class InternalTokenFilter extends OncePerRequestFilter {
     public static final String HEADER = "X-Internal-Token";
 
     static final List<String> PROTECTED_PATHS = List.of("/api/requests/config/**", "/api/internal/**");
-    // 신청 화면에서 로그인한 사용자가 부르는 이름 중복 확인은 비밀 정보를 돌려주지 않아 그대로 둔다.
-    static final String EXEMPT_PATH = "/api/requests/config/check-username";
+    // 신청 화면에서 로그인한 사용자가 부르는 이름 중복 확인은 내부 토큰이 아니라 JWT로 확인한다.
+    static final String EXEMPT_PATH = SecurityWhitelist.USERNAME_CHECK_PATH;
 
     private static final AntPathMatcher pathMatcher = new AntPathMatcher();
 
