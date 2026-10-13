@@ -11,8 +11,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.web.client.ResourceAccessException;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.web.client.RestClient;
 
 import java.net.ConnectException;
 import java.util.List;
@@ -20,8 +20,9 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
 
 /**
  * Slack Webhook URL은 그 자체가 인증 수단이므로 로그로 남기면 안 된다.
@@ -35,31 +36,25 @@ class SlackApiServiceLoggingTest {
     private RedisTemplate<String, Object> redisTemplate;
 
     @Mock
-    private RestTemplate restTemplate;
-
-    @Mock
     private ValueOperations<String, Object> valueOperations;
 
+    private MockRestServiceServer server;
     private SlackApiService slackApiService;
 
     @BeforeEach
     void setUp() {
-        slackApiService = new SlackApiService(redisTemplate);
+        RestClient.Builder builder = RestClient.builder();
+        server = MockRestServiceServer.bindTo(builder).build();
+        slackApiService = new SlackApiService(redisTemplate, builder.build());
         ReflectionTestUtils.setField(slackApiService, "botToken", "test-bot-token");
-        ReflectionTestUtils.setField(slackApiService, "restTemplate", restTemplate);
     }
 
     @Test
     @DisplayName("Webhook 전송 실패 시 URL을 로그로 남기지 않고 예외 타입만 남긴다")
     void doesNotLogWebhookUrlOnFailure() {
-        // RestTemplate이 실제로 만드는 형태 그대로 재현한다: ResourceAccessException의 메시지 자체에
-        // 요청 URL이 박혀 있다("I/O error on POST request for \"<url>\": ..."). 원인 없이 메시지만
-        // 있는 가짜 예외로 테스트하면 이 위험을 재현하지 못해 회귀를 놓친다.
-        ConnectException connectRefused = new ConnectException("Connection refused");
-        ResourceAccessException realistic = new ResourceAccessException(
-                "I/O error on POST request for \"" + WEBHOOK_URL + "\": Connection refused", connectRefused);
-        when(restTemplate.postForEntity(eq(WEBHOOK_URL), any(), eq(String.class)))
-                .thenThrow(realistic);
+        // 연결 실패를 그대로 일으켜 RestClient가 실제로 만드는 예외를 받는다 — 그 메시지에는 요청 URL이 박혀 있다
+        // ("I/O error on POST request for \"<url>\": ..."). 손으로 만든 가짜 예외로는 이 위험을 재현하지 못한다.
+        server.expect(requestTo(WEBHOOK_URL)).andRespond(withException(new ConnectException("Connection refused")));
 
         try (LogCaptor logCaptor = LogCaptor.forClass(SlackApiService.class)) {
             assertThatThrownBy(() -> slackApiService.sendWebhook(WEBHOOK_URL, "메시지"))
