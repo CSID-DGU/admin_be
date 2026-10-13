@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.home.service;
 
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -20,6 +21,15 @@ public class HomeRetentionPolicy {
     /** 마지막 컨테이너가 끝난 뒤 실제로 지우기까지의 기간. 실험 스택에서만 짧은 값을 넣는다. */
     @Value("${home-retention.delete-days:40}")
     private int deleteDays = 40;
+
+    /** 알린 날보다 먼저 지우는 설정이면 기동하지 않는다 — 사용자가 안내받은 날 전에 홈이 사라진다. */
+    @PostConstruct
+    void validate() {
+        if (announcedDays < 0 || deleteDays < announcedDays) {
+            throw new IllegalStateException("home-retention.delete-days(" + deleteDays
+                    + ")는 home-retention.announced-days(" + announcedDays + ") 이상이어야 한다");
+        }
+    }
 
     public int announcedDays() {
         return announcedDays;
