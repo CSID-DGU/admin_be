@@ -57,6 +57,9 @@ class RequestQueryServiceTest {
     @Mock
     private RequestGroupRepository requestGroupRepository;
 
+    @Mock
+    private DGU_AI_LAB.admin_be.domain.users.repository.UserGroupRepository userGroupRepository;
+
     @Nested
     @DisplayName("getRequestsByUserId")
     class GetRequestsByUserId {

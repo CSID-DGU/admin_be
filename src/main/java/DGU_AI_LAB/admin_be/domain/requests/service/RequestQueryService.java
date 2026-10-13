@@ -15,6 +15,8 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.ChangeRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestGroupRepository;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.domain.users.repository.UserGroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -25,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -39,6 +42,7 @@ public class RequestQueryService {
     private final PortRequestRepository portRequestRepository;
     private final PodExternalPortRepository podExternalPortRepository;
     private final RequestGroupRepository requestGroupRepository;
+    private final UserGroupRepository userGroupRepository;
 
     /** 내 신청 목록 */
     public List<SaveRequestResponseDTO> getRequestsByUserId(Long userId) {
@@ -48,7 +52,7 @@ public class RequestQueryService {
         return toResponseDTOs(requestRepository.findAllByUser_UserId(userId));
     }
 
-    /** 목록 단위 배치 로딩으로 N+1 방지: portRequests, podExternalPorts를 IN절 1회씩 조회 */
+    /** 목록 단위 배치 로딩으로 N+1 방지: 포트·신청 그룹·계정 그룹을 IN절 1회씩 조회 */
     List<SaveRequestResponseDTO> toResponseDTOs(List<Request> requests) {
         if (requests.isEmpty()) return List.of();
 
@@ -75,12 +79,27 @@ public class RequestQueryService {
                                 Collectors.mapping(RequestGroup::getGroup, Collectors.toList())
                         ));
 
+        List<Long> userIds = requests.stream()
+                .map(Request::getUser)
+                .filter(Objects::nonNull)
+                .map(User::getUserId)
+                .distinct()
+                .toList();
+
+        Map<Long, List<Long>> gidsByUser =
+                userGroupRepository.findAllWithGroupByUserIds(userIds).stream()
+                        .collect(Collectors.groupingBy(
+                                ug -> ug.getUser().getUserId(),
+                                Collectors.mapping(ug -> ug.getGroup().getUbuntuGid(), Collectors.toList())
+                        ));
+
         return requests.stream()
                 .map(r -> SaveRequestResponseDTO.fromEntityWithPorts(
                         r,
                         portMappingsByRequest.getOrDefault(r.getRequestId(), List.of()),
                         podPortsByRequest.getOrDefault(r.getRequestId(), List.of()),
-                        groupsByRequest.getOrDefault(r.getRequestId(), List.of())
+                        groupsByRequest.getOrDefault(r.getRequestId(), List.of()),
+                        r.getUser() == null ? List.of() : gidsByUser.getOrDefault(r.getUser().getUserId(), List.of())
                 ))
                 .toList();
     }

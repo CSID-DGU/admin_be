@@ -80,21 +80,36 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     Optional<Request> findByIdForUpdate(@Param("requestId") Long requestId);
 
     /**
-     * 관리자 전체 신청 목록용. 응답 변환이 신청마다 사용자·서버·이미지·그룹을 읽으므로 한 번에 함께 읽는다
-     * (따로 읽으면 신청 수만큼 추가 조회가 나간다).
+     * 관리자 신청 목록용. 응답 변환이 신청마다 읽는 사용자·서버·이미지만 함께 읽는다. 그룹처럼 여러 행인 연관은
+     * 여기서 조인하지 않는다 — 두 개를 함께 조인하면 신청 하나가 (신청 그룹 수 × 계정 그룹 수)행으로 불어난다.
+     * 그쪽은 응답을 만들 때 신청·사용자 번호로 한 번씩 묶어 읽는다(RequestQueryService.toResponseDTOs).
      */
-    // r.requestGroups(신청 시점 그룹)와 u.userGroups(계정 실제 그룹) 둘 다 응답 DTO가 읽으므로
-    // 함께 fetch한다 — 안 하면 신청 수만큼 u.userGroups 지연 로딩이 추가로 나간다.
-    @Query("SELECT DISTINCT r FROM Request r " +
-           "JOIN FETCH r.user u " +
+    @Query("SELECT r FROM Request r " +
+           "JOIN FETCH r.user " +
            "LEFT JOIN FETCH r.resourceGroup " +
            "LEFT JOIN FETCH r.containerImage " +
-           "LEFT JOIN FETCH r.requestGroups rg " +
-           "LEFT JOIN FETCH rg.group " +
-           "LEFT JOIN FETCH u.userGroups ug " +
-           "LEFT JOIN FETCH ug.group " +
+           "WHERE r.status IN :statuses AND r.createdAt >= :createdFrom " +
            "ORDER BY r.requestId DESC")
-    List<Request> findAllWithAssociations();
+    List<Request> findAllForAdminList(@Param("statuses") Collection<Status> statuses,
+                                      @Param("createdFrom") LocalDateTime createdFrom);
+
+    /** 신청 하나를 응답 변환에 필요한 사용자·서버·이미지와 함께 읽는다. */
+    @Query("SELECT r FROM Request r " +
+           "JOIN FETCH r.user " +
+           "LEFT JOIN FETCH r.resourceGroup " +
+           "LEFT JOIN FETCH r.containerImage " +
+           "WHERE r.requestId = :requestId")
+    Optional<Request> findByIdForAdminView(@Param("requestId") Long requestId);
+
+    /** 상태별 신청 건수. 건수가 0인 상태는 행이 없다. */
+    @Query("SELECT r.status AS status, COUNT(r) AS count FROM Request r " +
+           "WHERE r.createdAt >= :createdFrom GROUP BY r.status")
+    List<StatusCount> countByStatusCreatedFrom(@Param("createdFrom") LocalDateTime createdFrom);
+
+    interface StatusCount {
+        Status getStatus();
+        long getCount();
+    }
 
     @Query("SELECT DISTINCT r FROM Request r " +
            "JOIN FETCH r.user u " +

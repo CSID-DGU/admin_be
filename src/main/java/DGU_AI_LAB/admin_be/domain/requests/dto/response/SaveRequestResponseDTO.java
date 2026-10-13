@@ -151,15 +151,18 @@ public record SaveRequestResponseDTO(
             List<PodExternalPortResponseDTO> podExternalPorts
     ) {
         return fromEntityWithPorts(request, portMappings, podExternalPorts,
-                request.getRequestGroups().stream().map(RequestGroup::getGroup).toList());
+                request.getRequestGroups().stream().map(RequestGroup::getGroup).toList(),
+                request.getUser() == null ? List.of()
+                        : request.getUser().getUserGroups().stream().map(ug -> ug.getGroup().getUbuntuGid()).toList());
     }
 
-    /** 목록 조회처럼 신청마다 그룹을 따로 읽지 않도록, 미리 모아 둔 그룹을 받는다. */
+    /** 목록 조회처럼 신청마다 그룹을 따로 읽지 않도록, 미리 모아 둔 신청 그룹과 계정 그룹 GID를 받는다. */
     public static SaveRequestResponseDTO fromEntityWithPorts(
             Request request,
             List<PortMappingDTO> portMappings,
             List<PodExternalPortResponseDTO> podExternalPorts,
-            List<Group> requestedGroups
+            List<Group> requestedGroups,
+            List<Long> ubuntuGids
     ) {
         if (request.getResourceGroup() == null) {
             throw new BusinessException(ErrorCode.RESOURCE_GROUP_NOT_FOUND);
@@ -182,11 +185,7 @@ public record SaveRequestResponseDTO(
                 .ubuntuUsername(request.getUbuntuUsername())
                 .ubuntuUid(request.getUbuntuUid())
                 .ubuntuGid(request.getUbuntuGid())
-                .ubuntuGids(
-                        request.getUser().getUserGroups().stream()
-                                .map(ug -> ug.getGroup().getUbuntuGid())
-                                .toList()
-                )
+                .ubuntuGids(ubuntuGids)
                 .requestedGroups(requestedGroups.stream()
                         .map(RequestedGroupDTO::fromEntity)
                         .sorted(Comparator.comparing(RequestedGroupDTO::groupName))
