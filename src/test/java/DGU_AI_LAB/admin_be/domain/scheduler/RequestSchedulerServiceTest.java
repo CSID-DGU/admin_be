@@ -91,7 +91,7 @@ public class RequestSchedulerServiceTest {
 
     private void deleteTestUser() {
         userRepository.findByEmail("test@dgu.ac.kr").ifPresent(user -> {
-            requestRepository.deleteAllInBatch(requestRepository.findAllByUser(user));
+            requestRepository.deleteAllInBatch(requestRepository.findAllByUser_UserId(user.getUserId()));
             userRepository.deleteById(user.getUserId());
         });
     }

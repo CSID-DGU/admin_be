@@ -75,7 +75,7 @@ public class AdminUserService {
         newTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         Long userId = user.getUserId();
 
-        List<Request> userRequests = newTx.execute(status -> requestRepository.findAllByUser(user));
+        List<Request> userRequests = newTx.execute(status -> requestRepository.findAllByUser_UserId(user.getUserId()));
 
         // 마이그레이션이 방금 끝났는데 아직 상태가 되돌아오지 않았을 수 있다(결과 반영은 주기 작업이
         // 한다). 그 틈 때문에 정리가 통째로 거부되지 않도록, 검사 전에 끝난 결과를 먼저 반영한다.
@@ -90,7 +90,7 @@ public class AdminUserService {
         List<Request> targets = newTx.execute(status -> {
             User managed = userRepository.findByIdForUpdate(userId)
                     .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
-            List<Request> current = requestRepository.findAllByUser(managed);
+            List<Request> current = requestRepository.findAllByUser_UserId(managed.getUserId());
             boolean hasInFlightRequest = current.stream()
                     .anyMatch(r -> r.getStatus() == Status.MIGRATING || r.getStatus() == Status.PROCESSING);
             if (hasInFlightRequest) {

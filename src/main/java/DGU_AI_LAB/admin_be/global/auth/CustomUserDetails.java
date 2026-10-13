@@ -19,7 +19,7 @@ public class CustomUserDetails implements UserDetails {
     private final String name;
     private final User user;
 
-    public CustomUserDetails(User user, Long selectedCafeId) {
+    public CustomUserDetails(User user) {
         this.user = user;
         this.userId = user.getUserId();
         this.email = user.getEmail();

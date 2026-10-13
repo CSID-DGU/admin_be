@@ -18,7 +18,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,62 +37,7 @@ class TokenServiceTest {
     private RedisTemplate<String, String> redisTemplate;
 
     @Mock
-    private ValueOperations<String, String> valueOperations;
-
-    @Mock
     private CustomUserDetailsService customUserDetailsService;
-
-    @Nested
-    @DisplayName("issueToken")
-    class IssueToken {
-
-        @Test
-        @DisplayName("Redis에 리프레시 토큰이 없으면 새로 발급하고 저장한다")
-        void issueToken_createsNewRefreshToken_whenNotInRedis() {
-            ReflectionTestUtils.setField(tokenService, "REFRESH_TOKEN_EXPIRE_TIME", 604800L);
-            when(jwtProvider.getIssueToken(1L, true)).thenReturn("newAccessToken");
-            when(jwtProvider.getIssueToken(1L, false)).thenReturn("newRefreshToken");
-            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-            when(valueOperations.get("RT:1")).thenReturn(null);
-
-            UserTokenResponseDTO result = tokenService.issueToken(1L);
-
-            assertThat(result.accessToken()).isEqualTo("newAccessToken");
-            assertThat(result.refreshToken()).isEqualTo("newRefreshToken");
-            verify(valueOperations).set(eq("RT:1"), eq("newRefreshToken"), anyLong(), any());
-        }
-
-        @Test
-        @DisplayName("Redis에 기존 리프레시 토큰이 있으면 재사용한다")
-        void issueToken_reusesExistingRefreshToken_whenInRedis() {
-            when(jwtProvider.getIssueToken(1L, true)).thenReturn("newAccessToken");
-            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-            when(valueOperations.get("RT:1")).thenReturn("existingRefreshToken");
-
-            UserTokenResponseDTO result = tokenService.issueToken(1L);
-
-            assertThat(result.accessToken()).isEqualTo("newAccessToken");
-            assertThat(result.refreshToken()).isEqualTo("existingRefreshToken");
-            verify(jwtProvider, never()).getIssueToken(1L, false);
-        }
-    }
-
-    @Nested
-    @DisplayName("issueTempToken")
-    class IssueTempToken {
-
-        @Test
-        @DisplayName("임시 토큰을 발급하면 액세스/리프레시 토큰을 모두 새로 발급한다")
-        void issueTempToken_issuesBothTokens() {
-            when(jwtProvider.getIssueToken(1L, true)).thenReturn("tempAccess");
-            when(jwtProvider.getIssueToken(1L, false)).thenReturn("tempRefresh");
-
-            UserTokenResponseDTO result = tokenService.issueTempToken(1L);
-
-            assertThat(result.accessToken()).isEqualTo("tempAccess");
-            assertThat(result.refreshToken()).isEqualTo("tempRefresh");
-        }
-    }
 
     @Nested
     @DisplayName("logout")

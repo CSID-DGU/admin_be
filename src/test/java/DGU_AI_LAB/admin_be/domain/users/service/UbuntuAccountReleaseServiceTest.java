@@ -38,7 +38,6 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
@@ -72,7 +71,7 @@ class UbuntuAccountReleaseServiceTest {
         user.beginUbuntuAccountRelease();
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
         when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user));
-        when(requestRepository.findAllByUser(user)).thenReturn(requests);
+        when(requestRepository.findAllByUser_UserId(user.getUserId())).thenReturn(requests);
         // 최신순. 노드가 없는 신청은 이 조회에 나오지 않는다.
         when(requestRepository.findAllWithNodeByUserIdOrderByRequestIdDesc(USER_ID))
                 .thenAnswer(inv -> requests.stream()
@@ -249,6 +248,6 @@ class UbuntuAccountReleaseServiceTest {
         service.advance(USER_ID);
 
         verifyNoInteractions(ubuntuAccountService, jobClient, alarmService);
-        verify(requestRepository, never()).findAllByUser(eq(user));
+        verify(requestRepository, never()).findAllByUser_UserId(any());
     }
 }

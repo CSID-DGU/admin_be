@@ -120,7 +120,7 @@ class RequestRepositoryTest {
         @Test
         @DisplayName("특정 유저의 모든 요청을 조회한다")
         void findAllByUser_returnsUserRequests() {
-            List<Request> result = requestRepository.findAllByUser(user);
+            List<Request> result = requestRepository.findAllByUser_UserId(user.getUserId());
 
             assertThat(result).hasSize(2);
         }
@@ -152,7 +152,7 @@ class RequestRepositoryTest {
         @Test
         @DisplayName("같은 유저네임의 종료된(DENIED) 이력은 제외한다 — 유저네임은 더 이상 유일하지 않다")
         void excludesClosedHistory() {
-            List<Request> all = requestRepository.findAllByUser(user);
+            List<Request> all = requestRepository.findAllByUser_UserId(user.getUserId());
             assertThat(all).filteredOn(r -> "pendinguser".equals(r.getUbuntuUsername())).hasSize(2);
 
             List<Request> result = requestRepository

@@ -14,7 +14,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -42,14 +41,11 @@ class JwtAuthenticationFilterLoggingTest {
     @Mock
     private CustomUserDetailsService customUserDetailsService;
 
-    @Mock
-    private RedisTemplate<String, String> redisTemplate;
-
     private JwtAuthenticationFilter filter;
 
     @BeforeEach
     void setUp() {
-        filter = new JwtAuthenticationFilter(jwtProvider, customUserDetailsService, redisTemplate);
+        filter = new JwtAuthenticationFilter(jwtProvider, customUserDetailsService);
     }
 
     @AfterEach

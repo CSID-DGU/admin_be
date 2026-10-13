@@ -173,7 +173,7 @@ class AdminUserServiceTest {
     }
 
     private void givenRequests(Request... requests) {
-        when(requestRepository.findAllByUser(any())).thenReturn(List.of(requests));
+        when(requestRepository.findAllByUser_UserId(any())).thenReturn(List.of(requests));
     }
 
     @Nested

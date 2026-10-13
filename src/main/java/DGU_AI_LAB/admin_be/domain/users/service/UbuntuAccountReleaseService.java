@@ -93,7 +93,7 @@ public class UbuntuAccountReleaseService {
         if (user == null || !user.isReleasingUbuntuAccount()) {
             return null;
         }
-        boolean containersRemain = requestRepository.findAllByUser(user).stream()
+        boolean containersRemain = requestRepository.findAllByUser_UserId(user.getUserId()).stream()
                 .anyMatch(r -> Status.activeStatuses().contains(r.getStatus()) || r.getStatus() == Status.PROCESSING);
         // 최신순이므로 노드마다 처음 보이는 신청이 그 노드에서 계정을 마지막으로 쓴 신청이다.
         Set<String> seen = new LinkedHashSet<>();
