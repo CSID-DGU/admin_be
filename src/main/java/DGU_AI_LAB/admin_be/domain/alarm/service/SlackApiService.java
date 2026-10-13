@@ -2,15 +2,17 @@ package DGU_AI_LAB.admin_be.domain.alarm.service;
 
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.http.*;
-import org.springframework.stereotype.Service;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 import java.net.URI;
 import java.net.URLEncoder;
@@ -28,22 +30,31 @@ import java.util.Map;
  * 관심 없음: 누구한테 왜 보냈는지
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SlackApiService {
 
     @Value("${slack.bot-token}")
     private String botToken;
 
-    private final RestTemplate restTemplate = createRestTemplate();
+    private final RedisTemplate<String, Object> redisTemplate;
+    private final RestClient restClient;
 
-    private static RestTemplate createRestTemplate() {
+    @Autowired
+    public SlackApiService(RedisTemplate<String, Object> redisTemplate) {
+        this(redisTemplate, createRestClient());
+    }
+
+    SlackApiService(RedisTemplate<String, Object> redisTemplate, RestClient restClient) {
+        this.redisTemplate = redisTemplate;
+        this.restClient = restClient;
+    }
+
+    private static RestClient createRestClient() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(3_000);
         factory.setReadTimeout(5_000);
-        return new RestTemplate(factory);
+        return RestClient.builder().requestFactory(factory).build();
     }
-    private final RedisTemplate<String, Object> redisTemplate;
 
     private static final String SLACK_USERS_CACHE_KEY = "slack:cache:users:list";
     private static final long CACHE_TTL_HOURS = 1;
@@ -59,17 +70,19 @@ public class SlackApiService {
 
     /** blocks가 있으면 그 양식으로 보이고, message는 알림 미리보기에 쓰인다. */
     public void sendWebhook(String webhookUrl, String message, List<Map<String, Object>> blocks) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
         Map<String, Object> payload = new HashMap<>();
         payload.put("text", message);
         if (!blocks.isEmpty()) {
             payload.put("blocks", blocks);
         }
-        HttpEntity<Map<String, Object>> request = new HttpEntity<>(payload, headers);
 
         try {
-            ResponseEntity<String> response = restTemplate.postForEntity(webhookUrl, request, String.class);
+            ResponseEntity<String> response = restClient.post()
+                    .uri(webhookUrl)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(payload)
+                    .retrieve()
+                    .toEntity(String.class);
             if (!response.getStatusCode().is2xxSuccessful()) {
                 log.warn("Slack Webhook 전송 응답 이상: {}", response.getStatusCode());
                 throw new BusinessException(ErrorCode.SLACK_SEND_FAILED);
@@ -86,7 +99,7 @@ public class SlackApiService {
             throw new BusinessException(ErrorCode.SLACK_SEND_FAILED);
         } catch (Exception e) {
             // 주의: webhookUrl 자체가 인증 정보다. ResourceAccessException 등은 메시지에 요청 URL을
-            // 그대로 담아서 만들어지므로(RestTemplate가 "I/O error on POST request for \"<url>\": ..."
+            // 그대로 담아서 만들어지므로(RestClient가 "I/O error on POST request for \"<url>\": ..."
             // 형태로 직접 구성한다) e.getMessage()/e.toString()이나 e 객체를 로그 인자로 그대로
             // 넘기면 안 된다 — logger가 예외 인자를 렌더링할 때도 그 메시지가 그대로 찍힌다.
             // 원인 예외(cause, 예: ConnectException/SocketTimeoutException)의 메시지에는
@@ -180,19 +193,18 @@ public class SlackApiService {
 
         log.info("Slack User List: API 직접 호출 (Refresh)");
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(botToken);
-        HttpEntity<Void> request = new HttpEntity<>(headers);
-
         try {
             // 한 번에 다 오지 않으면 다음 쪽 표시(next_cursor)가 온다. 첫 쪽만 읽으면 뒤쪽 회원은 없는 사람이 된다.
             List<Map<String, Object>> members = new ArrayList<>();
             String cursor = "";
             for (int page = 0; page < MAX_USER_LIST_PAGES; page++) {
-                // 문자열 주소로 넘기면 RestTemplate이 한 번 더 인코딩해 cursor가 깨진다. 완성된 URI로 넘긴다.
+                // 문자열 주소로 넘기면 RestClient가 한 번 더 인코딩해 cursor가 깨진다. 완성된 URI로 넘긴다.
                 URI url = URI.create(USERS_LIST_URL + (cursor.isEmpty() ? "" : "&cursor=" + cursor));
-                ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, request, Map.class);
-                Map<?, ?> body = response.getBody();
+                Map<?, ?> body = restClient.get()
+                        .uri(url)
+                        .headers(headers -> headers.setBearerAuth(botToken))
+                        .retrieve()
+                        .body(Map.class);
                 if (body == null || !Boolean.TRUE.equals(body.get("ok"))) {
                     throw new BusinessException(ErrorCode.SLACK_USER_NOT_FOUND);
                 }
@@ -288,14 +300,14 @@ public class SlackApiService {
 
     private String openDMChannel(String userId, String token) {
         String url = "https://slack.com/api/conversations.open";
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(token);
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<Map<String, Object>> request = new HttpEntity<>(Map.of("users", userId), headers);
-
         try {
-            ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
-            Map<?, ?> body = response.getBody();
+            Map<?, ?> body = restClient.post()
+                    .uri(url)
+                    .headers(headers -> headers.setBearerAuth(token))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("users", userId))
+                    .retrieve()
+                    .body(Map.class);
             if (body == null || !Boolean.TRUE.equals(body.get("ok"))) {
                 log.warn("conversations.open API 응답 이상: ok=false 또는 body null");
                 return null;
@@ -324,9 +336,6 @@ public class SlackApiService {
     /** blocks가 있으면 그 양식으로 보이고, message는 알림 미리보기에 쓰인다. */
     public String postToChannel(String channelId, String message, String threadTs, List<Map<String, Object>> blocks) {
         String url = "https://slack.com/api/chat.postMessage";
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(botToken);
-        headers.setContentType(MediaType.APPLICATION_JSON);
         Map<String, Object> payload = new HashMap<>();
         payload.put("channel", channelId);
         payload.put("text", message);
@@ -337,11 +346,16 @@ public class SlackApiService {
             payload.put("thread_ts", threadTs);
             payload.put("reply_broadcast", true);
         }
-        HttpEntity<Map<String, Object>> request = new HttpEntity<>(payload, headers);
 
         Map<?, ?> body;
         try {
-            body = restTemplate.postForEntity(url, request, Map.class).getBody();
+            body = restClient.post()
+                    .uri(url)
+                    .headers(headers -> headers.setBearerAuth(botToken))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(payload)
+                    .retrieve()
+                    .body(Map.class);
         } catch (Exception e) {
             log.error("Slack 채널 메시지 전송 실패: {}", e.toString(), e);
             throw new BusinessException(ErrorCode.SLACK_SEND_FAILED);
