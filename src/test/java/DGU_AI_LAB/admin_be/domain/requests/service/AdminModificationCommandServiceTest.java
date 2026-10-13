@@ -1,7 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
-import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.alarm.service.RequestChannelNotifier;
+import DGU_AI_LAB.admin_be.domain.alarm.service.UserGuideMailer;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.service.GroupOperationService;
@@ -70,7 +71,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class AdminModificationCommandServiceTest {
 
-    @Mock private AlarmService alarmService;
+    @Mock private RequestChannelNotifier requestChannelNotifier;
+    @Mock private UserGuideMailer userGuideMailer;
     @Mock private RequestRepository requestRepository;
     @Mock private UserRepository userRepository;
     @Mock private ChangeRequestRepository changeRequestRepository;
@@ -95,7 +97,7 @@ class AdminModificationCommandServiceTest {
 
         // @RequiredArgsConstructor 생성자 필드 선언 순서대로 주입
         service = new AdminModificationCommandService(
-                alarmService, requestRepository, userRepository, changeRequestRepository,
+                requestChannelNotifier, userGuideMailer, requestRepository, userRepository, changeRequestRepository,
                 groupOperationService, portOperationService, new ObjectMapper()
         );
         // 공유 엔티티 기본 설정
@@ -173,7 +175,7 @@ class AdminModificationCommandServiceTest {
         }
 
         @Test
-        @DisplayName("변경 요청 거절 성공 시 alarmService.sendModificationRejectedEmail이 호출된다")
+        @DisplayName("변경 요청 거절 성공 시 userGuideMailer.sendModificationRejectedEmail이 호출된다")
         void rejectModification_sendsRejectionEmail_onSuccess() {
             ChangeRequest changeRequest = mock(ChangeRequest.class);
             when(changeRequest.getRequestedBy()).thenReturn(mock(User.class));
@@ -184,9 +186,9 @@ class AdminModificationCommandServiceTest {
             RejectModificationDTO dto = new RejectModificationDTO(10L, "변경 사유 불충분");
             service.rejectModification(100L, dto);
 
-            verify(alarmService).sendModificationRejectedEmail(changeRequest, "변경 사유 불충분");
+            verify(userGuideMailer).sendModificationRejectedEmail(changeRequest, "변경 사유 불충분");
             // 채널에 남은 접수 알림에도 결과를 댓글로 남긴다.
-            verify(alarmService).sendChangeRequestDecidedNotification(any(ChangeRequestDecision.class));
+            verify(requestChannelNotifier).sendChangeRequestDecidedNotification(any(ChangeRequestDecision.class));
         }
 
         @Test
@@ -201,7 +203,7 @@ class AdminModificationCommandServiceTest {
 
             service.rejectModification(100L, new RejectModificationDTO(11L, comment));
 
-            verify(alarmService).sendModificationRejectedEmail(changeRequest, comment);
+            verify(userGuideMailer).sendModificationRejectedEmail(changeRequest, comment);
         }
 
         @Test
@@ -214,8 +216,8 @@ class AdminModificationCommandServiceTest {
             assertThatThrownBy(() -> service.rejectModification(100L, new RejectModificationDTO(12L, "사유")))
                     .isInstanceOf(BusinessException.class);
 
-            verify(alarmService, never()).sendModificationRejectedEmail(any(), anyString());
-            verify(alarmService, never()).sendChangeRequestDecidedNotification(any());
+            verify(userGuideMailer, never()).sendModificationRejectedEmail(any(), anyString());
+            verify(requestChannelNotifier, never()).sendChangeRequestDecidedNotification(any());
         }
 
         @Test
@@ -227,7 +229,7 @@ class AdminModificationCommandServiceTest {
             when(changeRequestRepository.findByIdForUpdate(13L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
             doThrow(new RuntimeException("SMTP 연결 실패"))
-                    .when(alarmService).sendModificationRejectedEmail(any(), anyString());
+                    .when(userGuideMailer).sendModificationRejectedEmail(any(), anyString());
 
             // 이메일 실패해도 예외 미전파 (DB 롤백 없음)
             service.rejectModification(100L, new RejectModificationDTO(13L, "변경 사유 불충분"));
@@ -244,7 +246,7 @@ class AdminModificationCommandServiceTest {
             when(changeRequestRepository.findByIdForUpdate(14L)).thenReturn(Optional.of(changeRequest));
             when(userRepository.findById(100L)).thenReturn(Optional.of(mockUser));
             doThrow(new IllegalStateException("MessageUtils 키 없음"))
-                    .when(alarmService).sendModificationRejectedEmail(any(), anyString());
+                    .when(userGuideMailer).sendModificationRejectedEmail(any(), anyString());
 
             service.rejectModification(100L, new RejectModificationDTO(14L, "사유"));
 
@@ -284,10 +286,10 @@ class AdminModificationCommandServiceTest {
             verify(originalRequest).updateExpiresAt(captor.capture());
             assertThat(captor.getValue()).isEqualTo(newExpiry);
             verify(changeRequest).approve(mockUser, "기간 연장 승인");
-            verify(alarmService).sendContainerExtendedEmail(eq(originalRequest), eq(oldExpiry), eq(newExpiry));
-            verify(alarmService).sendChangeRequestDecidedNotification(any(ChangeRequestDecision.class));
+            verify(userGuideMailer).sendContainerExtendedEmail(eq(originalRequest), eq(oldExpiry), eq(newExpiry));
+            verify(requestChannelNotifier).sendChangeRequestDecidedNotification(any(ChangeRequestDecision.class));
             // EXPIRES_AT은 전용 메일(sendContainerExtendedEmail)만 보내고, 공용 승인 메일은 중복 발송하지 않는다
-            verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
+            verify(userGuideMailer, never()).sendModificationApprovedEmail(any(), any());
         }
 
         @Test
@@ -326,7 +328,7 @@ class AdminModificationCommandServiceTest {
             verify(originalRequest, never()).updateResourceGroup(any());
             verify(originalRequest, never()).updateContainerImage(any());
             verify(changeRequest, never()).approve(any(), anyString());
-            verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
+            verify(userGuideMailer, never()).sendModificationApprovedEmail(any(), any());
         }
 
         @Test
@@ -346,8 +348,8 @@ class AdminModificationCommandServiceTest {
             // 작업이 성공하기 전에는 승인된 것이 아니다 — DB 기록과 안내는 GroupOperationService.complete 가 한다.
             verify(changeRequest, never()).approve(any(), any());
             verify(mockUser, never()).addGroupIfAbsent(any());
-            verify(alarmService, never()).sendGroupAddedEmail(any(), any(), anyList());
-            verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
+            verify(userGuideMailer, never()).sendGroupAddedEmail(any(), any(), anyList());
+            verify(userGuideMailer, never()).sendModificationApprovedEmail(any(), any());
         }
 
         @Test
@@ -366,8 +368,8 @@ class AdminModificationCommandServiceTest {
             verify(portOperationService).start(changeRequest, originalRequest, mockUser, "포트 변경 승인");
             // 작업이 성공하기 전에는 승인된 것이 아니다 — DB 기록과 안내는 PortOperationService.complete 가 한다.
             verify(changeRequest, never()).approve(any(), any());
-            verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
-            verify(alarmService, never()).sendExtraPortsChangedEmail(any());
+            verify(userGuideMailer, never()).sendModificationApprovedEmail(any(), any());
+            verify(userGuideMailer, never()).sendExtraPortsChangedEmail(any());
         }
 
         @Test
@@ -389,7 +391,7 @@ class AdminModificationCommandServiceTest {
                     .isEqualTo(ErrorCode.GROUP_CHANGE_FAILED);
 
             verify(changeRequest, never()).approve(any(), any());
-            verify(alarmService, never()).sendGroupAddedEmail(any(), any(), anyList());
+            verify(userGuideMailer, never()).sendGroupAddedEmail(any(), any(), anyList());
         }
 
         @Test
@@ -434,7 +436,7 @@ class AdminModificationCommandServiceTest {
 
             verify(originalRequest, never()).updateExpiresAt(any());
             verify(changeRequest, never()).approve(any(), anyString());
-            verify(alarmService, never()).sendModificationApprovedEmail(any(), any());
+            verify(userGuideMailer, never()).sendModificationApprovedEmail(any(), any());
         }
 
         @Test

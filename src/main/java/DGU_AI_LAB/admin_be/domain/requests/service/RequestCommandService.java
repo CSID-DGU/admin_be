@@ -1,7 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestNotice;
-import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.alarm.service.RequestChannelNotifier;
 import DGU_AI_LAB.admin_be.global.util.AfterCommit;
 import DGU_AI_LAB.admin_be.domain.home.service.HomeCleanupService;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
@@ -57,7 +57,7 @@ public class RequestCommandService {
     private final ChangeRequestRepository changeRequestRepository;
     private final ChangeRequestDescriber changeRequestDescriber;
     private final PortRequestService portRequestService;
-    private final AlarmService alarmService;
+    private final RequestChannelNotifier requestChannelNotifier;
     private final RequestCreateThrottle requestCreateThrottle;
     private final SlackMembershipGate slackMembershipGate;
     private final EntityManager entityManager;
@@ -100,7 +100,7 @@ public class RequestCommandService {
     private void notifyCancelledAfterCommit(Request request) {
         Runnable send;
         try {
-            send = alarmService.prepareRequestCancelledNotification(request);
+            send = requestChannelNotifier.prepareRequestCancelledNotification(request);
         } catch (Exception e) {
             log.error("신청 취소 알림을 만들지 못했습니다. (요청 ID: {}). 하지만 취소는 정상적으로 처리되었습니다.", request.getRequestId(), e);
             return;
@@ -131,7 +131,7 @@ public class RequestCommandService {
         changeRequest.cancel();
         ChangeRequestDecision decision = ChangeRequestDecision.of(changeRequest);
         AfterCommit.run("변경 요청 취소 알림, changeRequestId " + changeRequestId,
-                () -> alarmService.sendChangeRequestCancelledNotification(decision));
+                () -> requestChannelNotifier.sendChangeRequestCancelledNotification(decision));
     }
 
     /**
@@ -179,7 +179,7 @@ public class RequestCommandService {
     private void notifyChangeRequestedAfterCommit(ChangeRequest changeRequest) {
         ChangeRequestNotice notice = ChangeRequestNotice.of(changeRequest, changeRequestDescriber.describe(changeRequest));
         AfterCommit.run("변경 요청 접수 알림, changeRequestId " + changeRequest.getChangeRequestId(),
-                () -> alarmService.sendChangeRequestNotification(notice));
+                () -> requestChannelNotifier.sendChangeRequestNotification(notice));
     }
 
     /**
@@ -300,6 +300,6 @@ public class RequestCommandService {
     private void notifyNewRequest(Request req, List<PortRequests> portRequests, Long userId) {
         log.info("새로운 사용 신청에 대한 슬랙 알림을 전송합니다. 요청 ID: {}", req.getRequestId());
         long activeContainers = requestRepository.countByUser_UserIdAndStatusIn(userId, Status.activeStatuses());
-        alarmService.sendNewRequestNotification(req, portRequests, activeContainers);
+        requestChannelNotifier.sendNewRequestNotification(req, portRequests, activeContainers);
     }
 }

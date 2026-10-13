@@ -1,6 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
-import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.alarm.service.UserGuideMailer;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.util.RedisWindowCounter;
 import org.junit.jupiter.api.AfterEach;
@@ -21,8 +21,8 @@ import static org.mockito.Mockito.when;
 class SlackMembershipRefusalNoticeTest {
 
     private final RedisWindowCounter windowCounter = mock(RedisWindowCounter.class);
-    private final AlarmService alarmService = mock(AlarmService.class);
-    private final SlackMembershipRefusalNotice notice = new SlackMembershipRefusalNotice(windowCounter, alarmService);
+    private final UserGuideMailer userGuideMailer = mock(UserGuideMailer.class);
+    private final SlackMembershipRefusalNotice notice = new SlackMembershipRefusalNotice(windowCounter, userGuideMailer);
 
     private static User user() {
         User user = mock(User.class);
@@ -48,7 +48,7 @@ class SlackMembershipRefusalNoticeTest {
         notice.send(user());
         notice.send(user());
 
-        verify(alarmService, times(1)).sendSlackMembershipRequiredEmail("홍길동", "hong@dgu.ac.kr");
+        verify(userGuideMailer, times(1)).sendSlackMembershipRequiredEmail("홍길동", "hong@dgu.ac.kr");
     }
 
     @Test
@@ -58,11 +58,11 @@ class SlackMembershipRefusalNoticeTest {
         TransactionSynchronizationManager.initSynchronization();
 
         notice.send(user());
-        verify(alarmService, never()).sendSlackMembershipRequiredEmail(anyString(), anyString());
+        verify(userGuideMailer, never()).sendSlackMembershipRequiredEmail(anyString(), anyString());
 
         TransactionSynchronizationManager.getSynchronizations()
                 .forEach(sync -> sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
-        verify(alarmService).sendSlackMembershipRequiredEmail("홍길동", "hong@dgu.ac.kr");
+        verify(userGuideMailer).sendSlackMembershipRequiredEmail("홍길동", "hong@dgu.ac.kr");
     }
 
     @Test
@@ -73,6 +73,6 @@ class SlackMembershipRefusalNoticeTest {
 
         notice.send(user());
 
-        verify(alarmService, never()).sendSlackMembershipRequiredEmail(anyString(), anyString());
+        verify(userGuideMailer, never()).sendSlackMembershipRequiredEmail(anyString(), anyString());
     }
 }

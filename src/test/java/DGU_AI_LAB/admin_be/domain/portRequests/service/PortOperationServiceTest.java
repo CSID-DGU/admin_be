@@ -2,6 +2,8 @@ package DGU_AI_LAB.admin_be.domain.portRequests.service;
 
 import DGU_AI_LAB.admin_be.domain.warnings.service.SuspensionGuard;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.alarm.service.RequestChannelNotifier;
+import DGU_AI_LAB.admin_be.domain.alarm.service.UserGuideMailer;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortOperation;
@@ -71,6 +73,8 @@ class PortOperationServiceTest {
     @Mock private JobClient jobClient;
     @Mock private SuspensionGuard suspensionGuard;
     @Mock private AlarmService alarmService;
+    @Mock private RequestChannelNotifier requestChannelNotifier;
+    @Mock private UserGuideMailer userGuideMailer;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
     @Mock private Request request;
@@ -85,7 +89,7 @@ class PortOperationServiceTest {
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         service = new PortOperationService(operationRepository, portRequestRepository, podExternalPortRepository,
-                requestRepository, changeRequestRepository, jobClient, suspensionGuard, alarmService, new ObjectMapper(),
+                requestRepository, changeRequestRepository, jobClient, suspensionGuard, alarmService, requestChannelNotifier, userGuideMailer, new ObjectMapper(),
                 transactionManager);
 
         owner = User.builder().email("alice@dgu.ac.kr").name("alice").ubuntuUsername("alice").build();
@@ -204,9 +208,9 @@ class PortOperationServiceTest {
 
         assertThat(changeRequest.getStatus()).isEqualTo(Status.FULFILLED);
         assertThat(operation.getStatus()).isEqualTo(PortOperationStatus.APPLIED);
-        verify(alarmService).sendExtraPortsChangedEmail(request);
+        verify(userGuideMailer).sendExtraPortsChangedEmail(request);
         // 승인을 누른 때가 아니라 반영이 끝난 지금, 접수 알림에 결과를 댓글로 남긴다.
-        verify(alarmService).sendChangeRequestDecidedNotification(argThat(decision -> decision.approved()
+        verify(requestChannelNotifier).sendChangeRequestDecidedNotification(argThat(decision -> decision.approved()
                 && decision.changeType() == ChangeType.PORT));
     }
 
@@ -250,7 +254,7 @@ class PortOperationServiceTest {
         assertThat(operation.getStatus()).isEqualTo(PortOperationStatus.FAILED);
         assertThat(operation.getErrorCode()).isEqualTo(PortOperationService.ERROR_POD_CHANGED);
         assertThat(changeRequest.getStatus()).isEqualTo(Status.PENDING);
-        verifyNoInteractions(portRequestRepository, podExternalPortRepository, alarmService);
+        verifyNoInteractions(portRequestRepository, podExternalPortRepository, alarmService, requestChannelNotifier, userGuideMailer);
     }
 
     @Test
@@ -305,7 +309,7 @@ class PortOperationServiceTest {
         service.fail(OPERATION_ID, "Y");
 
         assertThat(operation.getErrorCode()).isEqualTo("X");
-        verifyNoInteractions(portRequestRepository, podExternalPortRepository, alarmService);
+        verifyNoInteractions(portRequestRepository, podExternalPortRepository, alarmService, requestChannelNotifier, userGuideMailer);
     }
 
     @Test

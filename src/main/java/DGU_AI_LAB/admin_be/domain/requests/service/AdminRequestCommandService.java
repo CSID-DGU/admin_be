@@ -4,6 +4,8 @@ import DGU_AI_LAB.admin_be.global.alert.AlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.alarm.service.RequestChannelNotifier;
+import DGU_AI_LAB.admin_be.domain.alarm.service.UserGuideMailer;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.service.PendingGroupService;
@@ -61,6 +63,8 @@ public class AdminRequestCommandService {
     }
 
     private final AlarmService alarmService;
+    private final RequestChannelNotifier requestChannelNotifier;
+    private final UserGuideMailer userGuideMailer;
 
     private final RequestRepository requestRepository;
     private final UserRepository userRepository;
@@ -378,9 +382,9 @@ public class AdminRequestCommandService {
         String sshPort = externalPortOf(made, "ssh");
         String jupyterPort = externalPortOf(made, "jupyter");
         AfterCommit.run("컨테이너 배정 안내 메일, 요청 ID " + requestId,
-                () -> alarmService.sendContainerCreatedEmail(savedRequest, sshPort, jupyterPort));
+                () -> userGuideMailer.sendContainerCreatedEmail(savedRequest, sshPort, jupyterPort));
         AfterCommit.run("생성 완료 알림, 요청 ID " + requestId,
-                () -> alarmService.sendContainerCreatedNotification(savedRequest, sshPort, jupyterPort));
+                () -> requestChannelNotifier.sendContainerCreatedNotification(savedRequest, sshPort, jupyterPort));
     }
 
     /**
@@ -489,8 +493,8 @@ public class AdminRequestCommandService {
         });
         Request rejected = rejection.request();
         AfterCommit.run("거절 안내 메일·신청서 채널 알림, 요청 ID " + requestId, () -> {
-            alarmService.sendRequestRejectedNotification(rejected, dto.adminComment());
-            alarmService.sendRequestRejectedEmail(rejected, dto.adminComment());
+            requestChannelNotifier.sendRequestRejectedNotification(rejected, dto.adminComment());
+            userGuideMailer.sendRequestRejectedEmail(rejected, dto.adminComment());
         });
         return rejection.response();
     }

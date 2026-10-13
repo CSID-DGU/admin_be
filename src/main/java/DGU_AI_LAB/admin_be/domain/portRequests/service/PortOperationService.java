@@ -2,6 +2,8 @@ package DGU_AI_LAB.admin_be.domain.portRequests.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestDecision;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.alarm.service.RequestChannelNotifier;
+import DGU_AI_LAB.admin_be.domain.alarm.service.UserGuideMailer;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.dto.PortChangeValue;
@@ -70,6 +72,8 @@ public class PortOperationService {
     private final JobClient jobClient;
     private final SuspensionGuard suspensionGuard;
     private final AlarmService alarmService;
+    private final RequestChannelNotifier requestChannelNotifier;
+    private final UserGuideMailer userGuideMailer;
     private final ObjectMapper objectMapper;
     private final PlatformTransactionManager transactionManager;
 
@@ -140,8 +144,8 @@ public class PortOperationService {
         reblock(ownerId[0]);
         if (applied != null) {
             AfterCommit.run("추가 포트 변경 안내 메일·채널 알림, 요청 ID " + applied.request().getRequestId(), () -> {
-                alarmService.sendChangeRequestDecidedNotification(applied.decision());
-                alarmService.sendExtraPortsChangedEmail(applied.request());
+                requestChannelNotifier.sendChangeRequestDecidedNotification(applied.decision());
+                userGuideMailer.sendExtraPortsChangedEmail(applied.request());
             });
         }
     }

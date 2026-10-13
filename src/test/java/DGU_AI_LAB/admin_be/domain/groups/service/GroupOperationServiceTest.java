@@ -2,6 +2,8 @@ package DGU_AI_LAB.admin_be.domain.groups.service;
 
 import DGU_AI_LAB.admin_be.support.Alerts;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.alarm.service.RequestChannelNotifier;
+import DGU_AI_LAB.admin_be.domain.alarm.service.UserGuideMailer;
 import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupOperationResponseDTO;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.entity.GroupOperation;
@@ -70,6 +72,8 @@ class GroupOperationServiceTest {
     @Mock private ChangeRequestRepository changeRequestRepository;
     @Mock private JobClient jobClient;
     @Mock private AlarmService alarmService;
+    @Mock private RequestChannelNotifier requestChannelNotifier;
+    @Mock private UserGuideMailer userGuideMailer;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
 
@@ -82,7 +86,7 @@ class GroupOperationServiceTest {
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         service = new GroupOperationService(operationRepository, groupRepository, userRepository, requestRepository,
-                changeRequestRepository, jobClient, alarmService, new ObjectMapper(),
+                changeRequestRepository, jobClient, alarmService, requestChannelNotifier, userGuideMailer, new ObjectMapper(),
                 transactionManager);
 
         user = user(USER_ID, "alice");
@@ -178,7 +182,7 @@ class GroupOperationServiceTest {
             assertThat(operation.getStatus()).isEqualTo(GroupOperationStatus.FAILED);
             assertThat(operation.getErrorCode()).isEqualTo("AD_GROUP_CREATE_FAILED");
             verify(groupRepository, never()).save(any());
-            verifyNoInteractions(alarmService);
+            verifyNoInteractions(alarmService, requestChannelNotifier, userGuideMailer);
         }
     }
 
@@ -238,9 +242,9 @@ class GroupOperationServiceTest {
             assertThat(user.getUserGroups()).extracting(ug -> ug.getGroup().getGroupName()).containsExactly("teamx");
             assertThat(changeRequest.getStatus()).isEqualTo(Status.FULFILLED);
             assertThat(operation.getStatus()).isEqualTo(GroupOperationStatus.APPLIED);
-            verify(alarmService).sendGroupAddedEmail(changeRequest, "승인합니다", List.of("teamx"));
+            verify(userGuideMailer).sendGroupAddedEmail(changeRequest, "승인합니다", List.of("teamx"));
             // 승인을 누른 때가 아니라 반영이 끝난 지금, 접수 알림에 결과를 댓글로 남긴다.
-            verify(alarmService).sendChangeRequestDecidedNotification(argThat(decision -> decision.approved()
+            verify(requestChannelNotifier).sendChangeRequestDecidedNotification(argThat(decision -> decision.approved()
                     && decision.changeType() == ChangeType.GROUP && "승인합니다".equals(decision.adminComment())));
         }
 
@@ -256,8 +260,8 @@ class GroupOperationServiceTest {
             assertThat(user.getUserGroups()).isEmpty();
             assertThat(changeRequest.getStatus()).isEqualTo(Status.PENDING);
             assertThat(operation.getErrorCode()).isEqualTo(GroupOperationService.ERROR_ACCOUNT_CHANGED);
-            verify(alarmService, never()).sendGroupAddedEmail(any(), any(), anyList());
-            verify(alarmService, never()).sendChangeRequestDecidedNotification(any());
+            verify(userGuideMailer, never()).sendGroupAddedEmail(any(), any(), anyList());
+            verify(requestChannelNotifier, never()).sendChangeRequestDecidedNotification(any());
         }
 
         @Test

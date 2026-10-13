@@ -1,7 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.dto.ChangeRequestNotice;
-import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.alarm.service.RequestChannelNotifier;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
@@ -92,7 +92,7 @@ class RequestCommandServiceTest {
     private PortRequestService portRequestService;
 
     @Mock
-    private AlarmService alarmService;
+    private RequestChannelNotifier requestChannelNotifier;
 
     @Mock
     private RequestCreateThrottle requestCreateThrottle;
@@ -150,11 +150,11 @@ class RequestCommandServiceTest {
             TransactionSynchronizationManager.initSynchronization();
             try {
                 requestCommandService.createRequest(1L, dto);
-                verifyNoInteractions(alarmService);
+                verifyNoInteractions(requestChannelNotifier);
 
                 TransactionSynchronizationManager.getSynchronizations()
                         .forEach(TransactionSynchronization::afterCommit);
-                verify(alarmService).sendNewRequestNotification(eq(savedReq), any(), anyLong());
+                verify(requestChannelNotifier).sendNewRequestNotification(eq(savedReq), any(), anyLong());
             } finally {
                 TransactionSynchronizationManager.clearSynchronization();
             }
@@ -369,7 +369,7 @@ class RequestCommandServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.CHANGE_REQUEST_ALREADY_PENDING);
             verify(changeRequestRepository, never()).save(any());
-            verify(alarmService, never()).sendChangeRequestNotification(any());
+            verify(requestChannelNotifier, never()).sendChangeRequestNotification(any());
         }
 
         @Test
@@ -394,7 +394,7 @@ class RequestCommandServiceTest {
 
             verify(changeRequestRepository).save(any());
             ArgumentCaptor<ChangeRequestNotice> notice = ArgumentCaptor.forClass(ChangeRequestNotice.class);
-            verify(alarmService).sendChangeRequestNotification(notice.capture());
+            verify(requestChannelNotifier).sendChangeRequestNotification(notice.capture());
             assertThat(notice.getValue().changeType()).isEqualTo(ChangeType.EXPIRES_AT);
             assertThat(notice.getValue().serverName()).isEqualTo("FARM");
             assertThat(notice.getValue().name()).isEqualTo("홍길동");
@@ -635,10 +635,10 @@ class RequestCommandServiceTest {
             TransactionSynchronizationManager.initSynchronization();
             try {
                 requestCommandService.cancelChangeRequest(1L, 5L);
-                verifyNoInteractions(alarmService);
+                verifyNoInteractions(requestChannelNotifier);
                 TransactionSynchronizationManager.getSynchronizations()
                         .forEach(TransactionSynchronization::afterCommit);
-                verify(alarmService).sendChangeRequestCancelledNotification(any());
+                verify(requestChannelNotifier).sendChangeRequestCancelledNotification(any());
             } finally {
                 TransactionSynchronizationManager.clearSynchronization();
             }
@@ -727,12 +727,12 @@ class RequestCommandServiceTest {
             Request request = buildRequest();
             when(requestRepository.findByIdForUpdate(11L)).thenReturn(Optional.of(request));
             Runnable send = mock(Runnable.class);
-            when(alarmService.prepareRequestCancelledNotification(request)).thenReturn(send);
+            when(requestChannelNotifier.prepareRequestCancelledNotification(request)).thenReturn(send);
 
             TransactionSynchronizationManager.initSynchronization();
             try {
                 requestCommandService.cancelRequest(1L, 11L);
-                verify(alarmService).prepareRequestCancelledNotification(request);
+                verify(requestChannelNotifier).prepareRequestCancelledNotification(request);
                 verifyNoInteractions(send);
 
                 TransactionSynchronizationManager.getSynchronizations()
@@ -752,7 +752,7 @@ class RequestCommandServiceTest {
 
             requestCommandService.cancelRequest(1L, 12L);
 
-            verifyNoInteractions(alarmService);
+            verifyNoInteractions(requestChannelNotifier);
         }
 
         @Test
@@ -760,7 +760,7 @@ class RequestCommandServiceTest {
         void cancelRequest_succeeds_whenNoticeFails() {
             Request request = buildRequest();
             when(requestRepository.findByIdForUpdate(11L)).thenReturn(Optional.of(request));
-            when(alarmService.prepareRequestCancelledNotification(request)).thenThrow(new IllegalStateException("boom"));
+            when(requestChannelNotifier.prepareRequestCancelledNotification(request)).thenThrow(new IllegalStateException("boom"));
 
             requestCommandService.cancelRequest(1L, 11L);
 

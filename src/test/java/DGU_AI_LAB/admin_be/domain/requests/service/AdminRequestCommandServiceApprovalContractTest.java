@@ -4,6 +4,8 @@ import DGU_AI_LAB.admin_be.domain.warnings.service.SuspensionGuard;
 import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.alarm.service.RequestChannelNotifier;
+import DGU_AI_LAB.admin_be.domain.alarm.service.UserGuideMailer;
 import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
@@ -70,6 +72,8 @@ import static org.mockito.Mockito.when;
 class AdminRequestCommandServiceApprovalContractTest {
 
     @Mock private AlarmService alarmService;
+    @Mock private RequestChannelNotifier requestChannelNotifier;
+    @Mock private UserGuideMailer userGuideMailer;
     @Mock private RequestRepository requestRepository;
     @Mock private UserRepository userRepository;
     @Mock private PasswordResetRequestRepository passwordResetRequestRepository;
@@ -98,7 +102,7 @@ class AdminRequestCommandServiceApprovalContractTest {
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
 
         service = new AdminRequestCommandService(
-                alarmService, requestRepository, userRepository, suspensionGuard, passwordResetRequestRepository,
+                alarmService, requestChannelNotifier, userGuideMailer, requestRepository, userRepository, suspensionGuard, passwordResetRequestRepository,
                 containerImageRepository,
                 resourceGroupRepository, podExternalPortRepository, jobClient,
                 new PendingGroupService(groupRepository, requestGroupRepository, mock(EntityManager.class)),

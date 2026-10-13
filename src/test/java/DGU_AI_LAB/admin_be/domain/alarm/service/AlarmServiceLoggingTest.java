@@ -7,7 +7,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -29,7 +28,6 @@ class AlarmServiceLoggingTest {
 
     private static final String EMAIL = "victim@dgu.ac.kr";
 
-    @InjectMocks
     private AlarmService alarmService;
 
     @Mock
@@ -52,19 +50,26 @@ class AlarmServiceLoggingTest {
 
     @BeforeEach
     void setUp() {
-        ReflectionTestUtils.setField(alarmService, "from", "noreply@dgu.ac.kr");
-        ReflectionTestUtils.setField(alarmService, "errorLogWebhookUrl", "https://hooks.slack.com/services/error");
+        NotificationChannels channels = new NotificationChannels();
+        ReflectionTestUtils.setField(channels, "errorLogWebhookUrl", "https://hooks.slack.com/services/error");
+        NotificationMailer mailer = new NotificationMailer(mailSender);
+        ReflectionTestUtils.setField(mailer, "from", "noreply@dgu.ac.kr");
+        alarmService = new AlarmService(
+                new SlackNotificationQueue(redisTemplate, slackApiService, messageUtils, dmRecipientEmails, channels),
+                mailer, channels, messageUtils);
         doThrow(new RuntimeException("SMTP 연결 실패")).when(mailSender).send(any(org.springframework.mail.SimpleMailMessage.class));
     }
 
     @Test
     @DisplayName("메일 전송 실패 시 로그와 Slack 알림 메시지에 수신자 이메일 전체가 남지 않는다")
     void doesNotLogFullEmailOnMailSendFailure() {
-        try (LogCaptor logCaptor = LogCaptor.forClass(AlarmService.class)) {
+        // 실패 로그는 메일을 보내는 쪽이, 오류 채널 알림 기록은 알림 서비스가 남긴다. 둘 다 본다.
+        try (LogCaptor mailerLogs = LogCaptor.forClass(NotificationMailer.class);
+             LogCaptor alarmLogs = LogCaptor.forClass(AlarmService.class)) {
             alarmService.notifyUser("홍길동", EMAIL, "제목", "본문");
 
-            String logs = logCaptor.joined();
-            assertThat(logs).doesNotContain(EMAIL);
+            assertThat(mailerLogs.joined()).contains("메일 전송 실패").doesNotContain(EMAIL);
+            assertThat(alarmLogs.joined()).doesNotContain(EMAIL);
         }
     }
 }
