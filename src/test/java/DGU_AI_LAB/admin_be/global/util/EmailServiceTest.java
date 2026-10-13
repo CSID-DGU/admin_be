@@ -168,7 +168,7 @@ class EmailServiceTest {
         }
 
         @Test
-        @DisplayName("이미 가입된 이메일에도 똑같이 성공으로 답하고, 인증 코드 없이 안내 메일만 보낸다")
+        @DisplayName("이미 가입된 이메일에도 똑같이 성공으로 답하고, 코드는 저장만 하며 메일에는 안내만 담는다")
         void sendEmailVerificationCode_alreadyRegisteredEmail_answersTheSameAndSendsNoticeOnly() throws Exception {
             when(userRepository.existsByEmail("test@example.com")).thenReturn(true);
             when(messageUtils.get("email.already-registered.subject")).thenReturn("이미 가입됨");
@@ -180,7 +180,9 @@ class EmailServiceTest {
 
             verify(mimeMessage).setSubject("이미 가입됨", "UTF-8");
             verify(mailSender).send(mimeMessage);
-            verifyNoInteractions(valueOperations);
+            // 코드 확인 단계의 응답이 미가입 주소와 같도록 코드는 저장하되, 본문 양식에는 넘기지 않는다.
+            verify(valueOperations).set(eq("email:verify:test@example.com"), anyString(), anyLong(), any());
+            verify(messageUtils, never()).get(eq("email.verify.body"), any());
         }
 
         @Test

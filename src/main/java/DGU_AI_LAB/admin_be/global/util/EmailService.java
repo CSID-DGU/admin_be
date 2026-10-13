@@ -58,9 +58,12 @@ public class EmailService {
         emailDomainPolicy.requireAllowed(email);
         emailSendThrottle.acquire(email);
         // 이미 가입된 이메일에도 응답은 똑같이 한다. 여기서 "이미 가입됨"으로 답하면 로그인 없이 누구나 어떤
-        // 주소가 가입돼 있는지 알아낼 수 있다. 인증 코드는 만들지 않고, 주소 주인에게만 메일로 알린다.
+        // 주소가 가입돼 있는지 알아낼 수 있다. 주소 주인에게는 코드 대신 안내 메일만 보낸다.
         if (userRepository.existsByEmail(email)) {
             log.info("이미 가입된 이메일의 가입 인증 요청: {}", EmailAddresses.mask(email));
+            // 코드는 어디에도 보내지 않지만 저장은 한다. 저장하지 않으면 코드 확인 단계에서 틀린 입력을
+            // 되풀이했을 때 "횟수 초과" 응답이 나오는지로 가입 여부가 갈린다.
+            issueCode(CodePurpose.SIGNUP, email);
             sendEmail(email, messageUtils.get("email.already-registered.subject"),
                     messageUtils.get("email.already-registered.body"));
             return;
