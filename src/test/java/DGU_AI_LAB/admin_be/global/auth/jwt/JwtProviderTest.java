@@ -154,4 +154,43 @@ class JwtProviderTest {
             assertThat(subject).isEqualTo(7L);
         }
     }
+
+    @Nested
+    @DisplayName("parseRefreshToken")
+    class ParseRefreshToken {
+
+        @Test
+        @DisplayName("유효한 리프레시 토큰이면 사용자 번호가 담긴 클레임을 돌려준다")
+        void returnsClaims_whenTokenIsValid() {
+            String token = jwtProvider.getIssueToken(7L, false);
+
+            assertThat(jwtProvider.parseRefreshToken(token).getSubject()).isEqualTo("7");
+        }
+
+        @Test
+        @DisplayName("액세스 토큰을 내면 거절한다")
+        void rejectsAccessToken() {
+            String token = jwtProvider.getIssueToken(7L, true);
+
+            assertThatThrownBy(() -> jwtProvider.parseRefreshToken(token))
+                    .isInstanceOf(UnauthorizedException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", DGU_AI_LAB.admin_be.error.ErrorCode.INVALID_REFRESH_TOKEN_VALUE);
+        }
+
+        @Test
+        @DisplayName("만료된 토큰이면 만료로 거절한다")
+        void rejectsExpiredToken() {
+            assertThatThrownBy(() -> jwtProvider.parseRefreshToken(buildExpiredToken(7L)))
+                    .isInstanceOf(UnauthorizedException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", DGU_AI_LAB.admin_be.error.ErrorCode.EXPIRED_REFRESH_TOKEN);
+        }
+
+        @Test
+        @DisplayName("다른 키로 서명된 토큰이면 거절한다")
+        void rejectsForgedToken() {
+            assertThatThrownBy(() -> jwtProvider.parseRefreshToken(buildTokenWithDifferentKey(7L)))
+                    .isInstanceOf(UnauthorizedException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", DGU_AI_LAB.admin_be.error.ErrorCode.INVALID_REFRESH_TOKEN_VALUE);
+        }
+    }
 }

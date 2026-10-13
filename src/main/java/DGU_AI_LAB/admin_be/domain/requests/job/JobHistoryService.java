@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.requests.job;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobHistoryResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobStepsResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.ProvisioningStatusResponseDTO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -40,6 +41,11 @@ public class JobHistoryService {
                 withoutJobsStartedBefore(jobClient.getSteps(JobResults.KIND_PROVISION, requestId), notBefore),
                 withoutJobsStartedBefore(jobClient.getSteps(JobResults.KIND_REVOKE, requestId), notBefore),
                 withoutJobsStartedBefore(jobClient.getSteps(JobResults.KIND_MIGRATE, requestId), notBefore));
+    }
+
+    /** 컨테이너 생성 진행 상황. 화면이 실행기를 직접 부르지 않도록 여기서 받아 전한다. */
+    public ProvisioningStatusResponseDTO getProvisioningStatus(Long requestId) {
+        return jobClient.getProvisioningStatus(requestId);
     }
 
     private static JobStepsResponseDTO withoutJobsStartedBefore(JobStepsResponseDTO steps, Instant notBefore) {

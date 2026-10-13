@@ -8,6 +8,7 @@ public class SecurityWhitelist {
     public static final List<String> UNPROTECTED_PATHS = List.of(
             "/", "/swagger-ui/**", "/swagger/**", "/v3/api-docs/**",
             "/api/auth/login", "/api/auth/register",
+            "/api/auth/token-refresh", // 액세스 토큰이 만료된 뒤에 부르므로 리프레시 토큰으로만 확인한다
             "/api/auth/email/**",
             "/api/auth/password-reset-codes", "/api/auth/password-resets", // 로그인 못 하는 사용자가 메일 인증으로 신청
             "/actuator/health", "/actuator/info",

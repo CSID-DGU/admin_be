@@ -78,6 +78,10 @@ public interface AdminRequestApi {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     ResponseEntity<SuccessResponse<?>> getJobSteps(Long requestId);
 
+    @Operation(summary = "컨테이너 생성 진행 상황 조회", description = "승인된 신청의 컨테이너 생성이 어느 단계까지 갔는지 조회합니다. 생성 이력이 없으면 stage가 unknown입니다.")
+    @ApiResponse(responseCode = "200", description = "성공")
+    ResponseEntity<SuccessResponse<?>> getProvisioningStatus(@Parameter(description = "신청 ID", example = "42") Long requestId);
+
     @Operation(summary = "마이그레이션 작업 등록", description = "FULFILLED 상태 신청을 MIGRATING으로 바꾸고 다른 노드로 옮기는 작업을 등록합니다. " +
             "force면 개선 비율을 보지 않습니다. 결과는 신청 상태와 마지막 마이그레이션 결과로 확인합니다. 홈 디렉터리만 유지됩니다.")
     @ApiResponse(responseCode = "202", description = "작업 등록됨")

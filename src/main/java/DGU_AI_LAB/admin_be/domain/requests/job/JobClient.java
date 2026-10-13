@@ -10,6 +10,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.request.ProvisionRegisterRequestD
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RevokeRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobStepsResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.dto.response.ProvisioningStatusResponseDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 
@@ -106,6 +107,9 @@ public interface JobClient {
      *                  포트 변경은 포트 작업 번호, 접속 차단·해제는 접속 작업 번호
      */
     JobResultResponseDTO getResult(String kind, Long requestId);
+
+    /** 컨테이너 생성 진행 상황을 조회한다. 생성 이력이 없으면 stage가 unknown으로 온다. */
+    ProvisioningStatusResponseDTO getProvisioningStatus(Long requestId);
 
     /** 작업 단계 기록을 조회한다. 작업이 없으면 jobs가 빈 목록으로 온다. */
     JobStepsResponseDTO getSteps(String kind, Long requestId);

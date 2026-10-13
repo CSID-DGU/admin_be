@@ -3,10 +3,12 @@ package DGU_AI_LAB.admin_be.domain.users.controller;
 import DGU_AI_LAB.admin_be.domain.users.controller.docs.AuthApi;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.EmailSendRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PasswordResetRequestDTO;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.TokenRefreshRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.service.SelfPasswordResetService;
+import DGU_AI_LAB.admin_be.domain.users.service.TokenService;
 import DGU_AI_LAB.admin_be.domain.users.service.UserLoginService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +26,7 @@ public class AuthController implements AuthApi {
 
     private final UserLoginService userLoginService;
     private final SelfPasswordResetService selfPasswordResetService;
+    private final TokenService tokenService;
 
     /**
      * 3) 회원가입
@@ -41,6 +44,14 @@ public class AuthController implements AuthApi {
     @PostMapping("/login")
     public ResponseEntity<UserTokenResponseDTO> login(@RequestBody @Valid UserLoginRequestDTO request) {
         return ResponseEntity.ok(userLoginService.login(request));
+    }
+
+    /**
+     * 토큰 갱신 — 리프레시 토큰으로 액세스 토큰을 다시 받는다. 리프레시 토큰도 새것으로 바뀐다.
+     */
+    @PostMapping("/token-refresh")
+    public ResponseEntity<UserTokenResponseDTO> refreshToken(@RequestBody @Valid TokenRefreshRequestDTO request) {
+        return ResponseEntity.ok(tokenService.refresh(request.refreshToken()));
     }
 
     /**
