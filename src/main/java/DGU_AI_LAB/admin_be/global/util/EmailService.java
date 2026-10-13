@@ -51,7 +51,10 @@ public class EmailService {
         }
     }
 
-    public void sendEmailVerificationCode(String email) {
+    public void sendEmailVerificationCode(String rawEmail) {
+        // 발송 횟수 제한, 코드 저장, 메일 수신 주소를 모두 같은 표기로 쓴다. 표기가 갈리면 공백·대소문자만
+        // 바꿔 횟수 제한을 피하거나, 코드가 묶인 주소와 메일이 가는 주소가 달라질 수 있다.
+        String email = EmailAddresses.normalize(rawEmail);
         emailDomainPolicy.requireAllowed(email);
         // 이미 가입된 이메일이면 인증 메일 자체를 보내지 않는다 — 어차피 register()에서도
         // 막히지만, 그 전에 걸러야 이미 가입된 사람에게 혼란만 주는 인증 메일 발송과
@@ -69,9 +72,15 @@ public class EmailService {
     }
 
     public void confirmAuthCode(String email, String code) {
-        consumeCode(CodePurpose.SIGNUP, email, code);
-        redisTemplate.opsForValue().set("VERIFIED:" + email, "true", 10, TimeUnit.MINUTES); // 인증 상태 저장
-        log.info("이메일 [{}] 인증 성공. VERIFIED:{} 키 저장 완료", email, email);
+        String key = EmailAddresses.normalize(email);
+        consumeCode(CodePurpose.SIGNUP, key, code);
+        redisTemplate.opsForValue().set(verifiedKey(email), "true", 10, TimeUnit.MINUTES); // 인증 상태 저장
+        log.info("이메일 [{}] 인증 성공", EmailAddresses.mask(key));
+    }
+
+    /** 가입 전 이메일 인증을 마쳤다는 표시의 Redis 키. 인증할 때와 가입할 때 대소문자가 달라도 같은 키다. */
+    public static String verifiedKey(String email) {
+        return "VERIFIED:" + EmailAddresses.normalize(email);
     }
 
     /**
@@ -144,7 +153,7 @@ public class EmailService {
 
             mailSender.send(message);
         } catch (MessagingException | RuntimeException e) {
-            log.error("이메일 전송 실패: 수신자={}", to, e);
+            log.error("이메일 전송 실패: 수신자={}", EmailAddresses.mask(to), e);
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
     }
