@@ -224,6 +224,22 @@ class PortOperationServiceTest {
     }
 
     @Test
+    @DisplayName("남는 포트의 용도가 바뀌었으면 신청서 행의 용도도 바꾼다")
+    void keptPortTakesTheNewPurpose() {
+        processing();
+        PortRequests web = requested(3000, "예전 용도");
+        PortRequests vnc = requested(6080, "novnc");
+        when(portRequestRepository.findByRequestRequestId(REQUEST_ID)).thenReturn(List.of(web, vnc));
+
+        service.complete(OPERATION_ID, result(SSH, JUPYTER, WEB));
+
+        assertThat(web.getUsagePurpose()).isEqualTo("web");
+        // 바꿀 수 없는 포트의 행은 그대로다.
+        assertThat(vnc.getUsagePurpose()).isEqualTo("novnc");
+        verify(portRequestRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("작업이 도는 사이 컨테이너가 바뀌었으면 포트를 기록하지 않고 변경 요청을 승인 대기로 되돌린다")
     void podChangedDuringTheJobIsNotRecorded() {
         PortOperation operation = processing();
