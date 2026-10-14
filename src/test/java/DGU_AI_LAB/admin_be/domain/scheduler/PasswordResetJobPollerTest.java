@@ -49,7 +49,7 @@ class PasswordResetJobPollerTest {
 
     private static PasswordResetRequest reset(Long changeRequestId, Long resetId, Long jobId, LocalDateTime approvedAt) {
         ChangeRequest changeRequest = mock(ChangeRequest.class);
-        when(changeRequest.getChangeRequestId()).thenReturn(changeRequestId);
+        lenient().when(changeRequest.getChangeRequestId()).thenReturn(changeRequestId);
         lenient().when(changeRequest.getUpdatedAt()).thenReturn(approvedAt);
         PasswordResetRequest reset = mock(PasswordResetRequest.class);
         when(reset.getChangeRequest()).thenReturn(changeRequest);

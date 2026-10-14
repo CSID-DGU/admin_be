@@ -23,7 +23,6 @@ public enum ErrorCode {
     INVALID_ACCESS_TOKEN(HttpStatus.UNAUTHORIZED, "액세스 토큰의 형식이 올바르지 않습니다. Bearer 타입을 확인해 주세요."),
     INVALID_ACCESS_TOKEN_VALUE(HttpStatus.UNAUTHORIZED, "액세스 토큰의 값이 올바르지 않습니다."),
     EXPIRED_ACCESS_TOKEN(HttpStatus.UNAUTHORIZED, "액세스 토큰이 만료되었습니다. 재발급 받아주세요."),
-    INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "리프레시 토큰의 형식이 올바르지 않습니다."),
     INVALID_REFRESH_TOKEN_VALUE(HttpStatus.UNAUTHORIZED, "리프레시 토큰의 값이 올바르지 않습니다."),
     EXPIRED_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "리프레시 토큰이 만료되었습니다. 다시 로그인해 주세요."),
     NOT_MATCH_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "일치하지 않는 리프레시 토큰입니다."),
@@ -60,8 +59,6 @@ public enum ErrorCode {
      * 500 Internal Server Error
      */
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 내부 오류입니다."),
-    FILE_UPLOAD_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "파일 업로드에 실패하였습니다."),
-    JSON_PARSING_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "JSON 파싱에 실패하였습니다."),
 
     /**
      * 502 Bad Gateway
@@ -89,7 +86,6 @@ public enum ErrorCode {
     USER_ALREADY_INACTIVE(HttpStatus.CONFLICT, "이미 비활성화된 사용자입니다."),
     USER_ALREADY_HAS_ROLE(HttpStatus.CONFLICT, "이미 해당 권한을 가진 사용자입니다."),
     LAST_ACTIVE_ADMIN(HttpStatus.CONFLICT, "마지막 관리자는 권한을 내리거나 비활성화·탈퇴시킬 수 없습니다. 다른 관리자를 먼저 지정해 주세요."),
-    DUPLICATE_NAME(HttpStatus.CONFLICT, "중복된 닉네임입니다."),
     INVALID_LOGIN_INFO(HttpStatus.UNAUTHORIZED, "잘못된 로그인 입력값입니다."),
     TOO_MANY_LOGIN_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "로그인 시도 횟수를 초과했습니다. 15분 후 다시 시도해주세요."),
     INVALID_AUTH_CODE(HttpStatus.BAD_REQUEST, "올바르지 않은 인증 코드입니다."),
@@ -116,11 +112,7 @@ public enum ErrorCode {
 
     SLACK_USER_NOT_FOUND(HttpStatus.NOT_FOUND, "Slack 사용자를 찾을 수 없습니다."),
     SLACK_MEMBERSHIP_REQUIRED(HttpStatus.CONFLICT, "Slack 워크스페이스에서 회원 정보와 이름·이메일이 같은 회원을 찾지 못했어요. Slack에 가입하고 이름(표시 이름 또는 실명)을 회원 정보의 이름과 똑같이 맞춰 주세요. Slack에 학교 이메일이 아닌 주소로 가입했다면 내 정보의 \"자주 사용하는 이메일\"에 그 주소를 적은 뒤 다시 신청해 주세요."),
-    SLACK_USER_EMAIL_NOT_MATCH(HttpStatus.NOT_FOUND, "이메일이 일치하는 Slack 사용자를 찾을 수 없습니다."),
 
-    // 로그인한 사용자가 변경 폼에 적은 현재 비밀번호가 틀린 것이라 인증 실패(401)가 아니다. 401이면 화면이
-    // 세션 만료로 보고 로그아웃시킨다.
-    INVALID_PASSWORD(HttpStatus.BAD_REQUEST, "현재 비밀번호가 맞지 않아요."),
     UBUNTU_PASSWORD_REQUIRED(HttpStatus.BAD_REQUEST, "SSH 비밀번호를 준비하려면 다시 로그인해 주세요."),
     UBUNTU_PASSWORD_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "컨테이너에 반영하지 못해 비밀번호를 바꾸지 않았어요. 잠시 후 다시 시도해 주세요."),
     PASSWORD_RESET_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "비밀번호 재설정 신청을 찾을 수 없어요."),
@@ -168,18 +160,11 @@ public enum ErrorCode {
      * Resource Group Error
      */
     RESOURCE_GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "리소스 그룹을 찾을 수 없습니다."),
-    NO_AVAILABLE_RESOURCES(HttpStatus.NOT_FOUND, "사용 가능한 리소스가 없습니다."),
-
-    /**
-     * Node Error
-     */
-    NODE_NOT_FOUND(HttpStatus.NOT_FOUND, "노드를 찾을 수 없습니다."),
 
     /**
      * Request Error
      */
     INVALID_REQUEST_STATUS(HttpStatus.CONFLICT, "이미 처리된 신청입니다."),
-    //FORBIDDEN_REQUEST(HttpStatus.BAD_REQUEST, "본인의 신청만 변경 신청할 수 있습니다."),
     UNSUPPORTED_CHANGE_TYPE(HttpStatus.BAD_REQUEST, "지원되지 않는 요청 타입(enum)입니다."),
     CONTAINER_REQUEST_ALREADY_PENDING(HttpStatus.CONFLICT, "승인을 기다리는 신청이 이미 있어요. 기존 신청을 취소한 뒤 다시 신청해 주세요."),
     HOME_CLEANUP_IN_PROGRESS(HttpStatus.CONFLICT, "보존 기간이 지난 홈 폴더를 정리하는 중이에요. 잠시 뒤 다시 신청해 주세요."),
@@ -195,15 +180,12 @@ public enum ErrorCode {
      * Account Error
      */
     UBUNTU_USER_DELETION_FAILED(HttpStatus.BAD_GATEWAY, "우분투 계정 삭제에 실패했습니다."),
-    USER_CREATION_FAILED(HttpStatus.BAD_GATEWAY, "사용자 계정 생성에 실패했습니다."),
-    INVALID_USERNAME_FORMAT(HttpStatus.BAD_REQUEST, "잘못된 사용자명 형식입니다."),
 
     /**
      * Pod Error
      */
     POD_CREATION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 생성 API 요청에 실패했습니다."),
     POD_DELETION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 삭제 API 요청에 실패했습니다."),
-    POD_CREATION_CONCURRENCY_LIMIT(HttpStatus.TOO_MANY_REQUESTS, "현재 동시에 처리 중인 Pod 생성 요청이 많습니다. 잠시 후 다시 시도해주세요."),
     // 인프라 서버(config-server)가 요청 내용 때문에 거절했다(4xx). 서버 장애(502)와 구분한다.
     INFRA_REQUEST_REJECTED(HttpStatus.UNPROCESSABLE_ENTITY, "인프라 서버가 요청을 거절했습니다."),
     POD_MIGRATION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 마이그레이션 API 요청에 실패했습니다."),
