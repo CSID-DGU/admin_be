@@ -1,7 +1,7 @@
 # 🖥️ DGU AI LAB GPU Server Admin Backend
 
 ![Java](https://img.shields.io/badge/Java-17-blue?logo=openjdk&logoColor=white) 
-![Spring Boot](https://img.shields.io/badge/SpringBoot-3.2-green?logo=springboot&logoColor=white) 
+![Spring Boot](https://img.shields.io/badge/SpringBoot-3.5-green?logo=springboot&logoColor=white) 
 ![JPA](https://img.shields.io/badge/JPA-Hibernate-red) 
 ![Redis](https://img.shields.io/badge/Redis-MessageQueue-red?logo=redis&logoColor=white)
 ![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?logo=mysql&logoColor=white)
@@ -36,7 +36,7 @@
 - 사용자는 원하는 GPU 용량, 기간, 이미지를 선택하여 신청.
 - 관리자 승인 시 **UsedId(UID/GID)** 자동 할당 및 **Ubuntu 계정 생성 API** 호출.
 
-### 2. 자동화된 스케줄러 (매일 10:00 실행)
+### 2. 자동화된 스케줄러 (매일 08:00 실행)
 - **만료 예고:** 만료 전 정해진 날짜(7, 3, 1일 전)에 사용자에게 알림 발송.
 - **자동 회수:** 만료일 도래 시 Linux 계정 삭제, DB 데이터 정리(Cascade), UID 반납.
 
@@ -46,22 +46,12 @@
 
 <br>
 
-## 🧭 후속 구현 필요 사항
-
-### 셀프 서비스 컨테이너 재시작 (보류)
-- 사용자가 관리자 개입 없이 본인의 실행 중인 컨테이너를 직접 재시작하는 기능. API/UI는 설계·구현했으나(admin_be #481, admin_infra #152, admin_fe #124, 전부 미머지) **보류** 상태.
-- 보류 사유: 재시작을 "홈 디렉토리 밖에 설치한 패키지까지 보존"하려면 실행 중인 컨테이너를 이미지로 커밋해야 하는데, 그 커밋을 수행하기로 되어 있던 `save_image.sh`가 실제 base 이미지 어디에도 존재하지 않음을 확인함(빈 껍데기 기능이었음 — 지금까지의 관리자 마이그레이션도 실제로는 커밋 없이 base 이미지로 재생성되고 있었음).
-- 근본적으로 pod에는 `/var/run/docker.sock`이 마운트되어 있지 않아 컨테이너가 스스로를 커밋할 수 없고, krb5 배포처럼 farm 노드에 SSH로 직접 `docker commit`을 실행하는 방식이 필요함. 이 경우 기존 `_farm_ssh`의 하드코딩된 60초 타임아웃으로는 부족해, 원격에서 백그라운드 실행 후 상태를 폴링하는 비동기 방식으로 재설계가 필요함.
-- 재개 시 확인할 것: (1) farm 노드에 배포된 forced-command 스크립트(`ailab-krb5-admin`) 확장 또는 별도 스크립트 추가, (2) 이미지 커밋을 비동기(백그라운드 실행 + 폴링)로 처리하는 config-server 쪽 설계.
-
-<br>
-
 ## 🛠 기술 스택
 
 | 분류 | 기술 | 비고 |
 | :--- | :--- | :--- |
 | **Language** | Java 17 | |
-| **Framework** | Spring Boot 3.2 | Spring Security, WebClient 등|
+| **Framework** | Spring Boot 3.5 | Spring Security, WebClient 등|
 | **Database** | MySQL 8.0 | 운영 DB |
 | **ORM** | Spring Data JPA | Hibernate 6.x |
 | **Message Queue** | Redis | 알림 비동기 처리 & JWT |
@@ -80,15 +70,15 @@
 ### 2. 로컬 환경 실행
 ```bash
 # 1. Repository Clone
-git clone [https://github.com/DGU-AI-LAB/admin-be.git](https://github.com/DGU-AI-LAB/admin-be.git)
-cd admin-be
+git clone https://github.com/CSID-DGU/admin_be.git
+cd admin_be
 
 # 2. Redis & DB 실행 (Docker 활용 시)
 docker run -d -p 6379:6379 --name redis redis
 
 # 3. 애플리케이션 빌드 및 실행
 ./gradlew clean build
-java -jar build/libs/admin-be-0.0.1-SNAPSHOT.jar
+java -jar build/libs/admin_be-0.0.1-SNAPSHOT.jar
 ```
 
 ### 3. ⚙️ 환경 변수 설정
