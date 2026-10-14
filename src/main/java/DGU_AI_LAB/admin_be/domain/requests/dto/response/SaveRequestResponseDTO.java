@@ -141,10 +141,6 @@ public record SaveRequestResponseDTO(
         return fromEntityWithPorts(request, List.of(), List.of());
     }
 
-    public static SaveRequestResponseDTO fromEntityWithPortMappings(Request request, List<PortMappingDTO> portMappings) {
-        return fromEntityWithPorts(request, portMappings, List.of());
-    }
-
     public static SaveRequestResponseDTO fromEntityWithPorts(
             Request request,
             List<PortMappingDTO> portMappings,

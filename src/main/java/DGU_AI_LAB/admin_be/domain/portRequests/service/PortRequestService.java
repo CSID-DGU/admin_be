@@ -38,10 +38,6 @@ public class PortRequestService {
         return portRequestRepository.findByRequestRequestId(requestId);
     }
 
-    public List<PortRequests> getPortRequestsByResourceGroupId(Integer resourceGroupId) {
-        return portRequestRepository.findByResourceGroupRsgroupId(resourceGroupId);
-    }
-
     @Transactional
     public void activatePortRequest(Long portRequestId) {
         PortRequests portRequest = portRequestRepository.findById(portRequestId)

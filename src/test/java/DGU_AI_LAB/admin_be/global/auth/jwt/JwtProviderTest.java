@@ -62,10 +62,10 @@ class JwtProviderTest {
     }
 
     // ───────────────────────────────────────────────────────────────
-    // validateAccessToken
+    // parseAccessToken
     // ───────────────────────────────────────────────────────────────
     @Nested
-    @DisplayName("validateAccessToken")
+    @DisplayName("parseAccessToken")
     class ValidateAccessToken {
 
         @Test
@@ -73,7 +73,7 @@ class JwtProviderTest {
         void doesNotThrow_whenTokenIsValid() {
             String token = jwtProvider.getIssueToken(1L, true);
 
-            assertThatCode(() -> jwtProvider.validateAccessToken(token))
+            assertThatCode(() -> jwtProvider.parseAccessToken(token))
                     .doesNotThrowAnyException();
         }
 
@@ -82,7 +82,7 @@ class JwtProviderTest {
         void throwsUnauthorized_whenTokenIsExpired() {
             String expiredToken = buildExpiredToken(1L);
 
-            assertThatThrownBy(() -> jwtProvider.validateAccessToken(expiredToken))
+            assertThatThrownBy(() -> jwtProvider.parseAccessToken(expiredToken))
                     .isInstanceOf(UnauthorizedException.class);
         }
 
@@ -91,14 +91,14 @@ class JwtProviderTest {
         void throwsUnauthorized_whenSignatureIsInvalid() {
             String forgedToken = buildTokenWithDifferentKey(1L);
 
-            assertThatThrownBy(() -> jwtProvider.validateAccessToken(forgedToken))
+            assertThatThrownBy(() -> jwtProvider.parseAccessToken(forgedToken))
                     .isInstanceOf(UnauthorizedException.class);
         }
 
         @Test
         @DisplayName("형식이 잘못된 토큰은 UnauthorizedException을 던진다")
         void throwsUnauthorized_whenTokenIsMalformed() {
-            assertThatThrownBy(() -> jwtProvider.validateAccessToken("bad.token"))
+            assertThatThrownBy(() -> jwtProvider.parseAccessToken("bad.token"))
                     .isInstanceOf(UnauthorizedException.class);
         }
 
@@ -107,7 +107,7 @@ class JwtProviderTest {
         void throwsUnauthorized_whenRefreshTokenIsUsedAsAccessToken() {
             String refreshToken = jwtProvider.getIssueToken(1L, false);
 
-            assertThatThrownBy(() -> jwtProvider.validateAccessToken(refreshToken))
+            assertThatThrownBy(() -> jwtProvider.parseAccessToken(refreshToken))
                     .isInstanceOf(UnauthorizedException.class);
         }
 
@@ -123,7 +123,7 @@ class JwtProviderTest {
                     .signWith(key, Jwts.SIG.HS256)
                     .compact();
 
-            assertThatThrownBy(() -> jwtProvider.validateAccessToken(untyped))
+            assertThatThrownBy(() -> jwtProvider.parseAccessToken(untyped))
                     .isInstanceOf(UnauthorizedException.class);
         }
     }

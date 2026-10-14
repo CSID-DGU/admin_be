@@ -16,7 +16,6 @@ import java.util.Optional;
 
 public interface ChangeRequestRepository extends JpaRepository<ChangeRequest, Long> {
     List<ChangeRequest> findAllByStatus(Status status);
-    List<ChangeRequest> findAllByRequestedBy_UserIdAndStatus(Long userId, Status status);
     List<ChangeRequest> findAllByRequestedBy_UserIdAndStatusNot(Long userId, Status status);
     Optional<ChangeRequest> findByChangeRequestIdAndRequestedBy_UserIdAndStatusNot(Long changeRequestId, Long userId, Status status);
     List<ChangeRequest> findAllByStatusNot(Status status);

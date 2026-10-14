@@ -32,7 +32,6 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     List<Request> findAllByStatus(Status status);
 
     List<Request> findAllByUser_UserIdAndStatus(Long userId, Status status);
-    boolean existsByUser_UbuntuUsernameAndUser_UserId(String ubuntuUsername, Long userId);
     boolean existsByPodName(String podName);
     boolean existsByUser_UbuntuUsernameAndStatusIn(String ubuntuUsername, Collection<Status> statuses);
     boolean existsByUser_UserIdAndStatus(Long userId, Status status);
@@ -62,7 +61,6 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
      */
     @Query("SELECT r FROM Request r WHERE r.user.userId = :userId AND r.nodeName IS NOT NULL ORDER BY r.requestId DESC")
     List<Request> findAllWithNodeByUserIdOrderByRequestIdDesc(@Param("userId") Long userId);
-
 
     @Query("SELECT r.user.ubuntuUsername FROM Request r WHERE r.status IN :statuses")
     List<String> findUbuntuUsernamesByStatusIn(@Param("statuses") List<Status> statuses);
@@ -124,7 +122,6 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
 
     @Query("SELECT r FROM Request r JOIN FETCH r.user JOIN FETCH r.resourceGroup WHERE r.expiresAt BETWEEN :start AND :end AND r.status IN :statuses")
     List<Request> findAllByExpiresAtBetweenAndStatusIn(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end, @Param("statuses") List<Status> statuses);
-
 
     @Query("SELECT r FROM Request r JOIN FETCH r.user JOIN FETCH r.resourceGroup WHERE r.expiresAt < :now AND r.status = :status")
     List<Request> findAllWithUserByExpiredDateBefore(@Param("now") LocalDateTime now, @Param("status") Status status);

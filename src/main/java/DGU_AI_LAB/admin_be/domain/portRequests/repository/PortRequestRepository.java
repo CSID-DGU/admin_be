@@ -14,7 +14,4 @@ public interface PortRequestRepository extends JpaRepository<PortRequests, Long>
 
     List<PortRequests> findByRequestRequestIdIn(Collection<Long> requestIds);
 
-    List<PortRequests> findByResourceGroupRsgroupId(Integer resourceGroupId);
-
-
 }

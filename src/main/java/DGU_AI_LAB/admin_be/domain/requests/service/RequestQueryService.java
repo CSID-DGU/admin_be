@@ -4,7 +4,6 @@ import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.portRequests.repository.PortRequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
-import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.PodExternalPortResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.PortMappingDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
@@ -110,14 +109,6 @@ public class RequestQueryService {
                 .map(ResourceUsageDTO::fromEntity)
                 .toList();
     }
-
-    /** 활성 컨테이너 (마이그레이션 중에도 자원을 점유하므로 MIGRATING 포함) */
-    public List<ContainerInfoDTO> getActiveContainers() {
-        return requestRepository.findAllByStatusIn(Status.activeStatuses()).stream()
-                .map(ContainerInfoDTO::fromEntity)
-                .toList();
-    }
-
 
     /** 내 신청 목록 중 승인 완료(FULFILLED) 또는 마이그레이션 중(MIGRATING)인 것만 조회 */
     public List<SaveRequestResponseDTO> getApprovedRequestsByUserId(Long userId) {

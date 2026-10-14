@@ -6,7 +6,6 @@ import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.portRequests.repository.PortRequestRepository;
 import DGU_AI_LAB.admin_be.domain.pod.entity.PodExternalPort;
 import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
-import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.SaveRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
@@ -177,21 +176,6 @@ class RequestQueryServiceTest {
 
             assertThat(result).isEmpty();
             verify(requestRepository).findAllByStatusIn(Status.activeStatuses());
-        }
-    }
-
-    @Nested
-    @DisplayName("getActiveContainers")
-    class GetActiveContainers {
-
-        @Test
-        @DisplayName("FULFILLED 상태 요청들의 컨테이너 정보를 반환한다")
-        void getActiveContainers_returnsList() {
-            when(requestRepository.findAllByStatusIn(Status.activeStatuses())).thenReturn(List.of());
-
-            List<ContainerInfoDTO> result = requestQueryService.getActiveContainers();
-
-            assertThat(result).isEmpty();
         }
     }
 
