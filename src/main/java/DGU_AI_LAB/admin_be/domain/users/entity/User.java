@@ -20,7 +20,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @Entity
 @Table(name = "users", uniqueConstraints = {
@@ -312,12 +311,6 @@ public class User extends BaseTimeEntity {
      */
     public void removeGroup(Long groupId) {
         this.userGroups.removeIf(ug -> ug.getGroup().getGroupId().equals(groupId));
-    }
-
-    public Set<Long> getUbuntuGidsOfGroups() {
-        return this.userGroups.stream()
-                .map(ug -> ug.getGroup().getUbuntuGid())
-                .collect(Collectors.toSet());
     }
 
     /**

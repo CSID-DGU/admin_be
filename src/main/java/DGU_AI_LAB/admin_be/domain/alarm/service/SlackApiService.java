@@ -179,7 +179,7 @@ public class SlackApiService {
 
     // --- Private Helper Methods ---
 
-    @SuppressWarnings("unchecked") // IDE에서 Redis 캐스팅 경고를 억제하기 위해서 추가 (깔끔함용)
+    @SuppressWarnings("unchecked")
     private List<Map<String, Object>> getSlackMembersWithCache() {
         try {
             Object cachedData = redisTemplate.opsForValue().get(SLACK_USERS_CACHE_KEY);

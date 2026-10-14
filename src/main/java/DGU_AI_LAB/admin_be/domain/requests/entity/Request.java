@@ -121,18 +121,6 @@ public class Request extends BaseTimeEntity {
         }
     }
 
-    public void updateResourceGroup(ResourceGroup newResourceGroup) {
-        if (newResourceGroup != null) {
-            this.resourceGroup = newResourceGroup;
-        }
-    }
-
-    public void updateContainerImage(ContainerImage newImage) {
-        if (newImage != null) {
-            this.containerImage = newImage;
-        }
-    }
-
     public void markAsProcessing() {
         transitionTo(Status.PROCESSING, "대기 중인 신청만 승인할 수 있습니다.");
         this.jobId = null;

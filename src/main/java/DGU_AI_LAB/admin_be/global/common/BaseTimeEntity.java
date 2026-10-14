@@ -22,8 +22,4 @@ public abstract class BaseTimeEntity {
     @LastModifiedDate
     @Column(name = "updated_at")
     protected LocalDateTime updatedAt;
-
-    public void setUpdatedAt(LocalDateTime updatedAt) {
-        this.updatedAt = updatedAt;
-    }
 }

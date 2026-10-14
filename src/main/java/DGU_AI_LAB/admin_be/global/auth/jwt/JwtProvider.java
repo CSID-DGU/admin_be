@@ -76,10 +76,6 @@ public class JwtProvider {
         return claims;
     }
 
-    public void validateAccessToken(String accessToken) {
-        parseAccessToken(accessToken);
-    }
-
     public Long getSubject(String token) {
         return Long.valueOf(getJwtParser().parseSignedClaims(token)
                 .getPayload()

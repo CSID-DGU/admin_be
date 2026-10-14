@@ -161,7 +161,6 @@ class UserTest {
             user.releaseUbuntuAccount();
 
             assertThat(user.getUserGroups()).isEmpty();
-            assertThat(user.getUbuntuGidsOfGroups()).isEmpty();
         }
     }
 

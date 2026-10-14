@@ -27,8 +27,6 @@ public interface UserRepository extends JpaRepository<User,Long> {
 
     boolean existsByUbuntuUsername(String ubuntuUsername);
 
-    Optional<User> findByUbuntuUsername(String ubuntuUsername);
-
     List<User> findAllByUbuntuAccountStatus(UbuntuAccountStatus ubuntuAccountStatus);
 
     /**
