@@ -4,6 +4,7 @@ import DGU_AI_LAB.admin_be.domain.pod.controller.docs.PodApi;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodEventDTO;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.pod.service.PodQueryService;
+import DGU_AI_LAB.admin_be.domain.pod.service.PodStatusCache;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodService;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,11 +27,18 @@ public class PodController implements PodApi {
 
     private final PodQueryService podQueryService;
     private final PodService podService;
+    private final PodStatusCache podStatusCache;
 
     // 전체 pod 목록 조회
     @GetMapping
     public List<String> getPods() {
         return podQueryService.getPodNames();
+    }
+
+    // 관리자 화면의 컨테이너 상태를 지금 다시 읽는다 (주기 갱신을 기다리지 않을 때)
+    @PostMapping("/status-refresh")
+    public ResponseEntity<SuccessResponse<?>> refreshPodStatus() {
+        return SuccessResponse.ok(Map.of("statusCheckedAt", podStatusCache.refreshUnlessFresh().checkedAt()));
     }
 
     // 단일 pod 정보 조회

@@ -1,6 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.requests.dto.response;
 
+import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 
@@ -35,9 +37,15 @@ public record ContainerInfoDTO(
         @Schema(description = "컨테이너 이미지 버전", example = "11.8")
         String imageVersion,
         @Schema(description = "서버 만료 일시", example = "2026-03-02T06:17:29")
-        LocalDateTime expiresAt
+        LocalDateTime expiresAt,
+        @Schema(description = "신청 상태(FULFILLED·MIGRATING·EXPIRING)", example = "FULFILLED")
+        Status status,
+        @Schema(description = "statusCheckedAt 시각에 k8s에서 읽은 Pod 상태. 그때 Pod가 없었으면 null")
+        PodResponseDTO pod,
+        @Schema(description = "Pod 상태를 읽은 시각. admin_be가 뜬 뒤 아직 한 번도 읽지 못했으면 null", example = "2026-10-15T21:25:00")
+        LocalDateTime statusCheckedAt
 ) {
-    public static ContainerInfoDTO fromEntity(Request request) {
+    public static ContainerInfoDTO fromEntity(Request request, PodResponseDTO pod, LocalDateTime statusCheckedAt) {
         return ContainerInfoDTO.builder()
                 .requestId(request.getRequestId())
                 .userId(request.getUser().getUserId())
@@ -62,6 +70,9 @@ public record ContainerInfoDTO(
                 .imageName(request.getContainerImage().getImageName())
                 .imageVersion(request.getContainerImage().getImageVersion())
                 .expiresAt(request.getExpiresAt())
+                .status(request.getStatus())
+                .pod(pod)
+                .statusCheckedAt(statusCheckedAt)
                 .build();
     }
 

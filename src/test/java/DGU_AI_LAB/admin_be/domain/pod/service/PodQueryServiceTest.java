@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.pod.service;
 
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.StoppedPodDTO;
+import DGU_AI_LAB.admin_be.domain.pod.dto.response.UserPodListing;
 import io.fabric8.kubernetes.api.model.ContainerStateTerminated;
 import io.fabric8.kubernetes.api.model.ContainerStateTerminatedBuilder;
 import io.fabric8.kubernetes.api.model.ContainerStatusBuilder;
@@ -107,12 +108,12 @@ class PodQueryServiceTest {
     }
 
     @Nested
-    @DisplayName("listStoppedPods")
-    class ListStoppedPods {
+    @DisplayName("listUserPods")
+    class ListUserPods {
 
         private Pod pod(String name, String phase, String podReason, ContainerStateTerminated terminated) {
             return new PodBuilder()
-                    .withMetadata(new ObjectMetaBuilder().withName(name).build())
+                    .withMetadata(new ObjectMetaBuilder().withName(name).addToLabels("app", "ailab-guest").build())
                     .withNewSpec().withNodeName("farm9").endSpec()
                     .withNewStatus()
                         .withPhase(phase)
@@ -125,7 +126,24 @@ class PodQueryServiceTest {
         }
 
         @Test
-        @DisplayName("Failed·Succeeded Pod만 사유·종료 코드·종료 시각과 함께 돌려준다")
+        @DisplayName("사용자 Pod만 상태와 함께 돌려주고, 같은 네임스페이스의 admin_be·DB 등은 뺀다")
+        void returnsOnlyUserPods() {
+            Pod system = new PodBuilder()
+                    .withMetadata(new ObjectMetaBuilder().withName("mysql-0").addToLabels("app", "mysql").build())
+                    .withNewStatus().withPhase("Failed").endStatus()
+                    .build();
+            when(inNamespace.list()).thenReturn(new PodListBuilder().withItems(
+                    pod("running", "Running", null, null), system).build());
+
+            UserPodListing listing = podQueryService.listUserPods();
+
+            assertThat(listing.pods()).extracting(PodResponseDTO::name, PodResponseDTO::status)
+                    .containsExactly(org.assertj.core.groups.Tuple.tuple("running", "Running"));
+            assertThat(listing.stopped()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("Failed·Succeeded Pod만 사유·종료 코드·종료 시각과 함께 멈춘 목록에 담는다")
         void returnsOnlyStoppedPods() {
             ContainerStateTerminated oom = new ContainerStateTerminatedBuilder()
                     .withReason("OOMKilled").withExitCode(137).withFinishedAt("2026-10-07T00:24:14Z").build();
@@ -136,7 +154,7 @@ class PodQueryServiceTest {
                     pod("done", "Succeeded", null, new ContainerStateTerminatedBuilder()
                             .withReason("Completed").withExitCode(0).build())).build());
 
-            assertThat(podQueryService.listStoppedPods()).containsExactly(
+            assertThat(podQueryService.listUserPods().stopped()).containsExactly(
                     new StoppedPodDTO("oom", "farm9", "OOMKilled", 137, "2026-10-07T00:24:14Z"),
                     new StoppedPodDTO("done", "farm9", "Completed", 0, null));
         }
@@ -147,7 +165,7 @@ class PodQueryServiceTest {
             when(inNamespace.list()).thenReturn(new PodListBuilder().withItems(
                     pod("evicted", "Failed", "Evicted", null)).build());
 
-            assertThat(podQueryService.listStoppedPods()).containsExactly(
+            assertThat(podQueryService.listUserPods().stopped()).containsExactly(
                     new StoppedPodDTO("evicted", "farm9", "Evicted", null, null));
         }
 
@@ -157,7 +175,7 @@ class PodQueryServiceTest {
             when(inNamespace.list()).thenReturn(new PodListBuilder().withItems(
                     pod("bare", "Failed", null, null)).build());
 
-            assertThat(podQueryService.listStoppedPods()).containsExactly(
+            assertThat(podQueryService.listUserPods().stopped()).containsExactly(
                     new StoppedPodDTO("bare", "farm9", "Failed", null, null));
         }
     }

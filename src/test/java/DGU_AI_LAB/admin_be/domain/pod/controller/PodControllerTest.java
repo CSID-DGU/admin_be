@@ -2,6 +2,8 @@ package DGU_AI_LAB.admin_be.domain.pod.controller;
 
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.pod.service.PodQueryService;
+import DGU_AI_LAB.admin_be.domain.pod.service.PodStatusCache;
+import DGU_AI_LAB.admin_be.domain.pod.service.PodStatusSnapshot;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodService;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
@@ -16,11 +18,13 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -38,6 +42,25 @@ class PodControllerTest extends WebMvcTestSupport {
 
     @MockitoBean
     private PodService podService;
+
+    @MockitoBean
+    private PodStatusCache podStatusCache;
+
+    @Nested
+    @DisplayName("POST /api/admin/pods/status-refresh")
+    class RefreshPodStatus {
+
+        @Test
+        @DisplayName("상태를 다시 읽고 읽은 시각을 200 OK로 돌려준다")
+        void refreshPodStatus_returnsCheckedAt() throws Exception {
+            when(podStatusCache.refreshUnlessFresh()).thenReturn(
+                    new PodStatusSnapshot(Map.of(), List.of(), LocalDateTime.of(2026, 10, 15, 21, 25, 30)));
+
+            mockMvc.perform(post("/api/admin/pods/status-refresh"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.statusCheckedAt").value("2026-10-15T21:25:30"));
+        }
+    }
 
     @Nested
     @DisplayName("GET /api/admin/pods")

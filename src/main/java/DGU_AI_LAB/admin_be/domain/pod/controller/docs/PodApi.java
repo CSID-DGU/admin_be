@@ -22,6 +22,12 @@ public interface PodApi {
     @ApiResponse(responseCode = "500", description = "K8s 연동 오류", content = @Content)
     List<String> getPods();
 
+    @Operation(summary = "컨테이너 상태 즉시 갱신", description = "관리자 화면이 보여 주는 사용자 Pod 상태를 k8s에서 지금 다시 읽습니다. " +
+            "평소에는 5분마다 자동으로 읽습니다. 10초 안에 다시 부르면 다시 읽지 않고 직전 값을 씁니다.")
+    @ApiResponse(responseCode = "200", description = "갱신 성공 — data.statusCheckedAt이 읽은 시각")
+    @ApiResponse(responseCode = "500", description = "K8s 연동 오류(직전 값은 그대로 남음)", content = @Content)
+    ResponseEntity<SuccessResponse<?>> refreshPodStatus();
+
     @Operation(summary = "Pod 상세 조회", description = "Pod 이름으로 특정 Pod의 상세 정보를 조회합니다.")
     @ApiResponse(responseCode = "200", description = "조회 성공",
             content = @Content(schema = @Schema(implementation = PodResponseDTO.class)))

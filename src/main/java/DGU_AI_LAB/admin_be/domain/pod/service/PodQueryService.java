@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.pod.service;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodEventDTO;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.StoppedPodDTO;
+import DGU_AI_LAB.admin_be.domain.pod.dto.response.UserPodListing;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import io.fabric8.kubernetes.api.model.Pod;
@@ -60,21 +61,24 @@ public class PodQueryService {
         }
     }
 
-    /** 멈춰서 스스로 돌아오지 않는 Pod 목록. 네임스페이스 전체를 한 번에 읽는다. */
-    public List<StoppedPodDTO> listStoppedPods() {
+    /** 사용자 Pod 전체를 한 번에 읽는다. 상태 캐시와 멈춘 컨테이너 알림이 같은 결과를 쓴다. */
+    public UserPodListing listUserPods() {
+        List<Pod> pods;
         try {
-            return client.pods()
+            pods = client.pods()
                     .inNamespace(namespace)
                     .list()
                     .getItems()
                     .stream()
-                    .map(StoppedPodDTO::from)
-                    .flatMap(Optional::stream)
-                    .collect(Collectors.toList());
+                    .filter(PodQueryService::isUserPod)
+                    .toList();
         } catch (Exception e) {
-            log.error("[PodQuery] 멈춘 pod 목록 조회 실패", e);
+            log.error("[PodQuery] 사용자 pod 목록 조회 실패", e);
             throw e;
         }
+        return new UserPodListing(
+                pods.stream().map(PodResponseDTO::fromEntity).toList(),
+                pods.stream().map(StoppedPodDTO::from).flatMap(Optional::stream).toList());
     }
 
     public PodResponseDTO getPodDetail(String podName) {
