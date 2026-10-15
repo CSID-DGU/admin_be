@@ -2,7 +2,7 @@ package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.StoppedPodDTO;
-import DGU_AI_LAB.admin_be.domain.pod.service.PodQueryService;
+import DGU_AI_LAB.admin_be.domain.pod.service.PodStatusCache;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -24,6 +24,9 @@ import java.util.stream.Collectors;
  * 승인 완료된 신청의 컨테이너가 멈추면(메모리 초과 등) 관리자에게 알린다. 사용자 Pod는 스스로 다시 뜨지 않아,
  * 알리지 않으면 관리자 화면을 직접 열기 전까지 아무도 모른다.
  *
+ * <p>Pod 목록은 매 바퀴 한 번 읽어 {@link PodStatusCache}에 넣는다 — 관리자 화면의 컨테이너 상태와 "마지막 확인"
+ * 시각이 이 값이다.
+ *
  * <p>알림은 Pod마다 한 번이다. 재시작하면 Pod 이름이 바뀌므로 새 컨테이너가 또 멈추면 다시 알린다.
  * Pod가 아예 없는 신청은 다루지 않는다 — 기록과 실제의 어긋남 판정은 이 서비스의 몫이 아니다.
  */
@@ -38,7 +41,7 @@ public class ContainerStopWatcher {
             "OOMKilled", "메모리 초과(OOMKilled)",
             "Evicted", "노드에서 밀려남(Evicted)");
 
-    private final PodQueryService podQueryService;
+    private final PodStatusCache podStatusCache;
     private final RequestRepository requestRepository;
     private final AlertDeduplicator alertDeduplicator;
     private final AlarmService alarmService;
@@ -47,7 +50,7 @@ public class ContainerStopWatcher {
     public void watchStoppedContainers() {
         List<StoppedPodDTO> stopped;
         try {
-            stopped = podQueryService.listStoppedPods();
+            stopped = podStatusCache.refresh().stopped();
         } catch (Exception e) {
             // 조회 실패는 PodQueryService가 남긴다. 다음 바퀴에 다시 본다.
             return;

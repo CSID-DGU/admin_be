@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.pod.service.PodStatusCache;
+import DGU_AI_LAB.admin_be.domain.pod.service.PodStatusSnapshot;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
@@ -30,6 +32,7 @@ public class AdminRequestQueryService {
     private final RequestRepository requestRepository;
     private final ChangeRequestRepository changeRequestRepository;
     private final RequestQueryService requestQueryService;
+    private final PodStatusCache podStatusCache;
 
     /** 시작 시각을 주지 않았을 때 쓰는 하한 — 어떤 신청보다도 앞선 시각이다. */
     private static final LocalDateTime EARLIEST = LocalDateTime.of(1970, 1, 1, 0, 0);
@@ -77,9 +80,12 @@ public class AdminRequestQueryService {
                 .toList();
     }
 
+    /** Pod 상태는 k8s를 부르지 않고 주기 작업이 읽어 둔 값을 붙인다. */
     public List<ContainerInfoDTO> getAllActiveContainers() {
+        PodStatusSnapshot snapshot = podStatusCache.snapshot();
         return requestRepository.findAllByStatusInWithAssociations(Status.activeStatuses()).stream()
-                .map(ContainerInfoDTO::fromEntity)
+                .map(request -> ContainerInfoDTO.fromEntity(
+                        request, snapshot.pod(request.getPodName()), snapshot.checkedAt()))
                 .toList();
     }
 

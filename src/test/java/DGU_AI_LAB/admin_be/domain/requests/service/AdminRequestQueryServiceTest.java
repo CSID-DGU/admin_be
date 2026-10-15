@@ -1,5 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodResponseDTO;
+import DGU_AI_LAB.admin_be.domain.pod.service.PodStatusCache;
+import DGU_AI_LAB.admin_be.domain.pod.service.PodStatusSnapshot;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ContainerInfoDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ResourceUsageDTO;
@@ -43,6 +46,9 @@ class AdminRequestQueryServiceTest {
 
     @Mock
     private RequestQueryService requestQueryService;
+
+    @Mock
+    private PodStatusCache podStatusCache;
 
     @Nested
     @DisplayName("getRequestCreatedAt")
@@ -197,6 +203,7 @@ class AdminRequestQueryServiceTest {
         @Test
         @DisplayName("FULFILLED 상태 요청들의 컨테이너 정보를 반환한다")
         void getAllActiveContainers_returnsList() {
+            when(podStatusCache.snapshot()).thenReturn(PodStatusSnapshot.EMPTY);
             when(requestRepository.findAllByStatusInWithAssociations(Status.activeStatuses())).thenReturn(List.of());
 
             List<ContainerInfoDTO> result = adminRequestQueryService.getAllActiveContainers();
@@ -218,6 +225,7 @@ class AdminRequestQueryServiceTest {
             when(resourceGroup.getResourceGroupName()).thenReturn("RTX A6000 Cluster");
             when(resourceGroup.getServerName()).thenReturn("FARM");
             when(request.getContainerImage()).thenReturn(containerImage);
+            when(podStatusCache.snapshot()).thenReturn(PodStatusSnapshot.EMPTY);
             when(requestRepository.findAllByStatusInWithAssociations(Status.activeStatuses())).thenReturn(List.of(request));
 
             ContainerInfoDTO result = adminRequestQueryService.getAllActiveContainers().get(0);
@@ -237,12 +245,43 @@ class AdminRequestQueryServiceTest {
             when(user.getUserGroups()).thenReturn(java.util.Set.of());
             when(request.getResourceGroup()).thenReturn(null);
             when(request.getContainerImage()).thenReturn(containerImage);
+            when(podStatusCache.snapshot()).thenReturn(PodStatusSnapshot.EMPTY);
             when(requestRepository.findAllByStatusInWithAssociations(Status.activeStatuses())).thenReturn(List.of(request));
 
             ContainerInfoDTO result = adminRequestQueryService.getAllActiveContainers().get(0);
 
             assertThat(result.resourceGroupName()).isNull();
             assertThat(result.serverName()).isNull();
+        }
+
+        @Test
+        @DisplayName("주기 작업이 읽어 둔 Pod 상태와 읽은 시각을 붙이고, k8s는 부르지 않는다")
+        void getAllActiveContainers_attachesCachedPodStatus() {
+            LocalDateTime checkedAt = LocalDateTime.of(2026, 10, 15, 21, 25);
+            PodResponseDTO running = PodResponseDTO.builder().name("ailab-a-1").status("Running").effectiveStatus("Running").build();
+            Request withPod = mock(Request.class);
+            Request podGone = mock(Request.class);
+            for (Request request : List.of(withPod, podGone)) {
+                var user = mock(DGU_AI_LAB.admin_be.domain.users.entity.User.class);
+                when(request.getUser()).thenReturn(user);
+                when(user.getUserGroups()).thenReturn(java.util.Set.of());
+                when(request.getContainerImage()).thenReturn(mock(DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage.class));
+                when(request.getStatus()).thenReturn(Status.FULFILLED);
+            }
+            when(withPod.getPodName()).thenReturn("ailab-a-1");
+            when(podGone.getPodName()).thenReturn("ailab-b-1");
+            when(podStatusCache.snapshot()).thenReturn(new PodStatusSnapshot(Map.of("ailab-a-1", running), List.of(), checkedAt));
+            when(requestRepository.findAllByStatusInWithAssociations(Status.activeStatuses())).thenReturn(List.of(withPod, podGone));
+
+            List<ContainerInfoDTO> result = adminRequestQueryService.getAllActiveContainers();
+
+            assertThat(result.get(0).pod()).isEqualTo(running);
+            assertThat(result.get(1).pod()).isNull();
+            assertThat(result).allSatisfy(dto -> {
+                assertThat(dto.statusCheckedAt()).isEqualTo(checkedAt);
+                assertThat(dto.status()).isEqualTo(Status.FULFILLED);
+            });
+            verify(podStatusCache, never()).refresh();
         }
     }
 
