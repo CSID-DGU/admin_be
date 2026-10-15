@@ -8,6 +8,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -41,7 +42,8 @@ public class PodStatusCache {
     /** k8s를 다시 읽어 바꾼다. 읽지 못하면 이전 값을(읽은 시각째로) 그대로 두고 던진다. */
     public synchronized PodStatusSnapshot refresh() {
         UserPodListing listing = podQueryService.listUserPods();
-        PodStatusSnapshot next = PodStatusSnapshot.of(listing, LocalDateTime.now(clock));
+        // 화면에는 초까지만 보인다. 나노초까지 넘기면 브라우저의 날짜 해석(소수 3자리까지)이 흔들린다.
+        PodStatusSnapshot next = PodStatusSnapshot.of(listing, LocalDateTime.now(clock).truncatedTo(ChronoUnit.SECONDS));
         current.set(next);
         return next;
     }

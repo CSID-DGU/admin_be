@@ -69,6 +69,15 @@ class PodStatusCacheTest {
     }
 
     @Test
+    @DisplayName("읽은 시각은 초 단위로 자른다")
+    void checkedAtTruncatedToSeconds() {
+        clock.advance(Duration.ofNanos(328_180_516));
+        when(podQueryService.listUserPods()).thenReturn(new UserPodListing(List.of(), List.of()));
+
+        assertThat(cache.refresh().checkedAt()).isEqualTo(LocalDateTime.of(2026, 10, 15, 21, 25));
+    }
+
+    @Test
     @DisplayName("읽기에 실패하면 이전 값과 그 시각을 그대로 두고 예외를 던진다")
     void keepsPreviousOnFailure() {
         when(podQueryService.listUserPods())
