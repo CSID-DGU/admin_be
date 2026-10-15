@@ -203,6 +203,47 @@ class AdminRequestQueryServiceTest {
 
             assertThat(result).isEmpty();
         }
+
+        @Test
+        @DisplayName("리소스 그룹 번호와 함께 GPU 이름과 서버를 담는다")
+        void getAllActiveContainers_includesResourceGroupName() {
+            Request request = mock(Request.class);
+            var user = mock(DGU_AI_LAB.admin_be.domain.users.entity.User.class);
+            var resourceGroup = mock(DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup.class);
+            var containerImage = mock(DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage.class);
+            when(request.getUser()).thenReturn(user);
+            when(user.getUserGroups()).thenReturn(java.util.Set.of());
+            when(request.getResourceGroup()).thenReturn(resourceGroup);
+            when(resourceGroup.getRsgroupId()).thenReturn(3);
+            when(resourceGroup.getResourceGroupName()).thenReturn("RTX A6000 Cluster");
+            when(resourceGroup.getServerName()).thenReturn("FARM");
+            when(request.getContainerImage()).thenReturn(containerImage);
+            when(requestRepository.findAllByStatusInWithAssociations(Status.activeStatuses())).thenReturn(List.of(request));
+
+            ContainerInfoDTO result = adminRequestQueryService.getAllActiveContainers().get(0);
+
+            assertThat(result.resourceGroupId()).isEqualTo(3);
+            assertThat(result.resourceGroupName()).isEqualTo("RTX A6000 Cluster");
+            assertThat(result.serverName()).isEqualTo("FARM");
+        }
+
+        @Test
+        @DisplayName("리소스 그룹이 없으면 GPU 이름과 서버도 비운다")
+        void getAllActiveContainers_toleratesNullResourceGroup() {
+            Request request = mock(Request.class);
+            var user = mock(DGU_AI_LAB.admin_be.domain.users.entity.User.class);
+            var containerImage = mock(DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage.class);
+            when(request.getUser()).thenReturn(user);
+            when(user.getUserGroups()).thenReturn(java.util.Set.of());
+            when(request.getResourceGroup()).thenReturn(null);
+            when(request.getContainerImage()).thenReturn(containerImage);
+            when(requestRepository.findAllByStatusInWithAssociations(Status.activeStatuses())).thenReturn(List.of(request));
+
+            ContainerInfoDTO result = adminRequestQueryService.getAllActiveContainers().get(0);
+
+            assertThat(result.resourceGroupName()).isNull();
+            assertThat(result.serverName()).isNull();
+        }
     }
 
     @Nested
