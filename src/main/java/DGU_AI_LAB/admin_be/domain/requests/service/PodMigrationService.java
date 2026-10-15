@@ -53,6 +53,9 @@ import java.util.stream.Collectors;
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 public class PodMigrationService {
 
+    /** 변경분을 굽다 실패한 뒤 기존 컨테이너의 멈춤을 풀지 못했다(config-server node_image). */
+    static final String CONTAINER_LEFT_PAUSED = "IMAGE_LEFT_PAUSED";
+
     private final RequestRepository requestRepository;
     private final SuspensionGuard suspensionGuard;
     private final PodExternalPortRepository podExternalPortRepository;
@@ -337,11 +340,20 @@ public class PodMigrationService {
         }
     }
 
-    /** 작업이 실패로 끝났다. 제어기가 새 Pod를 정리했고 기존 Pod는 그대로이므로 FULFILLED로 되돌리고 알린다. */
+    /**
+     * 작업이 실패로 끝났다. 제어기가 새 Pod를 정리했고 기존 Pod는 그대로이므로 FULFILLED로 되돌린다. 기존 Pod가
+     * 그대로라 관리자가 할 일이 없어 처리 기록으로 남긴다. 단, 변경분을 굽느라 멈춘 기존 컨테이너를 다시 풀지 못했으면
+     * 사용자가 접속할 수 없으므로 조치 필요로 알린다.
+     */
     public void failMigrationJob(Long requestId, JobResultResponseDTO result) {
         revertToFulfilled(requestId);
-        alert(null, "notification.admin.migration.job-failed",
-                        requestId, result == null ? null : result.errorCode());
+        String errorCode = result == null ? null : result.errorCode();
+        if (CONTAINER_LEFT_PAUSED.equals(errorCode)) {
+            alert(null, "notification.admin.migration.left-paused", requestId);
+            return;
+        }
+        log.warn("[마이그레이션] 작업 실패, 기존 Pod 유지: requestId={}, error={}", requestId, errorCode);
+        alarmService.recordLog("notification.admin.migration.job-failed", requestId, errorCode);
     }
 
     /** 결과 불명이거나 자원을 남긴 실패. 실제 Pod 상태를 확인하기 전에는 되돌리지 않고 MIGRATING으로 둔 채 알린다. */

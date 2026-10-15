@@ -448,14 +448,27 @@ class PodMigrationServiceTest {
     }
 
     @Test
-    @DisplayName("작업이 실패하면 FULFILLED로 되돌리고 알린다")
+    @DisplayName("기존 컨테이너가 멈춘 채 남은 실패는 조치 필요로 알린다")
+    void leftPausedNeedsAction() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+
+        service.failMigrationJob(1L, new JobResultResponseDTO("1", "migrate", 9L, "FAIL", "IMAGE_LEFT_PAUSED", null, null));
+
+        verify(request).endMigration();
+        assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("migration.left-paused")).hasSize(1);
+        assertThat(Alerts.recorded(alarmService)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("작업이 실패하면 FULFILLED로 되돌리고 오류 채널이 아니라 처리 기록으로 남긴다")
     void failReverts() {
         when(request.getStatus()).thenReturn(Status.MIGRATING);
 
         service.failMigrationJob(1L, new JobResultResponseDTO("1", "migrate", 9L, "FAIL", "POD_NOT_FOUND", null, null));
 
         verify(request).endMigration();
-        assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("POD_NOT_FOUND")).hasSize(1);
+        assertThat(Alerts.recorded(alarmService)).filteredOn(alert -> alert.contains("migration.job-failed") && alert.contains("POD_NOT_FOUND")).hasSize(1);
+        assertThat(Alerts.needsAction(alarmService)).isEmpty();
     }
 
     @Test
