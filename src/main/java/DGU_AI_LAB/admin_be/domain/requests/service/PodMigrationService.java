@@ -341,18 +341,17 @@ public class PodMigrationService {
     }
 
     /**
-     * 작업이 실패로 끝났다. 제어기가 새 Pod를 정리했고 기존 Pod는 그대로이므로 FULFILLED로 되돌린다. 기존 Pod가
-     * 그대로라 관리자가 할 일이 없어 처리 기록으로 남긴다. 단, 변경분을 굽느라 멈춘 기존 컨테이너를 다시 풀지 못했으면
-     * 사용자가 접속할 수 없으므로 조치 필요로 알린다.
+     * 작업이 실패로 끝났다. 제어기가 새 Pod를 정리했고 기존 Pod는 그대로이므로 FULFILLED로 되돌리고 처리 기록(noti)으로
+     * 남긴다. 변경분을 굽느라 멈춘 기존 컨테이너를 다시 풀지 못한 실패는 "기존 컨테이너 유지"가 사실이 아니므로 문구만 달리한다.
      */
     public void failMigrationJob(Long requestId, JobResultResponseDTO result) {
         revertToFulfilled(requestId);
         String errorCode = result == null ? null : result.errorCode();
+        log.warn("[마이그레이션] 작업 실패: requestId={}, error={}", requestId, errorCode);
         if (CONTAINER_LEFT_PAUSED.equals(errorCode)) {
-            alert(null, "notification.admin.migration.left-paused", requestId);
+            alarmService.recordLog("notification.admin.migration.left-paused", requestId);
             return;
         }
-        log.warn("[마이그레이션] 작업 실패, 기존 Pod 유지: requestId={}, error={}", requestId, errorCode);
         alarmService.recordLog("notification.admin.migration.job-failed", requestId, errorCode);
     }
 
