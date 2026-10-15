@@ -26,6 +26,10 @@ public record ContainerInfoDTO(
         List<Long> ubuntuGids,
         @Schema(description = "리소스 그룹 ID", example = "1")
         Integer resourceGroupId,
+        @Schema(description = "리소스 그룹명(GPU 종류)", example = "RTX 3090 Cluster")
+        String resourceGroupName,
+        @Schema(description = "리소스 그룹이 속한 서버", example = "FARM")
+        String serverName,
         @Schema(description = "컨테이너 이미지 이름", example = "cuda")
         String imageName,
         @Schema(description = "컨테이너 이미지 버전", example = "11.8")
@@ -48,6 +52,12 @@ public record ContainerInfoDTO(
                 )
                 .resourceGroupId(request.getResourceGroup() != null
                         ? request.getResourceGroup().getRsgroupId()
+                        : null)
+                .resourceGroupName(request.getResourceGroup() != null
+                        ? request.getResourceGroup().getResourceGroupName()
+                        : null)
+                .serverName(request.getResourceGroup() != null
+                        ? request.getResourceGroup().getServerName()
                         : null)
                 .imageName(request.getContainerImage().getImageName())
                 .imageVersion(request.getContainerImage().getImageVersion())
