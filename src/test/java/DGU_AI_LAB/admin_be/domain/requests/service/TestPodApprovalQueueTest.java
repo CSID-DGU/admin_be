@@ -32,6 +32,7 @@ class TestPodApprovalQueueTest {
         when(img.getImageId()).thenReturn(5L);
         when(rg.getRsgroupId()).thenReturn(7);
         when(r.getRequestId()).thenReturn(id);
+        when(r.getExpiresAt()).thenReturn(java.time.LocalDateTime.now().plusDays(1));
         when(r.getUser()).thenReturn(u);
         when(r.getContainerImage()).thenReturn(img);
         when(r.getResourceGroup()).thenReturn(rg);
@@ -68,6 +69,31 @@ class TestPodApprovalQueueTest {
 
         queue.drain();
 
+        verify(commands).rejectRequest(any(RejectRequestDTO.class));
+    }
+
+    @Test
+    void 재시도_한도를_넘으면_거절로_끝낸다() {
+        List<Request> waiting = List.of(req(1, 10));
+        when(requests.findAllByTestTrueAndStatusOrderByRequestIdAsc(Status.PENDING)).thenReturn(waiting);
+
+        for (int i = 0; i <= TestPodApprovalQueue.MAX_ATTEMPTS; i++) {
+            queue.drain();
+        }
+
+        verify(commands, times(TestPodApprovalQueue.MAX_ATTEMPTS)).approveRequest(any());
+        verify(commands).rejectRequest(any(RejectRequestDTO.class));
+    }
+
+    @Test
+    void 만료된_신청은_승인하지_않고_거절한다() {
+        Request r = req(1, 10);
+        when(r.getExpiresAt()).thenReturn(java.time.LocalDateTime.now().minusMinutes(1));
+        when(requests.findAllByTestTrueAndStatusOrderByRequestIdAsc(Status.PENDING)).thenReturn(List.of(r));
+
+        queue.drain();
+
+        verify(commands, never()).approveRequest(any());
         verify(commands).rejectRequest(any(RejectRequestDTO.class));
     }
 }

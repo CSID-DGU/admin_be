@@ -11,7 +11,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.List;
 import java.util.Set;
 
@@ -27,6 +30,10 @@ public class TestPodApprovalQueue {
     private final RequestRepository requestRepository;
     private final AdminRequestCommandService adminRequestCommandService;
 
+    // shortcut: 재시도 횟수는 메모리에만 둔다(재기동하면 0부터), 영속이 필요하면 requests에 칸을 추가
+    static final int MAX_ATTEMPTS = 3;
+    private final Map<Long, Integer> attempts = new HashMap<>();
+
     @Scheduled(fixedDelayString = "${operations.test-pod.queue-ms:5000}")
     public void drain() {
         List<Request> waiting = requestRepository.findAllByTestTrueAndStatusOrderByRequestIdAsc(Status.PENDING);
@@ -37,8 +44,19 @@ public class TestPodApprovalQueue {
                     || requestRepository.existsByUser_UserIdAndStatus(userId, Status.PROCESSING)) {
                 continue;
             }
-            approve(req);
+            if (req.getExpiresAt().isBefore(LocalDateTime.now())) {
+                giveUp(req, "만료됨");
+            } else if (attempts.merge(req.getRequestId(), 1, Integer::sum) > MAX_ATTEMPTS) {
+                giveUp(req, "생성 재시도 한도 초과");
+            } else {
+                approve(req);
+            }
         }
+    }
+
+    private void giveUp(Request req, String reason) {
+        attempts.remove(req.getRequestId());
+        adminRequestCommandService.rejectRequest(new RejectRequestDTO(req.getRequestId(), reason));
     }
 
     private void approve(Request req) {
