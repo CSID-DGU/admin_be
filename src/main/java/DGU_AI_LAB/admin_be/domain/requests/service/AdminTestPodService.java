@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 관리자 테스트 Pod 간편 생성. 노드마다 테스트 신청 한 건을 PENDING으로 만들어 두면
@@ -31,6 +32,8 @@ public class AdminTestPodService {
 
     static final String PURPOSE = "관리자 테스트 Pod";
     static final long EXPIRES_IN_DAYS = 1;
+    /** 테스트 Pod를 만들지 않는 서버. 노드를 직접 골라도 제외한다(운영 지시: LAB에는 발급하지 않음). */
+    static final Set<String> EXCLUDED_SERVERS = Set.of("LAB");
 
     private final UserRepository userRepository;
     private final NodeRepository nodeRepository;
@@ -72,11 +75,10 @@ public class AdminTestPodService {
         List<Node> nodes = dto.nodeIds() == null || dto.nodeIds().isEmpty()
                 ? nodeRepository.findAll()
                 : nodeRepository.findAllById(dto.nodeIds());
-        if (dto.resourceGroupIds() == null || dto.resourceGroupIds().isEmpty()) {
-            return nodes;
-        }
+        boolean allGroups = dto.resourceGroupIds() == null || dto.resourceGroupIds().isEmpty();
         return nodes.stream()
-                .filter(n -> dto.resourceGroupIds().contains(n.getResourceGroup().getRsgroupId()))
+                .filter(n -> !EXCLUDED_SERVERS.contains(n.getResourceGroup().getServerName()))
+                .filter(n -> allGroups || dto.resourceGroupIds().contains(n.getResourceGroup().getRsgroupId()))
                 .toList();
     }
 }

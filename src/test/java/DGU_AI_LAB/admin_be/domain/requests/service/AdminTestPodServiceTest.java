@@ -37,6 +37,7 @@ class AdminTestPodServiceTest {
     private final User admin = mock(User.class);
     private final ResourceGroup rg1 = mock(ResourceGroup.class);
     private final ResourceGroup rg2 = mock(ResourceGroup.class);
+    private final ResourceGroup lab = mock(ResourceGroup.class);
 
     private Node node(String id, ResourceGroup rg) {
         Node n = mock(Node.class);
@@ -53,6 +54,9 @@ class AdminTestPodServiceTest {
         when(requests.saveAndFlush(any(Request.class))).thenAnswer(i -> i.getArgument(0));
         when(rg1.getRsgroupId()).thenReturn(1);
         when(rg2.getRsgroupId()).thenReturn(2);
+        when(rg1.getServerName()).thenReturn("FARM");
+        when(rg2.getServerName()).thenReturn("FARM");
+        when(lab.getServerName()).thenReturn("LAB");
     }
 
     @Test
@@ -89,5 +93,21 @@ class AdminTestPodServiceTest {
         assertThatThrownBy(() -> service.create(1L, new TestPodCreateRequestDTO(9L, null, null, null)))
                 .isInstanceOf(BusinessException.class);
         verify(requests, never()).saveAndFlush(any(Request.class));
+    }
+
+    @Test
+    void LAB_노드는_전체_선택에서도_직접_골라도_제외한다() {
+        Node farm1 = node("farm1", rg1);
+        Node lab1 = node("lab1", lab);
+        givenBase(List.of(farm1, lab1));
+        when(nodes.findAllById(List.of("lab1"))).thenReturn(List.of(lab1));
+
+        service.create(1L, new TestPodCreateRequestDTO(9L, null, null, null));
+        ArgumentCaptor<Request> cap = ArgumentCaptor.forClass(Request.class);
+        verify(requests, times(1)).saveAndFlush(cap.capture());
+        assertThat(cap.getValue().getPinnedNode()).isEqualTo("farm1");
+
+        assertThatThrownBy(() -> service.create(1L, new TestPodCreateRequestDTO(9L, null, List.of("lab1"), null)))
+                .isInstanceOf(BusinessException.class);
     }
 }
