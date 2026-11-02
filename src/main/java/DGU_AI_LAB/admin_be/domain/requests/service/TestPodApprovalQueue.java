@@ -5,6 +5,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.List;
@@ -33,6 +35,10 @@ public class TestPodApprovalQueue {
     // shortcut: 재시도 횟수는 메모리에만 둔다(재기동하면 0부터), 영속이 필요하면 requests에 칸을 추가
     static final int MAX_ATTEMPTS = 3;
     private final Map<Long, Integer> attempts = new HashMap<>();
+
+    // 다시 해도 같은 결과인 사유만 바로 거절한다. 그 밖(POD_CREATION_FAILED, USER_APPROVAL_ALREADY_IN_PROGRESS 등)은 재시도 한도 경로로 간다.
+    private static final Set<ErrorCode> PERMANENT = EnumSet.of(ErrorCode.INVALID_REQUEST_STATUS,
+            ErrorCode.UBUNTU_ACCOUNT_RELEASING, ErrorCode.PASSWORD_RESET_IN_PROGRESS, ErrorCode.USER_NOT_FOUND);
 
     @Scheduled(fixedDelayString = "${operations.test-pod.queue-ms:5000}")
     public void drain() {
@@ -56,7 +62,7 @@ public class TestPodApprovalQueue {
 
     private void giveUp(Request req, String reason) {
         attempts.remove(req.getRequestId());
-        adminRequestCommandService.rejectRequest(new RejectRequestDTO(req.getRequestId(), reason));
+        reject(req.getRequestId(), reason);
     }
 
     private void approve(Request req) {
@@ -65,11 +71,23 @@ public class TestPodApprovalQueue {
             adminRequestCommandService.approveRequest(new ApproveRequestDTO(
                     id, req.getContainerImage().getImageId(), req.getResourceGroup().getRsgroupId(), null));
         } catch (BusinessException e) {
-            // 정지·계정 회수 중 같은 영구성 사유는 다시 해도 같다 — 대기에 두면 5초마다 반복하므로 거절로 끝낸다.
+            if (!PERMANENT.contains(e.getErrorCode())) {
+                log.warn("테스트 Pod 승인 실패, 다음 주기에 다시 시도 requestId={}: {}", id, e.getMessage());
+                return;
+            }
             log.warn("테스트 Pod 승인 실패, 거절 처리 requestId={}: {}", id, e.getMessage());
-            adminRequestCommandService.rejectRequest(new RejectRequestDTO(id, trim(e.getMessage())));
+            reject(id, trim(e.getMessage()));
         } catch (RuntimeException e) {
             log.error("테스트 Pod 승인 중 오류, 다음 주기에 다시 시도 requestId={}", id, e);
+        }
+    }
+
+    // 거절 실패가 drain 전체를 멈추지 않게 한다 — 남은 신청은 계속 처리하고 이 건은 다음 주기에 다시 본다.
+    private void reject(Long id, String reason) {
+        try {
+            adminRequestCommandService.rejectRequest(new RejectRequestDTO(id, reason));
+        } catch (RuntimeException e) {
+            log.error("테스트 Pod 거절 처리 실패 requestId={}", id, e);
         }
     }
 

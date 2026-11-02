@@ -96,4 +96,27 @@ class TestPodApprovalQueueTest {
         verify(commands, never()).approveRequest(any());
         verify(commands).rejectRequest(any(RejectRequestDTO.class));
     }
+
+    @Test
+    void 일시_오류는_거절하지_않고_다음_주기에_다시_시도한다() {
+        List<Request> waiting = List.of(req(1, 10));
+        when(requests.findAllByTestTrueAndStatusOrderByRequestIdAsc(Status.PENDING)).thenReturn(waiting);
+        when(commands.approveRequest(any())).thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED));
+
+        queue.drain();
+
+        verify(commands, never()).rejectRequest(any(RejectRequestDTO.class));
+    }
+
+    @Test
+    void 거절이_실패해도_남은_신청을_계속_처리한다() {
+        List<Request> waiting = List.of(req(1, 10), req(2, 20));
+        when(requests.findAllByTestTrueAndStatusOrderByRequestIdAsc(Status.PENDING)).thenReturn(waiting);
+        when(commands.approveRequest(any())).thenThrow(new BusinessException(ErrorCode.USER_NOT_FOUND));
+        when(commands.rejectRequest(any(RejectRequestDTO.class))).thenThrow(new IllegalStateException("db"));
+
+        queue.drain();
+
+        verify(commands, times(2)).approveRequest(any());
+    }
 }
