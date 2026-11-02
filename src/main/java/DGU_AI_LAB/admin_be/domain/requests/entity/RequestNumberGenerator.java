@@ -20,25 +20,37 @@ import java.util.EnumSet;
  */
 public class RequestNumberGenerator implements BeforeExecutionGenerator {
 
-    private static final String LOCK_NEXT = "SELECT next_number FROM request_numbers WHERE id = 1 FOR UPDATE";
-    private static final String ADVANCE = "UPDATE request_numbers SET next_number = ? WHERE id = 1";
+    /** 실 사용자 신청 번호 대장 행. */
+    static final int REAL_LEDGER = 1;
+    /** 테스트 Pod 신청 번호 대장 행. 2,000,000,001부터 따로 세어 실 사용자 번호에 빈틈을 내지 않는다(int 범위 안). */
+    static final int TEST_LEDGER = 2;
+
+    private static final String LOCK_NEXT = "SELECT next_number FROM request_numbers WHERE id = ? FOR UPDATE";
+    private static final String ADVANCE = "UPDATE request_numbers SET next_number = ? WHERE id = ?";
 
     @Override
     public Object generate(SharedSessionContractImplementor session, Object owner, Object currentValue,
                            EventType eventType) {
         Connection connection = session.getJdbcCoordinator().getLogicalConnection().getPhysicalConnection();
         try {
-            long number = lockNext(connection);
-            advance(connection, number + 1);
+            int ledger = owner instanceof Request request && request.isTest() ? TEST_LEDGER : REAL_LEDGER;
+            long number = lockNext(connection, ledger);
+            advance(connection, number + 1, ledger);
             return number;
         } catch (SQLException e) {
             throw new HibernateException("신청 번호를 발급하지 못했습니다.", e);
         }
     }
 
-    private long lockNext(Connection connection) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(LOCK_NEXT);
-             ResultSet row = statement.executeQuery()) {
+    private long lockNext(Connection connection, int ledger) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(LOCK_NEXT)) {
+            statement.setInt(1, ledger);
+            return read(statement);
+        }
+    }
+
+    private long read(PreparedStatement statement) throws SQLException {
+        try (ResultSet row = statement.executeQuery()) {
             if (!row.next()) {
                 throw new HibernateException("신청 번호 대장(request_numbers)에 행이 없습니다.");
             }
@@ -46,9 +58,10 @@ public class RequestNumberGenerator implements BeforeExecutionGenerator {
         }
     }
 
-    private void advance(Connection connection, long next) throws SQLException {
+    private void advance(Connection connection, long next, int ledger) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(ADVANCE)) {
             statement.setLong(1, next);
+            statement.setInt(2, ledger);
             statement.executeUpdate();
         }
     }
