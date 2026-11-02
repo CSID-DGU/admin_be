@@ -381,8 +381,10 @@ public class AdminRequestCommandService {
         suspensionGuard.reblockAfterPortsCreated(savedRequest.getUser().getUserId());
         String sshPort = externalPortOf(made, "ssh");
         String jupyterPort = externalPortOf(made, "jupyter");
-        AfterCommit.run("컨테이너 배정 안내 메일, 요청 ID " + requestId,
-                () -> userGuideMailer.sendContainerCreatedEmail(savedRequest, sshPort, jupyterPort));
+        if (!savedRequest.isTest()) {
+            AfterCommit.run("컨테이너 배정 안내 메일, 요청 ID " + requestId,
+                    () -> userGuideMailer.sendContainerCreatedEmail(savedRequest, sshPort, jupyterPort));
+        }
         AfterCommit.run("생성 완료 알림, 요청 ID " + requestId,
                 () -> requestChannelNotifier.sendContainerCreatedNotification(savedRequest, sshPort, jupyterPort));
     }
@@ -494,7 +496,9 @@ public class AdminRequestCommandService {
         Request rejected = rejection.request();
         AfterCommit.run("거절 안내 메일·신청서 채널 알림, 요청 ID " + requestId, () -> {
             requestChannelNotifier.sendRequestRejectedNotification(rejected, dto.adminComment());
-            userGuideMailer.sendRequestRejectedEmail(rejected, dto.adminComment());
+            if (!rejected.isTest()) {
+                userGuideMailer.sendRequestRejectedEmail(rejected, dto.adminComment());
+            }
         });
         return rejection.response();
     }

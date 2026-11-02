@@ -30,6 +30,7 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
 
     List<Request> findAllByUser_UserId(Long userId);
     List<Request> findAllByStatus(Status status);
+    List<Request> findAllByTestTrueAndStatusOrderByRequestIdAsc(Status status);
 
     List<Request> findAllByUser_UserIdAndStatus(Long userId, Status status);
     boolean existsByPodName(String podName);
