@@ -98,6 +98,14 @@ public class Request extends BaseTimeEntity {
     @Column(name = "slack_message_ts", length = 32)
     private String slackMessageTs;
 
+    /** 관리자가 간편 생성한 테스트 Pod 여부. 알림은 알림 기록 채널로만 가고 안내 메일은 보내지 않는다. */
+    @Column(name = "is_test", nullable = false)
+    private boolean test = false;
+
+    /** 테스트 Pod를 만들 노드. 비어 있으면 리소스 그룹 전체 노드 중에서 고른다. */
+    @Column(name = "pinned_node", length = 100)
+    private String pinnedNode;
+
     @Builder
     public Request(LocalDateTime expiresAt, String usagePurpose, String formAnswers, User user, ResourceGroup resourceGroup, ContainerImage containerImage, boolean enableVnc) {
         this.enableVnc = enableVnc;
@@ -110,6 +118,11 @@ public class Request extends BaseTimeEntity {
     }
 
     // ==== 비즈니스 메서드 ====
+
+    public void markAsTest(String pinnedNode) {
+        this.test = true;
+        this.pinnedNode = pinnedNode;
+    }
 
     /**
      * 변경 요청을 반영하여 엔티티의 속성을 업데이트합니다.

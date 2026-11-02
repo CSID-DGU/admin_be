@@ -96,7 +96,7 @@ public class RequestChannelNotifier {
                 formatTeamInfo(request),                                   // {19}
                 RECEIVED_AT_FORMAT.format(receivedAt));                    // {20}
 
-        enqueueRequestChannel(message, requestChannel(user, serverName), null, request.getRequestId(), null);
+        enqueueRequestChannel(message, requestChannel(request, serverName), null, request.getRequestId(), null);
     }
 
     /**
@@ -120,7 +120,7 @@ public class RequestChannelNotifier {
                 RECEIVED_AT_FORMAT.format(receivedAt),                     // {1}
                 SlackText.line(user.getName()),                            // {2}
                 String.valueOf(request.getRequestId()));                   // {3}
-        RequestChannel channel = requestChannel(user, serverName);
+        RequestChannel channel = requestChannel(request, serverName);
         String threadTs = request.getSlackMessageTs();
         return () -> safely("신청 취소 알림", () -> replyToRequest(message, channel, threadTs));
     }
@@ -139,7 +139,7 @@ public class RequestChannelNotifier {
                     serverName,                                                // {1}
                     SlackText.line(user.getName()),                            // {2}
                     SlackText.line(NotificationText.orNone(adminComment)));                     // {3}
-            replyToRequest(message, requestChannel(user, serverName), request.getSlackMessageTs());
+            replyToRequest(message, requestChannel(request, serverName), request.getSlackMessageTs());
         });
     }
 
@@ -169,7 +169,7 @@ public class RequestChannelNotifier {
                     serverProfileRegistry.publicPort(serverName, jupyterPort), // {8}
                     String.valueOf(user.getUbuntuUid()),                       // {9}
                     String.valueOf(user.getUbuntuGid()));                      // {10}
-            replyToRequest(message, requestChannel(user, serverName), request.getSlackMessageTs());
+            replyToRequest(message, requestChannel(request, serverName), request.getSlackMessageTs());
         });
     }
 
@@ -260,8 +260,8 @@ public class RequestChannelNotifier {
      * 신청서와 그 신청의 취소 알림이 가는 채널. 서버별 신청서 채널로 가고(따로 없으면 관리 채널), 그 채널에는
      * 이 둘 말고 다른 알림을 보내지 않는다. 테스트용 계정의 것은 webhook이든 봇이든 알림 기록 채널로만 돌린다.
      */
-    private RequestChannel requestChannel(User user, String serverName) {
-        return requestChannel(user.getEmail(), serverName);
+    private RequestChannel requestChannel(Request request, String serverName) {
+        return request.isTest() ? notiChannel() : requestChannel(request.getUser().getEmail(), serverName);
     }
 
     private RequestChannel requestChannel(String email, String serverName) {

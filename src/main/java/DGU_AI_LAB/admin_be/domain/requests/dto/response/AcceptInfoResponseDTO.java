@@ -89,6 +89,7 @@ public record AcceptInfoResponseDTO(
                 .toList();
 
         List<GpuNodeDTO> gpuNodeDTOList = nodes.stream()
+                .filter(node -> request.getPinnedNode() == null || request.getPinnedNode().equals(node.getNodeId()))
                 .map(node -> GpuNodeDTO.builder()
                         .node_name(node.getNodeId())
                         .num_gpu(node.getNumberGpu())

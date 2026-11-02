@@ -43,11 +43,14 @@ public record ContainerInfoDTO(
         @Schema(description = "statusCheckedAt 시각에 k8s에서 읽은 Pod 상태. 그때 Pod가 없었으면 null")
         PodResponseDTO pod,
         @Schema(description = "Pod 상태를 읽은 시각. admin_be가 뜬 뒤 아직 한 번도 읽지 못했으면 null", example = "2026-10-15T21:25:00")
-        LocalDateTime statusCheckedAt
+        LocalDateTime statusCheckedAt,
+        @Schema(description = "관리자가 간편 생성한 테스트 Pod 여부", example = "false")
+        boolean test
 ) {
     public static ContainerInfoDTO fromEntity(Request request, PodResponseDTO pod, LocalDateTime statusCheckedAt) {
         return ContainerInfoDTO.builder()
                 .requestId(request.getRequestId())
+                .test(request.isTest())
                 .userId(request.getUser().getUserId())
                 .userName(request.getUser().getName())
                 .ubuntuUsername(request.getUbuntuUsername())
