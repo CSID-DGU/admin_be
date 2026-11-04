@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.service;
 
+import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
+import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.warnings.service.SuspensionGuard;
 import DGU_AI_LAB.admin_be.support.Alerts;
 import DGU_AI_LAB.admin_be.global.alert.InMemoryAlertDeduplicator;
@@ -55,6 +57,7 @@ class PodMigrationServiceTest {
     @Mock private RequestRepository requestRepository;
     @Mock private PodExternalPortRepository podExternalPortRepository;
     @Mock private NodeRepository nodeRepository;
+    @Mock private ContainerImageRepository containerImageRepository;
     @Mock private JobClient jobClient;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
@@ -72,7 +75,7 @@ class PodMigrationServiceTest {
     void setUp() {
         when(request.getJobId()).thenReturn(10L); // result()의 작업 번호와 같다
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
-        service = new PodMigrationService(requestRepository, suspensionGuard, podExternalPortRepository, nodeRepository, jobClient, transactionManager, alarmService, userGuideMailer,
+        service = new PodMigrationService(requestRepository, suspensionGuard, podExternalPortRepository, nodeRepository, containerImageRepository, jobClient, transactionManager, alarmService, userGuideMailer,
                 restartThrottle, new InMemoryAlertDeduplicator());
         when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of(node("FARM2"), node("FARM7")));
         when(request.getUbuntuUsername()).thenReturn("testuser");
@@ -170,7 +173,7 @@ class PodMigrationServiceTest {
     @Test
     @DisplayName("관리자 재시작은 노드 목록 없이 현재 노드 재생성 작업을 등록하고 횟수를 세지 않는다")
     void adminRestartRegistersRecreateJob() {
-        service.startRestart(1L, new RestartPodRequestDTO(false));
+        service.startRestart(1L, new RestartPodRequestDTO(false, null));
 
         verify(request).beginMigration();
         verify(jobClient).registerMigrate(MigrateRegisterRequestDTO.restart(1L, "ailab-testuser-old", "testuser", false));
@@ -543,7 +546,7 @@ class PodMigrationServiceTest {
         when(user.getUserId()).thenReturn(7L);
         when(suspensionGuard.isSuspended(7L)).thenReturn(true);
 
-        service.startRestart(1L, new RestartPodRequestDTO(false));
+        service.startRestart(1L, new RestartPodRequestDTO(false, null));
 
         verify(jobClient).registerMigrate(
                 MigrateRegisterRequestDTO.restart(1L, "ailab-testuser-old", "testuser", false).accessBlocked(true));
@@ -558,5 +561,106 @@ class PodMigrationServiceTest {
         service.completeMigrationJob(1L, migrated(null));
 
         verify(suspensionGuard).reblockAfterPortsCreated(7L);
+    }
+
+    private static ContainerImage image(String name, String version) {
+        return ContainerImage.builder().imageName(name).imageVersion(version).cudaVersion("12.1").description("d").build();
+    }
+
+    private static JobResultResponseDTO.Result migratedTo(String image) {
+        return new JobResultResponseDTO.Result(null, null, "ailab-testuser-new", "farm2", List.of(), "migrated", null,
+                "farm2", "farm2", "ailab-testuser-old", null, null, image);
+    }
+
+    @Test
+    @DisplayName("관리자가 이미지를 골라 재시작하면 변경분 없이 그 이미지로 다시 만드는 작업을 등록한다")
+    void adminRestartWithImageRegistersImage() {
+        when(containerImageRepository.findById(5L)).thenReturn(Optional.of(image("dguailab/decs", "2")));
+
+        service.startRestart(1L, new RestartPodRequestDTO(null, 5L));
+
+        verify(jobClient).registerMigrate(
+                MigrateRegisterRequestDTO.restart(1L, "ailab-testuser-old", "testuser", false, "dguailab/decs:2"));
+    }
+
+    @Test
+    @DisplayName("이미지를 바꾸면서 변경분 유지를 요구하면 아무것도 바꾸지 않고 거절한다")
+    void restartWithImageAndKeepChangesIsRejected() {
+        assertThatThrownBy(() -> service.startRestart(1L, new RestartPodRequestDTO(true, 5L)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+        verify(request, never()).beginMigration();
+        verifyNoInteractions(jobClient);
+    }
+
+    @Test
+    @DisplayName("없는 이미지를 고르면 신청 상태를 바꾸기 전에 404로 거절한다")
+    void restartWithUnknownImageIsNotFound() {
+        when(containerImageRepository.findById(9L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.startRestart(1L, new RestartPodRequestDTO(null, 9L)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
+        verify(request, never()).beginMigration();
+        verifyNoInteractions(jobClient);
+    }
+
+    @Test
+    @DisplayName("사용자 본인 재시작은 이미지를 고를 수 없다")
+    void ownRestartRejectsImage() {
+        assertThatThrownBy(() -> service.startOwnRestart(7L, 1L, new RestartPodRequestDTO(false, 5L)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN_REQUEST);
+        verify(request, never()).beginMigration();
+        verifyNoInteractions(jobClient, restartThrottle);
+    }
+
+    @Test
+    @DisplayName("이미지를 바꿔 다시 만든 작업이 성공하면 신청의 이미지를 새 이미지로 바꾼다")
+    void completeRestartWithImageChangesRequestImage() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        ContainerImage next = image("dguailab/decs", "2");
+        when(containerImageRepository.findByImageNameAndImageVersion("dguailab/decs", "2")).thenReturn(Optional.of(next));
+
+        service.completeMigrationJob(1L, migratedTo("dguailab/decs:2"));
+
+        verify(request).changeContainerImage(next);
+        verify(request).endMigration();
+    }
+
+    @Test
+    @DisplayName("레지스트리 포트가 든 이미지 이름은 마지막 콜론에서 버전을 가른다")
+    void imageRefSplitsOnLastColon() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        ContainerImage next = image("reg:5000/decs", "2");
+        when(containerImageRepository.findByImageNameAndImageVersion("reg:5000/decs", "2")).thenReturn(Optional.of(next));
+
+        service.completeMigrationJob(1L, migratedTo("reg:5000/decs:2"));
+
+        verify(request).changeContainerImage(next);
+    }
+
+    @Test
+    @DisplayName("결과의 이미지를 DB에서 못 찾으면 옛 이미지를 두고 관리자에게 알린다")
+    void completeRestartWithUnknownImageKeepsOldImageAndAlerts() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+        when(containerImageRepository.findByImageNameAndImageVersion(anyString(), anyString())).thenReturn(Optional.empty());
+
+        service.completeMigrationJob(1L, migratedTo("gone/decs:9"));
+
+        verify(request, never()).changeContainerImage(any());
+        verify(request).endMigration();
+        assertThat(Alerts.needsAction(alarmService)).filteredOn(a -> a.contains("migration.image-unmatched")).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("이미지를 바꾸지 않은 마이그레이션은 신청의 이미지를 건드리지 않는다")
+    void completeWithoutImageLeavesRequestImage() {
+        when(request.getStatus()).thenReturn(Status.MIGRATING);
+
+        service.completeMigrationJob(1L, migrated(null));
+
+        verify(request, never()).changeContainerImage(any());
+        verifyNoInteractions(containerImageRepository);
     }
 }
