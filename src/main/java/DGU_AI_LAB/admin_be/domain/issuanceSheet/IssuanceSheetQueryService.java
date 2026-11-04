@@ -57,7 +57,10 @@ public class IssuanceSheetQueryService {
      */
     @Transactional(readOnly = true)
     public Map<String, List<List<String>>> rowsByServer() {
-        List<Request> issued = requestRepository.findAllByStatusInWithAssociations(Status.activeStatuses());
+        // 관리자 테스트 Pod는 실제 발급이 아니므로 대장에 올리지 않는다.
+        List<Request> issued = requestRepository.findAllByStatusInWithAssociations(Status.activeStatuses()).stream()
+                .filter(request -> !request.isTest())
+                .toList();
         Map<Long, List<String>> ports = ports(issued);
 
         Map<Long, LocalDate> homeDeletionDates = homeDeletionDates(issued);

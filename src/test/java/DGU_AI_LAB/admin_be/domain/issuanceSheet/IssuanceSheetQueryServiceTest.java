@@ -61,6 +61,17 @@ class IssuanceSheetQueryServiceTest {
     }
 
     @Test
+    @DisplayName("관리자 테스트 신청은 표에 넣지 않는다")
+    void excludesTestRequests() {
+        Request test = request(2, Status.FULFILLED, "테스트", "farm1");
+        when(test.isTest()).thenReturn(true);
+        activeRequests(test);
+        when(podExternalPortRepository.findByRequestRequestIdIn(any())).thenReturn(List.of());
+
+        assertThat(service().rowsByServer().get("FARM")).containsExactly(IssuanceSheetRows.HEADER);
+    }
+
+    @Test
     @DisplayName("컨테이너가 살아 있는 신청만 읽어 서버마다 표를 나누고, 열린 포트를 내부:외부(안내 메일과 같은 번호)로 적는다")
     void splitsActiveRequestsByServer() {
         Request issued = request(1, Status.FULFILLED, "가", "farm1");
