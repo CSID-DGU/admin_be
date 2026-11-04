@@ -117,11 +117,11 @@ public class PodMigrationService {
 
     /** 관리자가 현재 노드에서 다시 만든다(GPU 목록 갱신 등). imageId를 주면 그 이미지로 바꿔 만든다. */
     public void startRestart(Long requestId, RestartPodRequestDTO dto) {
-        String image = imageRefOf(dto);
-        start(requestId, req -> { }, req -> { }, req -> restartJob(req, dto, image));
+        // 이미지 확인은 행 잠금·상태 검증 뒤(job 안)에서 한다 — 상태 오류(409)가 이미지 오류보다 먼저여야 한다.
+        start(requestId, req -> { }, req -> { }, req -> restartJob(req, dto, imageRefOf(dto)));
     }
 
-    /** 신청의 상태를 바꾸기 전에 거절할 수 있도록 미리 확인해 name:version으로 돌려준다. 이미지를 고르지 않았으면 null. */
+    /** 상태 전환과 같은 트랜잭션 안에서 확인해(거절하면 롤백) name:version으로 돌려준다. 이미지를 고르지 않았으면 null. */
     private String imageRefOf(RestartPodRequestDTO dto) {
         if (dto == null || dto.imageId() == null) {
             return null;
@@ -367,7 +367,9 @@ public class PodMigrationService {
                 notifyPortsChanged(portsChangedRequest[0]);
             }
             if (imageUnmatched[0]) {
-                alert(null, "notification.admin.migration.image-unmatched", requestId, made.image());
+                if (alertDeduplicator.firstOccurrence("migration-image-unmatched:" + requestId + ":" + made.image())) {
+                    alert(null, "notification.admin.migration.image-unmatched", requestId, made.image());
+                }
             }
         } else {
             log.info("Pod 마이그레이션 건너뜀: requestId={}, reason={}", requestId, made == null ? null : made.reason());

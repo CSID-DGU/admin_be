@@ -589,19 +589,27 @@ class PodMigrationServiceTest {
         assertThatThrownBy(() -> service.startRestart(1L, new RestartPodRequestDTO(true, 5L)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
-        verify(request, never()).beginMigration();
         verifyNoInteractions(jobClient);
     }
 
     @Test
-    @DisplayName("없는 이미지를 고르면 신청 상태를 바꾸기 전에 404로 거절한다")
+    @DisplayName("이미 옮기는 중인 신청이면 이미지 검증보다 상태 오류가 먼저 난다")
+    void stateErrorComesBeforeImageValidation() {
+        doThrow(new BusinessException(ErrorCode.INVALID_REQUEST_STATUS)).when(request).beginMigration();
+
+        assertThatThrownBy(() -> service.startRestart(1L, new RestartPodRequestDTO(null, 9L)))
+                .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+        verifyNoInteractions(containerImageRepository, jobClient);
+    }
+
+    @Test
+    @DisplayName("없는 이미지를 고르면 작업을 등록하지 않고 404로 거절한다(트랜잭션 롤백)")
     void restartWithUnknownImageIsNotFound() {
         when(containerImageRepository.findById(9L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.startRestart(1L, new RestartPodRequestDTO(null, 9L)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
-        verify(request, never()).beginMigration();
         verifyNoInteractions(jobClient);
     }
 
