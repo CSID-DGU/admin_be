@@ -73,8 +73,9 @@ public class AdminRequestController implements AdminRequestApi {
     }
 
     @GetMapping("/containers")
-    public ResponseEntity<SuccessResponse<?>> getAllActiveContainers() {
-        List<ContainerInfoDTO> containers = adminRequestQueryService.getAllActiveContainers();
+    public ResponseEntity<SuccessResponse<?>> getAllActiveContainers(
+            @RequestParam(defaultValue = "false") boolean includeWaitingTests) {
+        List<ContainerInfoDTO> containers = adminRequestQueryService.getAllActiveContainers(includeWaitingTests);
         return SuccessResponse.ok(containers);
     }
 

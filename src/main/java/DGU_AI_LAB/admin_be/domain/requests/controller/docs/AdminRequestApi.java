@@ -49,7 +49,8 @@ public interface AdminRequestApi {
     @Operation(summary = "활성 컨테이너 목록 조회", description = "현재 활성화된 모든 컨테이너 정보(ubuntuUsername, Pod명, 노드명 등)를 조회합니다.")
     @ApiResponse(responseCode = "200", description = "성공",
             content = @Content(schema = @Schema(implementation = ContainerListResponseDoc.class)))
-    ResponseEntity<SuccessResponse<?>> getAllActiveContainers();
+    ResponseEntity<SuccessResponse<?>> getAllActiveContainers(
+            @io.swagger.v3.oas.annotations.Parameter(description = "true면 Pod가 아직 없는 대기·생성 중 테스트 신청도 포함") boolean includeWaitingTests);
 
     @Schema(name = "SuccessResponseListContainerInfoDTO", description = "활성 컨테이너 목록 응답")
     record ContainerListResponseDoc(int status, String message, List<ContainerInfoDTO> data) {}
