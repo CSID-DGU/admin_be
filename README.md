@@ -7,7 +7,7 @@
 ![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?logo=mysql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Container-blue?logo=docker&logoColor=white)
 
-> **동국대학교 GPU 서버실 자원 관리 및 자동화 시스템**
+> **동국대학교 GPU 서버실 자원 관리 시스템 Provi**
 > 의 사용자의 서버 신청부터 계정 생성, 만료 안내, 자원 회수(삭제)까지의 수명 주기를 관리하는 백엔드 서버입니다.
 
 <br>

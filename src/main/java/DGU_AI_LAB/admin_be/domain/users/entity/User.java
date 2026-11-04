@@ -5,6 +5,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
+import DGU_AI_LAB.admin_be.global.event.RequestRowChangeListener;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -21,6 +22,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+@EntityListeners(RequestRowChangeListener.class)
 @Entity
 @Table(name = "users", uniqueConstraints = {
         @UniqueConstraint(name = "uk_users_ubuntu_username", columnNames = "ubuntu_username"),

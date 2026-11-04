@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 /**
  * 인프라 서버에서 호출하는 Slack 알림 큐잉 서비스.
  * 백엔드 알림 큐(slack:notification:queue)와 별도로 운영되어
- * 인프라 모니터링 알림과 백엔드 자동화 알림이 서로 지연을 주지 않는다.
+ * 인프라 모니터링 알림과 백엔드(Provi) 알림이 서로 지연을 주지 않는다.
  */
 @Slf4j
 @Service

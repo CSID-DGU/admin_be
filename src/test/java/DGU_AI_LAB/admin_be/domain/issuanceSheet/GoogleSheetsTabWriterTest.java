@@ -66,21 +66,21 @@ class GoogleSheetsTabWriterTest {
                 .andExpect(header("Authorization", "Bearer token-1"))
                 .andRespond(withSuccess("""
                         {"sheets":[{"properties":{"sheetId":0,"title":"LAB"}},
-                                   {"properties":{"sheetId":5,"title":"LAB(자동화)","gridProperties":{"rowCount":1000,"columnCount":26}}}]}
+                                   {"properties":{"sheetId":5,"title":"LAB(Provi)","gridProperties":{"rowCount":1000,"columnCount":26}}}]}
                         """, MediaType.APPLICATION_JSON));
-        server.expect(request -> assertThat(decodedPath(request)).endsWith("/sheet-1/values/'LAB(자동화)'!A1"))
+        server.expect(request -> assertThat(decodedPath(request)).endsWith("/sheet-1/values/'LAB(Provi)'!A1"))
                 .andExpect(method(HttpMethod.PUT))
                 .andExpect(requestTo(endsWith("?valueInputOption=RAW")))
                 .andExpect(content().json("{\"values\":[[\"상태\",\"이름\"],[\"사용 중\",\"홍길동\"]]}"))
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
-        server.expect(request -> assertThat(decodedPath(request)).endsWith("/values/'LAB(자동화)'!A3:ZZ:clear"))
+        server.expect(request -> assertThat(decodedPath(request)).endsWith("/values/'LAB(Provi)'!A3:ZZ:clear"))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
-        server.expect(request -> assertThat(decodedPath(request)).endsWith("/values/'LAB(자동화)'!C1:ZZ2:clear"))
+        server.expect(request -> assertThat(decodedPath(request)).endsWith("/values/'LAB(Provi)'!C1:ZZ2:clear"))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
 
-        writer().replaceTab("LAB(자동화)", ROWS);
+        writer().replaceTab("LAB(Provi)", ROWS);
 
         server.verify();
     }
@@ -93,7 +93,7 @@ class GoogleSheetsTabWriterTest {
                         MediaType.APPLICATION_JSON));
         server.expect(requestTo(BASE + ":batchUpdate")).andExpect(method(HttpMethod.POST))
                 .andExpect(content().json("""
-                        {"requests":[{"addSheet":{"properties":{"title":"FARM(자동화)","gridProperties":{"frozenRowCount":1}}}}]}
+                        {"requests":[{"addSheet":{"properties":{"title":"FARM(Provi)","gridProperties":{"frozenRowCount":1}}}}]}
                         """))
                 .andRespond(withSuccess("""
                         {"replies":[{"addSheet":{"properties":{"sheetId":77,"gridProperties":{"rowCount":1000}}}}]}
@@ -107,7 +107,7 @@ class GoogleSheetsTabWriterTest {
         server.expect(method(HttpMethod.POST)).andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
         server.expect(method(HttpMethod.POST)).andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
 
-        writer().replaceTab("FARM(자동화)", ROWS);
+        writer().replaceTab("FARM(Provi)", ROWS);
 
         server.verify();
     }
@@ -116,11 +116,11 @@ class GoogleSheetsTabWriterTest {
     @DisplayName("내용이 탭 크기 이상이면 지우지 않는다")
     void skipsClearWhenTabGrew() {
         server.expect(method(HttpMethod.GET)).andRespond(withSuccess("""
-                {"sheets":[{"properties":{"sheetId":5,"title":"LAB(자동화)","gridProperties":{"rowCount":2,"columnCount":2}}}]}
+                {"sheets":[{"properties":{"sheetId":5,"title":"LAB(Provi)","gridProperties":{"rowCount":2,"columnCount":2}}}]}
                 """, MediaType.APPLICATION_JSON));
         server.expect(method(HttpMethod.PUT)).andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
 
-        writer().replaceTab("LAB(자동화)", ROWS);
+        writer().replaceTab("LAB(Provi)", ROWS);
 
         server.verify();
     }
@@ -139,7 +139,7 @@ class GoogleSheetsTabWriterTest {
     void failurePropagates() {
         server.expect(method(HttpMethod.GET)).andRespond(withServerError());
 
-        assertThatThrownBy(() -> writer().replaceTab("LAB(자동화)", ROWS)).isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> writer().replaceTab("LAB(Provi)", ROWS)).isInstanceOf(RuntimeException.class);
     }
 
     @Test

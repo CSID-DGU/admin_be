@@ -1,7 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.warnings.service;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
-import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.domain.warnings.dto.WarningStatusResponseDTO;
@@ -58,9 +57,6 @@ public class WarningService {
     public WarningStatusResponseDTO grant(Long adminId, Long userId, String reason) {
         return apply(userId, "경고 부여", () -> {
             User user = lockTarget(userId);
-            if (user.getRole() == Role.ADMIN) {
-                throw new BusinessException(ErrorCode.WARNING_TARGET_IS_ADMIN);
-            }
             LocalDateTime now = LocalDateTime.now();
             int count = WarningLedger.replay(rowsOf(userId)).count() + 1;
             UserWarning warning = warningRepository.save(UserWarning.grant(user, admin(adminId), reason));

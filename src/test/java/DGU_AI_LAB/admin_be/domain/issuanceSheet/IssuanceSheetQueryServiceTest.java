@@ -43,7 +43,7 @@ class IssuanceSheetQueryServiceTest {
                 new ServerProfileRegistry(properties, new MockEnvironment()
                         .withProperty("slack-webhook-url.lab-admin", "https://hooks.example.test/lab")
                         .withProperty("slack-webhook-url.farm-admin", "https://hooks.example.test/farm")),
-                new HomeRetentionPolicy());
+                new HomeRetentionPolicy(), null, null, null);
     }
 
     private void activeRequests(Request... requests) {

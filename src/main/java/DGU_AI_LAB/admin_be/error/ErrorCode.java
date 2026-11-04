@@ -144,6 +144,8 @@ public enum ErrorCode {
      * Warning Error
      */
     USER_SUSPENDED(HttpStatus.FORBIDDEN, "이용이 정지된 계정이에요. 정지가 끝난 뒤 다시 시도해 주세요."),
+    /** @deprecated 2026-11-04 관리자도 경고 대상이 되어 더 이상 던지지 않는다. 이름 재사용 금지. */
+    @Deprecated
     WARNING_TARGET_IS_ADMIN(HttpStatus.BAD_REQUEST, "관리자에게는 경고를 줄 수 없어요."),
     WARNING_NOT_DEDUCTIBLE(HttpStatus.CONFLICT, "경고가 3회 이상 쌓인 적이 있고 횟수가 남아 있을 때만 차감할 수 있어요."),
     WARNING_NOT_FOUND(HttpStatus.NOT_FOUND, "이 사용자에게 준 경고가 아니에요."),

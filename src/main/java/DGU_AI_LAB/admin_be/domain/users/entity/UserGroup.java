@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.users.entity;
 
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
+import DGU_AI_LAB.admin_be.global.event.RequestRowChangeListener;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -12,6 +13,7 @@ import java.time.LocalDateTime;
  * 다르다: RequestGroup은 "신규 컨테이너가 승인 전에 요청한 그룹"만 담당하고, "지금 이
  * 계정이 실제로 가진 그룹"을 답해야 하는 모든 읽기 경로는 이 테이블을 본다.
  */
+@EntityListeners(RequestRowChangeListener.class)
 @Entity
 @Table(name = "user_groups")
 @Getter
