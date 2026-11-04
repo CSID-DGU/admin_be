@@ -38,18 +38,27 @@ public record JobResultResponseDTO(
             @JsonProperty("old_pod_cleanup") String oldPodCleanup,
             // 생성 작업만: 계정에 넣은 보조 그룹과 그 gid. 승인 대기 그룹(gid 없이 보낸 그룹)은 작업이 발급한 gid 를
             // 여기서 받아 채운다.
-            List<GroupResult> groups
+            List<GroupResult> groups,
+            // 마이그레이션 작업만: 이미지를 바꿔 다시 만들었다면 새 Pod가 쓴 이미지(name:version)
+            String image
     ) {
         /** 생성 작업 결과. */
         public Result(Long uid, Long gid, String podName, String node, List<CreatePodResponseDTO.PortInfo> ports) {
-            this(uid, gid, podName, node, ports, null, null, null, null, null, null, null);
+            this(uid, gid, podName, node, ports, null, null, null, null, null, null, null, null);
         }
 
         /** 그룹 결과가 없는 작업 결과(마이그레이션 등). */
         public Result(Long uid, Long gid, String podName, String node, List<CreatePodResponseDTO.PortInfo> ports,
                       String status, String reason, String fromNode, String toNode, String oldPodName,
                       String oldPodCleanup) {
-            this(uid, gid, podName, node, ports, status, reason, fromNode, toNode, oldPodName, oldPodCleanup, null);
+            this(uid, gid, podName, node, ports, status, reason, fromNode, toNode, oldPodName, oldPodCleanup, null, null);
+        }
+
+        /** 이미지 없이 그룹 결과까지 있는 작업 결과(생성). */
+        public Result(Long uid, Long gid, String podName, String node, List<CreatePodResponseDTO.PortInfo> ports,
+                      String status, String reason, String fromNode, String toNode, String oldPodName,
+                      String oldPodCleanup, List<GroupResult> groups) {
+            this(uid, gid, podName, node, ports, status, reason, fromNode, toNode, oldPodName, oldPodCleanup, groups, null);
         }
 
         public boolean isMigrated() {

@@ -20,22 +20,29 @@ public record MigrateRegisterRequestDTO(
         Boolean force,
         Boolean recreate,
         @JsonProperty("keep_changes") Boolean keepChanges,
-        @JsonProperty("access_blocked") Boolean accessBlocked
+        @JsonProperty("access_blocked") Boolean accessBlocked,
+        String image
 ) {
     /** 다른 노드로 옮기는 작업. */
     public static MigrateRegisterRequestDTO move(Long requestId, String podName, String username, List<String> nodes,
                                                  Double minImprovementRatio, Boolean force) {
-        return new MigrateRegisterRequestDTO(requestId, podName, username, nodes, minImprovementRatio, force, null, null, null);
+        return new MigrateRegisterRequestDTO(requestId, podName, username, nodes, minImprovementRatio, force, null, null, null, null);
     }
 
     /** 현재 노드에서 다시 만드는 작업. keepChanges면 컨테이너 변경분을 그 노드에 구워 새 Pod에 이어 준다. */
     public static MigrateRegisterRequestDTO restart(Long requestId, String podName, String username, boolean keepChanges) {
-        return new MigrateRegisterRequestDTO(requestId, podName, username, null, null, null, true, keepChanges, null);
+        return restart(requestId, podName, username, keepChanges, null);
+    }
+
+    /** image(name:version)를 주면 새 Pod를 그 이미지로 만든다. 구운 변경분은 옛 이미지 위라 keepChanges와 함께 쓸 수 없다. */
+    public static MigrateRegisterRequestDTO restart(Long requestId, String podName, String username, boolean keepChanges,
+                                                    String image) {
+        return new MigrateRegisterRequestDTO(requestId, podName, username, null, null, null, true, keepChanges, null, image);
     }
 
     /** 접속이 막혀 있어야 하는 사용자의 작업이면 그 표시를 단다. 아니면 키를 뺀다. */
     public MigrateRegisterRequestDTO accessBlocked(boolean blocked) {
         return new MigrateRegisterRequestDTO(requestId, podName, username, nodes, minImprovementRatio, force, recreate,
-                keepChanges, blocked ? Boolean.TRUE : null);
+                keepChanges, blocked ? Boolean.TRUE : null, image);
     }
 }

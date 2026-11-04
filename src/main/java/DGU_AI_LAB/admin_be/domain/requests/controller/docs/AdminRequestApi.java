@@ -93,9 +93,10 @@ public interface AdminRequestApi {
 
     @Operation(summary = "컨테이너 재시작", description = "현재 노드에서 컨테이너를 다시 만드는 작업을 등록하고 바로 202로 돌아옵니다(신청은 MIGRATING). "
             + "새 컨테이너는 노드의 현재 GPU 목록을 받습니다. keepChanges(기본 true)면 설치한 패키지 등 컨테이너 변경분을 유지하고, "
-            + "false면 기본 이미지로 초기화합니다. 실행 중이던 프로세스는 이어지지 않습니다. 결과는 마지막 마이그레이션 결과로 확인합니다.")
+            + "false면 기본 이미지로 초기화합니다. imageId를 주면 신청의 이미지를 그 이미지로 바꿔 다시 만들며(변경분은 이어 줄 수 없어 keepChanges는 false), 작업이 성공하면 신청의 이미지도 바뀝니다. 실행 중이던 프로세스는 이어지지 않습니다. 결과는 마지막 마이그레이션 결과로 확인합니다.")
     @ApiResponse(responseCode = "202", description = "작업 등록됨")
-    @ApiResponse(responseCode = "404", description = "신청을 찾을 수 없음", content = @Content)
+    @ApiResponse(responseCode = "400", description = "imageId와 keepChanges=true를 함께 줌", content = @Content)
+    @ApiResponse(responseCode = "404", description = "신청 또는 이미지를 찾을 수 없음", content = @Content)
     @ApiResponse(responseCode = "409", description = "FULFILLED 상태가 아니거나 이미 진행 중", content = @Content)
     @ApiResponse(responseCode = "502", description = "config-server 작업 등록 실패", content = @Content)
     ResponseEntity<SuccessResponse<?>> startRestart(Long requestId, RestartPodRequestDTO dto);

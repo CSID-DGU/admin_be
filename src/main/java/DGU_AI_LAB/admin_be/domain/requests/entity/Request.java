@@ -175,6 +175,11 @@ public class Request extends BaseTimeEntity {
         }
     }
 
+    /** 이미지를 바꿔 다시 만든 작업이 성공했을 때 신청의 이미지를 새 Pod가 쓰는 이미지로 맞춘다. */
+    public void changeContainerImage(ContainerImage image) {
+        this.containerImage = image;
+    }
+
     /** 등록해 둔 생성 작업이 성공했을 때 승인을 확정한다. 관리자가 고른 값은 이미 반영돼 있다. */
     public void completeApproval() {
         transitionTo(Status.FULFILLED, "처리 중인 신청만 승인을 확정할 수 있습니다.");

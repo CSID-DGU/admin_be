@@ -5,6 +5,8 @@ import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.alarm.service.UserGuideMailer;
+import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
+import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
 import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.MigratePodRequestDTO;
@@ -60,6 +62,7 @@ public class PodMigrationService {
     private final SuspensionGuard suspensionGuard;
     private final PodExternalPortRepository podExternalPortRepository;
     private final NodeRepository nodeRepository;
+    private final ContainerImageRepository containerImageRepository;
     private final JobClient jobClient;
     private final PlatformTransactionManager transactionManager;
     private final AlarmService alarmService;
@@ -112,9 +115,24 @@ public class PodMigrationService {
                         dto.nodes(), dto.minImprovementRatio(), dto.force()));
     }
 
-    /** 관리자가 현재 노드에서 다시 만든다(GPU 목록 갱신 등). */
+    /** 관리자가 현재 노드에서 다시 만든다(GPU 목록 갱신 등). imageId를 주면 그 이미지로 바꿔 만든다. */
     public void startRestart(Long requestId, RestartPodRequestDTO dto) {
-        start(requestId, req -> { }, req -> { }, req -> restartJob(req, dto));
+        // 이미지 확인은 행 잠금·상태 검증 뒤(job 안)에서 한다 — 상태 오류(409)가 이미지 오류보다 먼저여야 한다.
+        start(requestId, req -> { }, req -> { }, req -> restartJob(req, dto, imageRefOf(dto)));
+    }
+
+    /** 상태 전환과 같은 트랜잭션 안에서 확인해(거절하면 롤백) name:version으로 돌려준다. 이미지를 고르지 않았으면 null. */
+    private String imageRefOf(RestartPodRequestDTO dto) {
+        if (dto == null || dto.imageId() == null) {
+            return null;
+        }
+        if (dto.keepsChanges()) {
+            throw new BusinessException("이미지를 바꾸면 컨테이너 변경분을 이어 줄 수 없습니다. keepChanges를 false로 주세요.",
+                    ErrorCode.INVALID_INPUT_VALUE);
+        }
+        ContainerImage image = containerImageRepository.findById(dto.imageId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        return image.getImageName() + ":" + image.getImageVersion();
     }
 
     /**
@@ -122,6 +140,10 @@ public class PodMigrationService {
      * 횟수는 실제로 시작할 수 있는 요청만 센다(상태 검증에 막힌 요청이 횟수를 쓰지 않게 전환 뒤에 센다).
      */
     public void startOwnRestart(Long userId, Long requestId, RestartPodRequestDTO dto) {
+        // 이미지 선택은 관리자 권한이다. 조용히 무시하면 사용자는 이미지가 바뀐 줄 안다.
+        if (dto != null && dto.imageId() != null) {
+            throw new BusinessException(ErrorCode.FORBIDDEN_REQUEST);
+        }
         // start()는 먼저 끝난 작업 결과를 당겨 반영한다. 남의 신청에는 그것도 일어나지 않게 여기서 한 번 거른다
         // (잠금 안에서 다시 확인한다).
         requireOwner(requestRepository.findById(requestId)
@@ -132,8 +154,12 @@ public class PodMigrationService {
     }
 
     private static MigrateRegisterRequestDTO restartJob(Request req, RestartPodRequestDTO dto) {
+        return restartJob(req, dto, null);
+    }
+
+    private static MigrateRegisterRequestDTO restartJob(Request req, RestartPodRequestDTO dto, String image) {
         return MigrateRegisterRequestDTO.restart(req.getRequestId(), req.getPodName(), req.getUbuntuUsername(),
-                dto == null || dto.keepsChanges());
+                dto == null || dto.keepsChanges(), image);
     }
 
     private static void requireOwner(Request req, Long userId) {
@@ -283,6 +309,7 @@ public class PodMigrationService {
         final boolean[] applied = {false};
         final Long[] ownerId = {null};
         final Request[] portsChangedRequest = {null};
+        final boolean[] imageUnmatched = {false};
         try {
             new TransactionTemplate(transactionManager).execute(status -> {
                 Request req = requestRepository.findByIdForUpdate(requestId)
@@ -294,6 +321,10 @@ public class PodMigrationService {
                 if (made != null && made.isMigrated()) {
                     Set<String> oldPorts = portKeys(podExternalPortRepository.findByRequestRequestId(requestId));
                     req.assignPodInfo(made.podName(), made.node());
+                    if (made.image() != null) {
+                        // 새 Pod는 이미 이 이미지로 떠 있다. 이미지가 그 사이 지워졌어도 반영은 이어 가고 알린다.
+                        imageUnmatched[0] = !applyImage(req, made.image());
+                    }
                     podExternalPortRepository.deleteByRequestRequestId(requestId);
                     if (made.ports() != null) {
                         for (CreatePodResponseDTO.PortInfo port : made.ports()) {
@@ -335,9 +366,28 @@ public class PodMigrationService {
             if (portsChangedRequest[0] != null) {
                 notifyPortsChanged(portsChangedRequest[0]);
             }
+            if (imageUnmatched[0]) {
+                if (alertDeduplicator.firstOccurrence("migration-image-unmatched:" + requestId + ":" + made.image())) {
+                    alert(null, "notification.admin.migration.image-unmatched", requestId, made.image());
+                }
+            }
         } else {
             log.info("Pod 마이그레이션 건너뜀: requestId={}, reason={}", requestId, made == null ? null : made.reason());
         }
+    }
+
+    /** name:version을 마지막 콜론에서 갈라 신청의 이미지를 바꾼다(이름에 레지스트리 포트의 콜론이 올 수 있다). 못 찾으면 false. */
+    private boolean applyImage(Request req, String ref) {
+        int colon = ref.lastIndexOf(':');
+        if (colon <= 0 || colon == ref.length() - 1) {
+            return false;
+        }
+        return containerImageRepository.findByImageNameAndImageVersion(ref.substring(0, colon), ref.substring(colon + 1))
+                .map(image -> {
+                    req.changeContainerImage(image);
+                    return true;
+                })
+                .orElse(false);
     }
 
     /**
