@@ -212,6 +212,31 @@ class AdminRequestQueryServiceTest {
         }
 
         @Test
+        @DisplayName("includeWaitingTests면 대기·생성 중인 테스트 신청만 더하고 일반 신청은 더하지 않는다")
+        void getAllActiveContainers_addsOnlyWaitingTests() {
+            Request test = waitingRequest(true);
+            Request normal = waitingRequest(false);
+            when(podStatusCache.snapshot()).thenReturn(PodStatusSnapshot.EMPTY);
+            when(requestRepository.findAllByStatusInWithAssociations(Status.activeStatuses())).thenReturn(List.of());
+            when(requestRepository.findAllByStatusInWithAssociations(List.of(Status.PENDING, Status.PROCESSING)))
+                    .thenReturn(List.of(test, normal));
+
+            assertThat(adminRequestQueryService.getAllActiveContainers(true)).hasSize(1);
+            assertThat(adminRequestQueryService.getAllActiveContainers(false)).isEmpty();
+        }
+
+        private Request waitingRequest(boolean isTest) {
+            Request request = mock(Request.class);
+            var user = mock(DGU_AI_LAB.admin_be.domain.users.entity.User.class);
+            lenient().when(request.getUser()).thenReturn(user);
+            lenient().when(user.getUserGroups()).thenReturn(java.util.Set.of());
+            lenient().when(request.isTest()).thenReturn(isTest);
+            lenient().when(request.getContainerImage()).thenReturn(mock(DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage.class));
+            lenient().when(request.getResourceGroup()).thenReturn(mock(DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup.class));
+            return request;
+        }
+
+        @Test
         @DisplayName("리소스 그룹 번호와 함께 GPU 이름과 서버를 담는다")
         void getAllActiveContainers_includesResourceGroupName() {
             Request request = mock(Request.class);

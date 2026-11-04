@@ -20,6 +20,7 @@ import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -80,10 +81,25 @@ public class AdminRequestQueryService {
                 .toList();
     }
 
-    /** Pod 상태는 k8s를 부르지 않고 주기 작업이 읽어 둔 값을 붙인다. */
     public List<ContainerInfoDTO> getAllActiveContainers() {
+        return getAllActiveContainers(false);
+    }
+
+    /**
+     * Pod 상태는 k8s를 부르지 않고 주기 작업이 읽어 둔 값을 붙인다.
+     *
+     * @param includeWaitingTests true면 아직 Pod가 없는 대기·생성 중 테스트 신청도 담는다(테스트 Pod 화면의 진행 표시용).
+     *                            일반 신청은 담지 않는다 — 대시보드·컨테이너 목록의 개수가 달라지면 안 된다.
+     */
+    public List<ContainerInfoDTO> getAllActiveContainers(boolean includeWaitingTests) {
         PodStatusSnapshot snapshot = podStatusCache.snapshot();
-        return requestRepository.findAllByStatusInWithAssociations(Status.activeStatuses()).stream()
+        List<Request> requests = new ArrayList<>(requestRepository.findAllByStatusInWithAssociations(Status.activeStatuses()));
+        if (includeWaitingTests) {
+            requestRepository.findAllByStatusInWithAssociations(List.of(Status.PENDING, Status.PROCESSING)).stream()
+                    .filter(Request::isTest)
+                    .forEach(requests::add);
+        }
+        return requests.stream()
                 .map(request -> ContainerInfoDTO.fromEntity(
                         request, snapshot.pod(request.getPodName()), snapshot.checkedAt()))
                 .toList();
