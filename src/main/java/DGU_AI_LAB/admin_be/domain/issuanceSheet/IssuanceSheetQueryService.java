@@ -6,6 +6,10 @@ import DGU_AI_LAB.admin_be.domain.pod.repository.PodExternalPortRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
+import DGU_AI_LAB.admin_be.domain.warnings.entity.UserWarning;
+import DGU_AI_LAB.admin_be.domain.warnings.repository.UserSuspensionRepository;
+import DGU_AI_LAB.admin_be.domain.warnings.repository.UserWarningRepository;
 import DGU_AI_LAB.admin_be.global.server.ServerProfileProperties;
 import DGU_AI_LAB.admin_be.global.server.ServerProfileRegistry;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +33,22 @@ public class IssuanceSheetQueryService {
     private final ServerProfileProperties serverProfiles;
     private final ServerProfileRegistry serverProfileRegistry;
     private final HomeRetentionPolicy retentionPolicy;
+    private final UserRepository userRepository;
+    private final UserWarningRepository warningRepository;
+    private final UserSuspensionRepository suspensionRepository;
+
+    static final String USERS_TAB = "사용자 목록";
+    static final String WARNINGS_TAB = "경고";
+
+    /** @return 서버와 무관한 탭 이름(접미사 제외) → 표. 사용자 전체와 경고 대장 전체를 담는다 */
+    @Transactional(readOnly = true)
+    public Map<String, List<List<String>>> accountTables() {
+        List<UserWarning> warnings = warningRepository.findAll();
+        Map<String, List<List<String>>> tables = new LinkedHashMap<>();
+        tables.put(USERS_TAB, AccountSheetRows.users(userRepository.findAll(), warnings));
+        tables.put(WARNINGS_TAB, AccountSheetRows.warnings(warnings, suspensionRepository.findAll()));
+        return tables;
+    }
 
     /**
      * 컨테이너가 살아 있는 신청만 담는다. 대기 중이거나 회수가 끝난 신청은 넣지 않는다.

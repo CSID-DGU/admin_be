@@ -40,7 +40,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -140,13 +139,14 @@ class WarningServiceTest {
     }
 
     @Test
-    @DisplayName("관리자에게는 경고를 줄 수 없다")
-    void adminCannotBeWarned() {
+    @DisplayName("관리자에게도 경고를 줄 수 있다")
+    void adminCanBeWarned() {
         ReflectionTestUtils.setField(user, "role", Role.ADMIN);
 
-        assertCode(this::grant, ErrorCode.WARNING_TARGET_IS_ADMIN);
-        assertThat(rows).isEmpty();
-        verifyNoInteractions(accessEnforcementService, alarmService);
+        grant();
+
+        assertThat(rows).hasSize(1);
+        verify(accessEnforcementService).enforce(USER_ID);
     }
 
     @Test

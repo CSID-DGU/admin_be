@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.warnings.entity;
 
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
+import DGU_AI_LAB.admin_be.global.event.RequestRowChangeListener;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -11,6 +12,7 @@ import lombok.NoArgsConstructor;
  * 경고 대장의 한 줄. 고치거나 지우지 않고 더하기만 한다 — 현재 횟수는 {@code WarningLedger}가 이 줄들을 처음부터
  * 다시 읽어 구한다. 종류는 {@link WarningType} 참고.
  */
+@EntityListeners(RequestRowChangeListener.class)
 @Entity
 @Getter
 @Table(name = "user_warnings")

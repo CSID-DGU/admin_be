@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.warnings.entity;
 
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
+import DGU_AI_LAB.admin_be.global.event.RequestRowChangeListener;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -13,6 +14,7 @@ import java.time.LocalDateTime;
  * 이용 정지 하나. 경고(부여) 하나가 정지 하나를 만든다. 끝나는 시각이 지나지 않은 정지가 하나라도 있으면 그 사용자는
  * 정지 중이다 — 정지가 겹치면 가장 늦게 끝나는 것이 실제 종료 시각이 된다.
  */
+@EntityListeners(RequestRowChangeListener.class)
 @Entity
 @Getter
 @Table(name = "user_suspensions")

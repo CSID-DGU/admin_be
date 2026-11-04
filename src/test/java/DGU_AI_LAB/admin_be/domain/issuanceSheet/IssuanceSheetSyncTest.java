@@ -79,8 +79,8 @@ class IssuanceSheetSyncTest {
 
         sync("sheet").onRequestRowChanged(new RequestRowChangedEvent());
 
-        verify(writer, timeout(2000)).replaceTab("LAB(자동화)", HEADER_ONLY);
-        verify(writer, timeout(2000)).replaceTab("FARM(자동화)", ONE_ROW);
+        verify(writer, timeout(2000)).replaceTab("LAB(Provi)", HEADER_ONLY);
+        verify(writer, timeout(2000)).replaceTab("FARM(Provi)", ONE_ROW);
     }
 
     @Test
@@ -90,7 +90,7 @@ class IssuanceSheetSyncTest {
 
         sync("sheet").onApplicationReady();
 
-        verify(writer, timeout(2000)).replaceTab("FARM(자동화)", ONE_ROW);
+        verify(writer, timeout(2000)).replaceTab("FARM(Provi)", ONE_ROW);
     }
 
     @Test
@@ -103,21 +103,21 @@ class IssuanceSheetSyncTest {
         tables(HEADER_ONLY, ONE_ROW);
         assertThat(sync.syncNow()).isTrue();
 
-        verify(writer, times(1)).replaceTab("LAB(자동화)", HEADER_ONLY);
-        verify(writer, times(1)).replaceTab("FARM(자동화)", HEADER_ONLY);
-        verify(writer, times(1)).replaceTab("FARM(자동화)", ONE_ROW);
+        verify(writer, times(1)).replaceTab("LAB(Provi)", HEADER_ONLY);
+        verify(writer, times(1)).replaceTab("FARM(Provi)", HEADER_ONLY);
+        verify(writer, times(1)).replaceTab("FARM(Provi)", ONE_ROW);
     }
 
     @Test
     @DisplayName("한 탭이 실패해도 다른 탭은 쓰고, 실패한 탭은 변경이 더 없어도 잠시 뒤 다시 쓴다")
     void retriesFailedTabWithoutNewChange() {
         tables(HEADER_ONLY, ONE_ROW);
-        doThrow(new IllegalStateException("503")).doNothing().when(writer).replaceTab("LAB(자동화)", HEADER_ONLY);
+        doThrow(new IllegalStateException("503")).doNothing().when(writer).replaceTab("LAB(Provi)", HEADER_ONLY);
 
         sync("sheet").onRequestRowChanged(new RequestRowChangedEvent());
 
-        verify(writer, timeout(2000).times(2)).replaceTab("LAB(자동화)", HEADER_ONLY);
-        verify(writer, times(1)).replaceTab("FARM(자동화)", ONE_ROW);
+        verify(writer, timeout(2000).times(2)).replaceTab("LAB(Provi)", HEADER_ONLY);
+        verify(writer, times(1)).replaceTab("FARM(Provi)", ONE_ROW);
     }
 
     @Test
@@ -128,5 +128,20 @@ class IssuanceSheetSyncTest {
         assertThat(sync("sheet").syncNow()).isFalse();
 
         verify(writer, never()).replaceTab(any(), any());
+    }
+
+    @Test
+    @DisplayName("사용자·경고 탭도 접미사를 붙여 쓰고, 그 조회가 실패해도 서버 탭은 쓴다")
+    void writesAccountTabsAndSurvivesTheirFailure() {
+        tables(HEADER_ONLY, ONE_ROW);
+        when(queryService.accountTables())
+                .thenThrow(new IllegalStateException("db"))
+                .thenReturn(Map.of("사용자 목록", ONE_ROW, "경고", HEADER_ONLY));
+
+        sync("sheet").onRequestRowChanged(new RequestRowChangedEvent());
+
+        verify(writer, timeout(2000)).replaceTab("FARM(Provi)", ONE_ROW);
+        verify(writer, timeout(2000)).replaceTab("사용자 목록(Provi)", ONE_ROW);
+        verify(writer, timeout(2000)).replaceTab("경고(Provi)", HEADER_ONLY);
     }
 }

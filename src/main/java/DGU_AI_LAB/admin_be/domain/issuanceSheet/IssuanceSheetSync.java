@@ -12,6 +12,7 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
@@ -96,6 +97,14 @@ public class IssuanceSheetSync {
             return false;
         }
         boolean allWritten = true;
+        try {
+            tables = new LinkedHashMap<>(tables);
+            tables.putAll(queryService.accountTables());
+        } catch (Exception e) {
+            // 서버 탭은 그대로 옮기고, 사용자·경고 탭만 다시 한다.
+            log.warn("발급 내역 시트: 사용자·경고 조회 실패. 잠시 뒤 다시 한다.", e);
+            allWritten = false;
+        }
         for (Map.Entry<String, List<List<String>>> table : tables.entrySet()) {
             allWritten &= writeIfChanged(properties.tabName(table.getKey()), table.getValue());
         }

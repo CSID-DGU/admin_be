@@ -12,7 +12,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *   enabled: true                                        # 기본값 false
  *   spreadsheet-id: 문서 주소의 /d/ 뒤 값
  *   credentials-path: /etc/admin-be/google-client.json   # 서비스 계정 키(JSON). 그 계정을 문서 편집자로 공유해 둔다
- *   tab-suffix: "(자동화)"                                # 생략 가능. 탭 이름은 서버 이름 + 이 값
+ *   tab-suffix: "(Provi)"                                # 생략 가능. 탭 이름은 서버 이름 + 이 값
  *   retry-ms: 60000                                      # 생략 가능. 옮기지 못했을 때 다시 하기까지
  * </pre>
  *
@@ -22,7 +22,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "issuance-sheet")
 public record IssuanceSheetProperties(boolean enabled, String spreadsheetId, String credentialsPath, String tabSuffix) {
 
-    static final String DEFAULT_TAB_SUFFIX = "(자동화)";
+    static final String DEFAULT_TAB_SUFFIX = "(Provi)";
 
     public IssuanceSheetProperties {
         if (tabSuffix == null || tabSuffix.isBlank()) {
