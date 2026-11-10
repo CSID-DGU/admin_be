@@ -70,7 +70,7 @@ class HomeCleanupJobPollerTest {
     void successCompletesAndNotifies() {
         processing();
         result(JOB_ID, JobResults.PHASE_SUCCESS, null);
-        when(homeCleanupService.complete(CLEANUP_ID)).thenReturn(Optional.of(TARGET));
+        when(homeCleanupService.complete(CLEANUP_ID, null)).thenReturn(Optional.of(TARGET));
 
         poller.pollHomeCleanups();
 
@@ -79,11 +79,26 @@ class HomeCleanupJobPollerTest {
     }
 
     @Test
+    @DisplayName("작업 결과의 홈 크기를 삭제 완료에 실어 보낸다")
+    void successCarriesSize() {
+        processing();
+        when(jobClient.getResult(JobResults.KIND_HOME, CLEANUP_ID)).thenReturn(new JobResultResponseDTO(
+                String.valueOf(CLEANUP_ID), JobResults.KIND_HOME, JOB_ID, JobResults.PHASE_SUCCESS, null, null,
+                new JobResultResponseDTO.Result(null, null, null, null, null, null, null, null, null, null, null,
+                        null, null, 5_000L)));
+        when(homeCleanupService.complete(CLEANUP_ID, 5_000L)).thenReturn(Optional.of(TARGET));
+
+        poller.pollHomeCleanups();
+
+        verify(notifier).deleted(TARGET);
+    }
+
+    @Test
     @DisplayName("이미 닫힌 시도면 알림을 다시 보내지 않는다")
     void alreadySettledDoesNotNotifyAgain() {
         processing();
         result(JOB_ID, JobResults.PHASE_SUCCESS, null);
-        when(homeCleanupService.complete(CLEANUP_ID)).thenReturn(Optional.empty());
+        when(homeCleanupService.complete(CLEANUP_ID, null)).thenReturn(Optional.empty());
 
         poller.pollHomeCleanups();
 
