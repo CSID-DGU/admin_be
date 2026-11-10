@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.ContactEmailUpdateRequestDTO;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.GraduationUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PhoneUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.global.validation.PhoneNumbers;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuUsernameRegisterRequestDTO;
@@ -62,6 +63,15 @@ public class UserService {
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
         user.updatePhone(PhoneNumbers.normalize(request.newPhone()));
         log.info("[updatePhone] userId={} 연락처 변경 완료", userId);
+        return UserResponseDTO.fromEntity(user);
+    }
+
+    /** 졸업 예정일 입력 — 가입 때 받지 못한 기존 사용자가 접속할 때 입력한다. 바꾸는 것도 같은 경로다. */
+    public UserResponseDTO updateExpectedGraduationDate(Long userId, GraduationUpdateRequestDTO request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND));
+        user.updateExpectedGraduationDate(request.expectedGraduationDate());
+        log.info("[updateExpectedGraduationDate] userId={} 졸업 예정일 저장", userId);
         return UserResponseDTO.fromEntity(user);
     }
 

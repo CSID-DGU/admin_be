@@ -43,6 +43,39 @@ class RequestTest {
     }
 
     @Nested
+    @DisplayName("confirmProfessorApproval")
+    class ConfirmProfessorApproval {
+
+        @Test
+        @DisplayName("지도교수 승인을 확인한 관리자와 시각이 남는다")
+        void recordsAdminAndTime() {
+            request.confirmProfessorApproval(9L);
+
+            assertThat(request.getProfessorApprovalConfirmedBy()).isEqualTo(9L);
+            assertThat(request.getProfessorApprovalConfirmedAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("다시 승인해도 처음 확인한 관리자와 시각을 덮어쓰지 않는다")
+        void doesNotOverwriteFirstConfirmation() {
+            request.confirmProfessorApproval(9L);
+            var firstAt = request.getProfessorApprovalConfirmedAt();
+
+            request.confirmProfessorApproval(10L);
+
+            assertThat(request.getProfessorApprovalConfirmedBy()).isEqualTo(9L);
+            assertThat(request.getProfessorApprovalConfirmedAt()).isEqualTo(firstAt);
+        }
+
+        @Test
+        @DisplayName("확인하지 않은 신청은 비어 있다")
+        void emptyByDefault() {
+            assertThat(request.getProfessorApprovalConfirmedBy()).isNull();
+            assertThat(request.getProfessorApprovalConfirmedAt()).isNull();
+        }
+    }
+
+    @Nested
     @DisplayName("completeApproval")
     class CompleteApproval {
 

@@ -16,6 +16,7 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -123,6 +124,18 @@ class UserRepositoryTest {
         }
 
         @Test
+        @DisplayName("졸업 예정일이 있는 사용자는 졸업 규칙이 맡으므로 조회하지 않는다")
+        void findInactiveUsers_excludesUsersWithGraduationDate() {
+            user1.updateExpectedGraduationDate(LocalDate.now().plusYears(1));
+            userRepository.saveAndFlush(user1);
+            setCreatedAt(user1, LocalDateTime.now().minusYears(2));
+
+            List<User> result = userRepository.findInactiveUsers(LocalDateTime.now().minusYears(1), Status.openStatuses());
+
+            assertThat(result).extracting(User::getEmail).doesNotContain("active@dgu.ac.kr");
+        }
+
+        @Test
         @DisplayName("관리자는 조회하지 않는다")
         void findInactiveUsers_excludesAdmins() {
             user1.changeRole(Role.ADMIN);
@@ -159,6 +172,146 @@ class UserRepositoryTest {
 
             assertThat(result).extracting(User::getEmail).doesNotContain("active@dgu.ac.kr", "user2@dgu.ac.kr");
         }
+    }
+
+    @Nested
+    @DisplayName("findGraduatingUsers")
+    class FindGraduatingUsers {
+
+        private final LocalDate today = LocalDate.of(2026, 11, 9);
+
+        private void graduate(User user, LocalDate date) {
+            user.updateExpectedGraduationDate(date);
+            userRepository.saveAndFlush(user);
+        }
+
+        @Test
+        @DisplayName("졸업 예정일이 기준일보다 이른 활성 일반 사용자만 조회한다")
+        void returnsOnlyBeforeCutoff() {
+            graduate(user1, today.minusDays(31));
+            graduate(user2, today);
+
+            List<User> result = userRepository.findGraduatingUsers(today, Status.openStatuses());
+
+            assertThat(result).extracting(User::getEmail).containsExactly("active@dgu.ac.kr");
+        }
+
+        @Test
+        @DisplayName("졸업 예정일이 없거나 관리자거나 비활성이면 조회하지 않는다")
+        void excludesNullAdminInactive() {
+            graduate(user2, today.minusDays(40));
+            user2.changeRole(Role.ADMIN);
+            userRepository.saveAndFlush(user2);
+            // user1: 졸업 예정일 없음
+            User inactive = userRepository.save(User.builder().email("off@dgu.ac.kr").password("p")
+                    .name("비활성").studentId("2021009999").phone("010-9999-9999").department("컴퓨터공학과").build());
+            graduate(inactive, today.minusDays(40));
+            inactive.deactivate();
+            userRepository.saveAndFlush(inactive);
+
+            assertThat(userRepository.findGraduatingUsers(today, Status.openStatuses())).isEmpty();
+        }
+
+        @Test
+        @DisplayName("끝나지 않은 신청이 있으면 조회하지 않는다")
+        void excludesOpenRequests() {
+            graduate(user1, today.minusDays(40));
+            persistRequest(user1);
+
+            assertThat(userRepository.findGraduatingUsers(today, Status.openStatuses())).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("findHomeReminderCandidates")
+    class FindHomeReminderCandidates {
+
+        private final LocalDateTime from = LocalDateTime.of(2026, 10, 1, 0, 0);
+        private final LocalDateTime to = LocalDateTime.of(2026, 10, 2, 0, 0);
+
+        private void withAccount(User user) {
+            user.assignUbuntuAccount(60001L + user.getUserId(), 60001L + user.getUserId());
+            ReflectionTestUtils.setField(user, "ubuntuUsername", "u" + user.getUserId());
+            userRepository.saveAndFlush(user);
+        }
+
+        private Long deletedRequest(User user, LocalDateTime endedAt) {
+            Long id = persistRequest(user);
+            entityManager.getEntityManager()
+                    .createNativeQuery("UPDATE requests SET status = 'DELETED', approved_at = :t, updated_at = :t WHERE request_id = :id")
+                    .setParameter("t", endedAt).setParameter("id", id).executeUpdate();
+            entityManager.clear();
+            return id;
+        }
+
+        @Test
+        @DisplayName("마지막 컨테이너가 [from, to) 안에 끝난 사용자만 조회한다")
+        void windowIsHalfOpen() {
+            withAccount(user1);
+            withAccount(user2);
+            deletedRequest(user1, from);              // 포함(경계)
+            deletedRequest(user2, to);                // 제외(상한 미포함)
+
+            List<User> result = userRepository.findHomeReminderCandidates(from, to, Status.openStatuses());
+
+            assertThat(result).extracting(User::getEmail).containsExactly("active@dgu.ac.kr");
+            // 안내 후보는 삭제 후보의 부분집합이어야 한다 — 두 질의의 공통 조건이 어긋나면 여기서 드러난다.
+            assertThat(userRepository.findHomeCleanupCandidates(to.plusDays(1), Status.openStatuses()))
+                    .containsAll(result);
+        }
+
+        @Test
+        @DisplayName("더 나중에 끝난 컨테이너가 있으면 마지막 시각이 창 밖이라 조회하지 않는다")
+        void usesLatestEnd() {
+            withAccount(user1);
+            deletedRequest(user1, from.plusHours(1));
+            deletedRequest(user1, to.plusDays(5));
+
+            assertThat(userRepository.findHomeReminderCandidates(from, to, Status.openStatuses())).isEmpty();
+        }
+
+        @Test
+        @DisplayName("계정이 없거나 끝나지 않은 신청이 있거나 탈퇴한 사용자는 조회하지 않는다")
+        void excludes() {
+            deletedRequest(user1, from.plusHours(1));          // 계정 없음
+            withAccount(user2);
+            deletedRequest(user2, from.plusHours(1));
+            persistRequest(user2);                              // 열린 신청
+            assertThat(userRepository.findHomeReminderCandidates(from, to, Status.openStatuses())).isEmpty();
+
+            User gone = userRepository.save(User.builder().email("gone@dgu.ac.kr").password("p")
+                    .name("탈퇴").studentId("2021008888").phone("010-8888-8888").department("컴퓨터공학과").build());
+            withAccount(gone);
+            deletedRequest(gone, from.plusHours(1));
+            gone = userRepository.findById(gone.getUserId()).orElseThrow();
+            gone.withdraw();
+            userRepository.saveAndFlush(gone);
+            assertThat(userRepository.findHomeReminderCandidates(from, to, Status.openStatuses())).isEmpty();
+        }
+
+        @Test
+        @DisplayName("비활성화된 사용자에게는 안내하지 않는다")
+        void excludesInactive() {
+            withAccount(user1);
+            deletedRequest(user1, from.plusHours(1));
+            user1 = userRepository.findById(user1.getUserId()).orElseThrow();
+            user1.deactivate();
+            userRepository.saveAndFlush(user1);
+
+            assertThat(userRepository.findHomeReminderCandidates(from, to, Status.openStatuses())).isEmpty();
+        }
+    }
+
+    private Long persistRequest(User user) {
+        ResourceGroup rg = entityManager.persist(ResourceGroup.builder()
+                .resourceGroupName("rg" + System.nanoTime()).description("GPU").serverName("FARM").build());
+        ContainerImage image = entityManager.persist(ContainerImage.builder()
+                .imageName("img" + System.nanoTime()).imageVersion("1").cudaVersion("11.8").description("d").build());
+        Request r = entityManager.persist(Request.builder()
+                .expiresAt(LocalDateTime.now().plusDays(30)).usagePurpose("연구").formAnswers("{}")
+                .user(user).resourceGroup(rg).containerImage(image).build());
+        entityManager.flush();
+        return r.getRequestId();
     }
 
     @Nested

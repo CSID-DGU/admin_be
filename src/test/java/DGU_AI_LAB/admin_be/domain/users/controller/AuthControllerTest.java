@@ -101,7 +101,7 @@ class AuthControllerTest extends WebMvcTestSupport {
             doNothing().when(userLoginService).register(any());
 
             UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
-                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null, java.time.LocalDate.now().plusMonths(6)
             );
 
             mockMvc.perform(post("/api/auth/register")
@@ -114,7 +114,7 @@ class AuthControllerTest extends WebMvcTestSupport {
         @DisplayName("이메일 형식이 잘못되면 400 Bad Request를 반환한다")
         void register_returns400_whenEmailInvalid() throws Exception {
             UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
-                    "invalid-email", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null
+                    "invalid-email", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null, java.time.LocalDate.now().plusMonths(6)
             );
 
             mockMvc.perform(post("/api/auth/register")
@@ -130,7 +130,7 @@ class AuthControllerTest extends WebMvcTestSupport {
                     .when(userLoginService).register(any());
 
             UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
-                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null
+                    "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null, java.time.LocalDate.now().plusMonths(6)
             );
 
             mockMvc.perform(post("/api/auth/register")

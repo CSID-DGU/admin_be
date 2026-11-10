@@ -4,6 +4,7 @@ import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import io.swagger.v3.oas.annotations.media.Schema;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Schema(description = "내 정보 응답 DTO")
@@ -30,6 +31,8 @@ public record MyInfoResponseDTO(
         Boolean isActive,
         @Schema(description = "사용자 권한", example = "USER", allowableValues = {"USER", "ADMIN"})
         Role role,
+        @Schema(description = "졸업 예정일 — null이면 아직 입력하지 않은 사용자(화면이 입력을 받는다)", example = "2027-02-26")
+        LocalDate expectedGraduationDate,
         @Schema(description = "계정 생성 일시", example = "2026-01-09T15:25:28")
         LocalDateTime createdAt,
         @Schema(description = "계정 수정 일시", example = "2026-01-09T15:25:28")
@@ -48,6 +51,7 @@ public record MyInfoResponseDTO(
                 u.hasUbuntuPassword(),
                 u.getIsActive(),
                 u.getRole(),
+                u.getExpectedGraduationDate(),
                 u.getCreatedAt(),
                 u.getUpdatedAt()
         );

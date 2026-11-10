@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.requests.dto.request;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -11,5 +12,8 @@ public record ApprovalRequestDTO(
         Integer resourceGroupId,
         // requests.admin_comment가 300자다.
         @Size(max = 300, message = "승인 코멘트는 300자 이하여야 합니다.")
-        String adminComment
+        String adminComment,
+        @NotNull(message = "지도교수 승인 확인은 필수로 입력해야 합니다.")
+        @AssertTrue(message = "지도교수 승인을 확인한 뒤에만 승인할 수 있습니다.")
+        Boolean professorApprovalConfirmed
 ) {}

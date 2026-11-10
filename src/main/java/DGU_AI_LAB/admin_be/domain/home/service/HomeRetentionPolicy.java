@@ -40,6 +40,11 @@ public class HomeRetentionPolicy {
         return containerEndDate.plusDays(announcedDays);
     }
 
+    /** 안내한 삭제일이 {@code announcedDeletionDate}인 계정의 마지막 컨테이너가 끝난 날. */
+    public LocalDate containerEndDateFor(LocalDate announcedDeletionDate) {
+        return announcedDeletionDate.minusDays(announcedDays);
+    }
+
     /** 마지막 컨테이너가 이 시각보다 먼저 끝난 계정의 홈은 지울 수 있다. */
     public LocalDateTime deletableEndedBefore(LocalDateTime now) {
         return now.minusDays(deleteDays);

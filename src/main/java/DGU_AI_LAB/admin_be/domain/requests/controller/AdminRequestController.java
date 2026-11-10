@@ -6,6 +6,9 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectionRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApproveRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RestartPodRequestDTO;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 
@@ -82,9 +85,13 @@ public class AdminRequestController implements AdminRequestApi {
 
     @PostMapping("/{requestId}/approval")
     public ResponseEntity<SuccessResponse<?>> approveRequest(@PathVariable Long requestId,
+                                                             @AuthenticationPrincipal(expression = "userId") Long adminUserId,
                                                              @RequestBody @Valid ApprovalRequestDTO dto) {
+        if (adminUserId == null) { // 지도교수 승인 확인 기록은 승인한 관리자가 있어야 남는다. 비우면 조용히 빠진다.
+            throw new BusinessException(ErrorCode.UNAUTHORIZED);
+        }
         SaveRequestResponseDTO responseDto = adminRequestCommandService.approveRequest(
-                new ApproveRequestDTO(requestId, dto.imageId(), dto.resourceGroupId(), dto.adminComment()));
+                new ApproveRequestDTO(requestId, dto.imageId(), dto.resourceGroupId(), dto.adminComment(), adminUserId));
         return SuccessResponse.accepted(responseDto);
     }
 

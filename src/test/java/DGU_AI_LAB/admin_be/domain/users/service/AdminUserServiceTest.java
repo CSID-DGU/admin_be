@@ -52,6 +52,9 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class AdminUserServiceTest {
 
+    @Mock
+    private DGU_AI_LAB.admin_be.domain.home.service.HomeRetentionPolicy homeRetentionPolicy;
+
     @InjectMocks
     private AdminUserService adminUserService;
 

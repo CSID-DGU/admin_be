@@ -22,5 +22,12 @@ public record ApproveRequestDTO(
         // requests.admin_comment가 300자다.
         @Schema(description = "관리자 승인 코멘트 (선택 사항)", example = "사용 목적에 따라 리소스를 할당함")
         @Size(max = 300, message = "승인 코멘트는 300자 이하여야 합니다.")
-        String adminComment
-) {}
+        String adminComment,
+
+        // 지도교수 승인을 확인하고 승인한 관리자. 비어 있으면 지도교수 승인 확인을 기록하지 않는다(테스트 Pod 자동 승인).
+        Long professorApprovedByAdminId
+) {
+    public ApproveRequestDTO(Long requestId, Long imageId, Integer resourceGroupId, String adminComment) {
+        this(requestId, imageId, resourceGroupId, adminComment, null);
+    }
+}

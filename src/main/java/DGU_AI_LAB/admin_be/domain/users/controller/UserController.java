@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.users.controller;
 
 import DGU_AI_LAB.admin_be.domain.users.controller.docs.UserApi;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.GraduationUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PhoneUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.ContactEmailUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuUsernameRegisterRequestDTO;
@@ -43,6 +44,18 @@ public class UserController implements UserApi {
     ) {
         UserResponseDTO updatedUser = userService.updatePhone(principal.getUserId(), request);
         return SuccessResponse.ok(updatedUser);
+    }
+
+    /**
+     * 졸업 예정일 입력 API
+     * PATCH /api/users/me/graduation
+     */
+    @PatchMapping("/me/graduation")
+    public ResponseEntity<SuccessResponse<?>> updateExpectedGraduationDate(
+            @AuthenticationPrincipal CustomUserDetails principal,
+            @RequestBody @Valid GraduationUpdateRequestDTO request
+    ) {
+        return SuccessResponse.ok(userService.updateExpectedGraduationDate(principal.getUserId(), request));
     }
 
     /**

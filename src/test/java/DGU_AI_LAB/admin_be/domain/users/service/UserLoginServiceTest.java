@@ -4,6 +4,7 @@ import DGU_AI_LAB.admin_be.global.util.RedisWindowCounter;
 import DGU_AI_LAB.admin_be.global.auth.EmailDomainPolicy;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserLoginRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.support.UserRegisterRequests;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserTokenResponseDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
@@ -100,7 +101,7 @@ class UserLoginServiceTest {
             when(userRepository.findByEmail("Test@dgu.ac.kr")).thenReturn(Optional.empty());
             when(passwordEncoder.encode(anyString())).thenReturn("encodedPw");
 
-            userLoginService.register(new UserRegisterRequestDTO(
+            userLoginService.register(UserRegisterRequests.of(
                     "Test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null
             ));
 
@@ -115,7 +116,7 @@ class UserLoginServiceTest {
             when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.empty());
             when(passwordEncoder.encode(anyString())).thenReturn("encodedPw");
 
-            UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+            UserRegisterRequestDTO dto = UserRegisterRequests.of(
                     "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null
             );
 
@@ -138,7 +139,7 @@ class UserLoginServiceTest {
             when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.empty());
             when(userRepository.existsByUbuntuUsername("honggildong")).thenReturn(true);
 
-            UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+            UserRegisterRequestDTO dto = UserRegisterRequests.of(
                     "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null
             );
 
@@ -156,7 +157,7 @@ class UserLoginServiceTest {
             when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.empty());
             when(reservedLinuxNames.contains("www-data")).thenReturn(true);
 
-            UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+            UserRegisterRequestDTO dto = UserRegisterRequests.of(
                     "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "www-data", null
             );
 
@@ -175,7 +176,7 @@ class UserLoginServiceTest {
             when(userRepository.existsByUbuntuUsername("developers")).thenReturn(false);
             when(groupRepository.existsByGroupName("developers")).thenReturn(true);
 
-            UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+            UserRegisterRequestDTO dto = UserRegisterRequests.of(
                     "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "developers", null
             );
 
@@ -196,7 +197,7 @@ class UserLoginServiceTest {
                     .thenThrow(new DataIntegrityViolationException("constraint violation",
                             new RuntimeException("Duplicate entry 'honggildong' for key 'uk_users_ubuntu_username'")));
 
-            UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+            UserRegisterRequestDTO dto = UserRegisterRequests.of(
                     "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null
             );
 
@@ -217,7 +218,7 @@ class UserLoginServiceTest {
             when(userRepository.saveAndFlush(any(User.class)))
                     .thenThrow(new DataIntegrityViolationException("uk_users_email"));
 
-            UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+            UserRegisterRequestDTO dto = UserRegisterRequests.of(
                     "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null
             );
 
@@ -234,7 +235,7 @@ class UserLoginServiceTest {
         void register_throwsException_whenEmailNotVerified() {
             when(redisTemplate.hasKey("VERIFIED:test@dgu.ac.kr")).thenReturn(false);
 
-            UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+            UserRegisterRequestDTO dto = UserRegisterRequests.of(
                     "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null
             );
 
@@ -248,7 +249,7 @@ class UserLoginServiceTest {
             when(redisTemplate.hasKey("VERIFIED:test@dgu.ac.kr")).thenReturn(true);
             when(userRepository.findByEmail("test@dgu.ac.kr")).thenReturn(Optional.of(activeUser));
 
-            UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+            UserRegisterRequestDTO dto = UserRegisterRequests.of(
                     "test@dgu.ac.kr", "password123", "홍길동", "컴퓨터공학과", "2021001234", "010-1234-5678", "honggildong", null
             );
 

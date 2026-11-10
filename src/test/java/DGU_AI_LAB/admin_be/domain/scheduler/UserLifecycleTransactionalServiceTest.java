@@ -54,6 +54,9 @@ class UserLifecycleTransactionalServiceTest {
     private InactivityNoticeStore noticeStore;
 
     @Mock
+    private DGU_AI_LAB.admin_be.domain.home.service.HomeRetentionPolicy homeRetentionPolicy;
+
+    @Mock
     @SuppressWarnings("rawtypes")
     private ValueOperations valueOps;
 
@@ -93,6 +96,48 @@ class UserLifecycleTransactionalServiceTest {
     }
 
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 1, 10, 9, 0);
+
+    @Nested
+    @DisplayName("processInactiveUser - 졸업 예정일 규칙")
+    class GraduationRule {
+
+        private User graduating(LocalDateTime createdAt, java.time.LocalDate graduationDate) {
+            User user = buildUser(createdAt, null);
+            ReflectionTestUtils.setField(user, "expectedGraduationDate", graduationDate);
+            when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+            return user;
+        }
+
+        @Test
+        @DisplayName("졸업 예정일 + 30일의 7일 전에 졸업 안내 경고를 보낸다 — 가입이 1년 안이어도")
+        void warnsSevenDaysBeforeGraduationDeadline() {
+            graduating(NOW.minusDays(10), NOW.toLocalDate().plusDays(7).minusDays(30));
+
+            boolean deactivate = lifecycleService.processInactiveUser(1L, NOW);
+
+            assertThat(deactivate).isFalse();
+            verify(messageUtils).get(eq("notification.user.graduation-warning.subject"), any(Object[].class));
+            verify(messageUtils).get(eq("notification.user.graduation-warning.body"), any(Object[].class));
+            verify(alarmService).notifyUser(any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("졸업 예정일 + 30일이 지나고 안내한 예정일도 지났으면 비활성화한다")
+        void deactivatesAfterGraduationDeadline() {
+            graduating(NOW.minusDays(10), NOW.toLocalDate().minusDays(30));
+
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isTrue();
+        }
+
+        @Test
+        @DisplayName("졸업 예정일이 있으면 마지막 컨테이너 1년 규칙은 적용하지 않는다")
+        void ignoresOneYearRuleWhenGraduationDateIsSet() {
+            graduating(NOW.minusYears(2), NOW.toLocalDate().plusYears(1));
+
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isFalse();
+            verify(alarmService, never()).notifyUser(any(), any(), any(), any());
+        }
+    }
 
     @Nested
     @DisplayName("processInactiveUser - 경고 알림 중복 방지")
@@ -182,7 +227,7 @@ class UserLifecycleTransactionalServiceTest {
 
             verify(noticeStore).save(1L, NOW.toLocalDate().plusDays(7), NOW.toLocalDate());
             verify(messageUtils).get("notification.user.delete-warning.body",
-                    "홍길동", "7", NOW.toLocalDate().plusDays(7).toString());
+                    "홍길동", "7", NOW.toLocalDate().plusDays(7).toString(), "0");
             verify(alarmService, times(1)).notifyUser(any(), any(), any(), any());
         }
 

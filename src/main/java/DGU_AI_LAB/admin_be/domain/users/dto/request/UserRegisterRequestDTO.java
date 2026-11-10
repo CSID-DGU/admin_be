@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.users.dto.request;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.global.validation.MaxUtf8Bytes;
 import DGU_AI_LAB.admin_be.global.validation.PhoneNumber;
+import DGU_AI_LAB.admin_be.global.validation.ExpectedGraduationDate;
 import DGU_AI_LAB.admin_be.global.validation.PhoneNumbers;
 import DGU_AI_LAB.admin_be.global.validation.UbuntuUsername;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -10,6 +11,8 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+
+import java.time.LocalDate;
 
 @Schema(description = "회원가입 요청 DTO")
 public record UserRegisterRequestDTO(
@@ -55,7 +58,13 @@ public record UserRegisterRequestDTO(
         // Slack에 학교 이메일이 아닌 주소로 가입한 사람을 알아보는 데 쓴다. 비우거나 학교 이메일과 같게 적으면 저장하지 않는다.
         @Schema(description = "자주 사용하는 이메일 (없거나 학교 이메일과 같으면 생략)", example = "user@gmail.com")
         @Email @Size(max = 100)
-        String contactEmail
+        String contactEmail,
+
+        // 이 날짜 + 30일이 지나면 계정이 비활성화된다. 필수 입력이라 졸업 예정일이 없는 옛 가입 화면은 400을 받는다 —
+        // 배포할 때 BE와 FE를 함께 올려야 한다.
+        @Schema(description = "졸업 예정일", example = "2027-02-26")
+        @ExpectedGraduationDate
+        LocalDate expectedGraduationDate
 ) {
         /** 비밀번호는 서비스에서 암호화한 값을 넘겨서 처리 */
         public User toEntity(String encodedPassword) {
@@ -68,6 +77,7 @@ public record UserRegisterRequestDTO(
                         .phone(PhoneNumbers.normalize(phone))
                         .ubuntuUsername(ubuntuUsername)
                         .contactEmail(contactEmail)
+                        .expectedGraduationDate(expectedGraduationDate)
                         // role, isActive는 엔티티의 @Builder.Default 로 기본값 사용
                         .build();
         }

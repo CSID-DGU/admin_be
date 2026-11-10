@@ -18,6 +18,7 @@ import DGU_AI_LAB.admin_be.error.exception.ConflictException;
 import DGU_AI_LAB.admin_be.error.exception.EntityNotFoundException;
 import DGU_AI_LAB.admin_be.global.util.AfterCommit;
 import DGU_AI_LAB.admin_be.global.util.MessageUtils;
+import DGU_AI_LAB.admin_be.domain.home.service.HomeRetentionPolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -48,6 +49,7 @@ public class AdminUserService {
     private final PasswordResetService passwordResetService;
     private final InactivityNoticeStore inactivityNoticeStore;
     private final PlatformTransactionManager transactionManager;
+    private final HomeRetentionPolicy homeRetentionPolicy;
 
     /**
      * 전체 유저 조회
@@ -178,7 +180,10 @@ public class AdminUserService {
         }
         requireNotLastActiveAdminInNewTx(userId);
         log.warn("[withdrawInactiveUser] userId={} 장기 미사용 탈퇴 시작", userId);
-        withdrawWithCleanup(userId, user, "withdrawInactiveUser", "notification.user.soft-delete");
+        // 졸업 예정일이 있는 사용자는 졸업 때문에, 없는 사용자는 1년 미사용 때문에 비활성화된다.
+        String noticeKey = user.getExpectedGraduationDate() != null
+                ? "notification.user.soft-delete.graduation" : "notification.user.soft-delete";
+        withdrawWithCleanup(userId, user, "withdrawInactiveUser", noticeKey);
     }
 
     /** 비활성화는 이미 끝났으므로 실패해도 되돌리지 않는다 — 남은 신청은 승인이 거절한다. */
@@ -209,7 +214,7 @@ public class AdminUserService {
 
         AfterCommit.run("계정 비활성화 안내(" + logPrefix + "), userId " + userId, () -> {
             String subject = messageUtils.get(noticeKey + ".subject");
-            String body = messageUtils.get(noticeKey + ".body", withdrawn.getName());
+            String body = messageUtils.get(noticeKey + ".body", withdrawn.getName(), String.valueOf(homeRetentionPolicy.announcedDays()));
             alarmService.notifyUser(withdrawn.getName(), withdrawn.getEmail(), subject, body);
         });
     }

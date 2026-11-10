@@ -32,4 +32,18 @@ class MessagesPropertiesTest {
             assertThat(new MessageFormat(template, Locale.KOREA).format(args)).as(key).doesNotContain("{").doesNotContain("}");
         }
     }
+
+    @Test
+    @DisplayName("비활성화 안내문은 홈 폴더와 이력이 어떻게 되는지 알려 준다")
+    void inactivationNoticesExplainHomeAndHistory() throws Exception {
+        Properties messages = new Properties();
+        try (var reader = new InputStreamReader(
+                getClass().getClassLoader().getResourceAsStream("messages.properties"), StandardCharsets.UTF_8)) {
+            messages.load(reader);
+        }
+
+        for (String key : new String[]{"notification.user.delete-warning.body", "notification.user.soft-delete.body"}) {
+            assertThat(messages.getProperty(key)).as(key).contains("홈 폴더").contains("이력");
+        }
+    }
 }

@@ -129,6 +129,10 @@ public enum ErrorCode {
     INVALID_GROUP_MEMBER(HttpStatus.BAD_REQUEST, "존재하지 않는 사용자입니다."),
     RESERVED_GROUP_NAME(HttpStatus.CONFLICT, "시스템이 이미 쓰는 그룹 이름입니다. 다른 이름을 쓰세요."),
     GROUP_NAME_CONFLICTS_USER(HttpStatus.BAD_REQUEST, "계정 이름과 같은 그룹 이름은 쓸 수 없습니다."),
+    GROUP_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "한 사람이 속할 수 있는 그룹은 5개까지예요. 속한 그룹을 줄인 뒤 다시 시도해 주세요."),
+    GROUP_LEAVE_NOT_MEMBER(HttpStatus.BAD_REQUEST, "속해 있지 않은 그룹이에요."),
+    GROUP_LEAVE_ALREADY_REQUESTED(HttpStatus.CONFLICT, "이 그룹의 탈퇴 신청이 이미 승인을 기다리고 있어요."),
+    GROUP_LEAVE_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "그룹 탈퇴 신청을 찾을 수 없습니다."),
     // AD 반영 실패는 DC 접속 장애 같은 일시적 원인이 대부분이라 다시 승인하면 되는 경우가 많다.
     // 이걸 형식 오류와 같은 코드로 묶으면 관리자가 신청이 잘못됐다고 판단하고 되돌린다.
     PRIMARY_GROUP_REMOVAL(HttpStatus.CONFLICT, "계정의 기본 그룹에서는 뺄 수 없습니다."),

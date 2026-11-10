@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.home.service.HomeRetentionPolicy;
 import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
@@ -34,9 +35,13 @@ public class UserLifecycleTransactionalService {
     private final MessageUtils messageUtils;
     private final RedisTemplate<String, Object> redisTemplate;
     private final InactivityNoticeStore noticeStore;
+    private final HomeRetentionPolicy homeRetentionPolicy;
 
     /** 마지막 컨테이너가 끝난 뒤(컨테이너를 쓴 적이 없으면 가입한 뒤) 이만큼 지나면 비활성화한다. */
     static final int INACTIVE_MONTHS = 12;
+
+    /** 졸업 예정일이 있는 사용자는 그 날짜로부터 이만큼 지나면 비활성화한다. 1년 규칙은 적용하지 않는다. */
+    static final int GRADUATION_GRACE_DAYS = 30;
 
     /** 기한이 지나도록 경고를 받지 못한 사용자에게 경고와 함께 주는 유예 기간. */
     static final int NOTICE_DAYS = 7;
@@ -68,7 +73,10 @@ public class UserLifecycleTransactionalService {
         }
 
         LocalDate today = now.toLocalDate();
-        LocalDate ruleDate = inactiveSince.plusMonths(INACTIVE_MONTHS).toLocalDate();
+        boolean byGraduation = user.getExpectedGraduationDate() != null;
+        LocalDate ruleDate = byGraduation
+                ? user.getExpectedGraduationDate().plusDays(GRADUATION_GRACE_DAYS)
+                : inactiveSince.plusMonths(INACTIVE_MONTHS).toLocalDate();
         LocalDate deleteDate = ruleDate.isAfter(today) ? ruleDate : noticedDeadline(userId, today);
         long daysLeft = ChronoUnit.DAYS.between(today, deleteDate);
 
@@ -79,7 +87,7 @@ public class UserLifecycleTransactionalService {
                 log.warn("유저({}) 유예 예정일을 기록하지 못해 경고를 보내지 않고 다음 회차에 다시 봅니다", userId);
                 return false;
             }
-            sendWarningAlert(user, daysLeft, deleteDate, today.toString());
+            sendWarningAlert(user, daysLeft, deleteDate, today.toString(), byGraduation);
         }
         return daysLeft <= 0;
     }
@@ -97,16 +105,17 @@ public class UserLifecycleTransactionalService {
         return user.lastContainerEndedAt().orElse(user.getCreatedAt());
     }
 
-    private void sendWarningAlert(User user, long daysLeft, LocalDate deleteDate, String today) {
+    private void sendWarningAlert(User user, long daysLeft, LocalDate deleteDate, String today, boolean byGraduation) {
         if (isDuplicateWarning(user.getUserId(), daysLeft, today)) {
             log.debug("계정 삭제 경고 중복 발송 방지: userId={}, daysLeft={}, date={}", user.getUserId(), daysLeft, today);
             return;
         }
 
         String dateStr = deleteDate.toString();
-        String subject = messageUtils.get("notification.user.delete-warning.subject", String.valueOf(daysLeft));
-        String body = messageUtils.get("notification.user.delete-warning.body",
-                user.getName(), String.valueOf(daysLeft), dateStr);
+        String noticeKey = byGraduation ? "notification.user.graduation-warning" : "notification.user.delete-warning";
+        String subject = messageUtils.get(noticeKey + ".subject", String.valueOf(daysLeft));
+        String body = messageUtils.get(noticeKey + ".body",
+                user.getName(), String.valueOf(daysLeft), dateStr, String.valueOf(homeRetentionPolicy.announcedDays()));
 
         String name = user.getName();
         String email = user.getEmail();

@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.users.service;
 
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 
+import DGU_AI_LAB.admin_be.domain.users.dto.request.GraduationUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PhoneUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuUsernameRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.MyInfoResponseDTO;
@@ -134,6 +135,32 @@ class UserServiceTest {
         }
     }
 
+
+    @Nested
+    @DisplayName("updateExpectedGraduationDate")
+    class UpdateExpectedGraduationDate {
+
+        @Test
+        @DisplayName("졸업 예정일을 저장한다")
+        void saves() {
+            when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
+            java.time.LocalDate date = java.time.LocalDate.of(2027, 2, 26);
+
+            userService.updateExpectedGraduationDate(1L, new GraduationUpdateRequestDTO(date));
+
+            assertThat(mockUser.getExpectedGraduationDate()).isEqualTo(date);
+        }
+
+        @Test
+        @DisplayName("유저가 없으면 EntityNotFoundException을 던진다")
+        void throwsWhenUserNotFound() {
+            when(userRepository.findById(99L)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> userService.updateExpectedGraduationDate(
+                    99L, new GraduationUpdateRequestDTO(java.time.LocalDate.of(2027, 2, 26))))
+                    .isInstanceOf(EntityNotFoundException.class);
+        }
+    }
 
     @Nested
     @DisplayName("registerUbuntuUsername")

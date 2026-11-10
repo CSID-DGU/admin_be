@@ -46,6 +46,13 @@ public class Request extends BaseTimeEntity {
     @Column(name = "approved_at")
     private LocalDateTime approvedAt;
 
+    /** 지도교수 승인을 확인하고 승인한 관리자(users.user_id). 확인 기록이 없는 신청(이전 승인·테스트 Pod)은 비어 있다. */
+    @Column(name = "professor_approval_confirmed_by")
+    private Long professorApprovalConfirmedBy;
+
+    @Column(name = "professor_approval_confirmed_at")
+    private LocalDateTime professorApprovalConfirmedAt;
+
     /**
      * 거절 사유 등, status에 대한 설명
      */
@@ -173,6 +180,15 @@ public class Request extends BaseTimeEntity {
         if (adminComment != null && !adminComment.isBlank()) {
             this.adminComment = adminComment;
         }
+    }
+
+    /** 관리자가 지도교수 승인을 확인했다는 기록을 남긴다. 비동기 승인이 실패해 다시 승인해도 처음 기록을 덮어쓰지 않는다. */
+    public void confirmProfessorApproval(Long adminUserId) {
+        if (this.professorApprovalConfirmedBy != null) {
+            return;
+        }
+        this.professorApprovalConfirmedBy = adminUserId;
+        this.professorApprovalConfirmedAt = LocalDateTime.now();
     }
 
     /** 이미지를 바꿔 다시 만든 작업이 성공했을 때 신청의 이미지를 새 Pod가 쓰는 이미지로 맞춘다. */

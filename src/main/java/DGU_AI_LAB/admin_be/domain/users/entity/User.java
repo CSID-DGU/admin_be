@@ -12,6 +12,7 @@ import lombok.*;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
@@ -112,6 +113,10 @@ public class User extends BaseTimeEntity {
     @Column(name = "password_changed_at")
     private LocalDateTime passwordChangedAt;
 
+    /** 졸업 예정일. 비어 있으면 아직 받지 못한 사용자다(마지막 컨테이너 종료 1년 규칙을 적용). */
+    @Column(name = "expected_graduation_date")
+    private LocalDate expectedGraduationDate;
+
     @OneToMany(mappedBy = "user", cascade = CascadeType.REMOVE, orphanRemoval = true)
     private List<Request> requests = new ArrayList<>();
 
@@ -125,7 +130,7 @@ public class User extends BaseTimeEntity {
 
     @Builder
     public User(String email, String password, String name, String studentId, String phone, String department,
-                String ubuntuUsername, String contactEmail) {
+                String ubuntuUsername, String contactEmail, LocalDate expectedGraduationDate) {
         this.email = email;
         this.password = password;
         this.name = name;
@@ -134,6 +139,7 @@ public class User extends BaseTimeEntity {
         this.department = department;
         this.ubuntuUsername = ubuntuUsername;
         this.contactEmail = distinctContactEmail(contactEmail);
+        this.expectedGraduationDate = expectedGraduationDate;
         this.lastLoginAt = LocalDateTime.now();
     }
 
@@ -155,6 +161,10 @@ public class User extends BaseTimeEntity {
 
     public void updatePhone(String newPhone) {
         this.phone = newPhone;
+    }
+
+    public void updateExpectedGraduationDate(LocalDate date) {
+        this.expectedGraduationDate = date;
     }
 
     /** 빈 값이나 학교 이메일과 같은 값은 "따로 없음"으로 둔다. */
@@ -182,6 +192,8 @@ public class User extends BaseTimeEntity {
     public void reactivate() {
         this.isActive = true;
         this.deletedAt = null;
+        // 졸업 예정일이 이미 지난 채 되살리면 며칠 뒤 같은 규칙으로 다시 비활성화된다. 다시 입력받는다(접속 시 모달).
+        this.expectedGraduationDate = null;
     }
 
     /**

@@ -74,6 +74,7 @@ public class GroupOperationService {
     private final UserGuideMailer userGuideMailer;
     private final ObjectMapper objectMapper;
     private final PlatformTransactionManager transactionManager;
+    private final GroupMembershipPolicy groupMembershipPolicy;
 
     /** 작업이 끝난 뒤(트랜잭션 밖에서) 보낼 안내. */
     private record AddedNotice(ChangeRequest changeRequest, List<String> groupNames, ChangeRequestDecision decision) {}
@@ -85,7 +86,10 @@ public class GroupOperationService {
      * 호출자의 트랜잭션 안에서 불러야 한다 — 변경 요청과 원본 신청을 잠그고 검증한 그 트랜잭션이다.
      */
     public void startAdd(ChangeRequest changeRequest, Request originalRequest, User admin, String adminComment) {
-        List<String> groupNames = groupsOf(changeRequest).stream().map(Group::getGroupName).toList();
+        Set<Group> groups = groupsOf(changeRequest);
+        // 접수 뒤에 다른 변경 요청이 먼저 승인됐을 수 있어 승인 때 한도를 다시 확인한다.
+        groupMembershipPolicy.requireRoomFor(originalRequest.getUser(), groups);
+        List<String> groupNames = groups.stream().map(Group::getGroupName).toList();
         GroupOperation operation = operationRepository.save(GroupOperation.add(
                 changeRequest, originalRequest.getUser(), originalRequest.getUbuntuUsername(), admin));
         operation.registered(jobClient.registerGroupChange(GroupChangeRegisterRequestDTO.add(

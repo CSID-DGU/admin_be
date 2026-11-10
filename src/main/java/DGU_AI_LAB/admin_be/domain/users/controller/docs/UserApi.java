@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.controller.docs;
 
+import DGU_AI_LAB.admin_be.domain.users.dto.request.GraduationUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.PhoneUpdateRequestDTO;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UbuntuUsernameRegisterRequestDTO;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
@@ -39,6 +40,18 @@ public interface UserApi {
     ResponseEntity<SuccessResponse<?>> updateUserPhone(
             @AuthenticationPrincipal @Parameter(hidden = true) CustomUserDetails principal,
             @RequestBody @Valid PhoneUpdateRequestDTO request
+    );
+
+    @Operation(summary = "졸업 예정일 입력", description = "졸업 예정일 + 30일이 지나면 계정이 비활성화됩니다. 가입 때 받지 못한 기존 사용자가 접속할 때 입력합니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청 (지난 날짜 등)"),
+            @ApiResponse(responseCode = "401", description = "인증 실패")
+    })
+    @PatchMapping("/me/graduation")
+    ResponseEntity<SuccessResponse<?>> updateExpectedGraduationDate(
+            @AuthenticationPrincipal @Parameter(hidden = true) CustomUserDetails principal,
+            @RequestBody @Valid GraduationUpdateRequestDTO request
     );
 
     @Operation(summary = "우분투 유저네임 등록", description = "가입 시 우분투 유저네임을 받기 전에 만들어진 계정을 위한 1회성 등록 API입니다. 이미 등록되어 있으면 실패합니다.")

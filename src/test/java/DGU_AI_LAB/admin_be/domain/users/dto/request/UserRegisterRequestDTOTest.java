@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.users.dto.request;
 
+import DGU_AI_LAB.admin_be.support.UserRegisterRequests;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -36,7 +37,7 @@ class UserRegisterRequestDTOTest {
     private UserRegisterRequestDTO valid() {
         return new UserRegisterRequestDTO(
                 "user@dgu.ac.kr", "strongPassword123!", "이소은",
-                "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi", null);
+                "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi", null, java.time.LocalDate.now().plusMonths(6));
     }
 
     private String repeat(int length) {
@@ -52,7 +53,7 @@ class UserRegisterRequestDTOTest {
     @Test
     @DisplayName("글자 수는 72자 이하여도 UTF-8로 72바이트를 넘는 비밀번호는 위반이다(BCrypt 한도)")
     void password_over72Bytes_isRejected() {
-        UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+        UserRegisterRequestDTO dto = UserRegisterRequests.of(
                 "user@dgu.ac.kr", "가".repeat(25), "이소은",
                 "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi", null);
 
@@ -62,7 +63,7 @@ class UserRegisterRequestDTOTest {
     @Test
     @DisplayName("UTF-8로 정확히 72바이트인 비밀번호는 통과한다")
     void password_exactly72Bytes_isAccepted() {
-        UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+        UserRegisterRequestDTO dto = UserRegisterRequests.of(
                 "user@dgu.ac.kr", "가".repeat(24), "이소은",
                 "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi", null);
 
@@ -72,7 +73,7 @@ class UserRegisterRequestDTOTest {
     @Test
     @DisplayName("name이 100자를 넘으면 위반이 발생한다")
     void name_over100_isRejected() {
-        UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+        UserRegisterRequestDTO dto = UserRegisterRequests.of(
                 "user@dgu.ac.kr", "pw", repeat(101),
                 "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi", null);
 
@@ -100,7 +101,7 @@ class UserRegisterRequestDTOTest {
     @Test
     @DisplayName("department가 100자를 넘으면 위반이 발생한다")
     void department_over100_isRejected() {
-        UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+        UserRegisterRequestDTO dto = UserRegisterRequests.of(
                 "user@dgu.ac.kr", "pw", "이소은",
                 repeat(101), "202312345", "010-1234-5678", "sochoi", null);
 
@@ -110,7 +111,7 @@ class UserRegisterRequestDTOTest {
     @Test
     @DisplayName("studentId가 100자를 넘으면 위반이 발생한다")
     void studentId_over100_isRejected() {
-        UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+        UserRegisterRequestDTO dto = UserRegisterRequests.of(
                 "user@dgu.ac.kr", "pw", "이소은",
                 "컴퓨터공학과", repeat(101), "010-1234-5678", "sochoi", null);
 
@@ -120,7 +121,7 @@ class UserRegisterRequestDTOTest {
     @Test
     @DisplayName("phone이 100자를 넘으면 위반이 발생한다")
     void phone_over100_isRejected() {
-        UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+        UserRegisterRequestDTO dto = UserRegisterRequests.of(
                 "user@dgu.ac.kr", "pw", "이소은",
                 "컴퓨터공학과", "202312345", repeat(101), "sochoi", null);
 
@@ -130,7 +131,7 @@ class UserRegisterRequestDTOTest {
     @Test
     @DisplayName("email이 100자를 넘으면 위반이 발생한다")
     void email_over100_isRejected() {
-        UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+        UserRegisterRequestDTO dto = UserRegisterRequests.of(
                 repeat(95) + "@dgu.ac.kr", "pw", "이소은",
                 "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi", null);
 
@@ -140,7 +141,7 @@ class UserRegisterRequestDTOTest {
     @Test
     @DisplayName("password가 255자를 넘으면 위반이 발생한다")
     void password_over255_isRejected() {
-        UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+        UserRegisterRequestDTO dto = UserRegisterRequests.of(
                 "user@dgu.ac.kr", repeat(256), "이소은",
                 "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi", null);
 
@@ -152,7 +153,7 @@ class UserRegisterRequestDTOTest {
     void exactly100_isAccepted() {
         UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
                 "user@dgu.ac.kr", repeat(72), repeat(100),
-                repeat(100), repeat(100), "010-1234-5678", "a".repeat(32), null);
+                repeat(100), repeat(100), "010-1234-5678", "a".repeat(32), null, java.time.LocalDate.now().plusMonths(6));
 
         assertThat(validator.validate(dto)).isEmpty();
     }
@@ -160,10 +161,10 @@ class UserRegisterRequestDTOTest {
     @Test
     @DisplayName("password가 8자 미만이거나 72자를 넘으면 위반이 발생한다 (BCrypt는 72바이트까지만 쓴다)")
     void password_lengthBounds() {
-        assertThat(violatedFields(new UserRegisterRequestDTO(
+        assertThat(violatedFields(UserRegisterRequests.of(
                 "user@dgu.ac.kr", repeat(7), "이소은", "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi", null)))
                 .contains("password");
-        assertThat(violatedFields(new UserRegisterRequestDTO(
+        assertThat(violatedFields(UserRegisterRequests.of(
                 "user@dgu.ac.kr", repeat(73), "이소은", "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi", null)))
                 .contains("password");
     }
@@ -171,7 +172,7 @@ class UserRegisterRequestDTOTest {
     @Test
     @DisplayName("phone은 하이픈이 없어도 받고, 저장할 때 010-1234-5678 모양으로 맞춘다")
     void phone_acceptsDigitsOnly_andNormalizes() {
-        UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+        UserRegisterRequestDTO dto = UserRegisterRequests.of(
                 "user@dgu.ac.kr", "strongPassword123!", "이소은", "컴퓨터공학과", "202312345", "01012345678", "sochoi", null);
 
         assertThat(violatedFields(dto)).doesNotContain("phone");
@@ -182,7 +183,7 @@ class UserRegisterRequestDTOTest {
     @DisplayName("phone에 숫자가 아닌 글자나 모자란 자리가 있으면 거절한다")
     void phone_rejectsMalformed() {
         for (String phone : new String[]{"010-12-5678", "전화번호", "1012345678", "010.1234.5678"}) {
-            assertThat(violatedFields(new UserRegisterRequestDTO(
+            assertThat(violatedFields(UserRegisterRequests.of(
                     "user@dgu.ac.kr", "strongPassword123!", "이소은", "컴퓨터공학과", "202312345", phone, "sochoi", null)))
                     .as(phone).contains("phone");
         }
@@ -191,7 +192,7 @@ class UserRegisterRequestDTOTest {
     @Test
     @DisplayName("기존 @NotBlank / @Email 제약은 그대로 동작한다")
     void existingConstraintsStillApply() {
-        UserRegisterRequestDTO blank = new UserRegisterRequestDTO(
+        UserRegisterRequestDTO blank = UserRegisterRequests.of(
                 "not-an-email", "  ".trim(), "", "", "", "", "", null);
 
         assertThat(violatedFields(blank))
@@ -201,7 +202,7 @@ class UserRegisterRequestDTOTest {
     @Test
     @DisplayName("ubuntuUsername이 3자 미만이면 위반이 발생한다")
     void ubuntuUsername_tooShort_isRejected() {
-        UserRegisterRequestDTO dto = new UserRegisterRequestDTO(
+        UserRegisterRequestDTO dto = UserRegisterRequests.of(
                 "user@dgu.ac.kr", "pw", "이소은",
                 "컴퓨터공학과", "202312345", "010-1234-5678", "ab", null);
 
@@ -248,13 +249,13 @@ class UserRegisterRequestDTOTest {
     }
 
     private UserRegisterRequestDTO registerWithUbuntuUsername(String ubuntuUsername) {
-        return new UserRegisterRequestDTO(
+        return UserRegisterRequests.of(
                 "user@dgu.ac.kr", "strongPassword123!", "이소은",
                 "컴퓨터공학과", "202312345", "010-1234-5678", ubuntuUsername, null);
     }
 
     private UserRegisterRequestDTO registerWithName(String name) {
-        return new UserRegisterRequestDTO(
+        return UserRegisterRequests.of(
                 "user@dgu.ac.kr", "strongPassword123!", name,
                 "컴퓨터공학과", "202312345", "010-1234-5678", "sochoi", null);
     }

@@ -226,4 +226,16 @@ class UserTest {
             assertThat(user.getDeletedAt()).isNotNull();
         }
     }
+
+    @Test
+    @DisplayName("reactivate: 지난 졸업 예정일이 남아 곧바로 다시 비활성화되지 않도록 졸업 예정일을 비운다")
+    void reactivateClearsGraduationDate() {
+        user.updateExpectedGraduationDate(java.time.LocalDate.of(2026, 1, 1));
+        user.withdraw();
+
+        user.reactivate();
+
+        assertThat(user.getIsActive()).isTrue();
+        assertThat(user.getExpectedGraduationDate()).isNull();
+    }
 }
