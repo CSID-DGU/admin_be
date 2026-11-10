@@ -124,7 +124,7 @@ class UserLifecycleTransactionalServiceTest {
         @Test
         @DisplayName("졸업 예정일을 먼 미래로 미뤄도 1년 미사용 규칙이 먼저 적용된다 — 기한이 지나 안내한 예정일도 지났으면 비활성화")
         void farFutureGraduationDoesNotBypassOneYearRule() {
-            graduating(NOW.minusYears(2), NOW.toLocalDate().plusYears(8));
+            graduating(NOW.minusYears(2), NOW.toLocalDate().plusYears(6));
 
             assertThat(lifecycleService.processInactiveUser(1L, NOW)).isTrue();
         }

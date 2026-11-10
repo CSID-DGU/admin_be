@@ -181,8 +181,10 @@ public class AdminUserService {
         requireNotLastActiveAdminInNewTx(userId);
         log.warn("[withdrawInactiveUser] userId={} 장기 미사용 탈퇴 시작", userId);
         // 졸업 예정일이 있는 사용자는 졸업 때문에, 없는 사용자는 1년 미사용 때문에 비활성화된다.
-        String noticeKey = user.getExpectedGraduationDate() != null
-                ? "notification.user.soft-delete.graduation" : "notification.user.soft-delete";
+        // 졸업 예정일이 있어도 1년 미사용 규칙이 먼저 닿아 비활성화되는 사용자가 있다. 졸업 기한이 지난 경우에만 졸업 문구를 쓴다.
+        boolean byGraduation = user.getExpectedGraduationDate() != null
+                && !user.getExpectedGraduationDate().plusDays(30).isAfter(java.time.LocalDate.now());
+        String noticeKey = byGraduation ? "notification.user.soft-delete.graduation" : "notification.user.soft-delete";
         withdrawWithCleanup(userId, user, "withdrawInactiveUser", noticeKey);
     }
 

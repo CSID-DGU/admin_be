@@ -23,9 +23,9 @@ import java.lang.annotation.Target;
 @FutureOrPresent
 public @interface ExpectedGraduationDate {
 
-    int MAX_YEARS_AHEAD = 8;
+    int MAX_YEARS_AHEAD = 6;
 
-    String message() default "졸업 예정일은 오늘부터 8년 안의 날짜여야 합니다.";
+    String message() default "졸업 예정일은 오늘부터 6년 안의 날짜여야 합니다.";
 
     Class<?>[] groups() default {};
 
