@@ -29,7 +29,7 @@ public class UserSchedulerService {
     private static final int NOTIFICATION_LEAD_DAYS = 8;
 
     // 매일 오전 09:00 실행
-    @Scheduled(cron = "0 0 9 * * ?", zone = "Asia/Seoul")
+    @Scheduled(cron = "${user-lifecycle.cron:0 0 9 * * ?}", zone = "Asia/Seoul")
     public void runUserLifecycleScheduler() {
         log.info("👤 [스케줄러 시작] 사용자 계정 수명주기 관리");
         LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
