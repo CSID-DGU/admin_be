@@ -11,4 +11,9 @@ public interface SheetTabWriter {
      * @throws RuntimeException 옮겨 적지 못했을 때. 탭에는 이전 내용이나 일부만 바뀐 내용이 남을 수 있다
      */
     void replaceTab(String tabName, List<List<String>> rows);
+
+    /** 내용과 함께 탭의 모양(제목·머리글·고정·너비·색)도 맞춘다. 모양을 모르는 구현은 내용만 옮긴다. */
+    default void replaceTab(String tabName, List<List<String>> rows, TabLayout layout) {
+        replaceTab(tabName, rows);
+    }
 }
