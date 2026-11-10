@@ -199,7 +199,7 @@ public class MyGpuUsageService {
     }
 
     private Snapshot load(String node) {
-        String sel = hostSelector(node);
+        String sel = hostSelector("Hostname", node);
         CompletableFuture<List<Sample>> utilF = CompletableFuture.supplyAsync(
                 () -> prometheusClient.querySeries("DCGM_FI_DEV_GPU_UTIL" + sel), POOL);
         CompletableFuture<List<Sample>> usedF = CompletableFuture.supplyAsync(
@@ -216,6 +216,13 @@ public class MyGpuUsageService {
         Map<String, String> dockerOwners = new HashMap<>();
         boolean available = true;
         try {
+            // exporter가 이 노드에서 프로세스 목록을 읽고 있는지: 없으면(옛 exporter·미배포) 또는 0이면 '프로세스 없음'이 아니라 '모름'이다.
+            boolean up = prometheusClient.querySeries("gpu_process_metrics_up" + hostSelector("hostname", node))
+                    .stream().anyMatch(s -> s.value() == 1.0);
+            if (!up) {
+                log.warn("[MY-GPU] 프로세스 지표 없음(gpu_process_metrics_up): node={}", node);
+                return new Snapshot(util, used, free, List.of(), elapsed, podOwners, dockerOwners, false);
+            }
             String uuids = util.stream().map(s -> s.labels().get("UUID")).filter(u -> u != null && u.matches("[A-Za-z0-9-]+"))
                     .collect(Collectors.joining("|"));
             if (!uuids.isEmpty()) {
@@ -241,11 +248,11 @@ public class MyGpuUsageService {
      * DCGM Hostname 라벨은 노드 이름(예: farm6)이다. 대소문자·FQDN 차이는 허용한다.
      * 노드 이름에 쓸 수 없는 문자가 있으면 정확히 같은 값만 찾는다.
      */
-    static String hostSelector(String node) {
+    static String hostSelector(String label, String node) {
         if (node.matches("[A-Za-z0-9.-]+")) {
-            return "{Hostname=~\"(?i)" + node.replace(".", "[.]") + "([.].*)?\"}";
+            return "{" + label + "=~\"(?i)" + node.replace(".", "[.]") + "([.].*)?\"}";
         }
-        return "{Hostname=\"" + node.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}";
+        return "{" + label + "=\"" + node.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}";
     }
 
     /**

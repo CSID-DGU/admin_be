@@ -58,6 +58,13 @@ class MyGpuUsageServiceTest {
         return r;
     }
 
+    @org.junit.jupiter.api.BeforeEach
+    void exporterUpByDefault() {
+        // 대부분의 테스트는 exporter가 이 노드에서 프로세스 목록을 읽고 있다고 가정한다.
+        when(prometheus.querySeries(contains("gpu_process_metrics_up"))).thenReturn(List.of(
+                s(1, "hostname", "FARM6")));
+    }
+
     private static Sample s(double v, String... kv) {
         java.util.Map<String, String> m = new java.util.LinkedHashMap<>();
         for (int i = 0; i < kv.length; i += 2) m.put(kv[i], kv[i + 1]);
@@ -157,6 +164,31 @@ class MyGpuUsageServiceTest {
     }
 
     @Test
+    @DisplayName("exporter의 gpu_process_metrics_up 시리즈가 없거나 0이면 processesAvailable=false, 있으면 true")
+    void processesAvailableFollowsExporterMarker() {
+        Request r = request(1L, "p", "farm6");
+        when(requestRepository.findByIdWithUser(10L)).thenReturn(Optional.of(r));
+        stubGpu("GPU-1", "0", "m", 1);
+        when(prometheus.querySeries(contains("gpu_process_memory_used_bytes"))).thenReturn(List.of());
+
+        // 지표는 있는데 프로세스가 없을 뿐: 사용 가능
+        assertThat(service.getMyGpuUsage(10L, 1L).processesAvailable()).isTrue();
+        // 선택자는 실제 exporter 라벨(hostname=FARM6)을 대소문자 구분 없이 찾는다.
+        org.mockito.Mockito.verify(prometheus).querySeries(
+                "gpu_process_metrics_up{hostname=~\"(?i)farm6([.].*)?\"}");
+
+        // exporter가 없거나 옛 버전이라 시리즈 자체가 없음
+        when(prometheus.querySeries(contains("gpu_process_metrics_up"))).thenReturn(List.of());
+        assertThat(new MyGpuUsageService(prometheus, requestRepository, nodeRepository)
+                .getMyGpuUsage(10L, 1L).processesAvailable()).isFalse();
+
+        // 프로세스 목록 읽기 실패(0)
+        when(prometheus.querySeries(contains("gpu_process_metrics_up"))).thenReturn(List.of(s(0, "hostname", "FARM6")));
+        assertThat(new MyGpuUsageService(prometheus, requestRepository, nodeRepository)
+                .getMyGpuUsage(10L, 1L).processesAvailable()).isFalse();
+    }
+
+    @Test
     @DisplayName("노드에 등록된 모델의 GPU만 보인다(표기 차이는 무시), 노드 정보가 없으면 전부 보인다")
     void filtersGpusByNodeModels() {
         Request r = request(1L, "p", "farm6");
@@ -178,9 +210,9 @@ class MyGpuUsageServiceTest {
     @Test
     @DisplayName("DCGM Hostname 선택자는 실제 라벨(farm6)에 대소문자·FQDN 차이를 허용하고 위험 문자는 이스케이프한다")
     void hostSelectorFormat() {
-        assertThat(MyGpuUsageService.hostSelector("farm6")).isEqualTo("{Hostname=~\"(?i)farm6([.].*)?\"}");
-        assertThat(MyGpuUsageService.hostSelector("a.b")).isEqualTo("{Hostname=~\"(?i)a[.]b([.].*)?\"}");
-        assertThat(MyGpuUsageService.hostSelector("x\"y")).isEqualTo("{Hostname=\"x\\\"y\"}");
+        assertThat(MyGpuUsageService.hostSelector("Hostname", "farm6")).isEqualTo("{Hostname=~\"(?i)farm6([.].*)?\"}");
+        assertThat(MyGpuUsageService.hostSelector("Hostname", "a.b")).isEqualTo("{Hostname=~\"(?i)a[.]b([.].*)?\"}");
+        assertThat(MyGpuUsageService.hostSelector("Hostname", "x\"y")).isEqualTo("{Hostname=\"x\\\"y\"}");
         assertThat(MyGpuUsageService.normalizeModel("NVIDIA GeForce RTX 3090")).isEqualTo("RTX 3090");
         assertThat(MyGpuUsageService.normalizeModel("RTX 3090 Ti")).isNotEqualTo("RTX 3090");
     }
