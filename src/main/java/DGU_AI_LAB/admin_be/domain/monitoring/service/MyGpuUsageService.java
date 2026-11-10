@@ -47,7 +47,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class MyGpuUsageService {
 
-    private static final double MIB = 1024.0 * 1024.0;
+    static final double MIB = 1024.0 * 1024.0;
     static final long CACHE_TTL_MS = 10_000;
     private static final ExecutorService POOL = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "my-gpu-prom");
@@ -65,8 +65,15 @@ public class MyGpuUsageService {
     /** 노드 하나의 Prometheus 결과와 소유자 해석. processesAvailable=false면 프로세스 쪽 조회가 실패한 것이다. */
     record Snapshot(List<Sample> util, Map<String, Sample> used, Map<String, Sample> free,
                     List<Sample> procMem, Map<String, Double> elapsed,
-                    Map<String, String> podOwnerByContainer, Map<String, String> dockerOwnerByContainerGpu,
+                    Map<String, Owner> podOwnerByContainer, Map<String, Owner> dockerOwnerByContainerGpu,
                     boolean processesAvailable) {
+    }
+
+    /**
+     * 프로세스 소유자. key는 같은 사람을 Pod·옛 Docker에서 같게 세는 값(우분투 계정)이다.
+     * 옛 Docker 컨테이너는 userId·requestId를 알 수 없어 null이다.
+     */
+    record Owner(String key, Long userId, String name, String ubuntuUsername, Long requestId) {
     }
 
     private record Cached(Snapshot snapshot, long at) {
@@ -107,7 +114,8 @@ public class MyGpuUsageService {
         for (Sample s : snap.procMem()) {
             String uuid = s.labels().get("gpu_uuid");
             String containerId = s.labels().get("container_id");
-            String owner = ownerOf(snap, containerId, uuid);
+            Owner ownerInfo = ownerOf(snap, containerId, uuid);
+            String owner = ownerInfo == null ? null : ownerInfo.key();
             double mib = s.value() / MIB;
             if (me.equals(owner)) {
                 mine.computeIfAbsent(uuid, k -> new ArrayList<>()).add(new Process(
@@ -152,7 +160,7 @@ public class MyGpuUsageService {
         return MyGpuUsageResponseDTO.builder().nodeName(node).gpus(gpus).processesAvailable(processesAvailable).build();
     }
 
-    private Set<String> nodeModels(String node) {
+    Set<String> nodeModels(String node) {
         try {
             return nodeRepository.findByIdWithGpus(node).map(Node::getGpuModels).orElse(List.of()).stream()
                     .map(MyGpuUsageService::normalizeModel).collect(Collectors.toSet());
@@ -169,15 +177,15 @@ public class MyGpuUsageService {
                 .collect(Collectors.joining(" "));
     }
 
-    private static String ownerOf(Snapshot snap, String containerId, String gpuUuid) {
+    static Owner ownerOf(Snapshot snap, String containerId, String gpuUuid) {
         if (isBlank(containerId)) return null;
-        String pod = snap.podOwnerByContainer().get(containerId);
+        Owner pod = snap.podOwnerByContainer().get(containerId);
         if (pod != null) return pod;
         // 옛 Docker 컨테이너: 지표에 12자 단축 ID만 있어 같은 GPU에서 보이는 시계열일 때만 같은 컨테이너로 본다.
         return snap.dockerOwnerByContainerGpu().get(shortId(containerId) + "/" + gpuUuid);
     }
 
-    private static String shortId(String id) {
+    static String shortId(String id) {
         return id.length() > 12 ? id.substring(0, 12) : id;
     }
 
@@ -186,7 +194,7 @@ public class MyGpuUsageService {
     }
 
     /** 노드별 짧은 캐시. 같은 노드를 동시에 부르면 한 번만 조회하고, 실패는 캐시하지 않는다. */
-    private Snapshot snapshot(String node) {
+    Snapshot snapshot(String node) {
         Cached c = cache.get(node);
         if (c != null && System.currentTimeMillis() - c.at() < CACHE_TTL_MS) return c.snapshot();
         synchronized (locks.computeIfAbsent(node, k -> new Object())) {
@@ -212,8 +220,8 @@ public class MyGpuUsageService {
 
         List<Sample> procMem = List.of();
         Map<String, Double> elapsed = new HashMap<>();
-        Map<String, String> podOwners = new HashMap<>();
-        Map<String, String> dockerOwners = new HashMap<>();
+        Map<String, Owner> podOwners = new HashMap<>();
+        Map<String, Owner> dockerOwners = new HashMap<>();
         boolean available = true;
         try {
             // exporter가 이 노드에서 프로세스 목록을 읽고 있는지: 없으면(옛 exporter·미배포) 또는 0이면 '프로세스 없음'이 아니라 '모름'이다.
@@ -259,7 +267,7 @@ public class MyGpuUsageService {
      * Pod는 kube_pod_container_info의 container_id로 Pod 이름을 찾아 신청의 사용자로,
      * 옛 Docker 컨테이너는 docker_gpu_user_container_info의 ubuntu_username으로 찾는다.
      */
-    private void resolveOwners(List<Sample> procMem, Map<String, String> podOwners, Map<String, String> dockerOwners) {
+    private void resolveOwners(List<Sample> procMem, Map<String, Owner> podOwners, Map<String, Owner> dockerOwners) {
         Set<String> ids = procMem.stream().map(s -> s.labels().get("container_id"))
                 .filter(id -> id != null && id.matches("[0-9a-f]{64}")).collect(Collectors.toSet());
         if (ids.isEmpty()) return;
@@ -272,9 +280,10 @@ public class MyGpuUsageService {
             if (cid != null && pod != null) podByContainer.put(cid.substring(cid.lastIndexOf('/') + 1), pod);
         }
         if (!podByContainer.isEmpty()) {
-            Map<String, String> ownerByPod = new HashMap<>();
+            Map<String, Owner> ownerByPod = new HashMap<>();
             for (Request r : requestRepository.findAllByPodNameIn(new HashSet<>(podByContainer.values()))) {
-                ownerByPod.put(r.getPodName(), ownerKey(r));
+                ownerByPod.put(r.getPodName(), new Owner(ownerKey(r), r.getUser().getUserId(), r.getUser().getName(),
+                        r.getUser().getUbuntuUsername(), r.getRequestId()));
             }
             podByContainer.forEach((cid, pod) -> {
                 if (ownerByPod.containsKey(pod)) podOwners.put(cid, ownerByPod.get(pod));
@@ -288,17 +297,19 @@ public class MyGpuUsageService {
             String cid = s.labels().get("container_id");
             String uuid = s.labels().get("gpu_uuid");
             String user = s.labels().get("ubuntu_username");
-            if (cid != null && uuid != null && !isBlank(user)) dockerOwners.put(cid + "/" + uuid, user);
+            if (cid != null && uuid != null && !isBlank(user)) {
+                dockerOwners.put(cid + "/" + uuid, new Owner(user, null, s.labels().get("real_name"), user, null));
+            }
         }
     }
 
     /** 같은 사용자는 Pod든 옛 Docker 컨테이너든 같은 키가 되도록 우분투 계정을 쓴다. */
-    private static String ownerKey(Request r) {
+    static String ownerKey(Request r) {
         String name = r.getUser().getUbuntuUsername();
         return name != null && !name.isBlank() ? name : "id:" + r.getUser().getUserId();
     }
 
-    private static Map<String, Sample> byUuid(List<Sample> samples) {
+    static Map<String, Sample> byUuid(List<Sample> samples) {
         Map<String, Sample> m = new HashMap<>();
         for (Sample s : samples) {
             String uuid = s.labels().get("UUID");
@@ -307,16 +318,16 @@ public class MyGpuUsageService {
         return m;
     }
 
-    private static String procKey(Sample s) {
+    static String procKey(Sample s) {
         return s.labels().get("gpu_uuid") + "/" + s.labels().get("container_id") + "/" + s.labels().get("pid");
     }
 
-    private static String baseName(String path) {
+    static String baseName(String path) {
         if (path == null || path.isBlank()) return "";
         return path.substring(path.lastIndexOf('/') + 1);
     }
 
-    private static int parseIndex(String gpu) {
+    static int parseIndex(String gpu) {
         try {
             return Integer.parseInt(gpu);
         } catch (NumberFormatException e) {
