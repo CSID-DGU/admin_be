@@ -430,6 +430,26 @@ class AdminUserServiceTest {
         }
 
         @Test
+        @DisplayName("졸업 기한(+30일)이 1년 미사용 기한보다 먼저 지났으면 졸업 안내 문구를 쓴다")
+        void graduationEarlierThanInactivity_usesGraduationNotice() {
+            ReflectionTestUtils.setField(mockUser, "createdAt", java.time.LocalDateTime.now().minusMonths(13));
+            withdrawWithGraduation(java.time.LocalDate.now().minusDays(70));
+
+            verify(messageUtils).get(eq("notification.user.soft-delete.graduation.subject"));
+            verify(messageUtils, never()).get(eq("notification.user.soft-delete.subject"));
+        }
+
+        @Test
+        @DisplayName("졸업 기한이 지났어도 1년 미사용 기한이 먼저면 1년 미사용 안내 문구를 쓴다")
+        void inactivityEarlierThanGraduation_usesInactivityNotice() {
+            ReflectionTestUtils.setField(mockUser, "createdAt", java.time.LocalDateTime.now().minusMonths(13));
+            withdrawWithGraduation(java.time.LocalDate.now().minusDays(40));
+
+            verify(messageUtils).get(eq("notification.user.soft-delete.subject"));
+            verify(messageUtils, never()).get(eq("notification.user.soft-delete.graduation.subject"));
+        }
+
+        @Test
         @DisplayName("그 사이 이미 비활성화된 유저는 건너뛴다")
         void skipsInactiveUser() {
             mockUser.deactivate();

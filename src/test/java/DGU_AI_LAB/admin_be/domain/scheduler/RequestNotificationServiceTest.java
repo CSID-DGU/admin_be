@@ -225,7 +225,7 @@ class RequestNotificationServiceTest {
                     .thenReturn(List.of(req1, req2));
             when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("mock");
             doThrow(new RuntimeException("Slack error"))
-                    .doNothing()
+                    .doReturn(true)
                     .when(alarmService).notifyUser(any(), any(), any(), any());
 
             notificationService.sendPreExpiryNotification(LocalDateTime.now(), "3일");

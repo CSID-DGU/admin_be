@@ -73,12 +73,9 @@ public class UserLifecycleTransactionalService {
         }
 
         LocalDate today = now.toLocalDate();
-        // 두 규칙을 함께 적용해 더 이른 기한을 쓴다. 졸업 예정일을 계속 미뤄도 1년 미사용 규칙은 피하지 못한다.
-        LocalDate inactivityDate = inactiveSince.plusMonths(INACTIVE_MONTHS).toLocalDate();
-        LocalDate graduationDate = user.getExpectedGraduationDate() == null
-                ? null : user.getExpectedGraduationDate().plusDays(GRADUATION_GRACE_DAYS);
-        boolean byGraduation = graduationDate != null && graduationDate.isBefore(inactivityDate);
-        LocalDate ruleDate = byGraduation ? graduationDate : inactivityDate;
+        RuleDeadline rule = ruleDeadline(user);
+        LocalDate ruleDate = rule.date();
+        boolean byGraduation = rule.byGraduation();
         LocalDate deleteDate = ruleDate.isAfter(today) ? ruleDate : noticedDeadline(userId, today);
         long daysLeft = ChronoUnit.DAYS.between(today, deleteDate);
 
@@ -92,6 +89,26 @@ public class UserLifecycleTransactionalService {
             sendWarningAlert(user, daysLeft, deleteDate, today.toString(), byGraduation);
         }
         return daysLeft <= 0;
+    }
+
+    /**
+     * 두 규칙(졸업 예정일 + {@link #GRADUATION_GRACE_DAYS}, 마지막 컨테이너 종료 + {@link #INACTIVE_MONTHS})의 기한과
+     * 어느 쪽이 이른지. 졸업 예정일을 계속 미뤄도 1년 미사용 규칙은 피하지 못하므로 더 이른 쪽을 쓴다.
+     * 판정은 이 메서드만 한다 — 스케줄러 경고·비활성화와 관리자 탈퇴가 같은 결과를 쓴다.
+     * 미사용 기준 시각이 없으면(가입 시각도 없는 미저장 엔티티) 졸업 기한만 본다.
+     */
+    public static RuleDeadline ruleDeadline(User user) {
+        LocalDateTime inactiveSince = inactiveSince(user);
+        LocalDate inactivityDate = inactiveSince == null ? null : inactiveSince.plusMonths(INACTIVE_MONTHS).toLocalDate();
+        LocalDate graduationDate = user.getExpectedGraduationDate() == null
+                ? null : user.getExpectedGraduationDate().plusDays(GRADUATION_GRACE_DAYS);
+        boolean byGraduation = graduationDate != null
+                && (inactivityDate == null || graduationDate.isBefore(inactivityDate));
+        return new RuleDeadline(byGraduation ? graduationDate : inactivityDate, byGraduation);
+    }
+
+    /** 규칙별 기한 중 적용되는 기한과, 그것이 졸업 규칙인지. */
+    public record RuleDeadline(LocalDate date, boolean byGraduation) {
     }
 
     /** 규칙상 기한이 지난 사용자의 비활성화 예정일. 경고하면서 알린 날이 있으면 그날, 없으면 오늘부터 유예를 준다. */

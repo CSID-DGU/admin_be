@@ -43,6 +43,38 @@ class RequestTest {
     }
 
     @Nested
+    @DisplayName("교수 승인 확인 기록의 정리")
+    class ProfessorApprovalRecordCleanup {
+
+        @Test
+        @DisplayName("승인이 실패해 대기로 돌아가면 확인 기록을 지워, 다음 관리자가 승인할 때 그 관리자가 남는다")
+        void revertToPendingClearsRecord() {
+            request.markAsProcessing();
+            request.confirmProfessorApproval(5L);
+
+            request.revertToPending();
+            assertThat(request.getProfessorApprovalConfirmedBy()).isNull();
+            assertThat(request.getProfessorApprovalConfirmedAt()).isNull();
+
+            request.markAsProcessing();
+            request.confirmProfessorApproval(7L);
+            assertThat(request.getProfessorApprovalConfirmedBy()).isEqualTo(7L);
+        }
+
+        @Test
+        @DisplayName("거절하면 확인 기록을 지운다")
+        void rejectClearsRecord() {
+            request.markAsProcessing();
+            request.confirmProfessorApproval(5L);
+
+            request.reject("사유");
+
+            assertThat(request.getProfessorApprovalConfirmedBy()).isNull();
+            assertThat(request.getProfessorApprovalConfirmedAt()).isNull();
+        }
+    }
+
+    @Nested
     @DisplayName("confirmProfessorApproval")
     class ConfirmProfessorApproval {
 

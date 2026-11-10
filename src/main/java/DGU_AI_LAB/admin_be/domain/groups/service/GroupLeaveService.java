@@ -14,12 +14,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * 그룹 탈퇴 신청 → 관리자 승인. 승인하면 관리자가 직접 그룹에서 뺄 때와 같은 제거 작업({@link GroupOperationService#requestRemove})을
@@ -34,7 +31,6 @@ public class GroupLeaveService {
     private final GroupRepository groupRepository;
     private final UserRepository userRepository;
     private final GroupOperationService groupOperationService;
-    private final PlatformTransactionManager transactionManager;
 
     @Transactional
     public GroupLeaveRequest request(Long userId, Long groupId) {
@@ -70,20 +66,17 @@ public class GroupLeaveService {
     }
 
     /**
-     * 승인하고 제거 작업을 등록한다. 작업 등록은 config-server 호출이라 신청 행 잠금을 쥔 채 하지 않는다 — 대기 상태를
-     * 확인하고, 작업을 등록하고(자기 트랜잭션), 그다음에 승인으로 바꾼다. 등록이 실패하면 신청은 대기로 남아 다시
-     * 승인할 수 있고, 등록은 됐는데 승인 기록이 실패해도 같은 그룹의 진행 중 제거 작업이 있으면 다시 등록되지 않는다.
+     * 승인하고 제거 작업을 등록한다. 신청 행을 잠근 채 확인(대기) → 제거 작업 등록 → 승인 기록을 한 트랜잭션에서 한다.
+     * 등록이 실패하면 아무것도 바뀌지 않고 신청은 대기로 남는다. 등록 뒤 커밋이 실패하면 제거 작업만 남을 수 있는데,
+     * 재승인하면 새 제거 작업을 등록해 같은 결과로 맞춘다(제거를 멱등으로 본다 — config-server 확인 필요).
      */
+    @Transactional
     public GroupLeaveRequest approve(Long leaveRequestId, Long adminId) {
-        GroupLeaveRequest pending = inTransaction(() -> lockPending(leaveRequestId));
-        groupOperationService.requestRemove(pending.getUser().getUserId(), pending.getGroup().getGroupId(), adminId);
-        GroupLeaveRequest approved = inTransaction(() -> {
-            GroupLeaveRequest request = lockPending(leaveRequestId);
-            request.approve(userRepository.getReferenceById(adminId));
-            return request;
-        });
+        GroupLeaveRequest request = lockPending(leaveRequestId);
+        groupOperationService.requestRemove(request.getUser().getUserId(), request.getGroup().getGroupId(), adminId);
+        request.approve(userRepository.getReferenceById(adminId));
         log.info("[groupLeave] 탈퇴 승인: leaveRequestId={}, adminId={}", leaveRequestId, adminId);
-        return approved;
+        return request;
     }
 
     @Transactional
@@ -104,9 +97,5 @@ public class GroupLeaveService {
         Hibernate.initialize(request.getUser());
         Hibernate.initialize(request.getGroup());
         return request;
-    }
-
-    private <T> T inTransaction(Supplier<T> work) {
-        return new TransactionTemplate(transactionManager).execute(status -> work.get());
     }
 }

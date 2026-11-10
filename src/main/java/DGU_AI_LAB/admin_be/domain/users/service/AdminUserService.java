@@ -7,6 +7,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodMigrationService;
 import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
+import DGU_AI_LAB.admin_be.domain.scheduler.UserLifecycleTransactionalService;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.UbuntuAccountStatus;
@@ -28,6 +29,8 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -180,10 +183,10 @@ public class AdminUserService {
         }
         requireNotLastActiveAdminInNewTx(userId);
         log.warn("[withdrawInactiveUser] userId={} 장기 미사용 탈퇴 시작", userId);
-        // 졸업 예정일이 있는 사용자는 졸업 때문에, 없는 사용자는 1년 미사용 때문에 비활성화된다.
-        // 졸업 예정일이 있어도 1년 미사용 규칙이 먼저 닿아 비활성화되는 사용자가 있다. 졸업 기한이 지난 경우에만 졸업 문구를 쓴다.
-        boolean byGraduation = user.getExpectedGraduationDate() != null
-                && !user.getExpectedGraduationDate().plusDays(30).isAfter(java.time.LocalDate.now());
+        // 판정은 스케줄러와 같은 규칙(두 규칙 중 이른 쪽)을 쓴다. 졸업 쪽이 이르더라도 졸업 기한 전이면 졸업 사유가 아니다.
+        UserLifecycleTransactionalService.RuleDeadline rule = UserLifecycleTransactionalService.ruleDeadline(user);
+        boolean byGraduation = rule.byGraduation()
+                && !rule.date().isAfter(LocalDate.now(ZoneId.of("Asia/Seoul")));
         String noticeKey = byGraduation ? "notification.user.soft-delete.graduation" : "notification.user.soft-delete";
         withdrawWithCleanup(userId, user, "withdrawInactiveUser", noticeKey);
     }

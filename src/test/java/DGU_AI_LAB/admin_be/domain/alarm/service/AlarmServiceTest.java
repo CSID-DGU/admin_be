@@ -239,6 +239,19 @@ class AlarmServiceTest {
         }
 
         @Test
+        @DisplayName("사용자 안내는 메일이 나갔을 때만 true를 돌려준다 — 호출부가 실패를 보고 다시 보낼 수 있게")
+        void notifyUser_returnsWhetherMailWasSent() {
+            when(messageUtils.get("notification.monitor.log", "홍길동", "hong@dgu.ac.kr", "제목")).thenReturn("발송 기록");
+
+            assertThat(alarmService.notifyUser("홍길동", "hong@dgu.ac.kr", "제목", "내용")).isTrue();
+
+            doThrow(new RuntimeException("SMTP 오류")).when(mailSender).send(any(SimpleMailMessage.class));
+            when(messageUtils.get("notification.admin.mail-failed", "h***@dgu.ac.kr")).thenReturn("메일 실패");
+
+            assertThat(alarmService.notifyUser("홍길동", "hong@dgu.ac.kr", "제목", "내용")).isFalse();
+        }
+
+        @Test
         @DisplayName("메일이 실패하면 오류 채널로 알리고 발송 기록은 남기지 않는다 — DM은 그대로 보낸다")
         void notifyUser_alertsInsteadOfReceipt_whenMailFails() {
             doThrow(new RuntimeException("SMTP 오류")).when(mailSender).send(any(SimpleMailMessage.class));

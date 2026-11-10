@@ -57,21 +57,27 @@ public class AlarmService {
     /**
      * 사용자 안내: 메일과 Slack DM으로 보내고, 보냈다는 기록(본문 없음)을 알림 기록 채널에 남긴다.
      * 메일이 실패하면 기록 대신 오류 채널로 알린다. DM은 메일 성패와 상관없이 보낸다.
+     *
+     * @return 메일이 나갔으면 true. 호출부가 실패를 보고 다시 보내거나 중복 표시를 풀 수 있게 한다.
      */
-    public void notifyUser(String username, String email, String subject, String body) {
-        safely("사용자 안내", () -> {
+    public boolean notifyUser(String username, String email, String subject, String body) {
+        try {
             queue.dm(username, email, body);
-            mailUser(username, email, subject, body);
-        });
+            return mailUser(username, email, subject, body);
+        } catch (Exception e) {
+            log.error("사용자 안내 전송 실패", e);
+            return false;
+        }
     }
 
     /** 메일만 보내는 안내(접속 정보처럼 DM으로 보내지 않는 것). 발송 기록 규칙은 {@link #notifyUser}와 같다. */
-    public void mailUser(String username, String email, String subject, String body) {
+    public boolean mailUser(String username, String email, String subject, String body) {
         if (mailer.send(email, subject, body)) {
             queue.webhook(render("notification.monitor.log", username, email, subject), channels.notiWebhookUrl());
-        } else {
-            alertNeedsAction("notification.admin.mail-failed", EmailAddresses.mask(email));
+            return true;
         }
+        alertNeedsAction("notification.admin.mail-failed", EmailAddresses.mask(email));
+        return false;
     }
 
     /**
