@@ -61,7 +61,7 @@ class PrometheusClientTest {
     }
 
     @Test
-    @DisplayName("값이 없거나 수로 읽히지 않는 시계열은 건너뛰고 나머지는 돌려준다")
+    @DisplayName("값이 없거나 수로 읽히지 않거나 유한하지 않은 시계열은 건너뛰고 나머지는 돌려준다")
     void queryVector_skipsMalformedSeries() {
         PrometheusClient client = clientReturning("""
                 {"status":"success","data":{"resultType":"vector","result":[
@@ -69,13 +69,14 @@ class PrometheusClientTest {
                   {"metric":{"Hostname":"no-value"}},
                   {"metric":{"Hostname":"short"},"value":[1700000000]},
                   {"metric":{"Hostname":"text"},"value":[1700000000,"+Inf"]},
-                  {"metric":{"Hostname":"node-b"},"value":[1700000000,"NaN"]}
+                  {"metric":{"Hostname":"node-b"},"value":[1700000000,"NaN"]},
+                  {"metric":{"Hostname":"node-c"},"value":[1700000000,"-Inf"]}
                 ]}}
                 """);
 
         var result = client.queryVector("q", "Hostname");
 
-        assertThat(result).containsOnlyKeys("node-a", "node-b");
+        assertThat(result).containsOnlyKeys("node-a"); // NaN·±Inf는 수치로 쓸 수 없어 건너뛴다
         assertThat(result.get("node-a")).isEqualTo(42.5);
     }
 }

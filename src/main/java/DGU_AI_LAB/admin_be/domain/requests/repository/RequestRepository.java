@@ -34,6 +34,11 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
 
     List<Request> findAllByUser_UserIdAndStatus(Long userId, Status status);
     boolean existsByPodName(String podName);
+    @Query("SELECT r FROM Request r JOIN FETCH r.user WHERE r.podName IN :podNames")
+    List<Request> findAllByPodNameIn(@Param("podNames") Collection<String> podNames);
+
+    @Query("SELECT r FROM Request r JOIN FETCH r.user WHERE r.requestId = :requestId")
+    Optional<Request> findByIdWithUser(@Param("requestId") Long requestId);
     boolean existsByUser_UbuntuUsernameAndStatusIn(String ubuntuUsername, Collection<Status> statuses);
     boolean existsByUser_UserIdAndStatus(Long userId, Status status);
     boolean existsByUser_UserIdAndStatusIn(Long userId, Collection<Status> statuses);
