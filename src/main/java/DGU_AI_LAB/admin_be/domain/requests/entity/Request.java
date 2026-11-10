@@ -165,6 +165,8 @@ public class Request extends BaseTimeEntity {
         this.podName = null;
         this.nodeName = null;
         this.jobId = null;
+        // 실패로 돌아온 승인의 확인 기록을 지워야 다음에 승인하는 관리자가 기록된다.
+        clearProfessorApprovalConfirmation();
     }
 
     /**
@@ -182,13 +184,21 @@ public class Request extends BaseTimeEntity {
         }
     }
 
-    /** 관리자가 지도교수 승인을 확인했다는 기록을 남긴다. 비동기 승인이 실패해 다시 승인해도 처음 기록을 덮어쓰지 않는다. */
+    /**
+     * 관리자가 지도교수 승인을 확인했다는 기록을 남긴다. 같은 승인 시도 안에서는 처음 기록을 덮어쓰지 않는다.
+     * 승인이 실패해 대기로 돌아가거나 거절되면 기록을 지운다({@link #revertToPending}, {@link #reject}).
+     */
     public void confirmProfessorApproval(Long adminUserId) {
         if (this.professorApprovalConfirmedBy != null) {
             return;
         }
         this.professorApprovalConfirmedBy = adminUserId;
         this.professorApprovalConfirmedAt = LocalDateTime.now();
+    }
+
+    private void clearProfessorApprovalConfirmation() {
+        this.professorApprovalConfirmedBy = null;
+        this.professorApprovalConfirmedAt = null;
     }
 
     /** 이미지를 바꿔 다시 만든 작업이 성공했을 때 신청의 이미지를 새 Pod가 쓰는 이미지로 맞춘다. */

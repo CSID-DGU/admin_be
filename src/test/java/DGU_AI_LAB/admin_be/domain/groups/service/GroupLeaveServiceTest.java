@@ -15,7 +15,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.transaction.PlatformTransactionManager;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -26,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -38,7 +38,6 @@ class GroupLeaveServiceTest {
     @Mock private GroupRepository groupRepository;
     @Mock private UserRepository userRepository;
     @Mock private GroupOperationService groupOperationService;
-    @Mock private PlatformTransactionManager transactionManager;
 
     private GroupLeaveService service;
     private User user;
@@ -46,7 +45,7 @@ class GroupLeaveServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new GroupLeaveService(leaveRepository, groupRepository, userRepository, groupOperationService, transactionManager);
+        service = new GroupLeaveService(leaveRepository, groupRepository, userRepository, groupOperationService);
         user = User.builder().email("a@dgu.ac.kr").password("pw").name("홍").studentId("1")
                 .phone("010").department("과").build();
         ReflectionTestUtils.setField(user, "userId", 7L);
@@ -130,6 +129,18 @@ class GroupLeaveServiceTest {
 
         assertThat(pending.getStatus()).isEqualTo(GroupLeaveStatus.APPROVED);
         assertThat(pending.getDecidedBy()).isSameAs(admin);
+        verify(groupOperationService).requestRemove(7L, 3L, 9L);
+    }
+
+    @Test
+    @DisplayName("승인은 신청 행을 한 번만 잠가 확인·등록·승인 기록을 한 트랜잭션 안에서 한다")
+    void approveLocksRequestOnce() {
+        GroupLeaveRequest pending = GroupLeaveRequest.pending(user, group);
+        when(leaveRepository.findByIdForUpdate(5L)).thenReturn(Optional.of(pending));
+
+        service.approve(5L, 9L);
+
+        verify(leaveRepository, times(1)).findByIdForUpdate(5L);
         verify(groupOperationService).requestRemove(7L, 3L, 9L);
     }
 
