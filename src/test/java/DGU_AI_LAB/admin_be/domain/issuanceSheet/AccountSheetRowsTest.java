@@ -76,7 +76,7 @@ class AccountSheetRowsTest {
         List<List<String>> rows = AccountSheetRows.warnings(List.of(d4, g3, g1, g2), List.of(s3, s2), MESSAGES);
 
         assertThat(rows.get(3)).containsExactly("alice", "", "경고 부과", "r1", "root", "0", "+1", "1", "불가", "", "", "",
-                "notification.user.warning.granted.body[alice, r1, 1]", "1", "1", "alice", "", "");
+                "notification.user.warning.granted.body[alice, r1, 1, 2, 7]", "1", "1", "alice", "", "");
         assertThat(rows.get(4)).containsExactly("alice", "", "경고 부과", "r2", "root", "1", "+1", "2", "불가", "7",
                 "2026-10-08 10:30", "2026-10-15 10:30",
                 "notification.user.warning.suspended.body[alice, r2, 2, 7, 2026-10-15 10:30]", "2", "1", "alice", "", "");

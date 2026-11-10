@@ -132,7 +132,9 @@ final class AccountSheetRows {
             return messages.get("notification.user.warning.reduced.body", name, w.getReason(), String.valueOf(countAfter));
         }
         if (suspension == null) {
-            return messages.get("notification.user.warning.granted.body", name, w.getReason(), String.valueOf(countAfter));
+            return messages.get("notification.user.warning.granted.body", name, w.getReason(), String.valueOf(countAfter),
+                    String.valueOf(WarningPolicy.SUSPENSION_FROM_COUNT),
+                    String.valueOf(WarningPolicy.suspensionDays(WarningPolicy.SUSPENSION_FROM_COUNT)));
         }
         return messages.get("notification.user.warning.suspended.body", name, w.getReason(), String.valueOf(countAfter),
                 String.valueOf(days), time(suspension.getStartsAt().plusDays(days)));
