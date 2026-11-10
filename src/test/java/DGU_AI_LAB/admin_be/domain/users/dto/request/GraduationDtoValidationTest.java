@@ -44,9 +44,9 @@ class GraduationDtoValidationTest {
     }
 
     @Test
-    @DisplayName("오늘부터 8년을 넘는 졸업 예정일은 가입·입력 모두 받지 않는다")
+    @DisplayName("오늘부터 6년을 넘는 졸업 예정일은 가입·입력 모두 받지 않는다")
     void rejectsTooFarDate() {
-        LocalDate edge = LocalDate.now().plusYears(8);
+        LocalDate edge = LocalDate.now().plusYears(6);
         assertThat(violatedPaths(signup(edge))).doesNotContain("expectedGraduationDate");
         assertThat(violatedPaths(signup(edge.plusDays(1)))).contains("expectedGraduationDate");
         assertThat(violatedPaths(new GraduationUpdateRequestDTO(LocalDate.of(2099, 1, 1)))).contains("expectedGraduationDate");
