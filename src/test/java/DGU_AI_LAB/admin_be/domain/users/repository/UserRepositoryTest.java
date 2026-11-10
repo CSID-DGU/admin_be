@@ -124,15 +124,15 @@ class UserRepositoryTest {
         }
 
         @Test
-        @DisplayName("졸업 예정일이 있는 사용자는 졸업 규칙이 맡으므로 조회하지 않는다")
-        void findInactiveUsers_excludesUsersWithGraduationDate() {
+        @DisplayName("졸업 예정일이 있어도 조회한다 — 졸업 예정일을 미뤄 1년 규칙을 피할 수 없다")
+        void findInactiveUsers_includesUsersWithGraduationDate() {
             user1.updateExpectedGraduationDate(LocalDate.now().plusYears(1));
             userRepository.saveAndFlush(user1);
             setCreatedAt(user1, LocalDateTime.now().minusYears(2));
 
             List<User> result = userRepository.findInactiveUsers(LocalDateTime.now().minusYears(1), Status.openStatuses());
 
-            assertThat(result).extracting(User::getEmail).doesNotContain("active@dgu.ac.kr");
+            assertThat(result).extracting(User::getEmail).contains("active@dgu.ac.kr");
         }
 
         @Test
