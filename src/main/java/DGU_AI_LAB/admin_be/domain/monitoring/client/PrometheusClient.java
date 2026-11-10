@@ -56,8 +56,9 @@ public class PrometheusClient {
         Map<String, Object> response = webClient.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/api/v1/query")
-                        .queryParam("query", promql)
-                        .build())
+                        // PromQL의 {Hostname=~"…"} 같은 중괄호가 URI 템플릿 변수로 읽히지 않게 값은 변수로 넘긴다.
+                        .queryParam("query", "{promql}")
+                        .build(promql))
                 .retrieve()
                 .bodyToMono(Map.class)
                 .timeout(TIMEOUT)

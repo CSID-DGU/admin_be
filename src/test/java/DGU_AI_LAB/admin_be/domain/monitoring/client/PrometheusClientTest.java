@@ -54,6 +54,17 @@ class PrometheusClientTest {
     }
 
     @Test
+    @DisplayName("라벨 선택자의 중괄호가 URI 템플릿 변수로 읽히지 않고 인코딩돼 나간다")
+    void querySeries_braceSelector() {
+        PrometheusClient client = clientReturning("{\"status\":\"success\",\"data\":{\"result\":[]}}");
+
+        client.querySeries("DCGM_FI_DEV_GPU_UTIL{Hostname=~\"(?i)farm1([.].*)?\"}");
+
+        var query = captured.get().url().getRawQuery();
+        assertThat(query).startsWith("query=DCGM_FI_DEV_GPU_UTIL%7BHostname");
+    }
+
+    @Test
     @DisplayName("data나 result가 없으면 빈 결과를 돌려준다")
     void queryVector_emptyWhenNoData() {
         assertThat(clientReturning("{\"status\":\"success\"}").queryVector("q", "cluster")).isEmpty();
