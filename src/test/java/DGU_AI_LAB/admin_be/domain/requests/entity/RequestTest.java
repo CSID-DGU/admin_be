@@ -62,15 +62,15 @@ class RequestTest {
         }
 
         @Test
-        @DisplayName("거절하면 확인 기록을 지운다")
-        void rejectClearsRecord() {
+        @DisplayName("거절해도 누가 교수 승인을 확인했는지는 감사 기록으로 남긴다")
+        void rejectKeepsRecord() {
             request.markAsProcessing();
             request.confirmProfessorApproval(5L);
 
             request.reject("사유");
 
-            assertThat(request.getProfessorApprovalConfirmedBy()).isNull();
-            assertThat(request.getProfessorApprovalConfirmedAt()).isNull();
+            assertThat(request.getProfessorApprovalConfirmedBy()).isEqualTo(5L);
+            assertThat(request.getProfessorApprovalConfirmedAt()).isNotNull();
         }
     }
 

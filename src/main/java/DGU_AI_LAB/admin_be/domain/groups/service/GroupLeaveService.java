@@ -67,8 +67,9 @@ public class GroupLeaveService {
 
     /**
      * 승인하고 제거 작업을 등록한다. 신청 행을 잠근 채 확인(대기) → 제거 작업 등록 → 승인 기록을 한 트랜잭션에서 한다.
-     * 등록이 실패하면 아무것도 바뀌지 않고 신청은 대기로 남는다. 등록 뒤 커밋이 실패하면 제거 작업만 남을 수 있는데,
-     * 재승인하면 새 제거 작업을 등록해 같은 결과로 맞춘다(제거를 멱등으로 본다 — config-server 확인 필요).
+     * 등록이 실패하면 아무것도 바뀌지 않고 신청은 대기로 남는다. 등록 뒤 커밋이 실패하면 작업 기록(GroupOperation)도 함께
+     * 롤백돼 config-server 쪽 작업만 남고 폴러가 결과를 반영하지 못한다. 재승인하면 같은 제거 작업을 한 번 더 등록하므로
+     * 제거가 멱등이어야 한다(config-server 확인 필요, 미확인).
      */
     @Transactional
     public GroupLeaveRequest approve(Long leaveRequestId, Long adminId) {

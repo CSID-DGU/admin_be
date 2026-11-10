@@ -19,19 +19,22 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
- * 같은 대기 신청에 승인과 거절이 동시에 들어와도 한쪽만 결정된다. 각 호출이 자기 트랜잭션을 쓰도록 테스트 트랜잭션을
+ * 같은 대기 신청에 승인과 거절이 동시에 들어와도 한쪽만 결정된다. 경합 시점을 mock 안에서 고정해 매번 같은 순서로 재현한다. 각 호출이 자기 트랜잭션을 쓰도록 테스트 트랜잭션을
  * 끄고, 픽스처는 커밋한 뒤 정리한다.
  */
 @DataJpaTest
@@ -47,8 +50,8 @@ class GroupLeaveDecisionRaceIntegrationTest {
     @MockitoBean private GroupOperationService groupOperationService;
 
     @Test
-    @DisplayName("승인과 거절이 동시에 와도 하나만 결정되고, 제거 작업은 승인이 이겼을 때만 등록된다")
-    void concurrentApproveAndRejectDecideOnce() throws Exception {
+    @DisplayName("승인이 제거 작업을 등록하는 동안 들어온 거절은 막혔다가 실패하고, 승인만 결정된다")
+    void rejectDuringApproveRegistrationIsBlockedAndFails() throws Exception {
         Group group = groupRepository.save(Group.builder().groupName("race-lab").ubuntuGid(2900L).build());
         User member = userRepository.save(User.builder().email("race-member@dgu.ac.kr").password("p").name("이름")
                 .studentId("2099001111").phone("010-1111-2222").department("컴퓨터공학과").build());
@@ -58,37 +61,29 @@ class GroupLeaveDecisionRaceIntegrationTest {
         userRepository.save(member);
         Long leaveId = service.request(member.getUserId(), group.getGroupId()).getGroupLeaveRequestId();
 
-        ExecutorService pool = Executors.newFixedThreadPool(2);
-        CountDownLatch start = new CountDownLatch(1);
-        try {
-            Future<GroupLeaveRequest> approve = pool.submit(() -> {
-                start.await();
-                return service.approve(leaveId, admin.getUserId());
-            });
-            Future<GroupLeaveRequest> reject = pool.submit(() -> {
-                start.await();
-                return service.reject(leaveId, admin.getUserId());
-            });
-            start.countDown();
-
-            List<GroupLeaveStatus> outcomes = new ArrayList<>();
-            int failures = 0;
-            for (Future<GroupLeaveRequest> f : List.of(approve, reject)) {
-                try {
-                    outcomes.add(f.get().getStatus());
-                } catch (java.util.concurrent.ExecutionException e) {
-                    failures++;
-                    assertThat(e.getCause()).isInstanceOf(BusinessException.class);
-                    assertThat(((BusinessException) e.getCause()).getErrorCode())
-                            .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
-                }
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        AtomicReference<Future<GroupLeaveRequest>> reject = new AtomicReference<>();
+        // 승인이 제거 작업을 등록하는 순간에 거절을 끼워 넣는다. 잠금이 있으면 거절은 승인이 커밋할 때까지 막히고,
+        // 잠금이 없으면(확인→등록→기록이 따로 놀면) 거절이 먼저 결정해 버린다. H2 잠금 대기 한도(2초)보다 짧게 기다린다.
+        doAnswer(inv -> {
+            reject.set(pool.submit(() -> service.reject(leaveId, admin.getUserId())));
+            try {
+                reject.get().get(500, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException | ExecutionException blockedOrFailed) {
+                // 막혔으면 정상. 결과 판정은 아래에서 한다.
             }
-            assertThat(outcomes).hasSize(1);
-            assertThat(failures).isEqualTo(1);
+            return null;
+        }).when(groupOperationService).requestRemove(member.getUserId(), group.getGroupId(), admin.getUserId());
 
-            GroupLeaveStatus finalStatus = leaveRepository.findById(leaveId).orElseThrow().getStatus();
-            assertThat(finalStatus).isEqualTo(outcomes.get(0));
-            verify(groupOperationService, times(finalStatus == GroupLeaveStatus.APPROVED ? 1 : 0))
+        try {
+            assertThat(service.approve(leaveId, admin.getUserId()).getStatus()).isEqualTo(GroupLeaveStatus.APPROVED);
+
+            assertThatThrownBy(() -> reject.get().get(5, TimeUnit.SECONDS))
+                    .isInstanceOf(ExecutionException.class)
+                    .cause().isInstanceOfSatisfying(BusinessException.class,
+                            e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST_STATUS));
+            assertThat(leaveRepository.findById(leaveId).orElseThrow().getStatus()).isEqualTo(GroupLeaveStatus.APPROVED);
+            verify(groupOperationService, times(1))
                     .requestRemove(member.getUserId(), group.getGroupId(), admin.getUserId());
         } finally {
             pool.shutdownNow();

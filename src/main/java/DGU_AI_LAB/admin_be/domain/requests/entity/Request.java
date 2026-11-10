@@ -215,7 +215,6 @@ public class Request extends BaseTimeEntity {
     public void reject(String comment) {
         transitionTo(Status.DENIED, "대기 또는 처리 중인 신청만 거절할 수 있습니다.");
         this.adminComment = comment;
-        clearProfessorApprovalConfirmation();
     }
 
     /**
