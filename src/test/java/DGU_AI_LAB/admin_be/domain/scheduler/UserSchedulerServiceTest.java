@@ -91,7 +91,7 @@ class UserSchedulerServiceTest {
         setCreatedAt(d7User, d7Since);
         String d7Subject = messageUtils.get("notification.user.delete-warning.subject", "7");
         String d7Body = messageUtils.get("notification.user.delete-warning.body",
-                "D7User", "7", d7Since.plusMonths(12).toLocalDate().toString());
+                "D7User", "7", d7Since.plusMonths(12).toLocalDate().toString(), "30");
 
         // 4. [경고 대상 D-1]
         User d1User = createUser("d1@test.com", "D1User");
@@ -99,7 +99,7 @@ class UserSchedulerServiceTest {
         setCreatedAt(d1User, d1Since);
         String d1Subject = messageUtils.get("notification.user.delete-warning.subject", "1");
         String d1Body = messageUtils.get("notification.user.delete-warning.body",
-                "D1User", "1", d1Since.plusMonths(12).toLocalDate().toString());
+                "D1User", "1", d1Since.plusMonths(12).toLocalDate().toString(), "30");
 
         // 5. [탈퇴 대상] 어제 로그인했어도 가입(컨테이너 사용 없음) 1년이 지났다
         User softTarget = createUser("soft@test.com", "SoftTarget");
