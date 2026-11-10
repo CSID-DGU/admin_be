@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.dashboard.controller;
 
 import DGU_AI_LAB.admin_be.domain.dashboard.controller.docs.DashBoardApi;
 import DGU_AI_LAB.admin_be.domain.dashboard.service.DashboardService;
+import DGU_AI_LAB.admin_be.domain.monitoring.service.MyGpuUsageService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.UserServerResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.StatusFilter;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
@@ -11,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,6 +26,7 @@ import java.util.List;
 public class DashboardController implements DashBoardApi {
 
     private final DashboardService dashboardService;
+    private final MyGpuUsageService myGpuUsageService;
 
     /**
      * 사용자 신청 현황 서버 목록 조회 API
@@ -38,6 +41,15 @@ public class DashboardController implements DashBoardApi {
     ) {
         List<UserServerResponseDTO> userServers = dashboardService.getUserServers(principal.getUserId(), statusFilter);
         return SuccessResponse.ok(userServers);
+    }
+
+    /** 내 서버의 GPU별 사용률·메모리·내 프로세스. 다른 사용자는 사람 수와 메모리 합계만 돌려준다. */
+    @Override
+    public ResponseEntity<SuccessResponse<?>> getMyGpuUsage(
+            @AuthenticationPrincipal CustomUserDetails principal,
+            @PathVariable Long requestId
+    ) {
+        return SuccessResponse.ok(myGpuUsageService.getMyGpuUsage(requestId, principal.getUserId()));
     }
 
 }
