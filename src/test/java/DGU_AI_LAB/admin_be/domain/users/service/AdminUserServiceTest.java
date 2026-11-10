@@ -378,6 +378,57 @@ class AdminUserServiceTest {
             verify(messageUtils).get("notification.user.soft-delete.subject");
         }
 
+        private void withdrawWithGraduation(java.time.LocalDate graduationDate) {
+            mockUser.updateExpectedGraduationDate(graduationDate);
+            givenRequests();
+            adminUserService.withdrawInactiveUser(1L);
+        }
+
+        @Test
+        @DisplayName("졸업 예정일이 없으면 1년 미사용 안내 문구를 쓴다")
+        void noGraduationDate_usesInactivityNotice() {
+            withdrawWithGraduation(null);
+
+            verify(messageUtils).get(eq("notification.user.soft-delete.subject"));
+            verify(messageUtils, never()).get(eq("notification.user.soft-delete.graduation.subject"));
+        }
+
+        @Test
+        @DisplayName("졸업 예정일이 먼 미래라 1년 미사용으로 비활성화되면 1년 미사용 안내 문구를 쓴다")
+        void farFutureGraduation_usesInactivityNotice() {
+            withdrawWithGraduation(java.time.LocalDate.now().plusYears(5));
+
+            verify(messageUtils).get(eq("notification.user.soft-delete.subject"));
+            verify(messageUtils, never()).get(eq("notification.user.soft-delete.graduation.subject"));
+        }
+
+        @Test
+        @DisplayName("졸업 예정일 + 30일이 아직 안 지났으면(내일) 1년 미사용 안내 문구를 쓴다")
+        void graceNotYetOver_usesInactivityNotice() {
+            withdrawWithGraduation(java.time.LocalDate.now().minusDays(30).plusDays(1));
+
+            verify(messageUtils).get(eq("notification.user.soft-delete.subject"));
+            verify(messageUtils, never()).get(eq("notification.user.soft-delete.graduation.subject"));
+        }
+
+        @Test
+        @DisplayName("졸업 예정일 + 30일이 정확히 오늘이면 졸업 안내 문구를 쓴다 (경계)")
+        void graceEndsToday_usesGraduationNotice() {
+            withdrawWithGraduation(java.time.LocalDate.now().minusDays(30));
+
+            verify(messageUtils).get(eq("notification.user.soft-delete.graduation.subject"));
+            verify(messageUtils, never()).get(eq("notification.user.soft-delete.subject"));
+        }
+
+        @Test
+        @DisplayName("졸업 예정일 + 30일이 이미 지났으면 졸업 안내 문구를 쓴다")
+        void gracePassed_usesGraduationNotice() {
+            withdrawWithGraduation(java.time.LocalDate.now().minusDays(60));
+
+            verify(messageUtils).get(eq("notification.user.soft-delete.graduation.subject"));
+            verify(messageUtils, never()).get(eq("notification.user.soft-delete.subject"));
+        }
+
         @Test
         @DisplayName("그 사이 이미 비활성화된 유저는 건너뛴다")
         void skipsInactiveUser() {
