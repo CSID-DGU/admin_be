@@ -68,7 +68,8 @@ public class WarningService {
                         String.valueOf(count), String.valueOf(days), suspension.getEndsAt().format(TIME_FORMAT));
             } else {
                 body = messageUtils.get("notification.user.warning.granted.body", user.getName(), reason,
-                        String.valueOf(count));
+                        String.valueOf(count), String.valueOf(WarningPolicy.SUSPENSION_FROM_COUNT),
+                        String.valueOf(WarningPolicy.suspensionDays(WarningPolicy.SUSPENSION_FROM_COUNT)));
             }
             log.info("[warning] 경고 부여: userId={}, count={}, suspensionDays={}, adminId={}",
                     userId, count, days, adminId);
