@@ -106,19 +106,28 @@ public class IssuanceSheetSync {
             allWritten = false;
         }
         for (Map.Entry<String, List<List<String>>> table : tables.entrySet()) {
-            allWritten &= writeIfChanged(properties.tabName(table.getKey()), table.getValue());
+            allWritten &= writeIfChanged(properties.tabName(table.getKey()), table.getValue(), layoutOf(table.getKey()));
         }
         return allWritten;
     }
 
-    private boolean writeIfChanged(String tabName, List<List<String>> rows) {
+    /** 모양을 따로 맞추는 탭만 모양을 돌려준다. 나머지는 값만 옮긴다. */
+    private static TabLayout layoutOf(String tabKey) {
+        return IssuanceSheetQueryService.WARNINGS_TAB.equals(tabKey) ? AccountSheetRows.WARNING_LAYOUT : null;
+    }
+
+    private boolean writeIfChanged(String tabName, List<List<String>> rows, TabLayout layout) {
         if (rows.equals(lastWritten.get(tabName))) {
             return true;
         }
         try {
-            writer.replaceTab(tabName, rows);
+            if (layout == null) {
+                writer.replaceTab(tabName, rows);
+            } else {
+                writer.replaceTab(tabName, rows, layout);
+            }
             lastWritten.put(tabName, rows);
-            log.info("발급 내역 시트: '{}' 탭 갱신({}건)", tabName, rows.size() - 1);
+            log.info("발급 내역 시트: '{}' 탭 갱신({}건)", tabName, rows.size() - (layout == null ? 1 : layout.headerRow() + 1));
             return true;
         } catch (Exception e) {
             // 탭이 일부만 바뀌었을 수 있으니 같은 내용이라도 다시 쓴다.

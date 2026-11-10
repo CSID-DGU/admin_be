@@ -12,6 +12,7 @@ import DGU_AI_LAB.admin_be.domain.warnings.repository.UserSuspensionRepository;
 import DGU_AI_LAB.admin_be.domain.warnings.repository.UserWarningRepository;
 import DGU_AI_LAB.admin_be.global.server.ServerProfileProperties;
 import DGU_AI_LAB.admin_be.global.server.ServerProfileRegistry;
+import DGU_AI_LAB.admin_be.global.util.MessageUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +37,7 @@ public class IssuanceSheetQueryService {
     private final UserRepository userRepository;
     private final UserWarningRepository warningRepository;
     private final UserSuspensionRepository suspensionRepository;
+    private final MessageUtils messageUtils;
 
     static final String USERS_TAB = "사용자 목록";
     static final String WARNINGS_TAB = "경고";
@@ -46,7 +48,7 @@ public class IssuanceSheetQueryService {
         List<UserWarning> warnings = warningRepository.findAll();
         Map<String, List<List<String>>> tables = new LinkedHashMap<>();
         tables.put(USERS_TAB, AccountSheetRows.users(userRepository.findAll(), warnings));
-        tables.put(WARNINGS_TAB, AccountSheetRows.warnings(warnings, suspensionRepository.findAll()));
+        tables.put(WARNINGS_TAB, AccountSheetRows.warnings(warnings, suspensionRepository.findAll(), messageUtils::get));
         return tables;
     }
 
