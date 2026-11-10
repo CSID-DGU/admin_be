@@ -40,7 +40,7 @@ public class UserLifecycleTransactionalService {
     /** 마지막 컨테이너가 끝난 뒤(컨테이너를 쓴 적이 없으면 가입한 뒤) 이만큼 지나면 비활성화한다. */
     static final int INACTIVE_MONTHS = 12;
 
-    /** 졸업 예정일이 있는 사용자는 그 날짜로부터 이만큼 지나면 비활성화한다. 1년 규칙은 적용하지 않는다. */
+    /** 졸업 예정일로부터 이만큼 지나면 비활성화한다. 1년 미사용 규칙과 함께 적용하고 더 이른 쪽을 따른다. */
     static final int GRADUATION_GRACE_DAYS = 30;
 
     /** 기한이 지나도록 경고를 받지 못한 사용자에게 경고와 함께 주는 유예 기간. */
@@ -73,10 +73,12 @@ public class UserLifecycleTransactionalService {
         }
 
         LocalDate today = now.toLocalDate();
-        boolean byGraduation = user.getExpectedGraduationDate() != null;
-        LocalDate ruleDate = byGraduation
-                ? user.getExpectedGraduationDate().plusDays(GRADUATION_GRACE_DAYS)
-                : inactiveSince.plusMonths(INACTIVE_MONTHS).toLocalDate();
+        // 두 규칙을 함께 적용해 더 이른 기한을 쓴다. 졸업 예정일을 계속 미뤄도 1년 미사용 규칙은 피하지 못한다.
+        LocalDate inactivityDate = inactiveSince.plusMonths(INACTIVE_MONTHS).toLocalDate();
+        LocalDate graduationDate = user.getExpectedGraduationDate() == null
+                ? null : user.getExpectedGraduationDate().plusDays(GRADUATION_GRACE_DAYS);
+        boolean byGraduation = graduationDate != null && graduationDate.isBefore(inactivityDate);
+        LocalDate ruleDate = byGraduation ? graduationDate : inactivityDate;
         LocalDate deleteDate = ruleDate.isAfter(today) ? ruleDate : noticedDeadline(userId, today);
         long daysLeft = ChronoUnit.DAYS.between(today, deleteDate);
 

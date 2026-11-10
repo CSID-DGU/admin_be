@@ -122,6 +122,42 @@ class UserLifecycleTransactionalServiceTest {
         }
 
         @Test
+        @DisplayName("졸업 예정일을 먼 미래로 미뤄도 1년 미사용 규칙이 먼저 적용된다 — 기한이 지나 안내한 예정일도 지났으면 비활성화")
+        void farFutureGraduationDoesNotBypassOneYearRule() {
+            graduating(NOW.minusYears(2), NOW.toLocalDate().plusYears(8));
+
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isTrue();
+        }
+
+        @Test
+        @DisplayName("졸업 예정일이 더 늦으면 1년 규칙의 경고(7일 전)를 1년 규칙 문구로 보낸다")
+        void laterGraduationUsesOneYearWarning() {
+            graduating(NOW.plusDays(7).minusYears(1), NOW.toLocalDate().plusYears(5));
+
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isFalse();
+
+            verify(messageUtils).get(eq("notification.user.delete-warning.body"), any(Object[].class));
+            verify(messageUtils, never()).get(eq("notification.user.graduation-warning.body"), any(Object[].class));
+        }
+
+        @Test
+        @DisplayName("졸업 규칙의 기한이 더 이르면 졸업 규칙이 적용된다 — 1년 규칙 기한이 남아 있어도")
+        void earlierGraduationWins() {
+            graduating(NOW.minusDays(10), NOW.toLocalDate().minusDays(30));
+
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isTrue();
+        }
+
+        @Test
+        @DisplayName("졸업 예정일이 없으면 1년 규칙만 적용된다")
+        void nullGraduationUsesOneYearRuleOnly() {
+            graduating(NOW.minusDays(10), null);
+
+            assertThat(lifecycleService.processInactiveUser(1L, NOW)).isFalse();
+            verifyNoInteractions(alarmService);
+        }
+
+        @Test
         @DisplayName("졸업 예정일 + 30일이 지나고 안내한 예정일도 지났으면 비활성화한다")
         void deactivatesAfterGraduationDeadline() {
             graduating(NOW.minusDays(10), NOW.toLocalDate().minusDays(30));
@@ -130,9 +166,9 @@ class UserLifecycleTransactionalServiceTest {
         }
 
         @Test
-        @DisplayName("졸업 예정일이 있으면 마지막 컨테이너 1년 규칙은 적용하지 않는다")
-        void ignoresOneYearRuleWhenGraduationDateIsSet() {
-            graduating(NOW.minusYears(2), NOW.toLocalDate().plusYears(1));
+        @DisplayName("두 규칙 모두 기한이 멀면 졸업 예정일이 있어도 아무 일도 하지 않는다")
+        void nothingWhenBothRulesAreFar() {
+            graduating(NOW.minusDays(10), NOW.toLocalDate().plusYears(1));
 
             assertThat(lifecycleService.processInactiveUser(1L, NOW)).isFalse();
             verify(alarmService, never()).notifyUser(any(), any(), any(), any());
