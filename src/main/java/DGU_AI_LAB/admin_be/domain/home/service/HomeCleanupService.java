@@ -29,10 +29,15 @@ public class HomeCleanupService {
     private final HomeRetentionPolicy retentionPolicy;
 
     /** 등록할 작업의 내용. 엔티티를 트랜잭션 밖으로 내보내지 않으려고 값만 담는다. */
-    public record Target(Long cleanupId, String ubuntuUsername, Long ubuntuUid, LocalDateTime lastContainerEndedAt) {
+    public record Target(Long cleanupId, String ubuntuUsername, Long ubuntuUid, LocalDateTime lastContainerEndedAt,
+                         Long sizeBytes) {
+        public Target(Long cleanupId, String ubuntuUsername, Long ubuntuUid, LocalDateTime lastContainerEndedAt) {
+            this(cleanupId, ubuntuUsername, ubuntuUid, lastContainerEndedAt, null);
+        }
+
         static Target of(HomeCleanup cleanup) {
             return new Target(cleanup.getHomeCleanupId(), cleanup.getUbuntuUsername(), cleanup.getUbuntuUid(),
-                    cleanup.getLastContainerEndedAt());
+                    cleanup.getLastContainerEndedAt(), cleanup.getSizeBytes());
         }
     }
 
@@ -70,10 +75,11 @@ public class HomeCleanupService {
                 .ifPresent(cleanup -> cleanup.registered(jobId));
     }
 
-    /** @return 이번 호출로 끝난 시도. 이미 끝나 있었으면 비어 있다 — 알림이 두 번 나가지 않게 한다 */
+    /** @param sizeBytes 삭제 직전에 잰 홈 크기. 모르면 null
+     * @return 이번 호출로 끝난 시도. 이미 끝나 있었으면 비어 있다 — 알림이 두 번 나가지 않게 한다 */
     @Transactional
-    public Optional<Target> complete(Long cleanupId) {
-        return settle(cleanupId, HomeCleanup::complete);
+    public Optional<Target> complete(Long cleanupId, Long sizeBytes) {
+        return settle(cleanupId, cleanup -> cleanup.complete(sizeBytes));
     }
 
     @Transactional

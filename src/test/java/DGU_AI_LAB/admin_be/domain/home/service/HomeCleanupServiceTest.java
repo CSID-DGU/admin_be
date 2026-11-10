@@ -116,9 +116,10 @@ class HomeCleanupServiceTest {
         HomeCleanup cleanup = HomeCleanup.start(user, ENDED_LONG_AGO);
         when(cleanupRepository.findByIdForUpdate(CLEANUP_ID)).thenReturn(Optional.of(cleanup));
 
-        assertThat(service.complete(CLEANUP_ID)).isPresent();
+        assertThat(service.complete(CLEANUP_ID, 1024L)).isPresent();
+        assertThat(cleanup.getSizeBytes()).isEqualTo(1024L);
         assertThat(cleanup.getStatus()).isEqualTo(HomeCleanupStatus.DELETED);
-        assertThat(service.complete(CLEANUP_ID)).isEmpty();
+        assertThat(service.complete(CLEANUP_ID, 1024L)).isEmpty();
         assertThat(service.fail(CLEANUP_ID, "HOME_IN_USE")).isEmpty();
         assertThat(cleanup.getStatus()).isEqualTo(HomeCleanupStatus.DELETED);
     }

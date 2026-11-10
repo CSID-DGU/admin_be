@@ -40,25 +40,35 @@ public record JobResultResponseDTO(
             // 여기서 받아 채운다.
             List<GroupResult> groups,
             // 마이그레이션 작업만: 이미지를 바꿔 다시 만들었다면 새 Pod가 쓴 이미지(name:version)
-            String image
+            String image,
+            // 홈 삭제 작업만: 지우기 직전에 잰 홈 폴더 크기(바이트). 못 쟀거나 이미 없던 홈이면 null
+            @JsonProperty("size_bytes") Long sizeBytes
     ) {
+        /** 홈 크기가 없는 작업 결과. */
+        public Result(Long uid, Long gid, String podName, String node, List<CreatePodResponseDTO.PortInfo> ports,
+                      String status, String reason, String fromNode, String toNode, String oldPodName,
+                      String oldPodCleanup, List<GroupResult> groups, String image) {
+            this(uid, gid, podName, node, ports, status, reason, fromNode, toNode, oldPodName, oldPodCleanup,
+                    groups, image, null);
+        }
+
         /** 생성 작업 결과. */
         public Result(Long uid, Long gid, String podName, String node, List<CreatePodResponseDTO.PortInfo> ports) {
-            this(uid, gid, podName, node, ports, null, null, null, null, null, null, null, null);
+            this(uid, gid, podName, node, ports, null, null, null, null, null, null, null, null, null);
         }
 
         /** 그룹 결과가 없는 작업 결과(마이그레이션 등). */
         public Result(Long uid, Long gid, String podName, String node, List<CreatePodResponseDTO.PortInfo> ports,
                       String status, String reason, String fromNode, String toNode, String oldPodName,
                       String oldPodCleanup) {
-            this(uid, gid, podName, node, ports, status, reason, fromNode, toNode, oldPodName, oldPodCleanup, null, null);
+            this(uid, gid, podName, node, ports, status, reason, fromNode, toNode, oldPodName, oldPodCleanup, null, null, null);
         }
 
         /** 이미지 없이 그룹 결과까지 있는 작업 결과(생성). */
         public Result(Long uid, Long gid, String podName, String node, List<CreatePodResponseDTO.PortInfo> ports,
                       String status, String reason, String fromNode, String toNode, String oldPodName,
                       String oldPodCleanup, List<GroupResult> groups) {
-            this(uid, gid, podName, node, ports, status, reason, fromNode, toNode, oldPodName, oldPodCleanup, groups, null);
+            this(uid, gid, podName, node, ports, status, reason, fromNode, toNode, oldPodName, oldPodCleanup, groups, null, null);
         }
 
         public boolean isMigrated() {
