@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -55,6 +56,11 @@ public class GoogleSheetsTabWriter implements SheetTabWriter {
 
     @Override
     public void replaceTab(String tabName, List<List<String>> rows) {
+        replaceTab(tabName, rows, null);
+    }
+
+    @Override
+    public void replaceTab(String tabName, List<List<String>> rows, TabLayout layout) {
         String token = accessToken.get();
         int columnCount = rows.get(0).size();
         Grid grid = ensureTab(token, tabName, columnCount);
@@ -72,6 +78,81 @@ public class GoogleSheetsTabWriter implements SheetTabWriter {
         if (columnCount < grid.columnCount()) {
             clear(token, quotedTab + "!" + columnLetters(columnCount + 1) + "1:ZZ" + rows.size());
         }
+        if (layout != null) {
+            applyLayout(token, grid.sheetId(), rows.size(), columnCount, layout);
+        }
+    }
+
+    private static final Map<String, Object> WHITE = color(255, 255, 255);
+    private static final Map<String, Object> INK = color(30, 30, 30);
+    private static final Map<String, Object> NOTE = color(89, 89, 89);
+    private static final Map<String, Object> HEADER_FILL = color(232, 234, 237);
+    private static final Map<String, Object> CALCULATED_FILL = color(247, 247, 247);
+    private static final int TITLE_ROW_PX = 45;
+    private static final int BODY_ROW_PX = 64;
+
+    private static Map<String, Object> color(int red, int green, int blue) {
+        return Map.of("red", red / 255.0, "green", green / 255.0, "blue", blue / 255.0);
+    }
+
+    /** 탭의 모양을 맞춘다. 같은 모양을 다시 적용해도 결과가 같으므로, 쓸 때마다 한 번에 보낸다. */
+    private void applyLayout(String token, long sheetId, int rowCount, int columnCount, TabLayout layout) {
+        int header = layout.headerRow();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        requests.add(Map.of("updateSheetProperties", Map.of(
+                "properties", Map.of("sheetId", sheetId, "gridProperties",
+                        Map.of("frozenRowCount", header + 1, "frozenColumnCount", layout.frozenColumns())),
+                "fields", "gridProperties.frozenRowCount,gridProperties.frozenColumnCount")));
+        requests.add(Map.of("unmergeCells", Map.of("range", range(sheetId, 0, rowCount, 0, columnCount))));
+        for (TabLayout.Merge merge : layout.merges()) {
+            requests.add(Map.of("mergeCells", Map.of(
+                    "range", range(sheetId, merge.row(), merge.row() + 1, merge.fromColumn(), merge.toColumn() + 1),
+                    "mergeType", "MERGE_ALL")));
+        }
+        requests.add(format(range(sheetId, 0, rowCount, 0, columnCount), Map.of(
+                "backgroundColor", WHITE, "verticalAlignment", "TOP", "wrapStrategy", "WRAP",
+                "textFormat", Map.of("bold", false, "fontSize", 10, "fontFamily", "Arial", "foregroundColor", INK)),
+                "userEnteredFormat.backgroundColor,userEnteredFormat.verticalAlignment,userEnteredFormat.wrapStrategy,userEnteredFormat.textFormat"));
+        requests.add(format(range(sheetId, 0, 1, 0, columnCount), Map.of(
+                "verticalAlignment", "MIDDLE",
+                "textFormat", Map.of("bold", true, "fontSize", 14, "foregroundColor", INK)),
+                "userEnteredFormat.verticalAlignment,userEnteredFormat.textFormat"));
+        if (header > 1) {
+            requests.add(format(range(sheetId, 1, header, 0, columnCount), Map.of(
+                    "verticalAlignment", "MIDDLE", "textFormat", Map.of("foregroundColor", NOTE)),
+                    "userEnteredFormat.verticalAlignment,userEnteredFormat.textFormat.foregroundColor"));
+        }
+        requests.add(format(range(sheetId, header, header + 1, 0, columnCount), Map.of(
+                "backgroundColor", HEADER_FILL, "verticalAlignment", "MIDDLE", "textFormat", Map.of("bold", true)),
+                "userEnteredFormat.backgroundColor,userEnteredFormat.verticalAlignment,userEnteredFormat.textFormat.bold"));
+        if (rowCount > header + 1) {
+            requests.add(format(range(sheetId, header + 1, rowCount, layout.calculatedFrom(), layout.calculatedTo() + 1),
+                    Map.of("backgroundColor", CALCULATED_FILL), "userEnteredFormat.backgroundColor"));
+            requests.add(size(sheetId, "ROWS", header + 1, rowCount, BODY_ROW_PX));
+        }
+        requests.add(size(sheetId, "ROWS", 0, header + 1, TITLE_ROW_PX));
+        for (int column = 0; column < layout.columnWidthsPx().size(); column++) {
+            requests.add(size(sheetId, "COLUMNS", column, column + 1, layout.columnWidthsPx().get(column)));
+        }
+        requests.add(Map.of("setBasicFilter", Map.of("filter",
+                Map.of("range", range(sheetId, header, rowCount, 0, columnCount)))));
+        batchUpdate(token, requests);
+    }
+
+    private static Map<String, Object> range(long sheetId, int startRow, int endRow, int startColumn, int endColumn) {
+        return Map.of("sheetId", sheetId, "startRowIndex", startRow, "endRowIndex", endRow,
+                "startColumnIndex", startColumn, "endColumnIndex", endColumn);
+    }
+
+    private static Map<String, Object> format(Map<String, Object> range, Map<String, Object> cellFormat, String fields) {
+        return Map.of("repeatCell", Map.of("range", range,
+                "cell", Map.of("userEnteredFormat", cellFormat), "fields", fields));
+    }
+
+    private static Map<String, Object> size(long sheetId, String dimension, int start, int end, int pixels) {
+        return Map.of("updateDimensionProperties", Map.of(
+                "range", Map.of("sheetId", sheetId, "dimension", dimension, "startIndex", start, "endIndex", end),
+                "properties", Map.of("pixelSize", pixels), "fields", "pixelSize"));
     }
 
     private void clear(String token, String range) {
@@ -89,10 +170,12 @@ public class GoogleSheetsTabWriter implements SheetTabWriter {
         return letters.toString();
     }
 
-    private record Grid(int rowCount, int columnCount) {
+    private record Grid(long sheetId, int rowCount, int columnCount) {
 
-        static Grid of(JsonNode gridProperties) {
-            return new Grid(gridProperties.path("rowCount").asInt(NEW_TAB_ROW_COUNT),
+        static Grid of(JsonNode properties) {
+            JsonNode gridProperties = properties.path("gridProperties");
+            return new Grid(properties.path("sheetId").asLong(),
+                    gridProperties.path("rowCount").asInt(NEW_TAB_ROW_COUNT),
                     gridProperties.path("columnCount").asInt(NEW_TAB_COLUMN_COUNT));
         }
     }
@@ -106,7 +189,7 @@ public class GoogleSheetsTabWriter implements SheetTabWriter {
             for (JsonNode sheet : spreadsheet.path("sheets")) {
                 JsonNode properties = sheet.path("properties");
                 if (tabName.equals(properties.path("title").asText())) {
-                    return Grid.of(properties.path("gridProperties"));
+                    return Grid.of(properties);
                 }
             }
         }
@@ -129,13 +212,17 @@ public class GoogleSheetsTabWriter implements SheetTabWriter {
                         "startColumnIndex", 0, "endColumnIndex", columnCount),
                 "cell", Map.of("userEnteredFormat", Map.of("textFormat", Map.of("bold", true))),
                 "fields", "userEnteredFormat.textFormat.bold")));
-        return Grid.of(properties.path("gridProperties"));
+        return Grid.of(properties);
     }
 
     private JsonNode batchUpdate(String token, Map<String, Object> request) {
+        return batchUpdate(token, List.of(request));
+    }
+
+    private JsonNode batchUpdate(String token, List<Map<String, Object>> requests) {
         return http.post().uri(API + "/{id}:batchUpdate", spreadsheetId)
                 .headers(headers -> headers.setBearerAuth(token))
-                .body(Map.of("requests", List.of(request)))
+                .body(Map.of("requests", requests))
                 .retrieve().body(JsonNode.class);
     }
 }

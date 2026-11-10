@@ -113,6 +113,28 @@ class GoogleSheetsTabWriterTest {
     }
 
     @Test
+    @DisplayName("모양을 함께 주면 쓴 뒤 고정·병합·서식·너비·필터를 한 번에 맞춘다")
+    void appliesLayoutAfterWriting() {
+        TabLayout layout = new TabLayout(0, 1, List.of(100, 200), 1, 1, List.of(new TabLayout.Merge(0, 0, 1)));
+        server.expect(method(HttpMethod.GET)).andRespond(withSuccess("""
+                {"sheets":[{"properties":{"sheetId":5,"title":"LAB(Provi)","gridProperties":{"rowCount":2,"columnCount":2}}}]}
+                """, MediaType.APPLICATION_JSON));
+        server.expect(method(HttpMethod.PUT)).andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(BASE + ":batchUpdate")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"updateSheetProperties\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"sheetId\":5")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"mergeCells\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"frozenColumnCount\":1")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"pixelSize\":200")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"setBasicFilter\"")))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+
+        writer().replaceTab("LAB(Provi)", ROWS, layout);
+
+        server.verify();
+    }
+
+    @Test
     @DisplayName("내용이 탭 크기 이상이면 지우지 않는다")
     void skipsClearWhenTabGrew() {
         server.expect(method(HttpMethod.GET)).andRespond(withSuccess("""

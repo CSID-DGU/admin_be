@@ -54,9 +54,9 @@ class UserNoticeRenderingTest {
         String body = messageUtils.get("notification.user.delete-warning.body", NAME, "7", "2026-12-01", ANNOUNCED_DAYS);
 
         assertWellFormed("delete-warning", body);
-        assertThat(body).contains("7일 뒤(2026-12-01)").contains("컨테이너를 쓴 지 45일이 지나면 삭제")
-                .contains("이력은 비활성화돼도 보존돼요").contains("컨테이너를 새로 신청해 주세요");
-        assertThat(messageUtils.get("notification.user.delete-warning.subject", "7")).isEqualTo("[DGU AI LAB] 7일 뒤에 계정이 비활성화돼요");
+        assertThat(body).contains("7일 뒤(2026-12-01)").contains("컨테이너를 사용한 지 45일이 지나면 삭제")
+                .contains("이력은 비활성화 후에도 보존됩니다").contains("컨테이너를 새로 신청하시기 바랍니다");
+        assertThat(messageUtils.get("notification.user.delete-warning.subject", "7")).isEqualTo("[Provi] 7일 뒤에 계정이 비활성화됩니다");
     }
 
     @Test
@@ -66,7 +66,7 @@ class UserNoticeRenderingTest {
 
         assertWellFormed("graduation-warning", body);
         assertThat(body).contains("졸업 예정일").contains("1일 뒤(2027-03-28)").contains("45일이 지나면 삭제")
-                .contains("이력은 비활성화돼도 보존돼요").contains("졸업 예정일을 바꿔 주세요");
+                .contains("이력은 비활성화 후에도 보존됩니다").contains("졸업 예정일을 변경하시기 바랍니다");
     }
 
     @Test
@@ -76,10 +76,10 @@ class UserNoticeRenderingTest {
             String body = messageUtils.get(key + ".body", NAME, ANNOUNCED_DAYS);
 
             assertWellFormed(key, body);
-            assertThat(body).as(key).contains("계정을 비활성화했어요").contains("로그인할 수 없고")
-                    .contains("컨테이너를 쓴 지 45일이 지나면 삭제").contains("이미 삭제됐을 수 있어요")
-                    .contains("이력은 보존돼요").contains("문의 폼으로 알려 주세요").contains(FORM_URL);
-            assertThat(messageUtils.get(key + ".subject")).as(key).contains("비활성화됐어요").doesNotContain("{");
+            assertThat(body).as(key).contains("계정을 비활성화하였습니다").contains("로그인할 수 없으며")
+                    .contains("컨테이너를 사용한 지 45일이 지나면 삭제").contains("이미 삭제되었을 수 있습니다")
+                    .contains("이력은 보존됩니다").contains("문의 폼으로 접수하시기 바랍니다").contains(FORM_URL);
+            assertThat(messageUtils.get(key + ".subject")).as(key).contains("비활성화되었습니다").doesNotContain("{");
         }
     }
 
@@ -90,9 +90,9 @@ class UserNoticeRenderingTest {
 
         assertWellFormed("home-delete-reminder", body);
         assertThat(body).contains("/home/honggildong").contains("7일 뒤인 2026-12-08부터 삭제").contains("[GPU 신청]")
-                .contains("기존 홈 폴더를 그대로 사용");
+                .contains("기존 홈 디렉터리를 그대로 사용");
         assertThat(messageUtils.get("notification.user.home-delete-reminder.subject", "1"))
-                .isEqualTo("[DGU AI LAB] 홈 폴더가 1일 뒤에 삭제돼요");
+                .isEqualTo("[Provi] 홈 디렉터리가 1일 뒤에 삭제됩니다");
     }
 
     @Test

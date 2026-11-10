@@ -84,6 +84,18 @@ class IssuanceSheetSyncTest {
     }
 
     @Test
+    @DisplayName("경고 탭은 모양까지 맞추고 다른 탭은 값만 옮긴다")
+    void warningsTabCarriesLayout() {
+        tables(HEADER_ONLY, ONE_ROW);
+        when(queryService.accountTables()).thenReturn(Map.of(IssuanceSheetQueryService.WARNINGS_TAB, ONE_ROW));
+
+        sync("sheet").onApplicationReady();
+
+        verify(writer, timeout(2000)).replaceTab("경고(Provi)", ONE_ROW, AccountSheetRows.WARNING_LAYOUT);
+        verify(writer, timeout(2000)).replaceTab("LAB(Provi)", HEADER_ONLY);
+    }
+
+    @Test
     @DisplayName("서버가 뜨면 한 번 맞춘다")
     void syncsOnStartup() {
         tables(HEADER_ONLY, ONE_ROW);
@@ -142,6 +154,6 @@ class IssuanceSheetSyncTest {
 
         verify(writer, timeout(2000)).replaceTab("FARM(Provi)", ONE_ROW);
         verify(writer, timeout(2000)).replaceTab("사용자 목록(Provi)", ONE_ROW);
-        verify(writer, timeout(2000)).replaceTab("경고(Provi)", HEADER_ONLY);
+        verify(writer, timeout(2000)).replaceTab("경고(Provi)", HEADER_ONLY, AccountSheetRows.WARNING_LAYOUT);
     }
 }

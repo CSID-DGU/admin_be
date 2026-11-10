@@ -20,11 +20,11 @@ public enum ErrorCode {
      * 401 Unauthorized
      */
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "리소스 접근 권한이 없습니다."),
-    INVALID_ACCESS_TOKEN(HttpStatus.UNAUTHORIZED, "액세스 토큰의 형식이 올바르지 않습니다. Bearer 타입을 확인해 주세요."),
+    INVALID_ACCESS_TOKEN(HttpStatus.UNAUTHORIZED, "액세스 토큰의 형식이 올바르지 않습니다. Bearer 타입을 확인하시기 바랍니다."),
     INVALID_ACCESS_TOKEN_VALUE(HttpStatus.UNAUTHORIZED, "액세스 토큰의 값이 올바르지 않습니다."),
-    EXPIRED_ACCESS_TOKEN(HttpStatus.UNAUTHORIZED, "액세스 토큰이 만료되었습니다. 재발급 받아주세요."),
+    EXPIRED_ACCESS_TOKEN(HttpStatus.UNAUTHORIZED, "액세스 토큰이 만료되었습니다. 재발급받으시기 바랍니다."),
     INVALID_REFRESH_TOKEN_VALUE(HttpStatus.UNAUTHORIZED, "리프레시 토큰의 값이 올바르지 않습니다."),
-    EXPIRED_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "리프레시 토큰이 만료되었습니다. 다시 로그인해 주세요."),
+    EXPIRED_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "리프레시 토큰이 만료되었습니다. 다시 로그인하시기 바랍니다."),
     NOT_MATCH_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "일치하지 않는 리프레시 토큰입니다."),
     /**
      * 403 Forbidden
@@ -85,39 +85,39 @@ public enum ErrorCode {
     USER_ALREADY_ACTIVE(HttpStatus.CONFLICT, "이미 활성화된 사용자입니다."),
     USER_ALREADY_INACTIVE(HttpStatus.CONFLICT, "이미 비활성화된 사용자입니다."),
     USER_ALREADY_HAS_ROLE(HttpStatus.CONFLICT, "이미 해당 권한을 가진 사용자입니다."),
-    LAST_ACTIVE_ADMIN(HttpStatus.CONFLICT, "마지막 관리자는 권한을 내리거나 비활성화·탈퇴시킬 수 없습니다. 다른 관리자를 먼저 지정해 주세요."),
+    LAST_ACTIVE_ADMIN(HttpStatus.CONFLICT, "마지막 관리자는 권한을 내리거나 비활성화·탈퇴시킬 수 없습니다. 다른 관리자를 먼저 지정하시기 바랍니다."),
     INVALID_LOGIN_INFO(HttpStatus.UNAUTHORIZED, "잘못된 로그인 입력값입니다."),
-    TOO_MANY_LOGIN_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "로그인 시도 횟수를 초과했습니다. 15분 후 다시 시도해주세요."),
+    TOO_MANY_LOGIN_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "로그인 시도 횟수를 초과했습니다. 15분 후 다시 시도하시기 바랍니다."),
     INVALID_AUTH_CODE(HttpStatus.BAD_REQUEST, "올바르지 않은 인증 코드입니다."),
-    TOO_MANY_AUTH_CODE_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "인증 코드 입력 횟수를 초과했습니다. 인증 코드를 다시 받아주세요."),
-    TOO_MANY_EMAIL_SENDS(HttpStatus.TOO_MANY_REQUESTS, "인증 메일을 너무 자주 요청했어요. 잠시 후 다시 시도해 주세요."),
-    TOO_MANY_GROUP_CREATIONS(HttpStatus.TOO_MANY_REQUESTS, "그룹은 하루에 5개까지 만들 수 있어요. 내일 다시 시도해 주세요."),
-    TOO_MANY_CONTAINER_REQUESTS(HttpStatus.TOO_MANY_REQUESTS, "컨테이너 신청은 하루에 5건까지 할 수 있어요. 내일 다시 시도해 주세요."),
-    TOO_MANY_CONTAINER_RESTARTS(HttpStatus.TOO_MANY_REQUESTS, "컨테이너 재시작은 1시간에 5번까지 할 수 있어요. 잠시 뒤 다시 시도해 주세요."),
-    EMAIL_DOMAIN_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "학교 이메일(@dgu.ac.kr, @dongguk.edu)로만 가입할 수 있어요."),
+    TOO_MANY_AUTH_CODE_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "인증 코드 입력 횟수를 초과했습니다. 인증 코드를 다시 받으시기 바랍니다."),
+    TOO_MANY_EMAIL_SENDS(HttpStatus.TOO_MANY_REQUESTS, "인증 메일을 너무 자주 요청하였습니다. 잠시 후 다시 시도하시기 바랍니다."),
+    TOO_MANY_GROUP_CREATIONS(HttpStatus.TOO_MANY_REQUESTS, "그룹은 하루에 5개까지 만들 수 있습니다. 내일 다시 시도하시기 바랍니다."),
+    TOO_MANY_CONTAINER_REQUESTS(HttpStatus.TOO_MANY_REQUESTS, "컨테이너 신청은 하루에 5건까지 할 수 있습니다. 내일 다시 시도하시기 바랍니다."),
+    TOO_MANY_CONTAINER_RESTARTS(HttpStatus.TOO_MANY_REQUESTS, "컨테이너 재시작은 1시간에 5번까지 할 수 있습니다. 잠시 뒤 다시 시도하시기 바랍니다."),
+    EMAIL_DOMAIN_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "학교 이메일(@dgu.ac.kr, @dongguk.edu)로만 가입할 수 있습니다."),
     GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "지정된 그룹을 찾을 수 없습니다."),
     UID_ALLOCATION_FAILED(HttpStatus.BAD_GATEWAY, "외부 API 응답에서 UID/GID를 확인할 수 없습니다."),
-    DUPLICATE_USERNAME(HttpStatus.CONFLICT, "이미 사용 중인 username입니다. 다른 username을 입력해주세요."),
-    UBUNTU_USERNAME_CONFLICTS_GROUP(HttpStatus.CONFLICT, "같은 이름의 그룹이 있어 쓸 수 없는 우분투 계정명입니다. 다른 이름을 입력해주세요."),
-    UBUNTU_USERNAME_RESERVED(HttpStatus.CONFLICT, "시스템 계정 이름이라 쓸 수 없는 우분투 계정명입니다. 다른 이름을 입력해주세요."),
-    UBUNTU_USERNAME_NOT_ASSIGNED(HttpStatus.CONFLICT, "회원 정보에 우분투 계정명이 없습니다. 마이페이지에서 먼저 등록해주세요."),
+    DUPLICATE_USERNAME(HttpStatus.CONFLICT, "이미 사용 중인 username입니다. 다른 username을 입력하시기 바랍니다."),
+    UBUNTU_USERNAME_CONFLICTS_GROUP(HttpStatus.CONFLICT, "같은 이름의 그룹이 있어 쓸 수 없는 우분투 계정명입니다. 다른 이름을 입력하시기 바랍니다."),
+    UBUNTU_USERNAME_RESERVED(HttpStatus.CONFLICT, "시스템 계정 이름이라 쓸 수 없는 우분투 계정명입니다. 다른 이름을 입력하시기 바랍니다."),
+    UBUNTU_USERNAME_NOT_ASSIGNED(HttpStatus.CONFLICT, "회원 정보에 우분투 계정명이 없습니다. 마이페이지에서 먼저 등록하시기 바랍니다."),
     UBUNTU_USERNAME_ALREADY_ASSIGNED(HttpStatus.CONFLICT, "이미 우분투 계정명이 등록되어 있어 변경할 수 없습니다."),
     UBUNTU_ACCOUNT_ALREADY_ASSIGNED(HttpStatus.CONFLICT, "이미 다른 우분투 계정이 배정된 사용자입니다."),
-    UBUNTU_ACCOUNT_RELEASING(HttpStatus.CONFLICT, "우분투 계정을 회수하는 중입니다. 회수가 끝난 뒤 다시 시도해주세요."),
-    UBUNTU_PASSWORD_CHANGE_WHILE_PROVISIONING(HttpStatus.CONFLICT, "컨테이너를 만드는 중이라 지금은 비밀번호를 바꿀 수 없어요. 생성이 끝난 뒤 다시 시도해 주세요."),
+    UBUNTU_ACCOUNT_RELEASING(HttpStatus.CONFLICT, "우분투 계정을 회수하는 중입니다. 회수가 끝난 뒤 다시 시도하시기 바랍니다."),
+    UBUNTU_PASSWORD_CHANGE_WHILE_PROVISIONING(HttpStatus.CONFLICT, "컨테이너를 만드는 중이라 지금은 비밀번호를 변경할 수 없습니다. 생성이 끝난 뒤 다시 시도하시기 바랍니다."),
     // 인증 계층(로그인/토큰 갱신/JWT 필터) 전부에서 던져지는 예외라 401이어야 프론트가
     // 세션만료 처리 흐름(재로그인 모달)을 타운다. 404였을 때는 로그인 후 계정이 비활성화된
     // 세션에서 모든 API 호출이 조용히 실패하고 아무 안내도 뜨지 않았다.
-    ACCOUNT_DISABLED(HttpStatus.UNAUTHORIZED, "비활성화된 유저입니다. 관리자에게 문의하세요."),
+    ACCOUNT_DISABLED(HttpStatus.UNAUTHORIZED, "비활성화된 유저입니다. 관리자에게 문의하시기 바랍니다."),
 
     SLACK_USER_NOT_FOUND(HttpStatus.NOT_FOUND, "Slack 사용자를 찾을 수 없습니다."),
-    SLACK_MEMBERSHIP_REQUIRED(HttpStatus.CONFLICT, "Slack 워크스페이스에서 회원 정보와 이름·이메일이 같은 회원을 찾지 못했어요. Slack에 가입하고 이름(표시 이름 또는 실명)을 회원 정보의 이름과 똑같이 맞춰 주세요. Slack에 학교 이메일이 아닌 주소로 가입했다면 내 정보의 \"자주 사용하는 이메일\"에 그 주소를 적은 뒤 다시 신청해 주세요."),
+    SLACK_MEMBERSHIP_REQUIRED(HttpStatus.CONFLICT, "Slack 워크스페이스에서 회원 정보와 이름·이메일이 같은 회원을 찾지 못했습니다. Slack에 가입하고 이름(표시 이름 또는 실명)을 회원 정보의 이름과 동일하게 맞추시기 바랍니다. Slack에 학교 이메일이 아닌 주소로 가입했다면 내 정보의 \"자주 사용하는 이메일\"에 해당 주소를 기재한 뒤 다시 신청하시기 바랍니다."),
 
-    UBUNTU_PASSWORD_REQUIRED(HttpStatus.BAD_REQUEST, "SSH 비밀번호를 준비하려면 다시 로그인해 주세요."),
-    UBUNTU_PASSWORD_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "컨테이너에 반영하지 못해 비밀번호를 바꾸지 않았어요. 잠시 후 다시 시도해 주세요."),
-    PASSWORD_RESET_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "비밀번호 재설정 신청을 찾을 수 없어요."),
-    PASSWORD_RESET_IN_PROGRESS(HttpStatus.CONFLICT, "새 비밀번호를 컨테이너에 반영하는 중이에요. 끝난 뒤 다시 시도해 주세요."),
-    PASSWORD_RESET_ALREADY_CLOSED(HttpStatus.CONFLICT, "이미 적용됐거나 거절된 재설정 신청이에요."),
+    UBUNTU_PASSWORD_REQUIRED(HttpStatus.BAD_REQUEST, "SSH 비밀번호를 준비하려면 다시 로그인하시기 바랍니다."),
+    UBUNTU_PASSWORD_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "컨테이너에 반영하지 못해 비밀번호를 변경하지 않았습니다. 잠시 후 다시 시도하시기 바랍니다."),
+    PASSWORD_RESET_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "비밀번호 재설정 신청을 찾을 수 없습니다."),
+    PASSWORD_RESET_IN_PROGRESS(HttpStatus.CONFLICT, "새 비밀번호를 컨테이너에 반영하는 중입니다. 끝난 뒤 다시 시도하시기 바랍니다."),
+    PASSWORD_RESET_ALREADY_CLOSED(HttpStatus.CONFLICT, "이미 적용됐거나 거절된 재설정 신청입니다."),
 
     /**
      * Group Error
@@ -127,35 +127,35 @@ public enum ErrorCode {
     DUPLICATE_CONTAINER_IMAGE(HttpStatus.CONFLICT, "같은 이름과 버전의 이미지가 이미 등록되어 있습니다."),
     FORBIDDEN_REQUEST(HttpStatus.FORBIDDEN, "요청된 우분투 사용자 이름은 로그인한 사용자의 계정이 아닙니다."),
     INVALID_GROUP_MEMBER(HttpStatus.BAD_REQUEST, "존재하지 않는 사용자입니다."),
-    RESERVED_GROUP_NAME(HttpStatus.CONFLICT, "시스템이 이미 쓰는 그룹 이름입니다. 다른 이름을 쓰세요."),
+    RESERVED_GROUP_NAME(HttpStatus.CONFLICT, "시스템이 이미 쓰는 그룹 이름입니다. 다른 이름을 사용하시기 바랍니다."),
     GROUP_NAME_CONFLICTS_USER(HttpStatus.BAD_REQUEST, "계정 이름과 같은 그룹 이름은 쓸 수 없습니다."),
-    GROUP_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "한 사람이 속할 수 있는 그룹은 5개까지예요. 속한 그룹을 줄인 뒤 다시 시도해 주세요."),
-    GROUP_LEAVE_NOT_MEMBER(HttpStatus.BAD_REQUEST, "속해 있지 않은 그룹이에요."),
-    GROUP_LEAVE_ALREADY_REQUESTED(HttpStatus.CONFLICT, "이 그룹의 탈퇴 신청이 이미 승인을 기다리고 있어요."),
+    GROUP_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "한 사람이 속할 수 있는 그룹은 5개까지입니다. 속한 그룹을 줄인 뒤 다시 시도하시기 바랍니다."),
+    GROUP_LEAVE_NOT_MEMBER(HttpStatus.BAD_REQUEST, "속해 있지 않은 그룹입니다."),
+    GROUP_LEAVE_ALREADY_REQUESTED(HttpStatus.CONFLICT, "이 그룹의 탈퇴 신청이 이미 승인을 기다리고 있습니다."),
     GROUP_LEAVE_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "그룹 탈퇴 신청을 찾을 수 없습니다."),
     // AD 반영 실패는 DC 접속 장애 같은 일시적 원인이 대부분이라 다시 승인하면 되는 경우가 많다.
     // 이걸 형식 오류와 같은 코드로 묶으면 관리자가 신청이 잘못됐다고 판단하고 되돌린다.
     PRIMARY_GROUP_REMOVAL(HttpStatus.CONFLICT, "계정의 기본 그룹에서는 뺄 수 없습니다."),
-    GROUP_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "그룹 작업을 등록하지 못했어요. 잠시 후 다시 시도해 주세요."),
-    HOME_DELETE_FAILED(HttpStatus.BAD_GATEWAY, "홈 폴더 삭제 작업을 등록하지 못했어요."),
-    GROUP_OPERATION_IN_PROGRESS(HttpStatus.CONFLICT, "같은 그룹 작업을 반영하는 중이에요. 끝난 뒤 다시 시도해 주세요."),
+    GROUP_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "그룹 작업을 등록하지 못했습니다. 잠시 후 다시 시도하시기 바랍니다."),
+    HOME_DELETE_FAILED(HttpStatus.BAD_GATEWAY, "홈 디렉터리 삭제 작업을 등록하지 못했습니다."),
+    GROUP_OPERATION_IN_PROGRESS(HttpStatus.CONFLICT, "같은 그룹 작업을 반영하는 중입니다. 끝난 뒤 다시 시도하시기 바랍니다."),
     GROUP_OPERATION_NOT_FOUND(HttpStatus.NOT_FOUND, "그룹 작업을 찾을 수 없습니다."),
-    PORT_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "포트 변경 작업을 등록하지 못했어요. 잠시 후 다시 시도해 주세요."),
-    PORT_OPERATION_IN_PROGRESS(HttpStatus.CONFLICT, "이 컨테이너의 포트를 바꾸는 중이에요. 끝난 뒤 다시 시도해 주세요."),
-    ACCESS_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "접속 차단·해제 작업을 등록하지 못했어요. 잠시 후 다시 시도해 주세요."),
+    PORT_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "포트 변경 작업을 등록하지 못했습니다. 잠시 후 다시 시도하시기 바랍니다."),
+    PORT_OPERATION_IN_PROGRESS(HttpStatus.CONFLICT, "이 컨테이너의 포트를 변경하는 중입니다. 끝난 뒤 다시 시도하시기 바랍니다."),
+    ACCESS_CHANGE_FAILED(HttpStatus.BAD_GATEWAY, "접속 차단·해제 작업을 등록하지 못했습니다. 잠시 후 다시 시도하시기 바랍니다."),
 
     /**
      * Warning Error
      */
-    USER_SUSPENDED(HttpStatus.FORBIDDEN, "이용이 정지된 계정이에요. 정지가 끝난 뒤 다시 시도해 주세요."),
+    USER_SUSPENDED(HttpStatus.FORBIDDEN, "이용이 정지된 계정입니다. 정지가 끝난 뒤 다시 시도하시기 바랍니다."),
     /** @deprecated 2026-11-04 관리자도 경고 대상이 되어 더 이상 던지지 않는다. 이름 재사용 금지. */
     @Deprecated
-    WARNING_TARGET_IS_ADMIN(HttpStatus.BAD_REQUEST, "관리자에게는 경고를 줄 수 없어요."),
-    WARNING_NOT_DEDUCTIBLE(HttpStatus.CONFLICT, "경고가 3회 이상 쌓인 적이 있고 횟수가 남아 있을 때만 차감할 수 있어요."),
-    WARNING_NOT_FOUND(HttpStatus.NOT_FOUND, "이 사용자에게 준 경고가 아니에요."),
-    WARNING_ALREADY_CANCELED(HttpStatus.CONFLICT, "이미 취소된 경고예요."),
+    WARNING_TARGET_IS_ADMIN(HttpStatus.BAD_REQUEST, "관리자에게는 경고를 줄 수 없습니다."),
+    WARNING_NOT_DEDUCTIBLE(HttpStatus.CONFLICT, "경고가 3회 이상 쌓인 적이 있고 횟수가 남아 있을 때만 차감할 수 있습니다."),
+    WARNING_NOT_FOUND(HttpStatus.NOT_FOUND, "이 사용자에게 준 경고가 아닙니다."),
+    WARNING_ALREADY_CANCELED(HttpStatus.CONFLICT, "이미 취소된 경고입니다."),
     // 같은 새 그룹을 두 신청이 동시에 만들면 gid 가 두 번 발급된다. 앞 신청이 끝나면 그룹이 생겨 그대로 승인된다.
-    PENDING_GROUP_IN_PROGRESS(HttpStatus.CONFLICT, "같은 새 그룹을 만드는 다른 신청을 반영하는 중이에요. 끝난 뒤 다시 승인해 주세요."),
+    PENDING_GROUP_IN_PROGRESS(HttpStatus.CONFLICT, "같은 새 그룹을 만드는 다른 신청을 반영하는 중입니다. 끝난 뒤 다시 승인하시기 바랍니다."),
 
     /**
      * Approval Error
@@ -172,15 +172,15 @@ public enum ErrorCode {
      */
     INVALID_REQUEST_STATUS(HttpStatus.CONFLICT, "이미 처리된 신청입니다."),
     UNSUPPORTED_CHANGE_TYPE(HttpStatus.BAD_REQUEST, "지원되지 않는 요청 타입(enum)입니다."),
-    CONTAINER_REQUEST_ALREADY_PENDING(HttpStatus.CONFLICT, "승인을 기다리는 신청이 이미 있어요. 기존 신청을 취소한 뒤 다시 신청해 주세요."),
-    HOME_CLEANUP_IN_PROGRESS(HttpStatus.CONFLICT, "보존 기간이 지난 홈 폴더를 정리하는 중이에요. 잠시 뒤 다시 신청해 주세요."),
-    CHANGE_REQUEST_ALREADY_PENDING(HttpStatus.CONFLICT, "같은 종류의 변경 요청이 이미 대기 중입니다. 처리된 뒤 다시 요청해주세요."),
-    CHANGE_REQUEST_EXPIRES_AT_PASSED(HttpStatus.CONFLICT, "요청한 만료 일시가 이미 지났습니다. 거절하고 새로 요청받아 주세요."),
+    CONTAINER_REQUEST_ALREADY_PENDING(HttpStatus.CONFLICT, "승인을 기다리는 신청이 이미 있습니다. 기존 신청을 취소한 뒤 다시 신청하시기 바랍니다."),
+    HOME_CLEANUP_IN_PROGRESS(HttpStatus.CONFLICT, "보존 기간이 지난 홈 디렉터리를 정리하는 중입니다. 잠시 뒤 다시 신청하시기 바랍니다."),
+    CHANGE_REQUEST_ALREADY_PENDING(HttpStatus.CONFLICT, "같은 종류의 변경 요청이 이미 대기 중입니다. 처리된 뒤 다시 요청하시기 바랍니다."),
+    CHANGE_REQUEST_EXPIRES_AT_PASSED(HttpStatus.CONFLICT, "요청한 만료 일시가 이미 지났습니다. 거절하고 새로 요청받으시기 바랍니다."),
     REQUEST_MIGRATION_IN_PROGRESS(HttpStatus.CONFLICT, "마이그레이션이 진행 중인 요청이 있어 삭제할 수 없습니다."),
     MIGRATION_NODE_OUTSIDE_RESOURCE_GROUP(HttpStatus.BAD_REQUEST, "신청한 리소스 그룹에 속하지 않은 노드로는 옮길 수 없습니다."),
-    PROVISION_JOB_IN_PROGRESS(HttpStatus.CONFLICT, "컨테이너 생성 작업이 아직 끝나지 않아 거절할 수 없습니다. 작업이 끝난 뒤 다시 시도해주세요."),
-    USER_APPROVAL_ALREADY_IN_PROGRESS(HttpStatus.CONFLICT, "같은 사용자의 다른 신청이 처리 중(PROCESSING)입니다. 그 신청이 완료된 뒤 다시 승인하고, 처리 중에 멈춰 있다면 관리자가 먼저 정리해주세요."),
-    USER_REQUEST_CLEANUP_PARTIALLY_FAILED(HttpStatus.BAD_GATEWAY, "일부 컨테이너/계정 정리에 실패했습니다. 관리자에게 알림이 전송되었으니 확인 후 다시 시도해주세요."),
+    PROVISION_JOB_IN_PROGRESS(HttpStatus.CONFLICT, "컨테이너 생성 작업이 아직 끝나지 않아 거절할 수 없습니다. 작업이 끝난 뒤 다시 시도하시기 바랍니다."),
+    USER_APPROVAL_ALREADY_IN_PROGRESS(HttpStatus.CONFLICT, "같은 사용자의 다른 신청이 처리 중(PROCESSING)입니다. 그 신청이 완료된 뒤 다시 승인하고, 처리 중에 멈춰 있다면 관리자가 먼저 정리하시기 바랍니다."),
+    USER_REQUEST_CLEANUP_PARTIALLY_FAILED(HttpStatus.BAD_GATEWAY, "일부 컨테이너/계정 정리에 실패했습니다. 관리자에게 알림이 전송되었으니 확인 후 다시 시도하시기 바랍니다."),
 
     /**
      * Account Error
@@ -195,8 +195,8 @@ public enum ErrorCode {
     // 인프라 서버(config-server)가 요청 내용 때문에 거절했다(4xx). 서버 장애(502)와 구분한다.
     INFRA_REQUEST_REJECTED(HttpStatus.UNPROCESSABLE_ENTITY, "인프라 서버가 요청을 거절했습니다."),
     POD_MIGRATION_FAILED(HttpStatus.BAD_GATEWAY, "Pod 마이그레이션 API 요청에 실패했습니다."),
-    POD_NOT_ORPHAN(HttpStatus.CONFLICT, "신청 이력이 있는 Pod입니다. 개별 삭제 대신 사용자/신청 관리 화면에서 정리해주세요."),
-    POD_JOB_IN_PROGRESS(HttpStatus.CONFLICT, "이 Pod의 사용자에게 컨테이너 생성·이동 작업이 진행 중입니다. 작업이 끝난 뒤 다시 확인해주세요."),
+    POD_NOT_ORPHAN(HttpStatus.CONFLICT, "신청 이력이 있는 Pod입니다. 개별 삭제 대신 사용자/신청 관리 화면에서 정리하시기 바랍니다."),
+    POD_JOB_IN_PROGRESS(HttpStatus.CONFLICT, "이 Pod의 사용자에게 컨테이너 생성·이동 작업이 진행 중입니다. 작업이 끝난 뒤 다시 확인하시기 바랍니다."),
 
     /**
      * Message Template Error

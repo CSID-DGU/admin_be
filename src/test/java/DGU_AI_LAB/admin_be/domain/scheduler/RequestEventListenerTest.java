@@ -57,7 +57,7 @@ class RequestEventListenerTest {
     }
 
     @Test
-    @DisplayName("만료 안내 본문에 홈 폴더 안내를 넣는다")
+    @DisplayName("만료 안내 본문에 홈 디렉터리 안내를 넣는다")
     void handleExpiredEvent_passesHomeNoticeToBody() {
         requestEventListener.handleExpiredEvent(EVENT);
 
@@ -66,7 +66,7 @@ class RequestEventListenerTest {
     }
 
     @Test
-    @DisplayName("관리자 회수 안내 본문에 홈 폴더 안내를 넣는다")
+    @DisplayName("관리자 회수 안내 본문에 홈 디렉터리 안내를 넣는다")
     void handleContainerDeletedEvent_passesHomeNoticeToBody() {
         requestEventListener.handleContainerDeletedEvent(new RequestContainerDeletedEvent(
                 "홍길동", "hong@test.com", "user1", "server-lab", "pod-xxx", "ssh(30022)", "홈 안내"));
