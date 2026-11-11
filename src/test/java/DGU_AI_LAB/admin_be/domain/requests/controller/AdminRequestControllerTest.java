@@ -1,5 +1,12 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller;
 
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobHistoryService;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestCommandService;
 import DGU_AI_LAB.admin_be.domain.requests.service.AdminRequestQueryService;
@@ -44,6 +51,7 @@ class AdminRequestControllerTest extends WebMvcTestSupport {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired private AdminRequestController adminRequestController;
     @MockitoBean private AdminRequestCommandService adminRequestCommandService;
     @MockitoBean private AdminRequestQueryService adminRequestQueryService;
     @MockitoBean private PodMigrationService podMigrationService;
@@ -111,17 +119,60 @@ class AdminRequestControllerTest extends WebMvcTestSupport {
         verify(adminRequestQueryService).getRequest(12L);
     }
 
+    private static final String APPROVAL_BODY =
+            "{\"imageId\": 3, \"resourceGroupId\": 2, \"adminComment\": \"ok\", \"professorApprovalConfirmed\": true}";
+
+    private MockMvc approvalMvc() {
+        return MockMvcBuilders.standaloneSetup(adminRequestController)
+                .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver()).build();
+    }
+
     @Test
-    @DisplayName("POST /{id}/approval: 경로의 신청 번호로 생성 작업을 등록하고 202를 반환한다")
+    @DisplayName("POST /{id}/approval: 경로의 신청 번호로 생성 작업을 등록하고 승인한 관리자를 기록해 202를 반환한다")
     void approvalIsAccepted() throws Exception {
-        mockMvc.perform(post("/api/admin/requests/12/approval")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"imageId\": 3, \"resourceGroupId\": 2, \"adminComment\": \"ok\"}"))
-                .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.status").value(202));
+        User admin = User.builder().email("a@dgu.ac.kr").password("p").name("관리자")
+                .studentId("1").phone("010").department("과").build();
+        ReflectionTestUtils.setField(admin, "userId", 77L);
+        CustomUserDetails principal = new CustomUserDetails(admin);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities()));
+        try {
+            approvalMvc().perform(post("/api/admin/requests/12/approval")
+                            .contentType(MediaType.APPLICATION_JSON).content(APPROVAL_BODY))
+                    .andExpect(status().isAccepted())
+                    .andExpect(jsonPath("$.status").value(202));
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
 
         verify(adminRequestCommandService).approveRequest(argThat(dto ->
-                dto.requestId() == 12L && dto.imageId() == 3L && dto.resourceGroupId() == 2));
+                dto.requestId() == 12L && dto.imageId() == 3L && dto.resourceGroupId() == 2
+                        && Long.valueOf(77L).equals(dto.professorApprovedByAdminId())));
+    }
+
+    @Test
+    @DisplayName("POST /{id}/approval: 로그인한 관리자를 알 수 없으면 승인하지 않는다")
+    void approvalWithoutPrincipalIsRejected() throws Exception {
+        SecurityContextHolder.clearContext();
+
+        mockMvc.perform(post("/api/admin/requests/12/approval")
+                        .contentType(MediaType.APPLICATION_JSON).content(APPROVAL_BODY))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(adminRequestCommandService);
+    }
+
+    @Test
+    @DisplayName("POST /{id}/approval: 지도교수 승인 확인이 없거나 false면 400이고 승인하지 않는다")
+    void approvalRequiresProfessorConfirmation() throws Exception {
+        for (String body : new String[]{
+                "{\"imageId\": 3, \"resourceGroupId\": 2}",
+                "{\"imageId\": 3, \"resourceGroupId\": 2, \"professorApprovalConfirmed\": false}"}) {
+            mockMvc.perform(post("/api/admin/requests/12/approval")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isBadRequest());
+        }
+        verifyNoInteractions(adminRequestCommandService);
     }
 
     @Test

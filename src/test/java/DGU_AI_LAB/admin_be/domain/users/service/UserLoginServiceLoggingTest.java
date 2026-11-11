@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.users.service;
 import DGU_AI_LAB.admin_be.global.auth.EmailDomainPolicy;
 import DGU_AI_LAB.admin_be.global.validation.ReservedLinuxNames;
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserRegisterRequestDTO;
+import DGU_AI_LAB.admin_be.support.UserRegisterRequests;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.global.auth.jwt.JwtProvider;
@@ -58,7 +59,7 @@ class UserLoginServiceLoggingTest {
     @Test
     @DisplayName("회원가입 완료 로그에 이메일 주소가 남지 않는다")
     void doesNotLogEmailOnRegister() {
-        UserRegisterRequestDTO request = new UserRegisterRequestDTO(
+        UserRegisterRequestDTO request = UserRegisterRequests.of(
                 EMAIL, "rawPassword1!", "김신입", "컴퓨터공학과", "2024001234", "010-9999-8888", "kimsinip", null);
 
         when(redisTemplate.hasKey("VERIFIED:" + EMAIL)).thenReturn(true);

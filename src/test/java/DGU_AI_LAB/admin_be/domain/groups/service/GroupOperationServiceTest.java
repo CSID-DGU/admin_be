@@ -46,6 +46,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -76,6 +77,7 @@ class GroupOperationServiceTest {
     @Mock private UserGuideMailer userGuideMailer;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private TransactionStatus transactionStatus;
+    @Mock private GroupMembershipPolicy groupMembershipPolicy;
 
     private GroupOperationService service;
     private User user;
@@ -87,7 +89,7 @@ class GroupOperationServiceTest {
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
         service = new GroupOperationService(operationRepository, groupRepository, userRepository, requestRepository,
                 changeRequestRepository, jobClient, alarmService, requestChannelNotifier, userGuideMailer, new ObjectMapper(),
-                transactionManager);
+                transactionManager, groupMembershipPolicy);
 
         user = user(USER_ID, "alice");
         admin = user(ADMIN_ID, "root-admin");
@@ -217,6 +219,19 @@ class GroupOperationServiceTest {
             assertThat(changeRequest.getStatus()).isEqualTo(Status.PROCESSING);
             assertThat(changeRequest.getAdminComment()).isEqualTo("승인합니다");
             assertThat(user.getUserGroups()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("승인 때 그룹 한도를 넘으면 등록하지 않는다 — 접수 뒤 다른 요청이 먼저 승인된 경우")
+        void limitIsRecheckedAtApproval() {
+            doThrow(new BusinessException(ErrorCode.GROUP_LIMIT_EXCEEDED))
+                    .when(groupMembershipPolicy).requireRoomFor(eq(user), any());
+
+            assertThatThrownBy(() -> service.startAdd(changeRequest, originalRequest, admin, null))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCode.GROUP_LIMIT_EXCEEDED);
+            verifyNoInteractions(jobClient);
+            assertThat(changeRequest.getStatus()).isEqualTo(Status.PENDING);
         }
 
         @Test

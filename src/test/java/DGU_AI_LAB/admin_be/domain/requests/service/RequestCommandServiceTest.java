@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
+import DGU_AI_LAB.admin_be.domain.groups.service.GroupMembershipPolicy;
 import DGU_AI_LAB.admin_be.domain.groups.service.PendingGroupService;
 import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SingleChangeRequestDTO;
@@ -33,6 +34,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import jakarta.persistence.EntityManager;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
+import org.mockito.Spy;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -67,8 +69,8 @@ class RequestCommandServiceTest {
     @InjectMocks
     private RequestCommandService requestCommandService;
 
-    @Mock
-    private ObjectMapper objectMapper;
+    @Spy
+    private ObjectMapper objectMapper = new ObjectMapper();
 
     @Mock
     private RequestRepository requestRepository;
@@ -105,6 +107,9 @@ class RequestCommandServiceTest {
 
     @Mock
     private PendingGroupService pendingGroupService;
+
+    @Mock
+    private GroupMembershipPolicy groupMembershipPolicy;
 
     /** 가입 시 우분투 계정명이 정해진 사용자 — 신청은 이 값을 그대로 복사해 쓴다. */
     /** 가입(또는 로그인) 때 웹 비밀번호로 SSH 비밀번호 해시가 채워진 사용자. */
@@ -373,6 +378,30 @@ class RequestCommandServiceTest {
         }
 
         @Test
+        @DisplayName("그룹 추가 변경 요청이 한 사람 한도(5개)를 넘으면 받지 않는다")
+        void createSingleChangeRequest_overGroupLimit_isRejected() {
+            User owner = mock(User.class);
+            when(owner.getUserId()).thenReturn(1L);
+            when(owner.getUserGroups()).thenReturn(Set.of());
+            Request request = mock(Request.class);
+            when(request.getUser()).thenReturn(owner);
+            when(request.getStatus()).thenReturn(Status.FULFILLED);
+            when(requestRepository.findByIdForUpdate(14L)).thenReturn(Optional.of(request));
+            Group wanted = Group.builder().groupName("ailab").ubuntuGid(1005L).build();
+            when(groupRepository.findAllByUbuntuGidIn(Set.of(1005L))).thenReturn(List.of(wanted));
+            doThrow(new BusinessException(ErrorCode.GROUP_LIMIT_EXCEEDED))
+                    .when(groupMembershipPolicy).requireRoomFor(eq(owner), any());
+
+            SingleChangeRequestDTO dto = new SingleChangeRequestDTO(14L, ChangeType.GROUP, "[1005]", REASON);
+
+            assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(1L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.GROUP_LIMIT_EXCEEDED);
+            verify(changeRequestRepository, never()).save(any());
+        }
+
+        @Test
         @DisplayName("변경 요청을 받으면 알림 기록 채널에 접수 사실을 남긴다")
         void createSingleChangeRequest_recordsReceipt() {
             User owner = mock(User.class);
@@ -581,6 +610,26 @@ class RequestCommandServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
+            verify(requestRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(requestCreateThrottle);
+        }
+
+        @Test
+        @DisplayName("고른 그룹이 한 사람 한도(5개)를 넘으면 저장하지 않고 하루 한도도 세지 않는다")
+        void createRequest_overGroupLimit_isRejected() {
+            User user = userWithUbuntuUsername("honggildong");
+            SaveRequestRequestDTO dto = stubbedCreate(user);
+            Group chosen = Group.builder().groupName("ailab").ubuntuGid(2001L).build();
+            ReflectionTestUtils.setField(chosen, "groupId", 4L);
+            when(dto.groupIds()).thenReturn(Set.of(4L));
+            when(groupRepository.findAllByIdForUpdate(Set.of(4L))).thenReturn(List.of(chosen));
+            doThrow(new BusinessException(ErrorCode.GROUP_LIMIT_EXCEEDED))
+                    .when(groupMembershipPolicy).requireRoomFor(eq(user), any());
+
+            assertThatThrownBy(() -> requestCommandService.createRequest(1L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.GROUP_LIMIT_EXCEEDED);
             verify(requestRepository, never()).saveAndFlush(any());
             verifyNoInteractions(requestCreateThrottle);
         }

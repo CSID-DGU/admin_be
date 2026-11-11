@@ -43,6 +43,71 @@ class RequestTest {
     }
 
     @Nested
+    @DisplayName("교수 승인 확인 기록의 정리")
+    class ProfessorApprovalRecordCleanup {
+
+        @Test
+        @DisplayName("승인이 실패해 대기로 돌아가면 확인 기록을 지워, 다음 관리자가 승인할 때 그 관리자가 남는다")
+        void revertToPendingClearsRecord() {
+            request.markAsProcessing();
+            request.confirmProfessorApproval(5L);
+
+            request.revertToPending();
+            assertThat(request.getProfessorApprovalConfirmedBy()).isNull();
+            assertThat(request.getProfessorApprovalConfirmedAt()).isNull();
+
+            request.markAsProcessing();
+            request.confirmProfessorApproval(7L);
+            assertThat(request.getProfessorApprovalConfirmedBy()).isEqualTo(7L);
+        }
+
+        @Test
+        @DisplayName("거절해도 누가 교수 승인을 확인했는지는 감사 기록으로 남긴다")
+        void rejectKeepsRecord() {
+            request.markAsProcessing();
+            request.confirmProfessorApproval(5L);
+
+            request.reject("사유");
+
+            assertThat(request.getProfessorApprovalConfirmedBy()).isEqualTo(5L);
+            assertThat(request.getProfessorApprovalConfirmedAt()).isNotNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("confirmProfessorApproval")
+    class ConfirmProfessorApproval {
+
+        @Test
+        @DisplayName("지도교수 승인을 확인한 관리자와 시각이 남는다")
+        void recordsAdminAndTime() {
+            request.confirmProfessorApproval(9L);
+
+            assertThat(request.getProfessorApprovalConfirmedBy()).isEqualTo(9L);
+            assertThat(request.getProfessorApprovalConfirmedAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("다시 승인해도 처음 확인한 관리자와 시각을 덮어쓰지 않는다")
+        void doesNotOverwriteFirstConfirmation() {
+            request.confirmProfessorApproval(9L);
+            var firstAt = request.getProfessorApprovalConfirmedAt();
+
+            request.confirmProfessorApproval(10L);
+
+            assertThat(request.getProfessorApprovalConfirmedBy()).isEqualTo(9L);
+            assertThat(request.getProfessorApprovalConfirmedAt()).isEqualTo(firstAt);
+        }
+
+        @Test
+        @DisplayName("확인하지 않은 신청은 비어 있다")
+        void emptyByDefault() {
+            assertThat(request.getProfessorApprovalConfirmedBy()).isNull();
+            assertThat(request.getProfessorApprovalConfirmedAt()).isNull();
+        }
+    }
+
+    @Nested
     @DisplayName("completeApproval")
     class CompleteApproval {
 

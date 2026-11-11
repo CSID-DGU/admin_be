@@ -153,6 +153,28 @@ class AdminRequestCommandServiceApprovalContractTest {
     }
 
     @Test
+    @DisplayName("관리자가 지도교수 승인을 확인하고 승인하면 그 관리자가 신청에 기록된다")
+    void recordsProfessorApprovalAdmin() {
+        Long requestId = 310L;
+        Request request = approvableRequest(requestId);
+
+        service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null, 9L));
+
+        verify(request).confirmProfessorApproval(9L);
+    }
+
+    @Test
+    @DisplayName("승인자 없이 승인하는 경로(테스트 Pod 자동 승인)는 지도교수 승인을 기록하지 않는다")
+    void doesNotRecordProfessorApprovalWithoutAdmin() {
+        Long requestId = 311L;
+        Request request = approvableRequest(requestId);
+
+        service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
+
+        verify(request, never()).confirmProfessorApproval(any());
+    }
+
+    @Test
     @DisplayName("계정이 회수된 사람은 영구히 귀속된 자기 UID를 expected_uid로 보내 같은 번호·같은 홈으로 되살린다")
     void sendsOwnUidWhenAccountReleased() {
         Long requestId = 304L;

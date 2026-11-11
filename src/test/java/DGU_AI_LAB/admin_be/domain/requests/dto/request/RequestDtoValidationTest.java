@@ -127,6 +127,19 @@ class RequestDtoValidationTest {
     }
 
     @Nested
+    @DisplayName("지도교수 승인 확인")
+    class ProfessorApproval {
+
+        @Test
+        @DisplayName("승인 본문은 지도교수 승인 확인이 true일 때만 통과한다")
+        void approvalBodyRequiresConfirmation() {
+            assertThat(violatedPaths(new ApprovalRequestDTO(1L, 1, null, true))).isEmpty();
+            assertThat(violatedPaths(new ApprovalRequestDTO(1L, 1, null, false))).contains("professorApprovalConfirmed");
+            assertThat(violatedPaths(new ApprovalRequestDTO(1L, 1, null, null))).contains("professorApprovalConfirmed");
+        }
+    }
+
+    @Nested
     @DisplayName("관리자 코멘트 길이 (DB 컬럼 초과 시 500 방지)")
     class AdminComments {
 

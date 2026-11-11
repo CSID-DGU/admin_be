@@ -8,6 +8,7 @@ import DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage;
 import DGU_AI_LAB.admin_be.domain.containerImage.repository.ContainerImageRepository;
 import DGU_AI_LAB.admin_be.domain.groups.entity.Group;
 import DGU_AI_LAB.admin_be.domain.groups.repository.GroupRepository;
+import DGU_AI_LAB.admin_be.domain.groups.service.GroupMembershipPolicy;
 import DGU_AI_LAB.admin_be.domain.groups.service.PendingGroupService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.SingleChangeRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
@@ -29,6 +30,7 @@ import DGU_AI_LAB.admin_be.domain.portRequests.service.PortRequestService;
 import DGU_AI_LAB.admin_be.domain.warnings.service.SuspensionGuard;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
@@ -62,6 +64,7 @@ public class RequestCommandService {
     private final SlackMembershipGate slackMembershipGate;
     private final EntityManager entityManager;
     private final PendingGroupService pendingGroupService;
+    private final GroupMembershipPolicy groupMembershipPolicy;
     private final HomeCleanupService homeCleanupService;
 
     /** 아직 승인·거절이 정해지지 않은 신청 상태. */
@@ -166,10 +169,27 @@ public class RequestCommandService {
         // DTO 팩토리 메서드를 사용하여 검증된 ChangeRequest 생성 및 저장
         ChangeRequest changeRequest = SingleChangeRequestDTO.createValidatedChangeRequest(
                 dto, originalRequest, requestedBy, portRequestService.getPortRequestsByRequestId(requestId), objectMapper);
+        if (dto.changeType() == ChangeType.GROUP) {
+            // 값 형식은 위 검증이 끝냈다. 승인되면 이 그룹들에 속하게 되므로 한도를 먼저 확인한다.
+            Set<Long> gids = parseGids(dto.newValue());
+            List<Group> groups = groupRepository.findAllByUbuntuGidIn(gids);
+            if (groups.size() != gids.size()) { // 없는 gid를 버리면 한도가 적게 계산돼 접수만 통과한다
+                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+            }
+            groupMembershipPolicy.requireRoomFor(requestedBy, groups);
+        }
         changeRequestRepository.save(changeRequest);
 
         notifyChangeRequestedAfterCommit(changeRequest);
         return ChangeRequestResponseDTO.fromEntity(changeRequest);
+    }
+
+    private Set<Long> parseGids(String newValue) {
+        try {
+            return objectMapper.readValue(newValue, objectMapper.getTypeFactory().constructCollectionType(Set.class, Long.class));
+        } catch (JsonProcessingException e) {
+            throw new BusinessException("새로운 값의 형식이 올바르지 않습니다.", ErrorCode.INVALID_INPUT_VALUE);
+        }
     }
 
     /**
@@ -264,6 +284,8 @@ public class RequestCommandService {
         }
 
         List<Group> groups = findChosenGroups(dto);
+        // 신청이 승인되면 고른 그룹에 속하게 된다 — 지금 속한 그룹과 합쳐 한도를 넘으면 받지 않는다.
+        groupMembershipPolicy.requireRoomFor(user, groups);
 
         // 입력이 잘못돼 거절된 요청은 하루 한도에서 빼려고 모든 검증 뒤에 센다. Redis 카운터는 트랜잭션과 함께
         // 되돌아가지 않으므로, 이 아래에는 입력 때문에 실패하는 검증을 두지 않는다.

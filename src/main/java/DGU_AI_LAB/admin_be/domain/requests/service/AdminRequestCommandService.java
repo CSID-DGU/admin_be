@@ -143,6 +143,9 @@ public class AdminRequestCommandService {
             ResourceGroup resourceGroup = resourceGroupRepository.findById(dto.resourceGroupId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
             req.prepareAsyncApproval(image, resourceGroup, dto.adminComment());
+            if (dto.professorApprovedByAdminId() != null) {
+                req.confirmProfessorApproval(dto.professorApprovedByAdminId());
+            }
 
             // 비밀번호 재설정 승인과 같은 사용자 행 잠금으로 직렬화한다 — 잠금 없이 읽으면 교체 직전의 옛 해시로
             // 계정이 만들어질 수 있다(재설정 승인은 PROCESSING 신청이 있으면 거절한다).

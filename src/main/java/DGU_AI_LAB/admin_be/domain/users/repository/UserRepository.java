@@ -13,6 +13,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -70,8 +71,8 @@ public interface UserRepository extends JpaRepository<User,Long> {
 
     /**
      * 장기 미사용 판정 후보. 가입 시각이 기준일보다 이르고, 끝나지 않은 신청(컨테이너 포함)이 하나도 없는 활성 일반
-     * 사용자다. 관리자는 비활성화하면 운영할 사람이 사라지므로 뺀다. 미사용 기준 시각은 가입 시각보다 이르지 않아
-     * 가입 시각으로 추려도 대상이 빠지지 않는다. 마지막 컨테이너가 끝난 시각까지 따진 최종 판정은
+     * 사용자다. 졸업 예정일이 있어도 빼지 않는다 — 졸업 예정일을 미뤄 이 규칙을 피할 수 없다(두 규칙 중 이른 기한이 적용된다). 관리자는 비활성화하면 운영할 사람이 사라지므로 뺀다.
+     * 미사용 기준 시각은 가입 시각보다 이르지 않아 가입 시각으로 추려도 대상이 빠지지 않는다. 마지막 컨테이너가 끝난 시각까지 따진 최종 판정은
      * UserLifecycleTransactionalService가 한 곳에서 한다.
      */
     @Query("SELECT u FROM User u " +
@@ -81,6 +82,18 @@ public interface UserRepository extends JpaRepository<User,Long> {
             "  AND NOT EXISTS (SELECT r FROM Request r WHERE r.user = u AND r.status IN :openStatuses)")
     List<User> findInactiveUsers(@Param("thresholdDate") LocalDateTime thresholdDate,
                                  @Param("openStatuses") Collection<Status> openStatuses);
+
+    /**
+     * 졸업 예정일 규칙 후보. 졸업 예정일이 {@code graduationBefore}보다 이른 활성 일반 사용자 중 끝나지 않은 신청이
+     * 없는 사람이다. 최종 판정(졸업 예정일 + 30일)은 UserLifecycleTransactionalService가 한다.
+     */
+    @Query("SELECT u FROM User u " +
+            "WHERE u.isActive = true " +
+            "  AND u.role <> DGU_AI_LAB.admin_be.domain.users.entity.Role.ADMIN " +
+            "  AND u.expectedGraduationDate < :graduationBefore " +
+            "  AND NOT EXISTS (SELECT r FROM Request r WHERE r.user = u AND r.status IN :openStatuses)")
+    List<User> findGraduatingUsers(@Param("graduationBefore") LocalDate graduationBefore,
+                                   @Param("openStatuses") Collection<Status> openStatuses);
 
     /**
      * 홈 삭제 후보. 리눅스 계정을 가진 적이 있고, 끝나지 않은 신청이 하나도 없고, 마지막 컨테이너가 기준 시각보다 먼저
@@ -95,4 +108,21 @@ public interface UserRepository extends JpaRepository<User,Long> {
             "         AND d.approvedAt IS NOT NULL) < :endedBefore")
     List<User> findHomeCleanupCandidates(@Param("endedBefore") LocalDateTime endedBefore,
                                          @Param("openStatuses") Collection<Status> openStatuses);
+
+    /**
+     * 홈 삭제 직전 안내 후보. {@link #findHomeCleanupCandidates}와 같은 조건에, 마지막 컨테이너가 끝난 시각이
+     * [from, to) 안이고 탈퇴·비활성화되지 않은 사용자다(비활성 사용자에게 "새로 신청"하라고 안내하지 않는다).
+     */
+    @Query("SELECT u FROM User u " +
+            "WHERE u.ubuntuUsername IS NOT NULL AND u.ubuntuUid IS NOT NULL AND u.deletedAt IS NULL AND u.isActive = true " +
+            "  AND NOT EXISTS (SELECT r FROM Request r WHERE r.user = u AND r.status IN :openStatuses) " +
+            "  AND (SELECT MAX(d.updatedAt) FROM Request d WHERE d.user = u " +
+            "         AND d.status = DGU_AI_LAB.admin_be.domain.requests.entity.Status.DELETED " +
+            "         AND d.approvedAt IS NOT NULL) >= :from " +
+            "  AND (SELECT MAX(d.updatedAt) FROM Request d WHERE d.user = u " +
+            "         AND d.status = DGU_AI_LAB.admin_be.domain.requests.entity.Status.DELETED " +
+            "         AND d.approvedAt IS NOT NULL) < :to")
+    List<User> findHomeReminderCandidates(@Param("from") LocalDateTime from,
+                                          @Param("to") LocalDateTime to,
+                                          @Param("openStatuses") Collection<Status> openStatuses);
 }

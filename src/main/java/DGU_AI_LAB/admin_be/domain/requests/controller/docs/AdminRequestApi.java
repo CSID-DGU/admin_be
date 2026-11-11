@@ -61,7 +61,7 @@ public interface AdminRequestApi {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "409", description = "우분투 계정명 중복",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
-    ResponseEntity<SuccessResponse<?>> approveRequest(Long requestId, ApprovalRequestDTO dto);
+    ResponseEntity<SuccessResponse<?>> approveRequest(Long requestId, @Parameter(hidden = true) Long adminUserId, ApprovalRequestDTO dto);
 
     @Operation(summary = "사용 신청 거절", description = "PENDING 또는 FULFILLED 상태의 신청을 거절 처리합니다.")
     @ApiResponse(responseCode = "200", description = "성공")

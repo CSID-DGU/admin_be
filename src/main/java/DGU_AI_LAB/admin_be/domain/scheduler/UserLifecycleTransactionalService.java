@@ -1,6 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
+import DGU_AI_LAB.admin_be.domain.home.service.HomeRetentionPolicy;
 import DGU_AI_LAB.admin_be.domain.users.entity.Role;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
@@ -34,9 +35,13 @@ public class UserLifecycleTransactionalService {
     private final MessageUtils messageUtils;
     private final RedisTemplate<String, Object> redisTemplate;
     private final InactivityNoticeStore noticeStore;
+    private final HomeRetentionPolicy homeRetentionPolicy;
 
     /** 마지막 컨테이너가 끝난 뒤(컨테이너를 쓴 적이 없으면 가입한 뒤) 이만큼 지나면 비활성화한다. */
     static final int INACTIVE_MONTHS = 12;
+
+    /** 졸업 예정일로부터 이만큼 지나면 비활성화한다. 1년 미사용 규칙과 함께 적용하고 더 이른 쪽을 따른다. */
+    static final int GRADUATION_GRACE_DAYS = 30;
 
     /** 기한이 지나도록 경고를 받지 못한 사용자에게 경고와 함께 주는 유예 기간. */
     static final int NOTICE_DAYS = 7;
@@ -68,7 +73,9 @@ public class UserLifecycleTransactionalService {
         }
 
         LocalDate today = now.toLocalDate();
-        LocalDate ruleDate = inactiveSince.plusMonths(INACTIVE_MONTHS).toLocalDate();
+        RuleDeadline rule = ruleDeadline(user);
+        LocalDate ruleDate = rule.date();
+        boolean byGraduation = rule.byGraduation();
         LocalDate deleteDate = ruleDate.isAfter(today) ? ruleDate : noticedDeadline(userId, today);
         long daysLeft = ChronoUnit.DAYS.between(today, deleteDate);
 
@@ -79,9 +86,29 @@ public class UserLifecycleTransactionalService {
                 log.warn("유저({}) 유예 예정일을 기록하지 못해 경고를 보내지 않고 다음 회차에 다시 봅니다", userId);
                 return false;
             }
-            sendWarningAlert(user, daysLeft, deleteDate, today.toString());
+            sendWarningAlert(user, daysLeft, deleteDate, today.toString(), byGraduation);
         }
         return daysLeft <= 0;
+    }
+
+    /**
+     * 두 규칙(졸업 예정일 + {@link #GRADUATION_GRACE_DAYS}, 마지막 컨테이너 종료 + {@link #INACTIVE_MONTHS})의 기한과
+     * 어느 쪽이 이른지. 졸업 예정일을 계속 미뤄도 1년 미사용 규칙은 피하지 못하므로 더 이른 쪽을 쓴다.
+     * 판정은 이 메서드만 한다 — 스케줄러 경고·비활성화와 관리자 탈퇴가 같은 결과를 쓴다.
+     * 미사용 기준 시각이 없으면(가입 시각도 없는 미저장 엔티티) 졸업 기한만 본다.
+     */
+    public static RuleDeadline ruleDeadline(User user) {
+        LocalDateTime inactiveSince = inactiveSince(user);
+        LocalDate inactivityDate = inactiveSince == null ? null : inactiveSince.plusMonths(INACTIVE_MONTHS).toLocalDate();
+        LocalDate graduationDate = user.getExpectedGraduationDate() == null
+                ? null : user.getExpectedGraduationDate().plusDays(GRADUATION_GRACE_DAYS);
+        boolean byGraduation = graduationDate != null
+                && (inactivityDate == null || graduationDate.isBefore(inactivityDate));
+        return new RuleDeadline(byGraduation ? graduationDate : inactivityDate, byGraduation);
+    }
+
+    /** 규칙별 기한 중 적용되는 기한과, 그것이 졸업 규칙인지. */
+    public record RuleDeadline(LocalDate date, boolean byGraduation) {
     }
 
     /** 규칙상 기한이 지난 사용자의 비활성화 예정일. 경고하면서 알린 날이 있으면 그날, 없으면 오늘부터 유예를 준다. */
@@ -97,16 +124,17 @@ public class UserLifecycleTransactionalService {
         return user.lastContainerEndedAt().orElse(user.getCreatedAt());
     }
 
-    private void sendWarningAlert(User user, long daysLeft, LocalDate deleteDate, String today) {
+    private void sendWarningAlert(User user, long daysLeft, LocalDate deleteDate, String today, boolean byGraduation) {
         if (isDuplicateWarning(user.getUserId(), daysLeft, today)) {
             log.debug("계정 삭제 경고 중복 발송 방지: userId={}, daysLeft={}, date={}", user.getUserId(), daysLeft, today);
             return;
         }
 
         String dateStr = deleteDate.toString();
-        String subject = messageUtils.get("notification.user.delete-warning.subject", String.valueOf(daysLeft));
-        String body = messageUtils.get("notification.user.delete-warning.body",
-                user.getName(), String.valueOf(daysLeft), dateStr);
+        String noticeKey = byGraduation ? "notification.user.graduation-warning" : "notification.user.delete-warning";
+        String subject = messageUtils.get(noticeKey + ".subject", String.valueOf(daysLeft));
+        String body = messageUtils.get(noticeKey + ".body",
+                user.getName(), String.valueOf(daysLeft), dateStr, String.valueOf(homeRetentionPolicy.announcedDays()));
 
         String name = user.getName();
         String email = user.getEmail();

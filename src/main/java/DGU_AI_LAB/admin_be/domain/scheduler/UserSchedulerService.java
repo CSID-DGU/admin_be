@@ -9,6 +9,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
@@ -39,7 +42,15 @@ public class UserSchedulerService {
     private void processInactiveUsers(LocalDateTime now) {
         LocalDateTime searchThreshold = now.plusDays(NOTIFICATION_LEAD_DAYS)
                 .minusMonths(UserLifecycleTransactionalService.INACTIVE_MONTHS);
-        List<User> inactiveCandidates = userRepository.findInactiveUsers(searchThreshold, Status.openStatuses());
+        // 졸업 예정일 + 30일의 D-7 경고까지 포함하려면 졸업 예정일이 (오늘 + 8일 - 30일)보다 이른 사용자를 본다.
+        LocalDate graduationBefore = now.toLocalDate().plusDays(NOTIFICATION_LEAD_DAYS)
+                .minusDays(UserLifecycleTransactionalService.GRADUATION_GRACE_DAYS);
+        Map<Long, User> candidates = new LinkedHashMap<>();
+        userRepository.findInactiveUsers(searchThreshold, Status.openStatuses())
+                .forEach(u -> candidates.put(u.getUserId(), u));
+        userRepository.findGraduatingUsers(graduationBefore, Status.openStatuses())
+                .forEach(u -> candidates.putIfAbsent(u.getUserId(), u));
+        List<User> inactiveCandidates = List.copyOf(candidates.values());
 
         for (User user : inactiveCandidates) {
             try {
