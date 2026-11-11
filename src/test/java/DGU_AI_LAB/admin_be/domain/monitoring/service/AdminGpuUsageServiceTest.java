@@ -49,11 +49,16 @@ class AdminGpuUsageServiceTest {
     }
 
     private static Snapshot snap(boolean available, List<Sample> procMem, Map<String, Owner> podOwners) {
+        return snap(available, procMem, podOwners, Map.of());
+    }
+
+    private static Snapshot snap(boolean available, List<Sample> procMem, Map<String, Owner> podOwners,
+                                 Map<String, Double> ramBytes) {
         List<Sample> util = List.of(s(40, "UUID", "GPU-1", "gpu", "0", "modelName", "RTX 3090"));
         return new Snapshot(util,
                 Map.of("GPU-1", s(10240, "UUID", "GPU-1")),
                 Map.of("GPU-1", s(14336, "UUID", "GPU-1")),
-                procMem, Map.of("GPU-1/" + C_KNOWN + "/11", 3600.0), podOwners, Map.of(), available);
+                procMem, Map.of("GPU-1/" + C_KNOWN + "/11", 3600.0), podOwners, Map.of(), ramBytes, available);
     }
 
     @Test
@@ -92,6 +97,21 @@ class AdminGpuUsageServiceTest {
         assertThat(p.processName()).isEqualTo("train.py");
         assertThat(p.memoryUsedMiB()).isEqualTo(2);
         assertThat(p.elapsedSeconds()).isZero();
+    }
+
+    @Test
+    @DisplayName("컨테이너 RAM은 아는 컨테이너에만 MiB로 채우고 모르면 null이다")
+    void containerRamOnlyWhenKnown() {
+        Owner owner = new Owner("u7", 7L, "홍길동", "u7", 70L);
+        Sample known = s(5 * 1048576.0, "gpu_uuid", "GPU-1", "container_id", C_KNOWN, "pid", "11", "process_name", "/b/python");
+        Sample unknown = s(1 * 1048576.0, "gpu_uuid", "GPU-1", "container_id", C_UNKNOWN, "pid", "1", "process_name", "/a");
+        when(myGpuUsageService.snapshot("farm6")).thenReturn(
+                snap(true, List.of(known, unknown), Map.of(C_KNOWN, owner), Map.of(C_KNOWN, 3 * 1048576.0)));
+
+        List<AdminGpuUsageResponseDTO.Process> procs = service.getGpuUsage("farm6").get(0).gpus().get(0).processes();
+
+        assertThat(procs.get(0).containerRamMiB()).isEqualTo(3.0);
+        assertThat(procs.get(1).containerRamMiB()).isNull();
     }
 
     @Test

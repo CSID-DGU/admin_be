@@ -49,6 +49,11 @@ public class AdminGpuUsageService {
                 .toList();
     }
 
+    private static Double ramMiB(Snapshot snap, String containerId) {
+        Double bytes = snap.podRamBytesByContainer().get(containerId);
+        return bytes == null ? null : bytes / MyGpuUsageService.MIB;
+    }
+
     private AdminGpuUsageResponseDTO usageOf(String node, boolean failHard) {
         Snapshot snap;
         try {
@@ -71,6 +76,7 @@ public class AdminGpuUsageService {
                         .userId(owner == null ? null : owner.userId())
                         .requestId(owner == null ? null : owner.requestId())
                         .containerId(containerId == null || containerId.isBlank() ? null : MyGpuUsageService.shortId(containerId))
+                        .containerRamMiB(containerId == null ? null : ramMiB(snap, containerId))
                         .processName(MyGpuUsageService.baseName(s.labels().get("process_name")))
                         .memoryUsedMiB(s.value() / MyGpuUsageService.MIB)
                         .elapsedSeconds(snap.elapsed().getOrDefault(MyGpuUsageService.procKey(s), 0.0).longValue())

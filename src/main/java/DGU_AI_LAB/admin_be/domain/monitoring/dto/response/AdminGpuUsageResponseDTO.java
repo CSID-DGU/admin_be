@@ -33,6 +33,7 @@ public record AdminGpuUsageResponseDTO(
             @Schema(description = "소유자 사용자 번호. 미확인이거나 옛 Docker 컨테이너면 null", nullable = true) Long userId,
             @Schema(description = "소유 신청 번호. 미확인이거나 옛 Docker 컨테이너면 null", nullable = true) Long requestId,
             @Schema(description = "컨테이너 ID 앞 12자") String containerId,
+            @Schema(description = "이 컨테이너(Pod) 전체 RAM(MiB, working set). 이 프로세스만의 값이 아니라 같은 컨테이너의 행마다 같다. 모르면 null", nullable = true) Double containerRamMiB,
             @Schema(description = "프로세스 이름(파일 이름만)") String processName,
             @Schema(description = "GPU 메모리(MiB)") double memoryUsedMiB,
             @Schema(description = "실행된 지 지난 시간(초)") long elapsedSeconds) {
