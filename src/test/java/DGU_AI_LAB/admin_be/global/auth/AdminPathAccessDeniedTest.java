@@ -87,6 +87,27 @@ class AdminPathAccessDeniedTest {
     }
 
     @Test
+    @DisplayName("일반 사용자 토큰으로 관리자 GPU 사용 현황을 부르면 403이다")
+    void adminGpuUsage_withUserRole_returnsForbidden() {
+        User user = userRepository.save(User.builder()
+                .email("gpu-user@dgu.ac.kr")
+                .password("encoded")
+                .name("일반사용자")
+                .studentId("2021001235")
+                .phone("010-1111-3333")
+                .department("컴퓨터공학과")
+                .build());
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(jwtProvider.getIssueToken(user.getUserId(), true));
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                "/api/admin/gpu-usage", HttpMethod.GET, new HttpEntity<>(headers), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody()).contains("ACCESS_DENIED");
+    }
+
+    @Test
     @DisplayName("토큰 없이 관리자 API를 부르면 401을 받는다")
     void adminPath_withoutToken_returnsUnauthorized() {
         ResponseEntity<String> response = restTemplate.getForEntity("/api/admin/users/1/groups", String.class);
