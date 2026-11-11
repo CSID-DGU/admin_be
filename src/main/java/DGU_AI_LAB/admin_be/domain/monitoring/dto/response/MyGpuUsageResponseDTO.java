@@ -15,7 +15,8 @@ public record MyGpuUsageResponseDTO(
         @Schema(description = "서버(노드) 이름", example = "farm1") String nodeName,
         @Schema(description = "GPU별 현황") List<Gpu> gpus,
         @Schema(description = "프로세스·다른 사용자 정보를 읽었는지. false면 내 프로세스 없음·다른 사용자 0명이 '없음'이 아니라 '모름'이다")
-        boolean processesAvailable) {
+        boolean processesAvailable,
+        @Schema(description = "내 Pod 전체 RAM(MiB, working set). 모르면 null. 다른 사용자의 RAM은 담지 않는다", nullable = true) Double myRamMiB) {
 
     @Builder
     public record Gpu(

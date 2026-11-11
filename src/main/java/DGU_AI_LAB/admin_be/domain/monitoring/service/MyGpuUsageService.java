@@ -47,6 +47,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class MyGpuUsageService {
 
+    private static final java.util.regex.Pattern POD_NAME = java.util.regex.Pattern.compile("[A-Za-z0-9.-]+");
     static final double MIB = 1024.0 * 1024.0;
     static final long CACHE_TTL_MS = 10_000;
     private static final ExecutorService POOL = Executors.newCachedThreadPool(r -> {
@@ -62,11 +63,11 @@ public class MyGpuUsageService {
     private final Map<String, Cached> cache = new ConcurrentHashMap<>();
     private final Map<String, Object> locks = new ConcurrentHashMap<>();
 
-    /** 노드 하나의 Prometheus 결과와 소유자 해석. processesAvailable=false면 프로세스 쪽 조회가 실패한 것이다. */
+    /** 노드 하나의 Prometheus 결과와 소유자 해석. podRamBytesByContainer: 컨테이너 ID → 그 Pod 전체 RAM(바이트), 모르면 키 없음. processesAvailable=false면 프로세스 쪽 조회가 실패한 것이다. */
     record Snapshot(List<Sample> util, Map<String, Sample> used, Map<String, Sample> free,
                     List<Sample> procMem, Map<String, Double> elapsed,
                     Map<String, Owner> podOwnerByContainer, Map<String, Owner> dockerOwnerByContainerGpu,
-                    boolean processesAvailable) {
+                    Map<String, Double> podRamBytesByContainer, boolean processesAvailable) {
     }
 
     /**
@@ -91,7 +92,7 @@ public class MyGpuUsageService {
         }
         String node = request.getNodeName();
         if (request.getPodName() == null || node == null) {
-            return response(node, List.of(), true);
+            return response(node, List.of(), true, null);
         }
 
         Snapshot snap;
@@ -153,11 +154,25 @@ public class MyGpuUsageService {
                 })
                 .sorted(Comparator.comparingInt(Gpu::index))
                 .toList();
-        return response(node, gpus, snap.processesAvailable());
+        return response(node, gpus, snap.processesAvailable(), podRamMiB(request.getPodName()));
     }
 
-    private static MyGpuUsageResponseDTO response(String node, List<Gpu> gpus, boolean processesAvailable) {
-        return MyGpuUsageResponseDTO.builder().nodeName(node).gpus(gpus).processesAvailable(processesAvailable).build();
+    private static MyGpuUsageResponseDTO response(String node, List<Gpu> gpus, boolean processesAvailable, Double myRamMiB) {
+        return MyGpuUsageResponseDTO.builder().nodeName(node).gpus(gpus).processesAvailable(processesAvailable)
+                .myRamMiB(myRamMiB).build();
+    }
+
+    /** 내 Pod 전체 RAM(MiB). GPU를 안 써도 보이도록 별도로 조회하며, 실패·없음은 GPU 정보를 막지 않고 null(모름)이다. */
+    private Double podRamMiB(String pod) {
+        if (!POD_NAME.matcher(pod).matches()) return null;
+        try {
+            List<Sample> r = prometheusClient.querySeries(
+                    "sum(container_memory_working_set_bytes{pod=\"" + pod + "\",container!=\"\",container!=\"POD\"})");
+            return r.isEmpty() ? null : r.get(0).value() / MIB;
+        } catch (Exception e) {
+            log.warn("[MY-GPU] Pod RAM 조회 실패: pod={} {}", pod, e.toString());
+            return null;
+        }
     }
 
     Set<String> nodeModels(String node) {
@@ -222,6 +237,7 @@ public class MyGpuUsageService {
         Map<String, Double> elapsed = new HashMap<>();
         Map<String, Owner> podOwners = new HashMap<>();
         Map<String, Owner> dockerOwners = new HashMap<>();
+        Map<String, Double> ramByContainer = new HashMap<>();
         boolean available = true;
         try {
             // exporter가 이 노드에서 프로세스 목록을 읽고 있는지: 없으면(옛 exporter·미배포) 또는 0이면 '프로세스 없음'이 아니라 '모름'이다.
@@ -229,7 +245,7 @@ public class MyGpuUsageService {
                     .stream().anyMatch(s -> s.value() == 1.0);
             if (!up) {
                 log.warn("[MY-GPU] 프로세스 지표 없음(gpu_process_metrics_up): node={}", node);
-                return new Snapshot(util, used, free, List.of(), elapsed, podOwners, dockerOwners, false);
+                return new Snapshot(util, used, free, List.of(), elapsed, podOwners, dockerOwners, ramByContainer, false);
             }
             String uuids = util.stream().map(s -> s.labels().get("UUID")).filter(u -> u != null && u.matches("[A-Za-z0-9-]+"))
                     .collect(Collectors.joining("|"));
@@ -241,7 +257,7 @@ public class MyGpuUsageService {
                         () -> prometheusClient.querySeries("gpu_process_elapsed_seconds" + psel), POOL);
                 procMem = memF.join();
                 for (Sample s : elF.join()) elapsed.put(procKey(s), s.value());
-                resolveOwners(procMem, podOwners, dockerOwners);
+                resolveOwners(procMem, podOwners, dockerOwners, ramByContainer);
             }
         } catch (Exception e) {
             // 프로세스 정보 없이도 GPU별 사용률은 보여 준다. 대신 '모름'임을 응답에 남긴다.
@@ -249,7 +265,7 @@ public class MyGpuUsageService {
             procMem = List.of();
             available = false;
         }
-        return new Snapshot(util, used, free, procMem, elapsed, podOwners, dockerOwners, available);
+        return new Snapshot(util, used, free, procMem, elapsed, podOwners, dockerOwners, ramByContainer, available);
     }
 
     /**
@@ -267,7 +283,8 @@ public class MyGpuUsageService {
      * Pod는 kube_pod_container_info의 container_id로 Pod 이름을 찾아 신청의 사용자로,
      * 옛 Docker 컨테이너는 docker_gpu_user_container_info의 ubuntu_username으로 찾는다.
      */
-    private void resolveOwners(List<Sample> procMem, Map<String, Owner> podOwners, Map<String, Owner> dockerOwners) {
+    private void resolveOwners(List<Sample> procMem, Map<String, Owner> podOwners, Map<String, Owner> dockerOwners,
+                               Map<String, Double> ramByContainer) {
         Set<String> ids = procMem.stream().map(s -> s.labels().get("container_id"))
                 .filter(id -> id != null && id.matches("[0-9a-f]{64}")).collect(Collectors.toSet());
         if (ids.isEmpty()) return;
@@ -280,6 +297,7 @@ public class MyGpuUsageService {
             if (cid != null && pod != null) podByContainer.put(cid.substring(cid.lastIndexOf('/') + 1), pod);
         }
         if (!podByContainer.isEmpty()) {
+            fillPodRam(podByContainer, ramByContainer);
             Map<String, Owner> ownerByPod = new HashMap<>();
             for (Request r : requestRepository.findAllByPodNameIn(new HashSet<>(podByContainer.values()))) {
                 ownerByPod.put(r.getPodName(), new Owner(ownerKey(r), r.getUser().getUserId(), r.getUser().getName(),
@@ -300,6 +318,24 @@ public class MyGpuUsageService {
             if (cid != null && uuid != null && !isBlank(user)) {
                 dockerOwners.put(cid + "/" + uuid, new Owner(user, null, s.labels().get("real_name"), user, null));
             }
+        }
+    }
+
+    /** Pod 전체 RAM(cAdvisor working set 합계)을 컨테이너 ID에 붙인다. 실패해도 소유자 해석은 계속한다. */
+    private void fillPodRam(Map<String, String> podByContainer, Map<String, Double> ramByContainer) {
+        Set<String> pods = podByContainer.values().stream().filter(p -> POD_NAME.matcher(p).matches()).collect(Collectors.toSet());
+        if (pods.isEmpty()) return;
+        try {
+            Map<String, Double> ramByPod = new HashMap<>();
+            for (Sample s : prometheusClient.querySeries("sum by (pod) (container_memory_working_set_bytes{pod=~\""
+                    + String.join("|", pods) + "\",container!=\"\",container!=\"POD\"})")) {
+                if (s.labels().get("pod") != null) ramByPod.put(s.labels().get("pod"), s.value());
+            }
+            podByContainer.forEach((cid, pod) -> {
+                if (ramByPod.containsKey(pod)) ramByContainer.put(cid, ramByPod.get(pod));
+            });
+        } catch (Exception e) {
+            log.warn("[MY-GPU] Pod RAM 조회 실패: {}", e.toString());
         }
     }
 

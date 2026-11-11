@@ -103,8 +103,14 @@ class MyGpuUsageServiceTest {
         Request amy = request(3L, "pod-secret-y", "node-a");
         when(requestRepository.findAllByPodNameIn(anyCollection())).thenReturn(List.of(mine, bob, amy));
 
+        // 내 Pod의 RAM(512MiB)만 응답에 담긴다. 다른 사용자 Pod의 RAM은 어디에도 나오지 않는다.
+        when(prometheus.querySeries(contains("pod=\"pod-mine\""))).thenReturn(List.of(s(512 * 1048576.0)));
+        when(prometheus.querySeries(contains("sum by (pod)"))).thenReturn(List.of(
+                s(512 * 1048576.0, "pod", "pod-mine"), s(777 * 1048576.0, "pod", "pod-secret-x")));
+
         MyGpuUsageResponseDTO dto = service.getMyGpuUsage(10L, 1L);
 
+        assertThat(dto.myRamMiB()).isEqualTo(512.0);
         assertThat(dto.gpus()).hasSize(2);
         MyGpuUsageResponseDTO.Gpu g0 = dto.gpus().get(0);
         assertThat(g0.utilizationPercent()).isEqualTo(40);
@@ -116,7 +122,22 @@ class MyGpuUsageServiceTest {
 
         String json = new ObjectMapper().writeValueAsString(dto);
         assertThat(json).doesNotContain("secret").doesNotContain("bob").doesNotContain("amy")
-                .doesNotContain("train").doesNotContain("dave").doesNotContain("\"pid\"");
+                .doesNotContain("train").doesNotContain("dave").doesNotContain("\"pid\"").doesNotContain("777");
+    }
+
+    @Test
+    @DisplayName("RAM 조회가 실패해도 GPU 정보는 주고 myRamMiB만 null이다")
+    void ramFailureDoesNotBreakGpuView() {
+        Request mine = request(1L, "pod-mine", "node-a");
+        when(requestRepository.findByIdWithUser(10L)).thenReturn(Optional.of(mine));
+        when(prometheus.querySeries(contains("DCGM_FI_DEV_GPU_UTIL"))).thenReturn(List.of(
+                s(40, "UUID", "GPU-1", "gpu", "0", "modelName", "RTX 3090")));
+        when(prometheus.querySeries(contains("container_memory_working_set_bytes"))).thenThrow(new RuntimeException("down"));
+
+        MyGpuUsageResponseDTO dto = service.getMyGpuUsage(10L, 1L);
+
+        assertThat(dto.myRamMiB()).isNull();
+        assertThat(dto.gpus()).hasSize(1);
     }
 
     @Test
