@@ -60,6 +60,10 @@ public class HomeCleanup extends BaseTimeEntity {
     @Column(name = "failure_code", length = 64)
     private String failureCode;
 
+    /** 삭제 직전에 잰 홈 폴더 크기(바이트). 못 쟀거나 이미 없던 홈이면 비어 있다. */
+    @Column(name = "size_bytes")
+    private Long sizeBytes;
+
     private HomeCleanup(User user, LocalDateTime lastContainerEndedAt) {
         this.user = user;
         this.ubuntuUsername = user.getUbuntuUsername();
@@ -79,8 +83,9 @@ public class HomeCleanup extends BaseTimeEntity {
         return this.status == HomeCleanupStatus.PROCESSING;
     }
 
-    public void complete() {
+    public void complete(Long sizeBytes) {
         this.status = HomeCleanupStatus.DELETED;
+        this.sizeBytes = sizeBytes;
     }
 
     public void fail(String failureCode) {

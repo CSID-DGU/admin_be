@@ -66,7 +66,8 @@ public class HomeCleanupJobPoller extends OperationJobPoller<HomeCleanup> {
 
     @Override
     protected void onSuccess(HomeCleanup cleanup, JobResultResponseDTO result) {
-        homeCleanupService.complete(cleanup.getHomeCleanupId()).ifPresent(notifier::deleted);
+        homeCleanupService.complete(cleanup.getHomeCleanupId(),
+                result.result() == null ? null : result.result().sizeBytes()).ifPresent(notifier::deleted);
     }
 
     @Override
