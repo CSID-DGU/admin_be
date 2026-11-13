@@ -125,6 +125,7 @@ public class User extends BaseTimeEntity {
      * 읽는 곳이 트랜잭션 밖(알림·이벤트 리스너)에도 많아 즉시 로딩한다. 한 사람에 몇 건뿐이다.
      */
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @org.hibernate.annotations.BatchSize(size = 100) // 사용자 목록을 읽을 때 계정을 사용자마다 따로 읽지 않게 묶는다
     private Set<UbuntuAccount> ubuntuAccounts = new HashSet<>();
 
     /**
@@ -278,7 +279,7 @@ public class User extends BaseTimeEntity {
 
     /** 이 서버에서 마지막 컨테이너가 끝난 시각. 홈은 서버마다 따로라 홈 삭제 판단은 서버 단위로 한다. */
     public Optional<LocalDateTime> lastContainerEndedAt(String serverName) {
-        return lastContainerEndedAt(r -> r.getServerName().equalsIgnoreCase(serverName));
+        return lastContainerEndedAt(r -> serverName.equalsIgnoreCase(r.getServerName()));
     }
 
     private Optional<LocalDateTime> lastContainerEndedAt(java.util.function.Predicate<Request> scope) {
@@ -297,7 +298,7 @@ public class User extends BaseTimeEntity {
 
     /** 이 서버에 끝나지 않은 신청이 있는가. */
     public boolean hasOpenRequest(String serverName) {
-        return this.requests.stream().anyMatch(r -> r.getServerName().equalsIgnoreCase(serverName)
+        return this.requests.stream().anyMatch(r -> serverName.equalsIgnoreCase(r.getServerName())
                 && Status.openStatuses().contains(r.getStatus()));
     }
 

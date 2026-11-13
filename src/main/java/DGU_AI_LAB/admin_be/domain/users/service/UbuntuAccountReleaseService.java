@@ -67,7 +67,14 @@ public class UbuntuAccountReleaseService {
                         .filter(UbuntuAccount::isReleasing).map(UbuntuAccount::getServerName).toList())
                         .orElse(List.of()));
         if (servers != null) {
-            servers.forEach(server -> advance(userId, server));
+            for (String server : servers) {
+                // 한 서버의 실패가 다른 서버 회수를 굶기지 않게 서버마다 따로 막는다. 다음 바퀴에 다시 본다.
+                try {
+                    advance(userId, server);
+                } catch (Exception e) {
+                    log.warn("[계정 회수] 진행 실패 - userId={}, server={}", userId, server, e);
+                }
+            }
         }
     }
 
@@ -107,13 +114,13 @@ public class UbuntuAccountReleaseService {
         }
         // 다른 서버의 컨테이너·노드는 이 서버 계정과 무관하다.
         boolean containersRemain = requestRepository.findAllByUser_UserId(user.getUserId()).stream()
-                .filter(r -> r.getServerName().equalsIgnoreCase(serverName))
+                .filter(r -> serverName.equalsIgnoreCase(r.getServerName()))
                 .anyMatch(r -> Status.activeStatuses().contains(r.getStatus()) || r.getStatus() == Status.PROCESSING);
         // 최신순이므로 노드마다 처음 보이는 신청이 그 노드에서 계정을 마지막으로 쓴 신청이다.
         Set<String> seen = new LinkedHashSet<>();
         List<NodeJob> nodes = new ArrayList<>();
         for (Request r : requestRepository.findAllWithNodeByUserIdOrderByRequestIdDesc(userId)) {
-            if (r.getStatus() == Status.DELETED && r.getServerName().equalsIgnoreCase(serverName)
+            if (r.getStatus() == Status.DELETED && serverName.equalsIgnoreCase(r.getServerName())
                     && seen.add(r.getNodeName())) {
                 nodes.add(new NodeJob(r.getNodeName(), r.getRequestId(), r.getJobId()));
             }

@@ -48,6 +48,7 @@ class HomeCleanupServiceTest {
         service = new HomeCleanupService(userRepository, cleanupRepository, new HomeRetentionPolicy());
         when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user));
         when(user.getUbuntuUsername()).thenReturn("hong");
+        when(user.ubuntuUsernameOn(any())).thenReturn("hong");
         when(user.getUbuntuUid()).thenReturn(55010L);
         when(user.hasOpenRequest(User.PRIMARY_SERVER)).thenReturn(false);
         when(user.lastContainerEndedAt(User.PRIMARY_SERVER)).thenReturn(Optional.of(ENDED_LONG_AGO));

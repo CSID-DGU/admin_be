@@ -130,7 +130,7 @@ public class PasswordResetService {
                 return new Outcome(PasswordResetSummaryDTO.fromEntity(reset), ChangeRequestDecision.of(reset.getChangeRequest()));
             }
             reset.startProcessing(admin, adminComment,
-                    registerJob(reset.getPasswordResetRequestId(), user.getUbuntuUsername(), reset.getUbuntuPasswordHash()));
+                    registerJob(reset.getPasswordResetRequestId(), user.ubuntuUsernameOn(User.PRIMARY_SERVER), reset.getUbuntuPasswordHash()));
             return new Outcome(PasswordResetSummaryDTO.fromEntity(reset), null);
         });
         log.info("[passwordReset] changeRequestId={} 승인: adminId={}, status={}", changeRequestId, adminId, approval.request().status());
