@@ -50,10 +50,11 @@ public class HomeCleanupService {
     @Transactional
     public Optional<Target> begin(Long userId, LocalDateTime now) {
         User user = userRepository.findByIdForUpdate(userId).orElseThrow();
-        if (user.getUbuntuUsername() == null || user.getUbuntuUid() == null || user.hasOpenRequest()) {
+        if (user.getUbuntuUsername() == null || user.getUbuntuUid() == null
+                || user.hasOpenRequest(User.PRIMARY_SERVER)) {
             return Optional.empty();
         }
-        Optional<LocalDateTime> endedAt = user.lastContainerEndedAt()
+        Optional<LocalDateTime> endedAt = user.lastContainerEndedAt(User.PRIMARY_SERVER)
                 .filter(ended -> ended.isBefore(retentionPolicy.deletableEndedBefore(now)));
         if (endedAt.isEmpty() || cleanupRepository.existsByUser_UserIdAndStatusInAndLastContainerEndedAtGreaterThanEqual(
                 userId, SETTLED_OR_RUNNING, endedAt.get())) {

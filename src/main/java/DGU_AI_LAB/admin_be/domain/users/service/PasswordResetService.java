@@ -118,6 +118,12 @@ public class PasswordResetService {
                 throw new BusinessException(ErrorCode.UBUNTU_PASSWORD_CHANGE_WHILE_PROVISIONING);
             }
             User admin = userRepository.getReferenceById(adminId);
+            // 비밀번호 교체 작업은 기본 서버의 config-server 하나에만 등록한다. 다른 서버에 살아 있는 계정이 있으면 그 계정만 옛
+            // 비밀번호로 남으므로, 서버별 작업 경로가 생기기 전에는 조용히 넘기지 않고 막는다.
+            if (user.getUbuntuAccounts().stream().anyMatch(acc -> acc.isActive() && !acc.isServer(User.PRIMARY_SERVER))) {
+                throw new BusinessException("기본 서버 밖에 활성 계정이 있어 비밀번호 재설정을 승인할 수 없습니다.",
+                        ErrorCode.INVALID_REQUEST_STATUS);
+            }
             if (!user.hasUbuntuAccount()) {
                 apply(user, reset.hashes());
                 reset.applyWithoutJob(admin, adminComment);

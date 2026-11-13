@@ -121,6 +121,13 @@ public class User extends BaseTimeEntity {
     private List<Request> requests = new ArrayList<>();
 
     /**
+     * 서버별 리눅스 계정. 서버(resource_groups.server_name)마다 AD·NAS가 달라 한 사람이 서버 수만큼 가진다. 신청의 유저네임·UID를
+     * 읽는 곳이 트랜잭션 밖(알림·이벤트 리스너)에도 많아 즉시 로딩한다. 한 사람에 몇 건뿐이다.
+     */
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    private Set<UbuntuAccount> ubuntuAccounts = new HashSet<>();
+
+    /**
      * 이 계정이 실제로 가진 그룹. Request 단위가 아니라 계정 단위다 — 같은 웹 계정의
      * 모든 컨테이너가 같은 우분투 계정을 쓰므로(ubuntuUsername), 그룹도 계정 하나에 대해
      * 한 벌만 존재한다. AD에 실제로 반영된 뒤에만(승인 성공 확인 후) 채워진다.
@@ -217,9 +224,48 @@ public class User extends BaseTimeEntity {
         this.ubuntuPasswordHash = ubuntuPasswordHash;
     }
 
-    /** 리눅스 계정이 지금 살아 있는지. false면 승인 시 계정 생성(또는 같은 UID로 되살리기)을 요청해야 한다. */
+    /**
+     * 롤백 안전을 위해 옛 단일 계정 컬럼(ubuntu_uid/gid/account_status)에 미러링하는 기본 서버. 이 서버 계정의 쓰기만 옛 컬럼에도
+     * 적는다. shortcut: 서버 이름을 코드에 둠, 옛 컬럼을 지우는 후속 버전에서 이 상수와 미러링을 함께 제거한다.
+     */
+    public static final String PRIMARY_SERVER = "FARM";
+
+    /** 이 서버의 계정. 한 번도 만들어지지 않은 서버면 비어 있다. */
+    public Optional<UbuntuAccount> ubuntuAccount(String serverName) {
+        return this.ubuntuAccounts.stream().filter(a -> a.isServer(serverName)).findFirst();
+    }
+
+    /** 이 서버의 계정 행. 없으면 가입 때 고른 유저네임으로 만든다(아직 원장에 없는 NONE 상태). */
+    public UbuntuAccount ubuntuAccountFor(String serverName) {
+        return ubuntuAccount(serverName).orElseGet(() -> {
+            UbuntuAccount created = new UbuntuAccount(this, serverName, this.ubuntuUsername);
+            this.ubuntuAccounts.add(created);
+            return created;
+        });
+    }
+
+    /** 이 서버에서 쓸 유저네임. 계정 행이 있으면 그 값, 없으면 가입 때 고른 이름이다. */
+    public String ubuntuUsernameOn(String serverName) {
+        return ubuntuAccount(serverName).map(UbuntuAccount::getUsername).orElse(this.ubuntuUsername);
+    }
+
+    /** 이 서버 계정의 UID. 계정이 한 번도 만들어지지 않았으면 null. */
+    public Long ubuntuUidOn(String serverName) {
+        return ubuntuAccount(serverName).map(UbuntuAccount::getUid).orElse(null);
+    }
+
+    public Long ubuntuGidOn(String serverName) {
+        return ubuntuAccount(serverName).map(UbuntuAccount::getGid).orElse(null);
+    }
+
+    /** 이 서버의 리눅스 계정이 지금 살아 있는지. false면 승인 시 계정 생성(또는 같은 UID로 되살리기)을 요청해야 한다. */
+    public boolean hasUbuntuAccount(String serverName) {
+        return ubuntuAccount(serverName).map(UbuntuAccount::isActive).orElse(false);
+    }
+
+    /** 기본 서버 기준. 서버를 아는 호출부는 {@link #hasUbuntuAccount(String)}을 쓴다. */
     public boolean hasUbuntuAccount() {
-        return this.ubuntuAccountStatus == UbuntuAccountStatus.ACTIVE;
+        return hasUbuntuAccount(PRIMARY_SERVER);
     }
 
     /**
@@ -227,7 +273,17 @@ public class User extends BaseTimeEntity {
      * 행이 바뀌지 않는다. 컨테이너를 쓴 적이 없으면 비어 있다.
      */
     public Optional<LocalDateTime> lastContainerEndedAt() {
+        return lastContainerEndedAt(r -> true);
+    }
+
+    /** 이 서버에서 마지막 컨테이너가 끝난 시각. 홈은 서버마다 따로라 홈 삭제 판단은 서버 단위로 한다. */
+    public Optional<LocalDateTime> lastContainerEndedAt(String serverName) {
+        return lastContainerEndedAt(r -> r.getServerName().equalsIgnoreCase(serverName));
+    }
+
+    private Optional<LocalDateTime> lastContainerEndedAt(java.util.function.Predicate<Request> scope) {
         return this.requests.stream()
+                .filter(scope)
                 .filter(r -> r.getStatus() == Status.DELETED && r.getApprovedAt() != null)
                 .map(Request::getUpdatedAt)
                 .filter(Objects::nonNull)
@@ -239,68 +295,107 @@ public class User extends BaseTimeEntity {
         return this.requests.stream().anyMatch(r -> Status.openStatuses().contains(r.getStatus()));
     }
 
+    /** 이 서버에 끝나지 않은 신청이 있는가. */
+    public boolean hasOpenRequest(String serverName) {
+        return this.requests.stream().anyMatch(r -> r.getServerName().equalsIgnoreCase(serverName)
+                && Status.openStatuses().contains(r.getStatus()));
+    }
+
     /** 계정 회수 작업이 도는 중인지. 그 사이 승인·비밀번호 변경은 거절해야 한다 — 지워질 계정에 반영된다. */
+    public boolean isReleasingUbuntuAccount(String serverName) {
+        return ubuntuAccount(serverName).map(UbuntuAccount::isReleasing).orElse(false);
+    }
+
+    /** 어느 서버든 회수 중인 계정이 있는지. */
     public boolean isReleasingUbuntuAccount() {
-        return this.ubuntuAccountStatus == UbuntuAccountStatus.RELEASING;
+        return this.ubuntuAccounts.stream().anyMatch(UbuntuAccount::isReleasing);
     }
 
-    /**
-     * 계정이 만들어졌거나 되살아났음을 기록한다. 이 사람이 예전에 받은 UID/GID가 있으면 그 값과
-     * 같아야 한다(멱등) — 다른 값이면 실패시킨다. 한 사람이 두 번호를 가리키면 보존된 홈 디렉터리의
-     * 소유자와 어긋나고, 옛 번호가 다른 사람에게 넘어간 것처럼 보인다.
-     */
+    /** 기본 서버 기준. 서버를 아는 호출부는 {@link #assignUbuntuAccount(String, Long, Long)}을 쓴다. */
     public void assignUbuntuAccount(Long ubuntuUid, Long ubuntuGid) {
-        if (ubuntuUid == null || ubuntuGid == null || ubuntuUid <= 0 || ubuntuGid <= 0) {
-            throw new BusinessException(ErrorCode.UID_ALLOCATION_FAILED);
-        }
-        if (this.ubuntuUid != null
-                && (!this.ubuntuUid.equals(ubuntuUid) || !ubuntuGid.equals(this.ubuntuGid))) {
-            throw new BusinessException(
-                    "이미 다른 UID/GID가 배정된 계정입니다.", ErrorCode.UBUNTU_ACCOUNT_ALREADY_ASSIGNED);
-        }
-        if (isReleasingUbuntuAccount()) {
-            throw new BusinessException(ErrorCode.UBUNTU_ACCOUNT_RELEASING);
-        }
-        this.ubuntuUid = ubuntuUid;
-        this.ubuntuGid = ubuntuGid;
-        this.ubuntuAccountStatus = UbuntuAccountStatus.ACTIVE;
+        assignUbuntuAccount(PRIMARY_SERVER, ubuntuUid, ubuntuGid);
+    }
+
+    /** 이 서버의 계정이 만들어졌거나 되살아났음을 기록한다. 예전 UID/GID와 다르면 실패한다({@link UbuntuAccount#assign}). */
+    public void assignUbuntuAccount(String serverName, Long ubuntuUid, Long ubuntuGid) {
+        UbuntuAccount account = ubuntuAccountFor(serverName);
+        account.assign(ubuntuUid, ubuntuGid);
+        mirrorToLegacyColumns(account);
+    }
+
+    /** 기본 서버 기준. {@link #beginUbuntuAccountRelease(String)} 참고. */
+    public boolean beginUbuntuAccountRelease() {
+        return beginUbuntuAccountRelease(PRIMARY_SERVER);
     }
 
     /**
-     * 계정 회수를 시작한다. 이미 회수 중이면 그대로 둔다(관리자의 재시도). 계정이 없으면 회수할 것도 없다.
+     * 이 서버의 계정 회수를 시작한다. 이미 회수 중이면 그대로 둔다(관리자의 재시도). 계정이 없으면 회수할 것도 없다.
      *
      * @return 회수가 진행 중이면 true — 계정 회수 폴러가 컨테이너 회수가 끝나기를 기다렸다가 계정을 지운다
      */
-    public boolean beginUbuntuAccountRelease() {
-        if (this.ubuntuAccountStatus == UbuntuAccountStatus.NONE) {
-            return false;
+    public boolean beginUbuntuAccountRelease(String serverName) {
+        return ubuntuAccount(serverName).map(a -> {
+            boolean releasing = a.beginRelease();
+            mirrorToLegacyColumns(a);
+            return releasing;
+        }).orElse(false);
+    }
+
+    /** 모든 서버의 계정 회수를 시작한다(관리자 계정 삭제·탈퇴). 회수할 계정이 하나라도 있으면 true. */
+    public boolean beginUbuntuAccountReleaseOnAllServers() {
+        boolean releasing = false;
+        for (UbuntuAccount account : this.ubuntuAccounts) {
+            releasing |= beginUbuntuAccountRelease(account.getServerName());
         }
-        this.ubuntuAccountStatus = UbuntuAccountStatus.RELEASING;
-        return true;
+        return releasing;
+    }
+
+    /** 원장에 계정이 하나라도 남아 있는지(ACTIVE 또는 회수 중). */
+    public boolean hasAnyUbuntuAccountInLedger() {
+        return this.ubuntuAccounts.stream().anyMatch(a -> a.getStatus() != UbuntuAccountStatus.NONE);
+    }
+
+    /** 기본 서버 기준. */
+    public void abortUbuntuAccountRelease() {
+        abortUbuntuAccountRelease(PRIMARY_SERVER);
     }
 
     /** 회수할 노드를 몰라 계정을 지우지 못했을 때 계정이 살아 있는 상태로 되돌린다. */
-    public void abortUbuntuAccountRelease() {
-        requireReleasing();
-        this.ubuntuAccountStatus = UbuntuAccountStatus.ACTIVE;
+    public void abortUbuntuAccountRelease(String serverName) {
+        UbuntuAccount account = requireAccount(serverName);
+        account.abortRelease();
+        mirrorToLegacyColumns(account);
+    }
+
+    /** 기본 서버 기준. */
+    public void releaseUbuntuAccount() {
+        releaseUbuntuAccount(PRIMARY_SERVER);
     }
 
     /**
-     * 리눅스 계정이 실제로 삭제됐음을 기록한다. 유저네임·UID·GID는 남긴다 — 사람을 가리키는 값이라
-     * 재활성화 후 같은 번호·같은 홈으로 돌아와야 한다. 다음 승인은 이 UID를 expected_uid로 보내고,
-     * config-server는 NAS 홈 소유자가 그 번호일 때 같은 번호로 계정을 되살린다.
+     * 이 서버의 리눅스 계정이 실제로 삭제됐음을 기록한다. 유저네임·UID·GID는 남긴다 — 다시 승인되면 같은 번호·같은 홈으로
+     * 돌아와야 한다. 그룹 소속은 기본 서버 계정을 지울 때만 비운다(AD에서 사용자째 사라지므로). 그룹이 아직 서버별로
+     * 나뉘지 않아, 다른 서버 계정을 지울 때 비우면 기본 서버의 소속이 DB에서만 사라진다.
      */
-    public void releaseUbuntuAccount() {
-        requireReleasing();
-        this.ubuntuAccountStatus = UbuntuAccountStatus.NONE;
-        // 계정 삭제는 AD 사용자째 지우므로 그룹 소속도 함께 사라진다. 남겨 두면 화면엔 여전히
-        // 멤버로 보이고, 다시 승인될 때 AD에 없는 소속이 새 Pod 에 실린다.
-        this.userGroups.clear();
+    public void releaseUbuntuAccount(String serverName) {
+        UbuntuAccount account = requireAccount(serverName);
+        account.release();
+        mirrorToLegacyColumns(account);
+        if (account.isServer(PRIMARY_SERVER)) {
+            this.userGroups.clear();
+        }
     }
 
-    private void requireReleasing() {
-        if (!isReleasingUbuntuAccount()) {
-            throw new BusinessException("회수 중인 계정이 아닙니다.", ErrorCode.INVALID_REQUEST_STATUS);
+    private UbuntuAccount requireAccount(String serverName) {
+        return ubuntuAccount(serverName).orElseThrow(() ->
+                new BusinessException("회수 중인 계정이 아닙니다.", ErrorCode.INVALID_REQUEST_STATUS));
+    }
+
+    private void mirrorToLegacyColumns(UbuntuAccount account) {
+        if (account.isServer(PRIMARY_SERVER)) {
+            this.ubuntuUid = account.getUid();
+            this.ubuntuGid = account.getGid();
+            this.ubuntuAccountStatus = account.getStatus();
         }
     }
 

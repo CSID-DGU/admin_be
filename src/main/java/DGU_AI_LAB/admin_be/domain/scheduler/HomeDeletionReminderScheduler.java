@@ -60,7 +60,7 @@ public class HomeDeletionReminderScheduler {
         LocalDate firstEnded = retentionPolicy.containerEndDateFor(today.plusDays(1));
         LocalDate lastEnded = retentionPolicy.containerEndDateFor(today.plusDays(window));
         List<User> users = userRepository.findHomeReminderCandidates(
-                firstEnded.atStartOfDay(), lastEnded.plusDays(1).atStartOfDay(), Status.openStatuses());
+                firstEnded.atStartOfDay(), lastEnded.plusDays(1).atStartOfDay(), Status.openStatuses(), User.PRIMARY_SERVER);
         for (User user : users) {
             try {
                 remind(user, today);
@@ -72,7 +72,7 @@ public class HomeDeletionReminderScheduler {
     }
 
     private void remind(User user, LocalDate today) {
-        Optional<LocalDateTime> endedAt = user.lastContainerEndedAt();
+        Optional<LocalDateTime> endedAt = user.lastContainerEndedAt(User.PRIMARY_SERVER);
         if (endedAt.isEmpty()) {
             return;
         }

@@ -49,8 +49,8 @@ class HomeCleanupServiceTest {
         when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user));
         when(user.getUbuntuUsername()).thenReturn("hong");
         when(user.getUbuntuUid()).thenReturn(55010L);
-        when(user.hasOpenRequest()).thenReturn(false);
-        when(user.lastContainerEndedAt()).thenReturn(Optional.of(ENDED_LONG_AGO));
+        when(user.hasOpenRequest(User.PRIMARY_SERVER)).thenReturn(false);
+        when(user.lastContainerEndedAt(User.PRIMARY_SERVER)).thenReturn(Optional.of(ENDED_LONG_AGO));
         when(cleanupRepository.save(any(HomeCleanup.class))).thenAnswer(inv -> inv.getArgument(0));
     }
 
@@ -77,7 +77,7 @@ class HomeCleanupServiceTest {
     @Test
     @DisplayName("후보 조회 뒤 새로 신청했으면 만들지 않는다")
     void beginSkipsUserWithOpenRequest() {
-        when(user.hasOpenRequest()).thenReturn(true);
+        when(user.hasOpenRequest(User.PRIMARY_SERVER)).thenReturn(true);
 
         assertThat(service.begin(USER_ID, NOW)).isEmpty();
         verify(cleanupRepository, never()).save(any());
@@ -86,7 +86,7 @@ class HomeCleanupServiceTest {
     @Test
     @DisplayName("보존 기간이 아직 지나지 않았으면 만들지 않는다")
     void beginSkipsBeforeRetentionEnds() {
-        when(user.lastContainerEndedAt()).thenReturn(Optional.of(NOW.minusDays(40).plusMinutes(1)));
+        when(user.lastContainerEndedAt(User.PRIMARY_SERVER)).thenReturn(Optional.of(NOW.minusDays(40).plusMinutes(1)));
 
         assertThat(service.begin(USER_ID, NOW)).isEmpty();
         verify(cleanupRepository, never()).save(any());
@@ -95,7 +95,7 @@ class HomeCleanupServiceTest {
     @Test
     @DisplayName("컨테이너를 쓴 적이 없으면 만들지 않는다")
     void beginSkipsUserWhoNeverHadContainer() {
-        when(user.lastContainerEndedAt()).thenReturn(Optional.empty());
+        when(user.lastContainerEndedAt(User.PRIMARY_SERVER)).thenReturn(Optional.empty());
 
         assertThat(service.begin(USER_ID, NOW)).isEmpty();
     }

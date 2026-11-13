@@ -162,6 +162,57 @@ class UserTest {
 
             assertThat(user.getUserGroups()).isEmpty();
         }
+
+        @Test
+        @DisplayName("서버마다 계정이 따로다 — 다른 서버 계정은 기본 서버 옛 컬럼을 건드리지 않는다")
+        void accountsAreSeparatePerServer() {
+            user.assignUbuntuAccount("LAB", 10002L, 10002L);
+
+            assertThat(user.hasUbuntuAccount("LAB")).isTrue();
+            assertThat(user.hasUbuntuAccount(User.PRIMARY_SERVER)).isFalse();
+            assertThat(user.getUbuntuUid()).isNull();
+            assertThat(user.ubuntuUidOn("lab")).isEqualTo(10002L);
+
+            user.assignUbuntuAccount(User.PRIMARY_SERVER, 20001L, 20001L);
+            assertThat(user.getUbuntuUid()).isEqualTo(20001L);
+            assertThat(user.getUbuntuAccountStatus()).isEqualTo(UbuntuAccountStatus.ACTIVE);
+            assertThat(user.ubuntuUidOn("LAB")).isEqualTo(10002L);
+        }
+
+        @Test
+        @DisplayName("기본 서버 계정의 변경은 옛 컬럼에 미러링된다(롤백 안전)")
+        void primaryServerWritesAreMirrored() {
+            user.assignUbuntuAccount(User.PRIMARY_SERVER, 20001L, 20001L);
+            user.beginUbuntuAccountRelease(User.PRIMARY_SERVER);
+            assertThat(user.getUbuntuAccountStatus()).isEqualTo(UbuntuAccountStatus.RELEASING);
+
+            user.releaseUbuntuAccount(User.PRIMARY_SERVER);
+            assertThat(user.getUbuntuAccountStatus()).isEqualTo(UbuntuAccountStatus.NONE);
+            assertThat(user.getUbuntuUid()).isEqualTo(20001L);
+        }
+
+        @Test
+        @DisplayName("다른 서버 계정을 회수해도 기본 서버의 그룹 소속은 남는다")
+        void releasingOtherServerKeepsGroups() {
+            user.assignUbuntuAccount(User.PRIMARY_SERVER, 20001L, 20001L);
+            user.assignUbuntuAccount("LAB", 10002L, 10002L);
+            user.addGroupIfAbsent(Group.builder().groupName("team").ubuntuGid(70001L).build());
+
+            user.beginUbuntuAccountRelease("LAB");
+            user.releaseUbuntuAccount("LAB");
+
+            assertThat(user.getUserGroups()).hasSize(1);
+            assertThat(user.hasUbuntuAccount(User.PRIMARY_SERVER)).isTrue();
+            assertThat(user.isReleasingUbuntuAccount()).isFalse();
+        }
+
+        @Test
+        @DisplayName("계정이 없는 서버의 유저네임은 가입 때 고른 이름이다")
+        void usernameFallsBackToChosenName() {
+            assertThat(user.ubuntuUsernameOn("LAB")).isEqualTo("honggildong");
+            assertThat(user.beginUbuntuAccountRelease("LAB")).isFalse();
+            assertThat(user.hasAnyUbuntuAccountInLedger()).isFalse();
+        }
     }
 
     @Nested

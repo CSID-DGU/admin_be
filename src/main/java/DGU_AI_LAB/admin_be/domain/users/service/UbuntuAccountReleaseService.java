@@ -9,6 +9,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.requests.service.UbuntuAccountService;
+import DGU_AI_LAB.admin_be.domain.users.entity.UbuntuAccount;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -59,13 +60,24 @@ public class UbuntuAccountReleaseService {
 
     private record Snapshot(String username, boolean containersRemain, List<NodeJob> nodes) {}
 
+    /** 이 사용자의 회수 중인 계정(서버별)을 모두 한 단계씩 진행한다. */
     public void advance(Long userId) {
-        Snapshot snapshot = new TransactionTemplate(transactionManager).execute(status -> snapshot(userId));
+        List<String> servers = new TransactionTemplate(transactionManager).execute(status ->
+                userRepository.findById(userId).map(u -> u.getUbuntuAccounts().stream()
+                        .filter(UbuntuAccount::isReleasing).map(UbuntuAccount::getServerName).toList())
+                        .orElse(List.of()));
+        if (servers != null) {
+            servers.forEach(server -> advance(userId, server));
+        }
+    }
+
+    private void advance(Long userId, String serverName) {
+        Snapshot snapshot = new TransactionTemplate(transactionManager).execute(status -> snapshot(userId, serverName));
         if (snapshot == null || snapshot.containersRemain()) {
             return;
         }
         if (snapshot.nodes().isEmpty()) {
-            abortForUnknownNodes(userId, snapshot.username());
+            abortForUnknownNodes(userId, serverName, snapshot.username());
             return;
         }
 
@@ -80,30 +92,33 @@ public class UbuntuAccountReleaseService {
         }
         new TransactionTemplate(transactionManager).execute(status -> {
             userRepository.findByIdForUpdate(userId)
-                    .filter(User::isReleasingUbuntuAccount)
-                    .ifPresent(User::releaseUbuntuAccount);
+                    .filter(u -> u.isReleasingUbuntuAccount(serverName))
+                    .ifPresent(u -> u.releaseUbuntuAccount(serverName));
             return null;
         });
         log.info("[계정 회수] 완료: userId={}, username={}, nodes={}", userId, snapshot.username(),
                 snapshot.nodes().stream().map(NodeJob::nodeName).toList());
     }
 
-    private Snapshot snapshot(Long userId) {
+    private Snapshot snapshot(Long userId, String serverName) {
         User user = userRepository.findById(userId).orElse(null);
-        if (user == null || !user.isReleasingUbuntuAccount()) {
+        if (user == null || !user.isReleasingUbuntuAccount(serverName)) {
             return null;
         }
+        // 다른 서버의 컨테이너·노드는 이 서버 계정과 무관하다.
         boolean containersRemain = requestRepository.findAllByUser_UserId(user.getUserId()).stream()
+                .filter(r -> r.getServerName().equalsIgnoreCase(serverName))
                 .anyMatch(r -> Status.activeStatuses().contains(r.getStatus()) || r.getStatus() == Status.PROCESSING);
         // 최신순이므로 노드마다 처음 보이는 신청이 그 노드에서 계정을 마지막으로 쓴 신청이다.
         Set<String> seen = new LinkedHashSet<>();
         List<NodeJob> nodes = new ArrayList<>();
         for (Request r : requestRepository.findAllWithNodeByUserIdOrderByRequestIdDesc(userId)) {
-            if (r.getStatus() == Status.DELETED && seen.add(r.getNodeName())) {
+            if (r.getStatus() == Status.DELETED && r.getServerName().equalsIgnoreCase(serverName)
+                    && seen.add(r.getNodeName())) {
                 nodes.add(new NodeJob(r.getNodeName(), r.getRequestId(), r.getJobId()));
             }
         }
-        return new Snapshot(user.getUbuntuUsername(), containersRemain, nodes);
+        return new Snapshot(user.ubuntuUsernameOn(serverName), containersRemain, nodes);
     }
 
     /**
@@ -111,11 +126,11 @@ public class UbuntuAccountReleaseService {
      * 그 위험을 감수하느니 계정을 살아 있는 상태로 되돌리고 관리자에게 알린다 — 남은 계정은 수동으로 정리할 수
      * 있지만, 잘못 지운 남의 계정은 되돌릴 수 없다.
      */
-    private void abortForUnknownNodes(Long userId, String username) {
+    private void abortForUnknownNodes(Long userId, String serverName, String username) {
         new TransactionTemplate(transactionManager).execute(status -> {
             userRepository.findByIdForUpdate(userId)
-                    .filter(User::isReleasingUbuntuAccount)
-                    .ifPresent(User::abortUbuntuAccountRelease);
+                    .filter(u -> u.isReleasingUbuntuAccount(serverName))
+                    .ifPresent(u -> u.abortUbuntuAccountRelease(serverName));
             return null;
         });
         alert("notification.admin.account-revoke.unknown-nodes",
