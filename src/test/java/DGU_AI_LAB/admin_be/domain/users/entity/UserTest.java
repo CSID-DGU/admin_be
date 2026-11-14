@@ -207,6 +207,31 @@ class UserTest {
         }
 
         @Test
+        @DisplayName("전 서버 회수는 계정 있는 서버만 RELEASING으로 바꾸고 NONE 계정은 건드리지 않는다")
+        void beginReleaseOnAllServers_onlyAffectsExistingAccounts() {
+            user.assignUbuntuAccount(User.PRIMARY_SERVER, 20001L, 20001L);
+            user.assignUbuntuAccount("LAB", 10002L, 10002L);
+            user.beginUbuntuAccountRelease("LAB");
+            user.releaseUbuntuAccount("LAB");
+            user.assignUbuntuAccount("LAB", 10002L, 10002L);
+
+            assertThat(user.beginUbuntuAccountReleaseOnAllServers()).isTrue();
+            assertThat(user.isReleasingUbuntuAccount(User.PRIMARY_SERVER)).isTrue();
+            assertThat(user.isReleasingUbuntuAccount("LAB")).isTrue();
+            assertThat(user.getUbuntuAccountStatus()).isEqualTo(UbuntuAccountStatus.RELEASING);
+
+            user.releaseUbuntuAccount("LAB");
+            assertThat(user.isReleasingUbuntuAccount(User.PRIMARY_SERVER)).isTrue();
+            assertThat(user.isReleasingUbuntuAccount()).isTrue();
+        }
+
+        @Test
+        @DisplayName("회수할 계정이 없으면 전 서버 회수는 false다")
+        void beginReleaseOnAllServers_noAccounts() {
+            assertThat(user.beginUbuntuAccountReleaseOnAllServers()).isFalse();
+        }
+
+        @Test
         @DisplayName("계정이 없는 서버의 유저네임은 가입 때 고른 이름이다")
         void usernameFallsBackToChosenName() {
             assertThat(user.ubuntuUsernameOn("LAB")).isEqualTo("honggildong");

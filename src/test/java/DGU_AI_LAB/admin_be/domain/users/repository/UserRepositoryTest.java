@@ -364,4 +364,24 @@ class UserRepositoryTest {
                     .isEqualTo(CURRENT + "s$new2");
         }
     }
+
+    @Nested
+    @DisplayName("findAllWithReleasingAccount")
+    class ReleasingAccounts {
+
+        @Test
+        @DisplayName("어느 서버든 RELEASING 계정이 있는 사용자만, 중복 없이 돌려준다")
+        void returnsDistinctUsersWithReleasingAccount() {
+            user1.assignUbuntuAccount("FARM", 20001L, 20001L);
+            user1.assignUbuntuAccount("LAB", 10001L, 10001L);
+            user1.beginUbuntuAccountReleaseOnAllServers();
+            user2.assignUbuntuAccount("LAB", 10002L, 10002L);
+            userRepository.saveAll(List.of(user1, user2));
+            entityManager.flush();
+            entityManager.clear();
+
+            assertThat(userRepository.findAllWithReleasingAccount())
+                    .extracting(User::getUserId).containsExactly(user1.getUserId());
+        }
+    }
 }
