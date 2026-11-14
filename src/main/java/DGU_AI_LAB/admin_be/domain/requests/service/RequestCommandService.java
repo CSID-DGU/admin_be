@@ -252,7 +252,7 @@ public class RequestCommandService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
         // 유저네임은 신청마다 고르는 값이 아니라 가입 시 정해진 웹 계정의 고정값이다.
-        String ubuntuUsername = user.getUbuntuUsername();
+        String ubuntuUsername = user.ubuntuUsernameOn(rg.getServerName());
         if (ubuntuUsername == null || ubuntuUsername.isBlank()) {
             throw new BusinessException(ErrorCode.UBUNTU_USERNAME_NOT_ASSIGNED);
         }

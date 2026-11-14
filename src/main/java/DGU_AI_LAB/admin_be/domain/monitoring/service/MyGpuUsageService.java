@@ -301,7 +301,7 @@ public class MyGpuUsageService {
             Map<String, Owner> ownerByPod = new HashMap<>();
             for (Request r : requestRepository.findAllByPodNameIn(new HashSet<>(podByContainer.values()))) {
                 ownerByPod.put(r.getPodName(), new Owner(ownerKey(r), r.getUser().getUserId(), r.getUser().getName(),
-                        r.getUser().getUbuntuUsername(), r.getRequestId()));
+                        r.getUbuntuUsername(), r.getRequestId()));
             }
             podByContainer.forEach((cid, pod) -> {
                 if (ownerByPod.containsKey(pod)) podOwners.put(cid, ownerByPod.get(pod));
@@ -341,7 +341,7 @@ public class MyGpuUsageService {
 
     /** 같은 사용자는 Pod든 옛 Docker 컨테이너든 같은 키가 되도록 우분투 계정을 쓴다. */
     static String ownerKey(Request r) {
-        String name = r.getUser().getUbuntuUsername();
+        String name = r.getUbuntuUsername();
         return name != null && !name.isBlank() ? name : "id:" + r.getUser().getUserId();
     }
 
