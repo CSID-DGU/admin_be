@@ -56,7 +56,7 @@ class HomeDeletionReminderSchedulerTest {
         when(valueOps.setIfAbsent(anyString(), any(), any(Duration.class))).thenReturn(true);
         when(messageUtils.get(anyString(), any(Object[].class))).thenAnswer(i -> i.getArgument(0));
         when(alarmService.notifyUser(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
-        when(userRepository.findHomeReminderCandidates(any(), any(), any())).thenReturn(List.of());
+        when(userRepository.findHomeReminderCandidates(any(), any(), any(), any())).thenReturn(List.of());
         scheduler = new HomeDeletionReminderScheduler(
                 userRepository, new HomeRetentionPolicy(), alarmService, messageUtils, redisTemplate);
     }
@@ -67,12 +67,12 @@ class HomeDeletionReminderSchedulerTest {
         when(user.getName()).thenReturn(name);
         when(user.getEmail()).thenReturn(email);
         when(user.getUbuntuUsername()).thenReturn(username);
-        when(user.lastContainerEndedAt()).thenReturn(Optional.of(endedOn.atStartOfDay()));
+        when(user.lastContainerEndedAt(User.PRIMARY_SERVER)).thenReturn(Optional.of(endedOn.atStartOfDay()));
         return user;
     }
 
     private void candidates(User... users) {
-        when(userRepository.findHomeReminderCandidates(any(), any(), any())).thenReturn(List.of(users));
+        when(userRepository.findHomeReminderCandidates(any(), any(), any(), any())).thenReturn(List.of(users));
     }
 
     @Test
@@ -82,7 +82,7 @@ class HomeDeletionReminderSchedulerTest {
 
         // 삭제일 11/11~11/17 = 끝난 날 10/12~10/18. 끝난 시각 [10/12 0시, 10/19 0시).
         verify(userRepository).findHomeReminderCandidates(
-                eq(LocalDateTime.of(2026, 10, 12, 0, 0)), eq(LocalDateTime.of(2026, 10, 19, 0, 0)), any());
+                eq(LocalDateTime.of(2026, 10, 12, 0, 0)), eq(LocalDateTime.of(2026, 10, 19, 0, 0)), any(), eq(User.PRIMARY_SERVER));
     }
 
     @Test

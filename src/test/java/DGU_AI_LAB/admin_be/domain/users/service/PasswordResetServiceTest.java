@@ -251,6 +251,21 @@ class PasswordResetServiceTest {
         }
 
         @Test
+        @DisplayName("기본 서버 밖에 활성 계정이 있으면 작업을 등록하지 않고 막는다")
+        void rejectsWhenActiveAccountOutsidePrimaryServer() {
+            withAccount();
+            user.assignUbuntuAccount("LAB", 10002L, 10002L);
+            PasswordResetRequest reset = pendingReset();
+
+            assertThatThrownBy(() -> service.approve(CHANGE_ID, ADMIN_ID, "확인"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REQUEST_STATUS);
+            assertThat(reset.getStatus()).isEqualTo(Status.PENDING);
+            verifyNoInteractions(jobClient);
+            assertUserUnchanged();
+        }
+
+        @Test
         @DisplayName("컨테이너 생성 중이면 409로 막고 작업을 등록하지 않는다")
         void rejectsWhileProvisioning() {
             withAccount();

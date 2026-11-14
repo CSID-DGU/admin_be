@@ -252,11 +252,11 @@ class UserRepositoryTest {
             deletedRequest(user1, from);              // 포함(경계)
             deletedRequest(user2, to);                // 제외(상한 미포함)
 
-            List<User> result = userRepository.findHomeReminderCandidates(from, to, Status.openStatuses());
+            List<User> result = userRepository.findHomeReminderCandidates(from, to, Status.openStatuses(), User.PRIMARY_SERVER);
 
             assertThat(result).extracting(User::getEmail).containsExactly("active@dgu.ac.kr");
             // 안내 후보는 삭제 후보의 부분집합이어야 한다 — 두 질의의 공통 조건이 어긋나면 여기서 드러난다.
-            assertThat(userRepository.findHomeCleanupCandidates(to.plusDays(1), Status.openStatuses()))
+            assertThat(userRepository.findHomeCleanupCandidates(to.plusDays(1), Status.openStatuses(), User.PRIMARY_SERVER))
                     .containsAll(result);
         }
 
@@ -267,7 +267,7 @@ class UserRepositoryTest {
             deletedRequest(user1, from.plusHours(1));
             deletedRequest(user1, to.plusDays(5));
 
-            assertThat(userRepository.findHomeReminderCandidates(from, to, Status.openStatuses())).isEmpty();
+            assertThat(userRepository.findHomeReminderCandidates(from, to, Status.openStatuses(), User.PRIMARY_SERVER)).isEmpty();
         }
 
         @Test
@@ -277,7 +277,7 @@ class UserRepositoryTest {
             withAccount(user2);
             deletedRequest(user2, from.plusHours(1));
             persistRequest(user2);                              // 열린 신청
-            assertThat(userRepository.findHomeReminderCandidates(from, to, Status.openStatuses())).isEmpty();
+            assertThat(userRepository.findHomeReminderCandidates(from, to, Status.openStatuses(), User.PRIMARY_SERVER)).isEmpty();
 
             User gone = userRepository.save(User.builder().email("gone@dgu.ac.kr").password("p")
                     .name("탈퇴").studentId("2021008888").phone("010-8888-8888").department("컴퓨터공학과").build());
@@ -286,7 +286,7 @@ class UserRepositoryTest {
             gone = userRepository.findById(gone.getUserId()).orElseThrow();
             gone.withdraw();
             userRepository.saveAndFlush(gone);
-            assertThat(userRepository.findHomeReminderCandidates(from, to, Status.openStatuses())).isEmpty();
+            assertThat(userRepository.findHomeReminderCandidates(from, to, Status.openStatuses(), User.PRIMARY_SERVER)).isEmpty();
         }
 
         @Test
@@ -298,8 +298,37 @@ class UserRepositoryTest {
             user1.deactivate();
             userRepository.saveAndFlush(user1);
 
-            assertThat(userRepository.findHomeReminderCandidates(from, to, Status.openStatuses())).isEmpty();
+            assertThat(userRepository.findHomeReminderCandidates(from, to, Status.openStatuses(), User.PRIMARY_SERVER)).isEmpty();
         }
+    }
+
+    @Test
+    @DisplayName("existsByUbuntuUsername은 다른 서버 계정에 이미 있는 유저네임도 사용 중으로 본다")
+    void existsByUbuntuUsername_seesAccountNames() {
+        user1.assignUbuntuAccount("LAB", 10002L, 10002L);
+        ReflectionTestUtils.setField(user1.ubuntuAccount("LAB").orElseThrow(), "username", "legacyname");
+        userRepository.saveAndFlush(user1);
+        entityManager.clear();
+
+        assertThat(userRepository.existsByUbuntuUsername("legacyname")).isTrue();
+        assertThat(userRepository.existsByUbuntuUsername("nobody-has-this")).isFalse();
+    }
+
+    @Test
+    @DisplayName("홈 삭제 후보는 기본 서버의 신청만 본다 — 다른 서버 컨테이너가 끝났다고 그 서버 홈을 지우지 않는다")
+    void homeCleanupCandidates_areScopedToServer() {
+        user1.assignUbuntuAccount(60001L, 60001L);
+        ReflectionTestUtils.setField(user1, "ubuntuUsername", "scoped1");
+        userRepository.saveAndFlush(user1);
+        Long id = persistRequest(user1);
+        entityManager.getEntityManager()
+                .createNativeQuery("UPDATE requests SET status = 'DELETED', approved_at = :t, updated_at = :t WHERE request_id = :id")
+                .setParameter("t", LocalDateTime.of(2026, 1, 1, 0, 0)).setParameter("id", id).executeUpdate();
+        entityManager.clear();
+        LocalDateTime cutoff = LocalDateTime.of(2026, 6, 1, 0, 0);
+
+        assertThat(userRepository.findHomeCleanupCandidates(cutoff, Status.openStatuses(), "FARM")).contains(user1);
+        assertThat(userRepository.findHomeCleanupCandidates(cutoff, Status.openStatuses(), "LAB")).doesNotContain(user1);
     }
 
     private Long persistRequest(User user) {
@@ -333,6 +362,26 @@ class UserRepositoryTest {
 
             assertThat(userRepository.findById(user2.getUserId()).orElseThrow().getUbuntuPasswordHash())
                     .isEqualTo(CURRENT + "s$new2");
+        }
+    }
+
+    @Nested
+    @DisplayName("findAllWithReleasingAccount")
+    class ReleasingAccounts {
+
+        @Test
+        @DisplayName("어느 서버든 RELEASING 계정이 있는 사용자만, 중복 없이 돌려준다")
+        void returnsDistinctUsersWithReleasingAccount() {
+            user1.assignUbuntuAccount("FARM", 20001L, 20001L);
+            user1.assignUbuntuAccount("LAB", 10001L, 10001L);
+            user1.beginUbuntuAccountReleaseOnAllServers();
+            user2.assignUbuntuAccount("LAB", 10002L, 10002L);
+            userRepository.saveAll(List.of(user1, user2));
+            entityManager.flush();
+            entityManager.clear();
+
+            assertThat(userRepository.findAllWithReleasingAccount())
+                    .extracting(User::getUserId).containsExactly(user1.getUserId());
         }
     }
 }
