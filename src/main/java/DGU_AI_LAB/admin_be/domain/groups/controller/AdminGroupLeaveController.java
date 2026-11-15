@@ -4,6 +4,8 @@ import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupLeaveResponseDTO;
 import DGU_AI_LAB.admin_be.domain.groups.service.GroupLeaveService;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
+import DGU_AI_LAB.admin_be.domain.adminActionLog.AdminAction;
+import DGU_AI_LAB.admin_be.domain.adminActionLog.AdminActionType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -22,14 +24,14 @@ public class AdminGroupLeaveController {
     public ResponseEntity<SuccessResponse<?>> pending() {
         return SuccessResponse.ok(groupLeaveService.pending().stream().map(GroupLeaveResponseDTO::fromEntity).toList());
     }
-
+    @AdminAction(value = AdminActionType.GROUP_LEAVE_APPROVE, targetId = "leaveRequestId")
     @PostMapping("/{leaveRequestId}/approval")
     public ResponseEntity<SuccessResponse<?>> approve(@PathVariable Long leaveRequestId,
                                                       @AuthenticationPrincipal CustomUserDetails principal) {
         return SuccessResponse.accepted(GroupLeaveResponseDTO.fromEntity(
                 groupLeaveService.approve(leaveRequestId, principal.getUserId())));
     }
-
+    @AdminAction(value = AdminActionType.GROUP_LEAVE_REJECT, targetId = "leaveRequestId")
     @PostMapping("/{leaveRequestId}/rejection")
     public ResponseEntity<SuccessResponse<?>> reject(@PathVariable Long leaveRequestId,
                                                      @AuthenticationPrincipal CustomUserDetails principal) {

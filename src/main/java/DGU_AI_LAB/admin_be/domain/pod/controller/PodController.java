@@ -6,6 +6,8 @@ import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.pod.service.PodQueryService;
 import DGU_AI_LAB.admin_be.domain.pod.service.PodStatusCache;
 import DGU_AI_LAB.admin_be.domain.requests.service.PodService;
+import DGU_AI_LAB.admin_be.domain.adminActionLog.AdminAction;
+import DGU_AI_LAB.admin_be.domain.adminActionLog.AdminActionType;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -63,6 +65,7 @@ public class PodController implements PodApi {
     }
 
     // DB에 대응하는 신청이 없는 고아 Pod 직접 삭제 (신청 이력이 있으면 409로 거부)
+    @AdminAction(value = AdminActionType.ORPHAN_POD_DELETE, targetId = "podName")
     @DeleteMapping("/{podName}")
     public ResponseEntity<SuccessResponse<?>> deleteOrphanPod(@PathVariable String podName) {
         podService.deleteOrphanPod(podName);

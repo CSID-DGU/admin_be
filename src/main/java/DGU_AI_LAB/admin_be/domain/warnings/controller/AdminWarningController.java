@@ -3,6 +3,8 @@ package DGU_AI_LAB.admin_be.domain.warnings.controller;
 import DGU_AI_LAB.admin_be.domain.warnings.controller.docs.AdminWarningApi;
 import DGU_AI_LAB.admin_be.domain.warnings.dto.WarningReasonRequestDTO;
 import DGU_AI_LAB.admin_be.domain.warnings.service.WarningService;
+import DGU_AI_LAB.admin_be.domain.adminActionLog.AdminAction;
+import DGU_AI_LAB.admin_be.domain.adminActionLog.AdminActionType;
 import DGU_AI_LAB.admin_be.global.common.SuccessResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,7 @@ public class AdminWarningController implements AdminWarningApi {
         return SuccessResponse.ok(warningService.getStatus(userId));
     }
 
+    @AdminAction(value = AdminActionType.WARNING_GRANT, targetId = "userId")
     @PostMapping("/warnings")
     public ResponseEntity<SuccessResponse<?>> grantWarning(@PathVariable Long userId,
                                                            @AuthenticationPrincipal(expression = "userId") Long adminId,
@@ -36,6 +39,7 @@ public class AdminWarningController implements AdminWarningApi {
         return SuccessResponse.created(warningService.grant(adminId, userId, dto.reason()));
     }
 
+    @AdminAction(value = AdminActionType.WARNING_DEDUCT, targetId = "userId")
     @PostMapping("/warning-deductions")
     public ResponseEntity<SuccessResponse<?>> deductWarning(@PathVariable Long userId,
                                                             @AuthenticationPrincipal(expression = "userId") Long adminId,
@@ -44,6 +48,7 @@ public class AdminWarningController implements AdminWarningApi {
     }
 
     /** 사유는 본문이 아니라 쿼리(reason)로 받는다 — DELETE 본문은 중간 프록시가 버릴 수 있다. */
+    @AdminAction(value = AdminActionType.WARNING_CANCEL, targetId = "userId")
     @DeleteMapping("/warnings/{warningId}")
     public ResponseEntity<SuccessResponse<?>> cancelWarning(@PathVariable Long userId, @PathVariable Long warningId,
                                                             @AuthenticationPrincipal(expression = "userId") Long adminId,
