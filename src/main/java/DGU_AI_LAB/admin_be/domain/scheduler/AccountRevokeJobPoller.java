@@ -1,6 +1,5 @@
 package DGU_AI_LAB.admin_be.domain.scheduler;
 
-import DGU_AI_LAB.admin_be.domain.users.entity.UbuntuAccountStatus;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.domain.users.service.UbuntuAccountReleaseService;
@@ -20,7 +19,7 @@ public class AccountRevokeJobPoller {
 
     @Scheduled(fixedDelayString = "${operations.revoke.poll-ms:3000}")
     public void pollAccountRevokes() {
-        for (User user : userRepository.findAllByUbuntuAccountStatus(UbuntuAccountStatus.RELEASING)) {
+        for (User user : userRepository.findAllWithReleasingAccount()) {
             try {
                 ubuntuAccountReleaseService.advance(user.getUserId());
             } catch (Exception e) {

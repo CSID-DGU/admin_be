@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -35,8 +36,9 @@ class IssuanceSheetRowsTest {
         when(user.getUserId()).thenReturn(userId);
         when(user.getName()).thenReturn(name);
         when(user.getUbuntuUsername()).thenReturn("user" + userId);
-        when(user.getUbuntuUid()).thenReturn(55000L + userId);
-        when(user.getUbuntuGid()).thenReturn(56000L + userId);
+        when(user.ubuntuUsernameOn(any())).thenReturn("user" + userId);
+        when(user.ubuntuUidOn(any())).thenReturn(55000L + userId);
+        when(user.ubuntuGidOn(any())).thenReturn(56000L + userId);
         when(user.getEmail()).thenReturn("user" + userId + "@example.test");
         when(user.getPhone()).thenReturn("01000000000");
 
@@ -63,6 +65,9 @@ class IssuanceSheetRowsTest {
         when(request.getRequestId()).thenReturn(id);
         when(request.getStatus()).thenReturn(status);
         when(request.getUser()).thenReturn(user);
+        when(request.getUbuntuUsername()).thenReturn("user" + userId);
+        when(request.getUbuntuUid()).thenReturn(55000L + userId);
+        when(request.getUbuntuGid()).thenReturn(56000L + userId);
         when(request.getContainerImage()).thenReturn(image);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
         when(request.getNodeName()).thenReturn(nodeName);

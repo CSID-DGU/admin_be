@@ -167,8 +167,8 @@ public class RequestChannelNotifier {
                     image == null ? "-" : SlackText.line(image.getImageName() + ":" + image.getImageVersion()), // {6}
                     serverProfileRegistry.publicPort(serverName, sshPort),     // {7}
                     serverProfileRegistry.publicPort(serverName, jupyterPort), // {8}
-                    String.valueOf(user.getUbuntuUid()),                       // {9}
-                    String.valueOf(user.getUbuntuGid()));                      // {10}
+                    String.valueOf(request.getUbuntuUid()),                       // {9}
+                    String.valueOf(request.getUbuntuGid()));                      // {10}
             replyToRequest(message, requestChannel(request, serverName), request.getSlackMessageTs());
         });
     }

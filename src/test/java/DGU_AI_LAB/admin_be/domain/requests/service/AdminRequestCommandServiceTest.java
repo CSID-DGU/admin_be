@@ -126,7 +126,7 @@ class AdminRequestCommandServiceTest {
         when(mockUser.getName()).thenReturn("테스트유저");
         when(mockUser.getUserId()).thenReturn(100L);
         // 기본값: 아직 리눅스 계정이 없는 사용자 → 승인 시 계정 생성 API를 호출한다.
-        when(mockUser.hasUbuntuAccount()).thenReturn(false);
+        when(mockUser.hasUbuntuAccount(any())).thenReturn(false);
         // UID/GID 배정은 User 행을 잠그고 수행한다 (같은 사용자의 동시 승인 직렬화).
         when(userRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(mockUser));
         when(mockImage.getImageId()).thenReturn(1L);
@@ -513,7 +513,7 @@ class AdminRequestCommandServiceTest {
         void rejectsWhileAccountReleasing() {
             Long requestId = 206L;
             buildMockedRequest(requestId);
-            when(mockUser.isReleasingUbuntuAccount()).thenReturn(true);
+            when(mockUser.isReleasingUbuntuAccount(any())).thenReturn(true);
 
             assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
                     .isInstanceOf(BusinessException.class)
@@ -541,7 +541,7 @@ class AdminRequestCommandServiceTest {
             // Given
             Long requestId = 202L;
             buildMockedRequest(requestId);
-            when(mockUser.hasUbuntuAccount()).thenReturn(true);
+            when(mockUser.hasUbuntuAccount(any())).thenReturn(true);
 
             // When
             service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
@@ -671,7 +671,7 @@ class AdminRequestCommandServiceTest {
             // Given
             Long requestId = 204L;
             Request request = processingRequest(requestId);
-            when(mockUser.getUbuntuUid()).thenReturn(50001L);
+            when(mockUser.ubuntuUidOn(any())).thenReturn(50001L);
             when(mockUser.getUbuntuGid()).thenReturn(50001L);
             when(podExternalPortRepository.save(any(PodExternalPort.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -684,7 +684,7 @@ class AdminRequestCommandServiceTest {
             service.completeApprovalJob(requestId, made);
 
             // Then
-            verify(mockUser).assignUbuntuAccount(50001L, 50001L);
+            verify(mockUser).assignUbuntuAccount(any(), eq(50001L), eq(50001L));
             verify(request).assignPodInfo("ailab-testuser-abcd", "farm2");
             verify(request).completeApproval();
             verify(podExternalPortRepository, times(2)).save(any(PodExternalPort.class));
@@ -922,7 +922,7 @@ class AdminRequestCommandServiceTest {
             assertThat(pending.getUbuntuGid()).isNull();
             verify(request, never()).completeApproval();
             verify(request, never()).assignPodInfo(any(), any());
-            verify(mockUser, never()).assignUbuntuAccount(any(), any());
+            verify(mockUser, never()).assignUbuntuAccount(any(), any(), any());
             verify(transactionStatus, times(2)).setRollbackOnly();
             assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("vision-lab")).hasSize(1);
             verify(userGuideMailer, never()).sendContainerCreatedEmail(any(), any(), any());

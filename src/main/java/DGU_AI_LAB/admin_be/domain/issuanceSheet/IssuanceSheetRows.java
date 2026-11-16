@@ -53,13 +53,13 @@ final class IssuanceSheetRows {
         return List.of(
                 text(request.getRequestId()),
                 text(user.getName()),
-                text(user.getUbuntuUsername()),
+                text(request.getUbuntuUsername()),
                 user.getUserGroups().stream()
                         .map(userGroup -> userGroup.getGroup().getGroupName())
                         .sorted().collect(Collectors.joining(", ")),
                 text(request.getNodeName()),
-                text(user.getUbuntuUid()),
-                text(user.getUbuntuGid()),
+                text(request.getUbuntuUid()),
+                text(request.getUbuntuGid()),
                 String.join(", ", ports),
                 date(request.getExpiresAt()),
                 text(homeDeletionDate),

@@ -340,18 +340,23 @@ public class Request extends BaseTimeEntity {
         this.jobId = null;
     }
 
-    /** 신청 유저네임은 웹 계정에 한 번 정해지면 바뀌지 않는 값이라 따로 저장하지 않고 소유자에게서 읽는다. */
-    public String getUbuntuUsername() {
-        return user.getUbuntuUsername();
+    /** 이 신청이 쓰는 서버(리소스 그룹의 serverName). */
+    public String getServerName() {
+        return resourceGroup.getServerName();
     }
 
-    /** UID/GID는 사람에게 영구히 귀속된다(User). 신청은 소유자의 값을 그대로 보여 준다. */
+    /** 신청의 서버에 있는 계정의 유저네임. 계정 행이 아직 없으면 가입 때 고른 이름이다. */
+    public String getUbuntuUsername() {
+        return user.ubuntuUsernameOn(getServerName());
+    }
+
+    /** UID/GID는 사람에게, 서버별로 영구히 귀속된다(UbuntuAccount). 계정이 아직 없으면 null이다. */
     public Long getUbuntuUid() {
-        return user.getUbuntuUid();
+        return user.ubuntuUidOn(getServerName());
     }
 
     public Long getUbuntuGid() {
-        return user.getUbuntuGid();
+        return user.ubuntuGidOn(getServerName());
     }
 
     /**

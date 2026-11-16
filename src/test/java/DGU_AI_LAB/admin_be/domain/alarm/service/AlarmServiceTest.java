@@ -835,8 +835,8 @@ class AlarmServiceTest {
             when(request.getRequestId()).thenReturn(1234L);
             when(request.getCreatedAt()).thenReturn(java.time.LocalDateTime.of(2026, 10, 6, 13, 5));
             when(request.getNodeName()).thenReturn("farm6");
-            when(request.getUser().getUbuntuUid()).thenReturn(10148L);
-            when(request.getUser().getUbuntuGid()).thenReturn(10148L);
+            when(request.getUbuntuUid()).thenReturn(10148L);
+            when(request.getUbuntuGid()).thenReturn(10148L);
             when(serverProfileRegistry.publicPort(eq(serverName), anyString())).thenAnswer(inv -> inv.getArgument(1));
             return request;
         }

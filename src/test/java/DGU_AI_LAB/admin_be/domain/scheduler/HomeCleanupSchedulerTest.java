@@ -60,7 +60,7 @@ class HomeCleanupSchedulerTest {
             when(user.getUserId()).thenReturn(id);
             return user;
         }).toList();
-        when(userRepository.findHomeCleanupCandidates(any(), any())).thenReturn(users);
+        when(userRepository.findHomeCleanupCandidates(any(), any(), any())).thenReturn(users);
     }
 
     @Test

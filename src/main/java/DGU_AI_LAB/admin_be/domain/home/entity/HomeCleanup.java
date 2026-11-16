@@ -66,7 +66,7 @@ public class HomeCleanup extends BaseTimeEntity {
 
     private HomeCleanup(User user, LocalDateTime lastContainerEndedAt) {
         this.user = user;
-        this.ubuntuUsername = user.getUbuntuUsername();
+        this.ubuntuUsername = user.ubuntuUsernameOn(User.PRIMARY_SERVER);
         this.ubuntuUid = user.getUbuntuUid();
         this.lastContainerEndedAt = lastContainerEndedAt;
     }

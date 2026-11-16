@@ -10,7 +10,6 @@ import DGU_AI_LAB.admin_be.domain.requests.service.RequestExpiryService;
 import DGU_AI_LAB.admin_be.domain.scheduler.UserLifecycleTransactionalService;
 import DGU_AI_LAB.admin_be.domain.users.dto.response.UserSummaryDTO;
 import DGU_AI_LAB.admin_be.domain.users.entity.Role;
-import DGU_AI_LAB.admin_be.domain.users.entity.UbuntuAccountStatus;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
@@ -102,7 +101,7 @@ public class AdminUserService {
                 log.warn("[{}] userId={} 승인/마이그레이션 진행 중인 요청이 있어 정리를 거부합니다.", logPrefix, userId);
                 throw new ConflictException(ErrorCode.REQUEST_MIGRATION_IN_PROGRESS);
             }
-            if (managed.beginUbuntuAccountRelease()) {
+            if (managed.beginUbuntuAccountReleaseOnAllServers()) {
                 // 이전 회수 주기나 실패한 시도의 계정 회수 작업 번호를 비워 모든 노드를 새로 등록하게 한다.
                 current.stream()
                         .filter(r -> r.getStatus() == Status.DELETED && r.getJobId() != null)
@@ -243,7 +242,7 @@ public class AdminUserService {
     public void deleteUbuntuAccountOfUser(Long userId) {
         User user = new TransactionTemplate(transactionManager).execute(status -> userRepository.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.USER_NOT_FOUND)));
-        if (user.getUbuntuAccountStatus() == UbuntuAccountStatus.NONE) {
+        if (!user.hasAnyUbuntuAccountInLedger()) {
             throw new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND);
         }
         log.warn("[deleteUbuntuAccount] 우분투 계정 회수 시작: userId={}", userId);

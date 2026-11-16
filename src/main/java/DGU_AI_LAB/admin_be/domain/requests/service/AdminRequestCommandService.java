@@ -154,7 +154,7 @@ public class AdminRequestCommandService {
             // 이용 정지 중에는 새 컨테이너를 만들지 않는다. 신청은 대기로 남아 정지가 끝난 뒤 승인할 수 있다.
             suspensionGuard.requireNotSuspendedLocked(owner.getUserId());
             // 계정 회수가 도는 중이면 새 컨테이너가 곧 지워질 계정을 쓰게 된다. 회수가 끝난 뒤 승인하면 되살린다.
-            if (owner.isReleasingUbuntuAccount()) {
+            if (owner.isReleasingUbuntuAccount(req.getServerName())) {
                 throw new BusinessException(ErrorCode.UBUNTU_ACCOUNT_RELEASING);
             }
             // 비밀번호 교체 작업이 도는 중이면 이 컨테이너만 옛 비밀번호로 만들어진다. 교체가 끝난 뒤 승인한다.
@@ -176,7 +176,7 @@ public class AdminRequestCommandService {
                     req.getUbuntuUsername(),
                     false,
                     supplementaryGroups,
-                    previousUbuntuUid(req.getUser())
+                    previousUbuntuUid(req.getUser(), req.getServerName())
             );
             // 응답은 트랜잭션 안에서 만든다. 밖에서 만들면 DTO가 새로 읽는 lazy 연관(예: user.userGroups)마다
             // 초기화 목록을 따로 맞춰야 하고, 빠뜨리면 승인은 진행됐는데 관리자는 500을 받는다.
@@ -214,7 +214,7 @@ public class AdminRequestCommandService {
             boolean reuseAccount = Boolean.TRUE.equals(new TransactionTemplate(transactionManager).execute(status ->
                     userRepository.findByIdForUpdate(userId)
                             .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND))
-                            .hasUbuntuAccount()));
+                            .hasUbuntuAccount(serverName)));
 
             // 계정을 새로 만드는 경우의 그룹은 작업이 계정을 만들 때 함께 넣는다.
             // 재사용 계정의 경우, config-server의 provision 제어기가 Pod 생성 후 그룹을 추가하므로
@@ -296,8 +296,8 @@ public class AdminRequestCommandService {
      * 원장 UID가 같을 때만 이어받고, 없으면 NAS 홈 소유자가 이 값일 때 같은 UID로 다시 만든다.
      * 첫 승인이면 null이라 새 번호를 받는다.
      */
-    private Long previousUbuntuUid(User user) {
-        return user.hasUbuntuAccount() ? null : user.getUbuntuUid();
+    private Long previousUbuntuUid(User user, String serverName) {
+        return user.hasUbuntuAccount(serverName) ? null : user.ubuntuUidOn(serverName);
     }
 
     /**
@@ -335,10 +335,10 @@ public class AdminRequestCommandService {
                 status.setRollbackOnly();
                 return new ApprovalOutcome(null, groupProblem);
             }
-            if (!owner.hasUbuntuAccount() && made.uid() != null && made.gid() != null) {
+            if (!owner.hasUbuntuAccount(req.getServerName()) && made.uid() != null && made.gid() != null) {
                 // 작업이 계정을 새로 만들었거나 원장에 남은 계정을 이어받은 경우다. 이미 기록이 있으면
                 // 재사용 경로라 결과의 UID는 같은 값이다.
-                owner.assignUbuntuAccount(made.uid(), made.gid());
+                owner.assignUbuntuAccount(req.getServerName(), made.uid(), made.gid());
             }
             req.assignPodInfo(made.podName(), made.node());
             req.completeApproval();

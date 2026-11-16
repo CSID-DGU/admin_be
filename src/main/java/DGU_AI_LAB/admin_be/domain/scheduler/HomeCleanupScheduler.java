@@ -39,7 +39,7 @@ public class HomeCleanupScheduler {
     public void runHomeCleanup() {
         LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
         for (User user : userRepository.findHomeCleanupCandidates(
-                retentionPolicy.deletableEndedBefore(now), Status.openStatuses())) {
+                retentionPolicy.deletableEndedBefore(now), Status.openStatuses(), User.PRIMARY_SERVER)) {
             try {
                 // 사용자별 독립 트랜잭션 — 한 사용자의 실패가 나머지를 막지 않게 한다.
                 homeCleanupService.begin(user.getUserId(), now).ifPresent(this::register);

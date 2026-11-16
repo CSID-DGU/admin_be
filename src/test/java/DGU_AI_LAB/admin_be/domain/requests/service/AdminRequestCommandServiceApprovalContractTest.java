@@ -111,7 +111,7 @@ class AdminRequestCommandServiceApprovalContractTest {
 
         when(mockUser.getUserId()).thenReturn(100L);
         when(mockUser.getName()).thenReturn("테스트유저");
-        when(mockUser.hasUbuntuAccount()).thenReturn(false);
+        when(mockUser.hasUbuntuAccount(any())).thenReturn(false);
         when(userRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(mockUser));
         when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
         when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
@@ -179,8 +179,8 @@ class AdminRequestCommandServiceApprovalContractTest {
     void sendsOwnUidWhenAccountReleased() {
         Long requestId = 304L;
         approvableRequest(requestId);
-        when(mockUser.hasUbuntuAccount()).thenReturn(false);
-        when(mockUser.getUbuntuUid()).thenReturn(55000L);
+        when(mockUser.hasUbuntuAccount(any())).thenReturn(false);
+        when(mockUser.ubuntuUidOn(any())).thenReturn(55000L);
 
         service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
 
@@ -208,7 +208,7 @@ class AdminRequestCommandServiceApprovalContractTest {
     void reusedAccountApprovalSendsGroupsWithRegistration() {
         Long requestId = 302L;
         Request request = approvableRequest(requestId);
-        when(mockUser.hasUbuntuAccount()).thenReturn(true);
+        when(mockUser.hasUbuntuAccount(any())).thenReturn(true);
 
         service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
 

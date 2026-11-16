@@ -2,7 +2,6 @@ package DGU_AI_LAB.admin_be.domain.users.repository;
 
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.users.entity.Role;
-import DGU_AI_LAB.admin_be.domain.users.entity.UbuntuAccountStatus;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -26,9 +25,14 @@ public interface UserRepository extends JpaRepository<User,Long> {
 
     boolean existsByEmail(String email);
 
-    boolean existsByUbuntuUsername(String ubuntuUsername);
+    /** 가입 때 고른 이름이거나 어느 서버의 계정 유저네임이든 이미 쓰이는 이름인가. */
+    @Query("SELECT COUNT(u) > 0 FROM User u WHERE u.ubuntuUsername = :ubuntuUsername " +
+            "OR EXISTS (SELECT a FROM UbuntuAccount a WHERE a.username = :ubuntuUsername)")
+    boolean existsByUbuntuUsername(@Param("ubuntuUsername") String ubuntuUsername);
 
-    List<User> findAllByUbuntuAccountStatus(UbuntuAccountStatus ubuntuAccountStatus);
+    /** 회수 중인 계정(서버 어느 쪽이든)이 하나라도 있는 사용자. */
+    @Query("SELECT DISTINCT a.user FROM UbuntuAccount a WHERE a.status = DGU_AI_LAB.admin_be.domain.users.entity.UbuntuAccountStatus.RELEASING")
+    List<User> findAllWithReleasingAccount();
 
     /**
      * 이 권한의 활성 사용자 행을 모두 잠근다. "마지막 활성 관리자" 확인과 권한·활성 변경을 한 트랜잭션에서
@@ -102,12 +106,15 @@ public interface UserRepository extends JpaRepository<User,Long> {
      */
     @Query("SELECT u FROM User u " +
             "WHERE u.ubuntuUsername IS NOT NULL AND u.ubuntuUid IS NOT NULL " +
-            "  AND NOT EXISTS (SELECT r FROM Request r WHERE r.user = u AND r.status IN :openStatuses) " +
+            "  AND NOT EXISTS (SELECT r FROM Request r WHERE r.user = u AND r.status IN :openStatuses " +
+            "         AND LOWER(r.resourceGroup.serverName) = LOWER(:serverName)) " +
             "  AND (SELECT MAX(d.updatedAt) FROM Request d WHERE d.user = u " +
+            "         AND LOWER(d.resourceGroup.serverName) = LOWER(:serverName) " +
             "         AND d.status = DGU_AI_LAB.admin_be.domain.requests.entity.Status.DELETED " +
             "         AND d.approvedAt IS NOT NULL) < :endedBefore")
     List<User> findHomeCleanupCandidates(@Param("endedBefore") LocalDateTime endedBefore,
-                                         @Param("openStatuses") Collection<Status> openStatuses);
+                                         @Param("openStatuses") Collection<Status> openStatuses,
+                                         @Param("serverName") String serverName);
 
     /**
      * 홈 삭제 직전 안내 후보. {@link #findHomeCleanupCandidates}와 같은 조건에, 마지막 컨테이너가 끝난 시각이
@@ -115,14 +122,18 @@ public interface UserRepository extends JpaRepository<User,Long> {
      */
     @Query("SELECT u FROM User u " +
             "WHERE u.ubuntuUsername IS NOT NULL AND u.ubuntuUid IS NOT NULL AND u.deletedAt IS NULL AND u.isActive = true " +
-            "  AND NOT EXISTS (SELECT r FROM Request r WHERE r.user = u AND r.status IN :openStatuses) " +
+            "  AND NOT EXISTS (SELECT r FROM Request r WHERE r.user = u AND r.status IN :openStatuses " +
+            "         AND LOWER(r.resourceGroup.serverName) = LOWER(:serverName)) " +
             "  AND (SELECT MAX(d.updatedAt) FROM Request d WHERE d.user = u " +
+            "         AND LOWER(d.resourceGroup.serverName) = LOWER(:serverName) " +
             "         AND d.status = DGU_AI_LAB.admin_be.domain.requests.entity.Status.DELETED " +
             "         AND d.approvedAt IS NOT NULL) >= :from " +
             "  AND (SELECT MAX(d.updatedAt) FROM Request d WHERE d.user = u " +
+            "         AND LOWER(d.resourceGroup.serverName) = LOWER(:serverName) " +
             "         AND d.status = DGU_AI_LAB.admin_be.domain.requests.entity.Status.DELETED " +
             "         AND d.approvedAt IS NOT NULL) < :to")
     List<User> findHomeReminderCandidates(@Param("from") LocalDateTime from,
                                           @Param("to") LocalDateTime to,
-                                          @Param("openStatuses") Collection<Status> openStatuses);
+                                          @Param("openStatuses") Collection<Status> openStatuses,
+                                          @Param("serverName") String serverName);
 }

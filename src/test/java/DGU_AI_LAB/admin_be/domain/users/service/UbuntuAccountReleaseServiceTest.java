@@ -86,6 +86,7 @@ class UbuntuAccountReleaseServiceTest {
         when(r.getStatus()).thenReturn(status);
         when(r.getNodeName()).thenReturn(node);
         when(r.getJobId()).thenReturn(jobId);
+        when(r.getServerName()).thenReturn(User.PRIMARY_SERVER);
         when(requestRepository.findByIdForUpdate(requestId)).thenReturn(Optional.of(r));
         requests.add(r);
         return r;
