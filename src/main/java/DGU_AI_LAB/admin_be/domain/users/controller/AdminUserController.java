@@ -1,5 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.users.controller;
 
+import DGU_AI_LAB.admin_be.domain.adminActionLog.AdminAction;
+import DGU_AI_LAB.admin_be.domain.adminActionLog.AdminActionType;
+
 import DGU_AI_LAB.admin_be.domain.users.dto.request.UserActivationRequestDTO;
 
 import DGU_AI_LAB.admin_be.domain.users.controller.docs.AdminUserApi;
@@ -42,6 +45,7 @@ public class AdminUserController implements AdminUserApi {
         return SuccessResponse.accepted(null);
     }
 
+    @AdminAction(value = AdminActionType.UBUNTU_ACCOUNT_DELETE, targetId = "id")
     @DeleteMapping("/{id}/ubuntu-account")
     public ResponseEntity<SuccessResponse<?>> deleteUbuntuAccount(@PathVariable Long id) {
         adminUserService.deleteUbuntuAccountOfUser(id);
@@ -49,6 +53,7 @@ public class AdminUserController implements AdminUserApi {
     }
 
     /** 활성 상태 변경. {"active": false}면 비활성화(컨테이너·계정 정리), true면 재활성화. */
+    @AdminAction(value = AdminActionType.USER_ACTIVATION_CHANGE, targetId = "id")
     @PatchMapping("/{id}")
     public ResponseEntity<SuccessResponse<?>> updateUserActivation(@PathVariable Long id,
                                                                    @RequestBody @Valid UserActivationRequestDTO dto) {
@@ -62,17 +67,20 @@ public class AdminUserController implements AdminUserApi {
         return SuccessResponse.ok(userGroupService.getGroupsOfUser(id));
     }
 
+    @AdminAction(value = AdminActionType.USER_GROUP_REMOVE, targetId = "id")
     @DeleteMapping("/{id}/groups/{groupId}")
     public ResponseEntity<SuccessResponse<?>> removeUserFromGroup(@PathVariable Long id, @PathVariable Long groupId,
                                                                   @AuthenticationPrincipal(expression = "userId") Long adminId) {
         return SuccessResponse.accepted(userGroupService.removeUserFromGroup(id, groupId, adminId));
     }
 
+    @AdminAction(value = AdminActionType.USER_ROLE_CHANGE, targetId = "id")
     @PatchMapping("/{id}/role")
     public ResponseEntity<SuccessResponse<?>> changeUserRole(@PathVariable Long id, @RequestBody @Valid ChangeRoleRequestDTO dto) {
         return SuccessResponse.ok(adminUserService.changeUserRole(id, dto.role()));
     }
 
+    @AdminAction(value = AdminActionType.USER_PASSWORD_RESET, targetId = "id")
     @PutMapping("/{id}/password")
     public ResponseEntity<SuccessResponse<?>> resetPassword(@AuthenticationPrincipal(expression = "userId") Long adminId,
                                                             @PathVariable Long id,

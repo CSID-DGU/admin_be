@@ -5,6 +5,7 @@ import DGU_AI_LAB.admin_be.global.auth.jwt.JwtProvider;
 import org.springframework.data.jpa.mapping.JpaMetamodelMappingContext;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import DGU_AI_LAB.admin_be.domain.adminActionLog.AdminActionLogWriter;
 
 /**
  * @WebMvcTest에서 Spring Security 및 JPA 관련 빈 충돌 방지를 위한 공통 Mock 설정.
@@ -12,6 +13,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
  * - spring-data-jpa 클래스패스 존재 시 JpaMetamodelMappingContext 필요
  */
 public abstract class WebMvcTestSupport {
+
+    @MockitoBean
+    protected AdminActionLogWriter adminActionLogWriter;
 
     @MockitoBean
     protected JpaMetamodelMappingContext jpaMetamodelMappingContext;
