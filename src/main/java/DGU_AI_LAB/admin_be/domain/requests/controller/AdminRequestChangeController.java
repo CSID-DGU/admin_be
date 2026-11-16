@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller;
 
+import DGU_AI_LAB.admin_be.domain.adminActionLog.AdminAction;
+import DGU_AI_LAB.admin_be.domain.adminActionLog.AdminActionType;
 import DGU_AI_LAB.admin_be.domain.requests.controller.docs.AdminRequestChangeApi;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ChangeDecisionRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ChangeRequestResponseDTO;
@@ -33,6 +35,7 @@ public class AdminRequestChangeController implements AdminRequestChangeApi {
         return SuccessResponse.ok(changeRequests);
     }
 
+    @AdminAction(value = AdminActionType.CHANGE_REQUEST_APPROVE, targetId = "changeRequestId")
     @PostMapping("/{changeRequestId}/approval")
     public ResponseEntity<SuccessResponse<?>> approveModification(
             @AuthenticationPrincipal(expression = "userId") Long adminId,
@@ -44,6 +47,7 @@ public class AdminRequestChangeController implements AdminRequestChangeApi {
         return status == Status.PROCESSING ? SuccessResponse.accepted(null) : SuccessResponse.ok(null);
     }
 
+    @AdminAction(value = AdminActionType.CHANGE_REQUEST_REJECT, targetId = "changeRequestId")
     @PostMapping("/{changeRequestId}/rejection")
     public ResponseEntity<SuccessResponse<?>> rejectModification(
             @AuthenticationPrincipal(expression = "userId") Long adminId,
