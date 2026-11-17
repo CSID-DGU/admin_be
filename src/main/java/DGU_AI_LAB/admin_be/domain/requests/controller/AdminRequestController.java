@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.requests.controller;
 
+import DGU_AI_LAB.admin_be.domain.adminActionLog.AdminAction;
+import DGU_AI_LAB.admin_be.domain.adminActionLog.AdminActionType;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobHistoryService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.ApprovalRequestDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.request.RejectionRequestDTO;
@@ -84,6 +86,7 @@ public class AdminRequestController implements AdminRequestApi {
 
 
     @PostMapping("/{requestId}/approval")
+    @AdminAction(value = AdminActionType.REQUEST_APPROVE, targetId = "requestId")
     public ResponseEntity<SuccessResponse<?>> approveRequest(@PathVariable Long requestId,
                                                              @AuthenticationPrincipal(expression = "userId") Long adminUserId,
                                                              @RequestBody @Valid ApprovalRequestDTO dto) {
@@ -96,6 +99,7 @@ public class AdminRequestController implements AdminRequestApi {
     }
 
     @PostMapping("/{requestId}/rejection")
+    @AdminAction(value = AdminActionType.REQUEST_REJECT, targetId = "requestId")
     public ResponseEntity<SuccessResponse<?>> rejectRequest(@PathVariable Long requestId,
                                                             @RequestBody @Valid RejectionRequestDTO dto) {
         SaveRequestResponseDTO responseDto = adminRequestCommandService.rejectRequest(
@@ -116,6 +120,7 @@ public class AdminRequestController implements AdminRequestApi {
     }
 
     @PostMapping("/{requestId}/migrations")
+    @AdminAction(value = AdminActionType.REQUEST_MIGRATE, targetId = "requestId")
     public ResponseEntity<SuccessResponse<?>> startMigration(@PathVariable Long requestId,
                                                              @RequestBody @Valid MigratePodRequestDTO dto) {
         podMigrationService.startMigration(requestId, dto);
@@ -124,6 +129,7 @@ public class AdminRequestController implements AdminRequestApi {
 
     /** 현재 노드에서 컨테이너를 다시 만든다. 결과는 마지막 마이그레이션 결과로 확인한다. */
     @PostMapping("/{requestId}/restarts")
+    @AdminAction(value = AdminActionType.REQUEST_RESTART, targetId = "requestId")
     public ResponseEntity<SuccessResponse<?>> startRestart(@PathVariable Long requestId,
                                                            @RequestBody(required = false) RestartPodRequestDTO dto) {
         podMigrationService.startRestart(requestId, dto);
@@ -141,6 +147,7 @@ public class AdminRequestController implements AdminRequestApi {
      * 쓴다 — 그쪽은 그 사용자의 컨테이너를 전부 정리한다.
      */
     @DeleteMapping("/{requestId}/container")
+    @AdminAction(value = AdminActionType.CONTAINER_DELETE, targetId = "requestId")
     public ResponseEntity<SuccessResponse<?>> deleteContainer(@PathVariable Long requestId) {
         requestExpiryService.deleteContainerByAdmin(requestId);
         return SuccessResponse.accepted(null);
@@ -151,6 +158,7 @@ public class AdminRequestController implements AdminRequestApi {
      * 뒤 강제로 완료 처리한다. API 자체는 자원 존재를 재확인하지 않는다.
      */
     @PostMapping("/{requestId}/container/force-complete")
+    @AdminAction(value = AdminActionType.CONTAINER_FORCE_COMPLETE, targetId = "requestId")
     public ResponseEntity<SuccessResponse<?>> forceCompleteRevoke(@PathVariable Long requestId) {
         requestExpiryService.forceCompleteRevoke(requestId);
         return SuccessResponse.ok(null);

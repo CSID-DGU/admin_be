@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.warnings.controller;
 
+import DGU_AI_LAB.admin_be.domain.adminActionLog.AdminAction;
+import DGU_AI_LAB.admin_be.domain.adminActionLog.AdminActionType;
 import DGU_AI_LAB.admin_be.domain.warnings.controller.docs.AdminWarningApi;
 import DGU_AI_LAB.admin_be.domain.warnings.dto.WarningReasonRequestDTO;
 import DGU_AI_LAB.admin_be.domain.warnings.service.WarningService;
@@ -30,6 +32,7 @@ public class AdminWarningController implements AdminWarningApi {
     }
 
     @PostMapping("/warnings")
+    @AdminAction(value = AdminActionType.WARNING_GRANT, targetId = "userId")
     public ResponseEntity<SuccessResponse<?>> grantWarning(@PathVariable Long userId,
                                                            @AuthenticationPrincipal(expression = "userId") Long adminId,
                                                            @RequestBody @Valid WarningReasonRequestDTO dto) {
@@ -37,6 +40,7 @@ public class AdminWarningController implements AdminWarningApi {
     }
 
     @PostMapping("/warning-deductions")
+    @AdminAction(value = AdminActionType.WARNING_DEDUCT, targetId = "userId")
     public ResponseEntity<SuccessResponse<?>> deductWarning(@PathVariable Long userId,
                                                             @AuthenticationPrincipal(expression = "userId") Long adminId,
                                                             @RequestBody @Valid WarningReasonRequestDTO dto) {
@@ -45,6 +49,7 @@ public class AdminWarningController implements AdminWarningApi {
 
     /** 사유는 본문이 아니라 쿼리(reason)로 받는다 — DELETE 본문은 중간 프록시가 버릴 수 있다. */
     @DeleteMapping("/warnings/{warningId}")
+    @AdminAction(value = AdminActionType.WARNING_CANCEL, targetId = "userId")
     public ResponseEntity<SuccessResponse<?>> cancelWarning(@PathVariable Long userId, @PathVariable Long warningId,
                                                             @AuthenticationPrincipal(expression = "userId") Long adminId,
                                                             @ModelAttribute @Valid WarningReasonRequestDTO dto) {

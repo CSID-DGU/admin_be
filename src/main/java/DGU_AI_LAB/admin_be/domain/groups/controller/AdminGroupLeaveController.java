@@ -1,5 +1,7 @@
 package DGU_AI_LAB.admin_be.domain.groups.controller;
 
+import DGU_AI_LAB.admin_be.domain.adminActionLog.AdminAction;
+import DGU_AI_LAB.admin_be.domain.adminActionLog.AdminActionType;
 import DGU_AI_LAB.admin_be.domain.groups.dto.response.GroupLeaveResponseDTO;
 import DGU_AI_LAB.admin_be.domain.groups.service.GroupLeaveService;
 import DGU_AI_LAB.admin_be.global.auth.CustomUserDetails;
@@ -24,6 +26,7 @@ public class AdminGroupLeaveController {
     }
 
     @PostMapping("/{leaveRequestId}/approval")
+    @AdminAction(value = AdminActionType.GROUP_LEAVE_APPROVE, targetId = "leaveRequestId")
     public ResponseEntity<SuccessResponse<?>> approve(@PathVariable Long leaveRequestId,
                                                       @AuthenticationPrincipal CustomUserDetails principal) {
         return SuccessResponse.accepted(GroupLeaveResponseDTO.fromEntity(
@@ -31,6 +34,7 @@ public class AdminGroupLeaveController {
     }
 
     @PostMapping("/{leaveRequestId}/rejection")
+    @AdminAction(value = AdminActionType.GROUP_LEAVE_REJECT, targetId = "leaveRequestId")
     public ResponseEntity<SuccessResponse<?>> reject(@PathVariable Long leaveRequestId,
                                                      @AuthenticationPrincipal CustomUserDetails principal) {
         return SuccessResponse.ok(GroupLeaveResponseDTO.fromEntity(
