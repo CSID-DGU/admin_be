@@ -1,9 +1,12 @@
 package DGU_AI_LAB.admin_be.domain.adminActionLog.web;
 
 import DGU_AI_LAB.admin_be.domain.adminActionLog.AdminAction;
+
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.*;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
 
 /** 요청 하나에만 속하며, 안전한 값만 보관한다. */
 final class AdminActionContext {
@@ -19,7 +22,9 @@ final class AdminActionContext {
     boolean submitted;
 
     AdminActionContext(AdminAction action, Long adminId, String targetId, String captureStatus) {
-        this.action = action; this.adminId = adminId; this.targetId = targetId;
+        this.action = action;
+        this.adminId = adminId;
+        this.targetId = targetId;
         this.captureStatus = captureStatus;
     }
 }

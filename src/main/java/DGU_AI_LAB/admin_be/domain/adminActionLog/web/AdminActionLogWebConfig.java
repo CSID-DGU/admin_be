@@ -1,5 +1,9 @@
 package DGU_AI_LAB.admin_be.domain.adminActionLog.web;
 
+import DGU_AI_LAB.admin_be.domain.adminActionLog.service.AdminActionLogDispatcher;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
@@ -9,8 +13,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class AdminActionLogWebConfig {
     @Bean
     public AdminActionInterceptor adminActionInterceptor(
-            DGU_AI_LAB.admin_be.domain.adminActionLog.service.AdminActionLogDispatcher dispatcher,
-            com.fasterxml.jackson.databind.ObjectMapper mapper) {
+            AdminActionLogDispatcher dispatcher, ObjectMapper mapper) {
         return new AdminActionInterceptor(dispatcher, mapper);
     }
 

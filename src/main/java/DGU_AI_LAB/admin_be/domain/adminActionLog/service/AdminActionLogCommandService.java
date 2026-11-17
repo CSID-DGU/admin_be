@@ -3,9 +3,12 @@ package DGU_AI_LAB.admin_be.domain.adminActionLog.service;
 import DGU_AI_LAB.admin_be.domain.adminActionLog.dto.AdminActionEvent;
 import DGU_AI_LAB.admin_be.domain.adminActionLog.entity.AdminActionLog;
 import DGU_AI_LAB.admin_be.domain.adminActionLog.repository.AdminActionLogRepository;
+
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.*;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
