@@ -1,0 +1,95 @@
+package DGU_AI_LAB.admin_be.domain.adminActionLog;
+
+import DGU_AI_LAB.admin_be.domain.adminActionLog.dto.AdminActionEvent;
+import DGU_AI_LAB.admin_be.domain.adminActionLog.service.AdminActionLogDispatcher;
+import DGU_AI_LAB.admin_be.domain.adminActionLog.web.*;
+import DGU_AI_LAB.admin_be.domain.users.dto.request.*;
+import DGU_AI_LAB.admin_be.error.GlobalExceptionHandler;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.*;
+import org.mockito.ArgumentCaptor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.test.web.servlet.*;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import jakarta.validation.Valid;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+class AdminActionCaptureTest {
+    AdminActionLogDispatcher dispatcher;
+    MockMvc mvc;
+
+    @BeforeEach
+    void setup() {
+        dispatcher = mock(AdminActionLogDispatcher.class);
+        ObjectMapper mapper = new ObjectMapper();
+        // Advice가 현재 요청에 접근하도록 Spring의 요청 프록시와 같은 역할을 수행한다.
+        var request = mock(jakarta.servlet.http.HttpServletRequest.class, invocation -> {
+            var current = ((org.springframework.web.context.request.ServletRequestAttributes)
+                    org.springframework.web.context.request.RequestContextHolder.currentRequestAttributes()).getRequest();
+            return invocation.getMethod().invoke(current, invocation.getArguments());
+        });
+        mvc = MockMvcBuilders.standaloneSetup(new Actions())
+                .setControllerAdvice(new GlobalExceptionHandler(), new AdminActionBodyAdvice(request))
+                .addInterceptors(new AdminActionInterceptor(dispatcher, mapper)).build();
+    }
+
+    @Test
+    void capturesRoleAndOmitsPasswordIncludingInvalidPassword() throws Exception {
+        mvc.perform(patch("/api/admin/test/42/role").contentType("application/json").content("{\"role\":\"ADMIN\"}"))
+                .andExpect(status().isOk());
+        var role = event();
+        assertThat(role.requestedRole()).isEqualTo("ADMIN");
+        assertThat(role.targetId()).isEqualTo("42");
+        reset(dispatcher);
+        mvc.perform(put("/api/admin/test/42/password").contentType("application/json").content("{\"newPassword\":\"secret\"}"))
+                .andExpect(status().isBadRequest());
+        var password = event();
+        assertThat(password.captureStatus()).isEqualTo("OMITTED_BY_POLICY");
+        assertThat(password.requestValues()).doesNotContain("secret", "newPassword");
+        assertThat(password.httpStatus()).isEqualTo(400);
+    }
+
+    @Test
+    void malformedJsonStillRecordsFailureWithoutRawBody() throws Exception {
+        mvc.perform(patch("/api/admin/test/42/role").contentType("application/json").content("{\"role\":\"SECRET_BAD_ROLE\"}"))
+                .andExpect(status().isBadRequest());
+        var event = event();
+        assertThat(event.httpStatus()).isEqualTo(400);
+        assertThat(event.captureStatus()).isEqualTo("UNAVAILABLE");
+        assertThat(event.requestValues()).doesNotContain("SECRET_BAD_ROLE");
+    }
+
+    @Test
+    void capturesHandledServerErrorAndAcceptedWithoutCallingThemSuccess() throws Exception {
+        mvc.perform(post("/api/admin/test/42/fail")).andExpect(status().isInternalServerError());
+        assertThat(event().httpStatus()).isEqualTo(500);
+        reset(dispatcher);
+        mvc.perform(post("/api/admin/test/42/approval")).andExpect(status().isAccepted());
+        assertThat(event().httpStatus()).isEqualTo(202);
+    }
+
+    AdminActionEvent event() {
+        var captor = ArgumentCaptor.forClass(AdminActionEvent.class);
+        verify(dispatcher).submit(captor.capture());
+        return captor.getValue();
+    }
+
+    @RestController
+    @RequestMapping("/api/admin/test/{id}")
+    static class Actions {
+        @PatchMapping("/role") @AdminAction(value = AdminActionType.USER_ROLE_CHANGE, targetId = "id")
+        public void role(@PathVariable Long id, @RequestBody @Valid ChangeRoleRequestDTO dto) {}
+        @PutMapping("/password") @AdminAction(value = AdminActionType.USER_PASSWORD_RESET, targetId = "id")
+        public void password(@PathVariable Long id, @RequestBody @Valid AdminPasswordResetRequestDTO dto) {}
+        @PostMapping("/fail") @AdminAction(value = AdminActionType.REQUEST_REJECT, targetId = "id")
+        public void fail(@PathVariable Long id) { throw new IllegalStateException("test failure"); }
+        @PostMapping("/approval") @AdminAction(value = AdminActionType.REQUEST_APPROVE, targetId = "id")
+        public ResponseEntity<Void> approve(@PathVariable Long id) { return ResponseEntity.accepted().build(); }
+    }
+}
