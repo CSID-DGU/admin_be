@@ -52,6 +52,7 @@ class MyGpuUsageServiceTest {
         when(user.getUbuntuUsername()).thenReturn("u" + userId);
         Request r = mock(Request.class);
         when(r.getUser()).thenReturn(user);
+        when(r.getUbuntuUsername()).thenReturn("u" + userId);
         when(r.getPodName()).thenReturn(pod);
         when(r.getNodeName()).thenReturn(node);
         when(r.getStatus()).thenReturn(Status.FULFILLED);
@@ -304,5 +305,16 @@ class MyGpuUsageServiceTest {
 
         // 빈 목록('GPU 없음')으로 숨기지 않고 오류로 알린다.
         assertThatThrownBy(() -> service.getMyGpuUsage(10L, 1L)).isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    @DisplayName("소유자 키는 신청의 서버 기준 유저네임이다 — 서버마다 이름이 다른 사람도 그 서버 컨테이너에서 같은 키가 된다")
+    void ownerKeyUsesRequestServerUsername() {
+        Request r = request(7L, "pod-lab", "node-a");
+        when(r.getUbuntuUsername()).thenReturn("lab_name");
+        assertThat(MyGpuUsageService.ownerKey(r)).isEqualTo("lab_name");
+
+        when(r.getUbuntuUsername()).thenReturn(" ");
+        assertThat(MyGpuUsageService.ownerKey(r)).isEqualTo("id:7");
     }
 }

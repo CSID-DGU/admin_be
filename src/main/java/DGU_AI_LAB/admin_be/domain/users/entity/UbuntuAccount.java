@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.users.entity;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
+import DGU_AI_LAB.admin_be.global.event.RequestRowChangeListener;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -14,6 +15,7 @@ import lombok.NoArgsConstructor;
  * 같은 번호·같은 홈으로 돌아온다.
  */
 @Entity
+@EntityListeners(RequestRowChangeListener.class)
 @Table(name = "ubuntu_accounts", uniqueConstraints = {
         @UniqueConstraint(name = "uk_ubuntu_accounts_user_server", columnNames = {"user_id", "server_name"}),
         @UniqueConstraint(name = "uk_ubuntu_accounts_server_username", columnNames = {"server_name", "username"}),
