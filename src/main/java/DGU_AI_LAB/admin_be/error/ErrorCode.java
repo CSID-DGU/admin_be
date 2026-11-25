@@ -31,6 +31,8 @@ public enum ErrorCode {
      */
     FORBIDDEN(HttpStatus.FORBIDDEN, "리소스 접근 권한이 없습니다."),
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "접근이 거부되었습니다."),
+    INTERNAL_CLUSTER_AUTHENTICATION_FAILED(HttpStatus.FORBIDDEN, "클러스터 내부 API 인증에 실패했습니다."),
+    REQUEST_CLUSTER_MISMATCH(HttpStatus.FORBIDDEN, "요청한 클러스터와 저장된 신청의 클러스터가 일치하지 않습니다."),
 
 
     /**

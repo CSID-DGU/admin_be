@@ -4,6 +4,7 @@ import DGU_AI_LAB.admin_be.domain.nodes.entity.Node;
 import DGU_AI_LAB.admin_be.domain.portRequests.entity.PortRequests;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.RequestGroup;
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.entity.UserGroup;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
@@ -18,11 +19,13 @@ import java.util.stream.Stream;
 @Builder
 public record AcceptInfoResponseDTO(
 
+        @Schema(description = "신청이 속한 클러스터", example = "FARM")
+        String cluster_id,
         @Schema(description = "Ubuntu 사용자명", example = "test2014")
         String username,
         @Schema(description = "컨테이너 이미지 (이름:버전)", example = "cuda:11.8")
         String image,
-        @Schema(description = "그룹 목록 (GID + 그룹명)")
+        @Schema(description = "FARM 공용 그룹 목록 (GID + 그룹명). LAB은 빈 목록")
         List<GroupDTO> groups,
         @Schema(description = "GPU 노드 목록")
         List<GpuNodeDTO> gpu_nodes,
@@ -66,27 +69,36 @@ public record AcceptInfoResponseDTO(
             String usage_purpose
     ) {}
 
-    public static AcceptInfoResponseDTO fromEntity(Request request, List<PortRequests> portRequests, List<Node> nodes) {
+    public static AcceptInfoResponseDTO fromEntity(
+            String clusterId,
+            Request request,
+            List<PortRequests> portRequests,
+            List<Node> nodes
+    ) {
         var image = request.getContainerImage();
 
-        // 계정(User) 단위 그룹 전체에 이 신청의 그룹을 더해 보낸다. 계정 그룹만 보내면 마이그레이션·
+        // FARM은 계정(User) 단위 그룹 전체에 이 신청의 그룹을 더해 보낸다. 계정 그룹만 보내면 마이그레이션·
         // 재프로비저닝 때 다른 컨테이너에서 얻은 그룹이 빠지지 않는다. 이 신청의 그룹은 Pod 생성이
         // 끝난 뒤(completeApprovalJob)에야 계정으로 옮겨지므로, 여기서 더하지 않으면 그룹을 받으려고
-        // 낸 신청의 첫 컨테이너에 그 그룹이 없다.
+        // 낸 신청의 첫 컨테이너에 그 그룹이 없다. 그룹 기능이 없는 LAB에는 빈 목록을 보낸다.
         //
         // 그룹 자체(행 번호)로 중복을 거른다. gid 로 거르면 승인 대기 그룹(gid 없음)끼리 null 하나로 합쳐진다.
         // 승인 대기 그룹은 gid 없이 이름만 보내고, 이 신청의 생성 작업이 같은 작업에서 발급한 gid 로 채워 쓴다.
-        Set<Group> groups = new LinkedHashSet<>();
-        Stream.concat(
-                request.getUser().getUserGroups().stream().map(UserGroup::getGroup),
-                request.getRequestGroups().stream().map(RequestGroup::getGroup)
-        ).forEach(groups::add);
-        List<GroupDTO> groupDTOList = groups.stream()
-                .map(g -> GroupDTO.builder()
-                        .gid(g.getUbuntuGid())
-                        .name(g.getGroupName())
-                        .build())
-                .toList();
+        List<GroupDTO> groupDTOList = List.of();
+        if (User.PRIMARY_SERVER.equalsIgnoreCase(clusterId)
+                && User.PRIMARY_SERVER.equalsIgnoreCase(request.getServerName())) {
+            Set<Group> groups = new LinkedHashSet<>();
+            Stream.concat(
+                    request.getUser().getUserGroups().stream().map(UserGroup::getGroup),
+                    request.getRequestGroups().stream().map(RequestGroup::getGroup)
+            ).forEach(groups::add);
+            groupDTOList = groups.stream()
+                    .map(g -> GroupDTO.builder()
+                            .gid(g.getUbuntuGid())
+                            .name(g.getGroupName())
+                            .build())
+                    .toList();
+        }
 
         List<GpuNodeDTO> gpuNodeDTOList = nodes.stream()
                 .filter(node -> request.getPinnedNode() == null || request.getPinnedNode().equals(node.getNodeId()))
@@ -107,6 +119,7 @@ public record AcceptInfoResponseDTO(
                 .toList();
 
         return AcceptInfoResponseDTO.builder()
+                .cluster_id(clusterId)
                 .username(request.getUbuntuUsername())
                 .image(image.getImageName() + ":" + image.getImageVersion())
                 .groups(groupDTOList)

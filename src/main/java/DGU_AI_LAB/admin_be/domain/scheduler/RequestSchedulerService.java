@@ -97,7 +97,7 @@ public class RequestSchedulerService {
         Long requestId = request.getRequestId();
         String phase;
         try {
-            JobResultResponseDTO job = jobClient.getResult(JobResults.KIND_PROVISION, requestId);
+            JobResultResponseDTO job = jobClient.getResult(request.getServerName(), JobResults.KIND_PROVISION, requestId);
             // 자원을 남긴 실패(DEGRADED)는 되돌리면 안 되므로 결과 불명과 같이 취급한다.
             phase = JobResults.isDegraded(job) ? JobResults.ERROR_DEGRADED : job.phase();
         } catch (Exception e) {
@@ -113,7 +113,7 @@ public class RequestSchedulerService {
         // 락 + 상태 재확인은 revertToPendingIfStillProcessing 내부에서 수행 — 그 사이 정상
         // 처리(승인/거절)됐으면 건드리지 않는다.
         adminRequestCommandService.revertToPendingIfStillProcessing(
-                request.getRequestId(), request.getResourceGroup().getServerName());
+                request.getRequestId(), request.getServerName());
         alarmService.alertNeedsAction("notification.admin.request.stale-processing",
                 request.getRequestId(), request.getUbuntuUsername(), staleInFlightThresholdMinutes);
     }
@@ -127,7 +127,7 @@ public class RequestSchedulerService {
         Long requestId = request.getRequestId();
         String phase;
         try {
-            phase = jobClient.getResult(JobResults.KIND_REVOKE, requestId).phase();
+            phase = jobClient.getResult(request.getServerName(), JobResults.KIND_REVOKE, requestId).phase();
         } catch (Exception e) {
             log.warn("🔧 [재조정] 회수 작업 상태를 조회하지 못해 EXPIRING 요청을 그대로 둔다: requestId={}", requestId, e);
             return;
@@ -159,7 +159,7 @@ public class RequestSchedulerService {
 
             try {
                 if (request.getResourceGroup() != null) {
-                    serverName = request.getResourceGroup().getServerName();
+                    serverName = request.getServerName();
                 }
                 requestExpiryService.deleteExpiredRequest(request.getRequestId());
 

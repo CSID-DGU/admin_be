@@ -50,6 +50,9 @@ public class RequestExpiryService {
     private final PlatformTransactionManager transactionManager;
     private final HomeRetentionNotice homeRetentionNotice;
 
+    private record RevokeTarget(String clusterId, String podName) {
+    }
+
     /** 만료된 신청의 컨테이너 회수를 시작한다. FULFILLED가 아니면 만료 스케줄러가 다음 회차에 다시 본다. */
     public void deleteExpiredRequest(Long requestId) {
         startContainerRevoke(requestId);
@@ -79,22 +82,20 @@ public class RequestExpiryService {
     public boolean startContainerRevoke(Long requestId) {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
 
-        final String[] podNameRef = {null};
-        Boolean started = tx.execute(status -> {
+        RevokeTarget target = tx.execute(status -> {
             Request request = requestRepository.findByIdForUpdate(requestId)
                     .orElseThrow(() -> new EntityNotFoundException(ErrorCode.ENTITY_NOT_FOUND));
             if (request.getStatus() != Status.FULFILLED) {
-                return false;
+                return null;
             }
             request.beginExpiry();
-            podNameRef[0] = request.getPodName();
-            return true;
+            return new RevokeTarget(request.getServerName(), request.getPodName());
         });
-        if (!Boolean.TRUE.equals(started)) {
+        if (target == null) {
             return false;
         }
 
-        Long jobId = registerContainerRevoke(requestId, podNameRef[0]);
+        Long jobId = registerContainerRevoke(target.clusterId(), requestId, target.podName());
         // 결과 폴러가 이 번호의 결과만 반영하게 남긴다. 그 사이 상태가 바뀌었으면 건드리지 않는다.
         tx.execute(status -> {
             requestRepository.findByIdForUpdate(requestId)
@@ -102,7 +103,8 @@ public class RequestExpiryService {
                     .ifPresent(r -> r.recordJob(jobId));
             return null;
         });
-        log.info("컨테이너 회수 작업 등록: requestId={}, pod={}, jobId={}", requestId, podNameRef[0], jobId);
+        log.info("컨테이너 회수 작업 등록: clusterId={}, requestId={}, pod={}, jobId={}",
+                target.clusterId(), requestId, target.podName(), jobId);
         return true;
     }
 
@@ -111,9 +113,9 @@ public class RequestExpiryService {
      * 도는 경우(409) 작업은 config-server에 있으므로 EXPIRING으로 두고 결과 폴러에 맡긴다. 작업이 없으면
      * FULFILLED로 되돌려 다음 만료 회차나 관리자의 재시도가 다시 잡게 한다.
      */
-    private Long registerContainerRevoke(Long requestId, String podName) {
+    private Long registerContainerRevoke(String clusterId, Long requestId, String podName) {
         try {
-            return jobClient.registerRevoke(
+            return jobClient.registerRevoke(clusterId,
                     new RevokeRegisterRequestDTO(requestId, podName, null, null, false), ErrorCode.POD_DELETION_FAILED);
         } catch (Exception e) {
             if (JobResults.neverReachedServer(e)) {
@@ -123,7 +125,7 @@ public class RequestExpiryService {
             }
             JobResultResponseDTO job = null;
             try {
-                job = jobClient.getResult(JobResults.KIND_REVOKE, requestId);
+                job = jobClient.getResult(clusterId, JobResults.KIND_REVOKE, requestId);
             } catch (Exception lookupFailure) {
                 log.warn("회수 작업 등록 실패 후 작업 상태 조회도 실패 — EXPIRING 유지, 재조정에 맡김: requestId={}", requestId, lookupFailure);
                 throw asBusiness(e);
@@ -167,11 +169,11 @@ public class RequestExpiryService {
             String homeNotice = homeRetentionNotice.afterEnd(request, LocalDateTime.now(REQUEST_ZONE).toLocalDate());
             eventPublisher.publishEvent(isExpired(request)
                     ? new RequestExpiredEvent(request.getUser().getName(), request.getUser().getEmail(),
-                            request.getUbuntuUsername(), request.getResourceGroup().getServerName(),
+                            request.getUbuntuUsername(), request.getServerName(),
                             request.getPodName(), portSummary, request.getExpiresAt().toLocalDate().toString(),
                             homeNotice)
                     : new RequestContainerDeletedEvent(request.getUser().getName(), request.getUser().getEmail(),
-                            request.getUbuntuUsername(), request.getResourceGroup().getServerName(),
+                            request.getUbuntuUsername(), request.getServerName(),
                             request.getPodName(), portSummary, homeNotice));
             log.info("컨테이너 회수 완료: requestId={}, pod={}", requestId, request.getPodName());
             return null;
@@ -207,7 +209,7 @@ public class RequestExpiryService {
         if (JobResults.awaitingRegistration(jobId, snapshot.getUpdatedAt())) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
-        JobResultResponseDTO result = jobClient.getResult(JobResults.KIND_REVOKE, requestId);
+        JobResultResponseDTO result = jobClient.getResult(snapshot.getServerName(), JobResults.KIND_REVOKE, requestId);
         if (result == null || JobResults.isFromOtherJob(jobId, result)) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }

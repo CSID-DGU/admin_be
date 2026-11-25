@@ -5,9 +5,9 @@ import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.webclient.WebClientErrorHandler;
+import DGU_AI_LAB.admin_be.global.cluster.ClusterClientRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -27,7 +27,7 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class PodService {
 
-    private final @Qualifier("podWebClient") WebClient webClient;
+    private final ClusterClientRegistry clients;
     private final RequestRepository requestRepository;
 
     /** config-server generate_pod_name 규칙: ailab-{username}-{uuid hex 8자리}. */
@@ -46,17 +46,20 @@ public class PodService {
      * 생성·노드 이동 작업은 작업이 끝나야 podName을 적으므로, 그 사이의 Pod는 신청 이력이 없어
      * 보여도 작업 중인 Pod다 — 이름의 사용자에게 도는 작업이 있으면 함께 거부한다.
      */
-    public void deleteOrphanPod(String podName) {
-        if (requestRepository.existsByPodName(podName)) {
+    public void deleteOrphanPod(String clusterId, String podName) {
+        if (requestRepository.existsByPodNameAndClusterIdIgnoreCase(podName, clusterId)) {
             throw new BusinessException(ErrorCode.POD_NOT_ORPHAN);
         }
         Optional<String> owner = managedPodOwner(podName);
         if (owner.isPresent()
-                && requestRepository.existsByUser_UbuntuUsernameAndStatusIn(owner.get(), POD_JOB_STATUSES)) {
+                && requestRepository.existsByUbuntuAccountUsernameAndClusterIdAndStatusIn(
+                        owner.get(), clusterId, POD_JOB_STATUSES)) {
             throw new BusinessException(ErrorCode.POD_JOB_IN_PROGRESS);
         }
         try {
-            log.info("고아 Pod 삭제 API 요청 시작: {}", podName);
+            log.info("고아 Pod 삭제 API 요청 시작: clusterId={}, pod={}", clusterId, podName);
+
+            WebClient webClient = clients.podWebClient(clusterId);
 
             WebClientErrorHandler.onError(
                             webClient.delete()
@@ -74,7 +77,7 @@ public class PodService {
                     .bodyToMono(Map.class)
                     .block();
 
-            log.info("고아 Pod 삭제 API 요청 성공: {}", podName);
+            log.info("고아 Pod 삭제 API 요청 성공: clusterId={}, pod={}", clusterId, podName);
 
         } catch (BusinessException e) {
             throw e;

@@ -158,6 +158,10 @@ public class RequestCommandService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
         }
 
+        if (dto.changeType() == ChangeType.GROUP) {
+            requireFarmForGroupFeature(originalRequest.getServerName());
+        }
+
         // 같은 종류는 한 번에 하나만 대기시킨다 — 무제한으로 쌓이면 관리자가 무엇을 승인해야 할지 알 수 없다.
         if (changeRequestRepository.existsByRequest_RequestIdAndChangeTypeAndStatus(
                 requestId, dto.changeType(), Status.PENDING)) {
@@ -230,6 +234,19 @@ public class RequestCommandService {
         return groups;
     }
 
+    /** 공용 그룹 카탈로그와 그룹 작업은 FARM 계정에만 존재한다. */
+    private static void requireFarmForGroupFeature(String serverName) {
+        if (serverName == null || !User.PRIMARY_SERVER.equalsIgnoreCase(serverName)) {
+            throw new BusinessException("공용 그룹은 FARM 신청에서만 사용할 수 있습니다.",
+                    ErrorCode.INVALID_INPUT_VALUE);
+        }
+    }
+
+    private static boolean hasChosenGroups(SaveRequestRequestDTO dto) {
+        return (dto.groupIds() != null && !dto.groupIds().isEmpty())
+                || (dto.ubuntuGids() != null && !dto.ubuntuGids().isEmpty());
+    }
+
     /** 신청 생성 */
     @Transactional
     public SaveRequestResponseDTO createRequest(Long userId, SaveRequestRequestDTO dto) {
@@ -250,6 +267,10 @@ public class RequestCommandService {
 
         ResourceGroup rg = resourceGroupRepository.findById(dto.resourceGroupId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        if (hasChosenGroups(dto)) {
+            requireFarmForGroupFeature(rg.getServerName());
+        }
 
         // 유저네임은 신청마다 고르는 값이 아니라 가입 시 정해진 웹 계정의 고정값이다.
         String ubuntuUsername = user.getUbuntuUsername();
@@ -286,6 +307,11 @@ public class RequestCommandService {
         List<Group> groups = findChosenGroups(dto);
         // 신청이 승인되면 고른 그룹에 속하게 된다 — 지금 속한 그룹과 합쳐 한도를 넘으면 받지 않는다.
         groupMembershipPolicy.requireRoomFor(user, groups);
+
+        // username 기반 레거시 Config Server 조회와 생성 중 Pod 보호도 서버별 계정 원장을 기준으로 한다.
+        // 첫 신청부터 NONE 상태 행을 만들어 두어 FARM 이름이 LAB 신청에 잘못 결합되거나, 반대로 조회에서
+        // 누락되어 생성 중인 Pod를 고아로 판단하는 일을 막는다.
+        user.ubuntuAccountFor(rg.getServerName());
 
         // 입력이 잘못돼 거절된 요청은 하루 한도에서 빼려고 모든 검증 뒤에 센다. Redis 카운터는 트랜잭션과 함께
         // 되돌아가지 않으므로, 이 아래에는 입력 때문에 실패하는 검증을 두지 않는다.

@@ -150,7 +150,7 @@ public class PasswordResetService {
      */
     private Long registerJob(Long resetId, String ubuntuUsername, String ubuntuPasswordHash) {
         try {
-            return jobClient.registerPasswordChange(
+            return jobClient.registerPasswordChange(User.PRIMARY_SERVER,
                     new PasswordChangeRegisterRequestDTO(resetId, ubuntuUsername, ubuntuPasswordHash));
         } catch (JobRegistrationUnconfirmedException e) {
             log.warn("[passwordReset] resetId={} 작업 등록 결과를 확인하지 못함 — PROCESSING으로 두고 폴러에 맡김", resetId, e);

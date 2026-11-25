@@ -70,7 +70,7 @@ public class IssuanceSheetQueryService {
         Map<String, List<List<String>>> tables = new LinkedHashMap<>();
         for (String serverName : serverProfiles.servers().keySet()) {
             List<Request> ofServer = issued.stream()
-                    .filter(request -> serverName.equalsIgnoreCase(request.getResourceGroup().getServerName()))
+                    .filter(request -> serverName.equalsIgnoreCase(request.getServerName()))
                     .toList();
             tables.put(serverName, IssuanceSheetRows.of(ofServer, ports, homeDeletionDates));
         }
@@ -83,7 +83,7 @@ public class IssuanceSheetQueryService {
      */
     private Map<Long, List<String>> ports(List<Request> issued) {
         Map<Long, String> serverByRequest = issued.stream().collect(Collectors.toMap(
-                Request::getRequestId, request -> request.getResourceGroup().getServerName()));
+                Request::getRequestId, Request::getServerName));
         return podExternalPortRepository.findByRequestRequestIdIn(serverByRequest.keySet()).stream()
                 .sorted(Comparator.comparingInt(IssuanceSheetQueryService::portRank)
                         .thenComparing(PodExternalPort::getInternalPort))

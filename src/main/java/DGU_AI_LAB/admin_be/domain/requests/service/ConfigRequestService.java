@@ -12,6 +12,7 @@ import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.cluster.ClusterId;
 import DGU_AI_LAB.admin_be.global.validation.ReservedLinuxNames;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -49,25 +50,34 @@ public class ConfigRequestService {
      * 한 사용자가 신청을 여러 개 동시에 가질 수 있게 되면서 "가장 최근 열린 신청"을
      * 임의로 골라주는 방식이 됐다 — config-server가 지금 만들고/마이그레이션하는
      * 신청이 아닌 엉뚱한 신청의 설정을 가져올 위험이 있다. 가능하면
-     * {@link #getAcceptInfoByRequestId}를 쓴다. request_id를 아직 못 넘기는 옛
+     * {@link #getAcceptInfoByRequestId(String, Long)}를 쓴다. request_id를 아직 못 넘기는 옛
      * 호출을 위해서만 남겨둔다.
      */
     @Transactional(readOnly = true)
-    public AcceptInfoResponseDTO getAcceptInfo(String username) {
-        log.info("사용자 승인 정보 조회를 시작합니다. username: {}", username);
+    public AcceptInfoResponseDTO getAcceptInfo(String requestedClusterId, String username) {
+        String clusterId = canonicalCluster(requestedClusterId);
+        log.info("사용자 승인 정보 조회를 시작합니다. cluster: {}, username: {}", clusterId, username);
 
         // 승인 처리(PROCESSING) 중에 config-server가 이 API로 스펙을 되물으므로 PENDING/PROCESSING까지
         // 포함한 openStatuses로 찾는다. 종료된 이력 행은 같은 유저네임을 공유하므로 제외해야 한다.
-        Request request = requestRepository
-                .findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses())
-                .stream().findFirst()
-                .orElseThrow(() -> {
-                    log.warn("사용자 '{}'에 대한 승인 정보가 존재하지 않습니다.", username);
-                    return new BusinessException(ErrorCode.USER_APPROVAL_NOT_FOUND);
-                });
+        List<Request> matchingRequests = requestRepository
+                .findByUbuntuAccountUsernameAndClusterIdAndStatusInOrderByRequestIdDesc(
+                        username, clusterId, Status.openStatuses());
+        if (matchingRequests.isEmpty()) {
+            boolean existsInAnotherCluster = !requestRepository
+                    .findByUbuntuAccountUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses())
+                    .isEmpty();
+            if (existsInAnotherCluster) {
+                throw new BusinessException(ErrorCode.REQUEST_CLUSTER_MISMATCH);
+            }
+            log.warn("사용자 '{}'에 대한 승인 정보가 존재하지 않습니다.", username);
+            throw new BusinessException(ErrorCode.USER_APPROVAL_NOT_FOUND);
+        }
+        Request request = matchingRequests.get(0);
+        assertRequestCluster(request, clusterId);
 
         log.info("사용자 '{}'에 대한 AcceptInfoResponseDTO 생성을 완료했습니다.", username);
-        return buildAcceptInfo(request);
+        return buildAcceptInfo(request, clusterId);
     }
 
     /**
@@ -75,8 +85,9 @@ public class ConfigRequestService {
      * 한 사용자가 신청을 여러 개 동시에 가져도 모호함이 없다.
      */
     @Transactional(readOnly = true)
-    public AcceptInfoResponseDTO getAcceptInfoByRequestId(Long requestId) {
-        log.info("사용자 승인 정보 조회를 시작합니다. requestId: {}", requestId);
+    public AcceptInfoResponseDTO getAcceptInfoByRequestId(String requestedClusterId, Long requestId) {
+        String clusterId = canonicalCluster(requestedClusterId);
+        log.info("사용자 승인 정보 조회를 시작합니다. cluster: {}, requestId: {}", clusterId, requestId);
 
         // getAcceptInfo(username)와 동일하게 openStatuses로 좁힌다 — 안 좁히면 취소/만료돼
         // 종료된(DENIED/DELETED) 신청의 스펙도 그대로 내줘서, config-server가 이미 끝난
@@ -88,11 +99,12 @@ public class ConfigRequestService {
                     return new BusinessException(ErrorCode.USER_APPROVAL_NOT_FOUND);
                 });
 
+        assertRequestCluster(request, clusterId);
         log.info("requestId '{}'에 대한 AcceptInfoResponseDTO 생성을 완료했습니다.", requestId);
-        return buildAcceptInfo(request);
+        return buildAcceptInfo(request, clusterId);
     }
 
-    private AcceptInfoResponseDTO buildAcceptInfo(Request request) {
+    private AcceptInfoResponseDTO buildAcceptInfo(Request request, String clusterId) {
         log.debug("요청 정보를 성공적으로 찾았습니다. 요청 ID: {}", request.getRequestId());
 
         List<PortRequests> portRequests = portRequestRepository.findByRequestRequestId(request.getRequestId());
@@ -101,7 +113,27 @@ public class ConfigRequestService {
         List<Node> nodes = nodeRepository.findAllByResourceGroup(request.getResourceGroup());
         log.debug("리소스 그룹 소속 노드 {}개를 조회했습니다.", nodes.size());
 
-        return AcceptInfoResponseDTO.fromEntity(request, portRequests, nodes);
+        return AcceptInfoResponseDTO.fromEntity(clusterId, request, portRequests, nodes);
+    }
+
+    private String canonicalCluster(String clusterId) {
+        try {
+            return ClusterId.canonical(clusterId);
+        } catch (RuntimeException e) {
+            throw new BusinessException(ErrorCode.INTERNAL_CLUSTER_AUTHENTICATION_FAILED);
+        }
+    }
+
+    private void assertRequestCluster(Request request, String expectedClusterId) {
+        final String storedClusterId;
+        try {
+            storedClusterId = ClusterId.canonical(request.getServerName());
+        } catch (RuntimeException e) {
+            throw new BusinessException(ErrorCode.REQUEST_CLUSTER_MISMATCH);
+        }
+        if (!storedClusterId.equals(expectedClusterId)) {
+            throw new BusinessException(ErrorCode.REQUEST_CLUSTER_MISMATCH);
+        }
     }
 
 }

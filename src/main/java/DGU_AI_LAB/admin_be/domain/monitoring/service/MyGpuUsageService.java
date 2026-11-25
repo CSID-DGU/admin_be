@@ -12,6 +12,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.cluster.ClusterId;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -39,8 +40,8 @@ import java.util.stream.Collectors;
  * 노드별 Prometheus 결과는 짧게 캐시해 사용자가 화면을 열 때마다 질의가 나가지 않게 한다.
  *
  * <p>보여 주는 GPU: config-server가 Pod에 GPU를 줄 때 노드에 등록된 GPU 종류와 같은 모델만 UUID로 넘기므로
- * (NVIDIA_VISIBLE_DEVICES), 같은 규칙으로 그 모델의 GPU만 내 GPU로 본다. 한계: 노드가 DB에 없거나 모델
- * 목록이 비어 있으면 거를 근거가 없어 노드의 모든 GPU를 보인다.
+ * (NVIDIA_VISIBLE_DEVICES), 같은 규칙으로 그 모델의 GPU만 내 GPU로 본다. 노드가 DB에 없거나 신청 클러스터와
+ * 노드의 등록 클러스터가 다르면 지표를 조회하지 않는다. 모델 목록만 비어 있으면 노드의 모든 GPU를 보인다.
  */
 @Slf4j
 @Service
@@ -60,8 +61,15 @@ public class MyGpuUsageService {
     private final RequestRepository requestRepository;
     private final NodeRepository nodeRepository;
 
-    private final Map<String, Cached> cache = new ConcurrentHashMap<>();
-    private final Map<String, Object> locks = new ConcurrentHashMap<>();
+    private final Map<NodeScope, Cached> cache = new ConcurrentHashMap<>();
+    private final Map<NodeScope, Object> locks = new ConcurrentHashMap<>();
+
+    /** Request.clusterId와 nodeName을 함께 묶은 조회 경계. 노드명만으로는 다른 클러스터를 구분할 수 없다. */
+    record NodeScope(String clusterId, String node) {
+    }
+
+    private record PodScope(NodeScope nodeScope, String podName) {
+    }
 
     /** 노드 하나의 Prometheus 결과와 소유자 해석. podRamBytesByContainer: 컨테이너 ID → 그 Pod 전체 RAM(바이트), 모르면 키 없음. processesAvailable=false면 프로세스 쪽 조회가 실패한 것이다. */
     record Snapshot(List<Sample> util, Map<String, Sample> used, Map<String, Sample> free,
@@ -71,7 +79,7 @@ public class MyGpuUsageService {
     }
 
     /**
-     * 프로세스 소유자. key는 같은 사람을 Pod·옛 Docker에서 같게 세는 값(우분투 계정)이다.
+     * 프로세스 소유자. key는 같은 사람을 Pod·옛 Docker에서 같게 세는 값(신청 클러스터의 우분투 계정)이다.
      * 옛 Docker 컨테이너는 userId·requestId를 알 수 없어 null이다.
      */
     record Owner(String key, Long userId, String name, String ubuntuUsername, Long requestId) {
@@ -95,9 +103,12 @@ public class MyGpuUsageService {
             return response(node, List.of(), true, null);
         }
 
+        NodeScope scope = scopeOf(request.getServerName(), node);
+        Node registeredNode = requireRegisteredNode(scope);
+
         Snapshot snap;
         try {
-            snap = snapshot(node);
+            snap = snapshot(scope);
         } catch (Exception e) {
             // 'GPU 없음'과 구분되도록 빈 목록으로 숨기지 않고 오류로 알린다.
             log.warn("[MY-GPU] GPU 지표 조회 실패: node={} {}", node, e.toString());
@@ -107,7 +118,7 @@ public class MyGpuUsageService {
             log.warn("[MY-GPU] 노드 이름과 맞는 GPU 지표가 없음: node={} (DCGM Hostname 라벨과 노드 이름이 다를 수 있다)", node);
         }
 
-        Set<String> modelsWanted = nodeModels(node);
+        Set<String> modelsWanted = nodeModels(registeredNode);
         String me = ownerKey(request);
         Map<String, List<Process>> mine = new HashMap<>();
         Map<String, Double> otherMem = new HashMap<>();
@@ -154,7 +165,7 @@ public class MyGpuUsageService {
                 })
                 .sorted(Comparator.comparingInt(Gpu::index))
                 .toList();
-        return response(node, gpus, snap.processesAvailable(), podRamMiB(request.getPodName()));
+        return response(node, gpus, snap.processesAvailable(), podRamMiB(scope, request.getPodName()));
     }
 
     private static MyGpuUsageResponseDTO response(String node, List<Gpu> gpus, boolean processesAvailable, Double myRamMiB) {
@@ -163,11 +174,12 @@ public class MyGpuUsageService {
     }
 
     /** 내 Pod 전체 RAM(MiB). GPU를 안 써도 보이도록 별도로 조회하며, 실패·없음은 GPU 정보를 막지 않고 null(모름)이다. */
-    private Double podRamMiB(String pod) {
+    private Double podRamMiB(NodeScope scope, String pod) {
         if (!POD_NAME.matcher(pod).matches()) return null;
         try {
             List<Sample> r = prometheusClient.querySeries(
-                    "sum(container_memory_working_set_bytes{pod=\"" + pod + "\",container!=\"\",container!=\"POD\"})");
+                    "sum(container_memory_working_set_bytes{pod=\"" + pod + "\"," +
+                            nodeMatcher("node", scope.node()) + ",container!=\"\",container!=\"POD\"})");
             return r.isEmpty() ? null : r.get(0).value() / MIB;
         } catch (Exception e) {
             log.warn("[MY-GPU] Pod RAM 조회 실패: pod={} {}", pod, e.toString());
@@ -175,14 +187,9 @@ public class MyGpuUsageService {
         }
     }
 
-    Set<String> nodeModels(String node) {
-        try {
-            return nodeRepository.findByIdWithGpus(node).map(Node::getGpuModels).orElse(List.of()).stream()
-                    .map(MyGpuUsageService::normalizeModel).collect(Collectors.toSet());
-        } catch (Exception e) {
-            log.warn("[MY-GPU] 노드 GPU 모델 조회 실패, 모든 GPU를 보임: node={} {}", node, e.toString());
-            return Set.of();
-        }
+    private static Set<String> nodeModels(Node node) {
+        return node.getGpuModels().stream()
+                .map(MyGpuUsageService::normalizeModel).collect(Collectors.toSet());
     }
 
     /** config-server의 normalize_gpu_model과 같은 규칙: 제조사·제품군 낱말을 빼고 남은 낱말이 같으면 같은 모델. */
@@ -208,20 +215,27 @@ public class MyGpuUsageService {
         return s == null || s.isBlank();
     }
 
-    /** 노드별 짧은 캐시. 같은 노드를 동시에 부르면 한 번만 조회하고, 실패는 캐시하지 않는다. */
+    /** 관리자 조회 호환 경로. DB의 현재 노드 카탈로그로 클러스터를 확정한 뒤 같은 경계를 사용한다. */
     Snapshot snapshot(String node) {
-        Cached c = cache.get(node);
+        Node registered = nodeRepository.findByIdWithGpus(node)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        return snapshot(scopeOf(registered.getResourceGroup().getServerName(), node));
+    }
+
+    private Snapshot snapshot(NodeScope scope) {
+        Cached c = cache.get(scope);
         if (c != null && System.currentTimeMillis() - c.at() < CACHE_TTL_MS) return c.snapshot();
-        synchronized (locks.computeIfAbsent(node, k -> new Object())) {
-            c = cache.get(node);
+        synchronized (locks.computeIfAbsent(scope, k -> new Object())) {
+            c = cache.get(scope);
             if (c != null && System.currentTimeMillis() - c.at() < CACHE_TTL_MS) return c.snapshot();
-            Snapshot fresh = load(node);
-            cache.put(node, new Cached(fresh, System.currentTimeMillis()));
+            Snapshot fresh = load(scope);
+            cache.put(scope, new Cached(fresh, System.currentTimeMillis()));
             return fresh;
         }
     }
 
-    private Snapshot load(String node) {
+    private Snapshot load(NodeScope scope) {
+        String node = scope.node();
         String sel = hostSelector("Hostname", node);
         CompletableFuture<List<Sample>> utilF = CompletableFuture.supplyAsync(
                 () -> prometheusClient.querySeries("DCGM_FI_DEV_GPU_UTIL" + sel), POOL);
@@ -250,14 +264,14 @@ public class MyGpuUsageService {
             String uuids = util.stream().map(s -> s.labels().get("UUID")).filter(u -> u != null && u.matches("[A-Za-z0-9-]+"))
                     .collect(Collectors.joining("|"));
             if (!uuids.isEmpty()) {
-                String psel = "{gpu_uuid=~\"" + uuids + "\"}";
+                String psel = "{gpu_uuid=~\"" + uuids + "\"," + nodeMatcher("hostname", node) + "}";
                 CompletableFuture<List<Sample>> memF = CompletableFuture.supplyAsync(
                         () -> prometheusClient.querySeries("gpu_process_memory_used_bytes" + psel), POOL);
                 CompletableFuture<List<Sample>> elF = CompletableFuture.supplyAsync(
                         () -> prometheusClient.querySeries("gpu_process_elapsed_seconds" + psel), POOL);
                 procMem = memF.join();
                 for (Sample s : elF.join()) elapsed.put(procKey(s), s.value());
-                resolveOwners(procMem, podOwners, dockerOwners, ramByContainer);
+                resolveOwners(scope, procMem, podOwners, dockerOwners, ramByContainer);
             }
         } catch (Exception e) {
             // 프로세스 정보 없이도 GPU별 사용률은 보여 준다. 대신 '모름'임을 응답에 남긴다.
@@ -273,17 +287,22 @@ public class MyGpuUsageService {
      * 노드 이름에 쓸 수 없는 문자가 있으면 정확히 같은 값만 찾는다.
      */
     static String hostSelector(String label, String node) {
+        return "{" + nodeMatcher(label, node) + "}";
+    }
+
+    static String nodeMatcher(String label, String node) {
         if (node.matches("[A-Za-z0-9.-]+")) {
-            return "{" + label + "=~\"(?i)" + node.replace(".", "[.]") + "([.].*)?\"}";
+            return label + "=~\"(?i)" + node.replace(".", "[.]") + "([.].*)?\"";
         }
-        return "{" + label + "=\"" + node.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}";
+        return label + "=\"" + node.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
     /**
      * Pod는 kube_pod_container_info의 container_id로 Pod 이름을 찾아 신청의 사용자로,
      * 옛 Docker 컨테이너는 docker_gpu_user_container_info의 ubuntu_username으로 찾는다.
      */
-    private void resolveOwners(List<Sample> procMem, Map<String, Owner> podOwners, Map<String, Owner> dockerOwners,
+    private void resolveOwners(NodeScope scope, List<Sample> procMem,
+                               Map<String, Owner> podOwners, Map<String, Owner> dockerOwners,
                                Map<String, Double> ramByContainer) {
         Set<String> ids = procMem.stream().map(s -> s.labels().get("container_id"))
                 .filter(id -> id != null && id.matches("[0-9a-f]{64}")).collect(Collectors.toSet());
@@ -291,27 +310,39 @@ public class MyGpuUsageService {
 
         Map<String, String> podByContainer = new HashMap<>();
         for (Sample s : prometheusClient.querySeries(
-                "kube_pod_container_info{container_id=~\".+://(" + String.join("|", ids) + ")\"}")) {
+                "kube_pod_container_info{container_id=~\".+://(" + String.join("|", ids) + ")\"," +
+                        nodeMatcher("node", scope.node()) + "}")) {
             String cid = s.labels().get("container_id");
             String pod = s.labels().get("pod");
             if (cid != null && pod != null) podByContainer.put(cid.substring(cid.lastIndexOf('/') + 1), pod);
         }
         if (!podByContainer.isEmpty()) {
-            fillPodRam(podByContainer, ramByContainer);
-            Map<String, Owner> ownerByPod = new HashMap<>();
-            for (Request r : requestRepository.findAllByPodNameIn(new HashSet<>(podByContainer.values()))) {
-                ownerByPod.put(r.getPodName(), new Owner(ownerKey(r), r.getUser().getUserId(), r.getUser().getName(),
-                        r.getUser().getUbuntuUsername(), r.getRequestId()));
+            fillPodRam(scope, podByContainer, ramByContainer);
+            Map<PodScope, List<Request>> candidates = new HashMap<>();
+            for (Request r : requestRepository.findAllByPodNameInAndClusterIdAndNodeNameAndStatusIn(
+                    new HashSet<>(podByContainer.values()), scope.clusterId(), scope.node(), Status.activeStatuses())) {
+                if (matches(scope, r) && !isBlank(r.getPodName())) {
+                    candidates.computeIfAbsent(new PodScope(scope, r.getPodName()), ignored -> new ArrayList<>()).add(r);
+                }
             }
             podByContainer.forEach((cid, pod) -> {
-                if (ownerByPod.containsKey(pod)) podOwners.put(cid, ownerByPod.get(pod));
+                List<Request> matches = candidates.getOrDefault(new PodScope(scope, pod), List.of());
+                if (matches.size() == 1) {
+                    Request r = matches.get(0);
+                    podOwners.put(cid, new Owner(ownerKey(r), r.getUser().getUserId(), r.getUser().getName(),
+                            r.getUbuntuUsername(), r.getRequestId()));
+                } else if (matches.size() > 1) {
+                    log.warn("[MY-GPU] 같은 범위에 활성 Pod 신청이 여러 개라 소유자를 비움: cluster={}, node={}, pod={}",
+                            scope.clusterId(), scope.node(), pod);
+                }
             });
         }
 
         Set<String> unresolved = ids.stream().filter(id -> !podOwners.containsKey(id)).collect(Collectors.toSet());
         if (unresolved.isEmpty()) return;
         for (Sample s : prometheusClient.querySeries("docker_gpu_user_container_info{container_id=~\""
-                + unresolved.stream().map(MyGpuUsageService::shortId).collect(Collectors.joining("|")) + "\"}")) {
+                + unresolved.stream().map(MyGpuUsageService::shortId).collect(Collectors.joining("|")) + "\"," +
+                nodeMatcher("hostname", scope.node()) + "}")) {
             String cid = s.labels().get("container_id");
             String uuid = s.labels().get("gpu_uuid");
             String user = s.labels().get("ubuntu_username");
@@ -322,13 +353,14 @@ public class MyGpuUsageService {
     }
 
     /** Pod 전체 RAM(cAdvisor working set 합계)을 컨테이너 ID에 붙인다. 실패해도 소유자 해석은 계속한다. */
-    private void fillPodRam(Map<String, String> podByContainer, Map<String, Double> ramByContainer) {
+    private void fillPodRam(NodeScope scope, Map<String, String> podByContainer, Map<String, Double> ramByContainer) {
         Set<String> pods = podByContainer.values().stream().filter(p -> POD_NAME.matcher(p).matches()).collect(Collectors.toSet());
         if (pods.isEmpty()) return;
         try {
             Map<String, Double> ramByPod = new HashMap<>();
             for (Sample s : prometheusClient.querySeries("sum by (pod) (container_memory_working_set_bytes{pod=~\""
-                    + String.join("|", pods) + "\",container!=\"\",container!=\"POD\"})")) {
+                    + String.join("|", pods) + "\"," + nodeMatcher("node", scope.node()) +
+                    ",container!=\"\",container!=\"POD\"})")) {
                 if (s.labels().get("pod") != null) ramByPod.put(s.labels().get("pod"), s.value());
             }
             podByContainer.forEach((cid, pod) -> {
@@ -339,10 +371,43 @@ public class MyGpuUsageService {
         }
     }
 
-    /** 같은 사용자는 Pod든 옛 Docker 컨테이너든 같은 키가 되도록 우분투 계정을 쓴다. */
+    /** 같은 사용자는 Pod든 옛 Docker 컨테이너든 같은 키가 되도록 신청 클러스터의 우분투 계정을 쓴다. */
     static String ownerKey(Request r) {
-        String name = r.getUser().getUbuntuUsername();
+        String name = r.getUbuntuUsername();
         return name != null && !name.isBlank() ? name : "id:" + r.getUser().getUserId();
+    }
+
+    private Node requireRegisteredNode(NodeScope scope) {
+        Node node = nodeRepository.findByIdWithGpus(scope.node())
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        final String registeredCluster;
+        try {
+            registeredCluster = ClusterId.canonical(node.getResourceGroup().getServerName());
+        } catch (RuntimeException e) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        if (!scope.clusterId().equals(registeredCluster)) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        return node;
+    }
+
+    private static NodeScope scopeOf(String clusterId, String node) {
+        try {
+            if (node == null || node.isBlank()) throw new IllegalArgumentException("node is blank");
+            return new NodeScope(ClusterId.canonical(clusterId), node);
+        } catch (RuntimeException e) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+    }
+
+    private static boolean matches(NodeScope scope, Request request) {
+        try {
+            return scope.clusterId().equals(ClusterId.canonical(request.getServerName()))
+                    && scope.node().equalsIgnoreCase(request.getNodeName());
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     static Map<String, Sample> byUuid(List<Sample> samples) {

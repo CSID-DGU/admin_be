@@ -76,7 +76,7 @@ public abstract class JobResultPoller {
             }
             JobResultResponseDTO result;
             try {
-                result = jobClient.getResult(kind, requestId);
+                result = jobClient.getResult(request.getServerName(), kind, requestId);
             } catch (Exception e) {
                 // 조회 실패는 대개 일시적(네트워크 순단 등)이라 다음 바퀴에 스스로 회복된다. 매번 알리면 소음이라
                 // 로그만 남긴다 — 반영 실패(아래)와 달리 원인을 사람이 봐야 할 가능성이 낮다.

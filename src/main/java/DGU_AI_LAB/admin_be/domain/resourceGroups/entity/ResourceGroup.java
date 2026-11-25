@@ -1,5 +1,6 @@
 package DGU_AI_LAB.admin_be.domain.resourceGroups.entity;
 
+import DGU_AI_LAB.admin_be.global.cluster.ClusterId;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -21,7 +22,7 @@ public class ResourceGroup {
     @Column(name = "description", length = 500)
     private String description;
 
-    @Column(name = "server_name", length = 300)
+    @Column(name = "server_name", nullable = false, updatable = false, length = 16)
     private String serverName; // ex. FARM, LAB
 
     @Builder
@@ -29,6 +30,6 @@ public class ResourceGroup {
         this.rsgroupId = rsgroupId;
         this.resourceGroupName = resourceGroupName;
         this.description = description;
-        this.serverName = serverName;
+        this.serverName = ClusterId.canonical(serverName);
     }
 }

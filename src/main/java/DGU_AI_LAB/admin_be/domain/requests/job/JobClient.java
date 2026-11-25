@@ -21,6 +21,9 @@ import DGU_AI_LAB.admin_be.error.exception.BusinessException;
  * <p>등록 요청이 닿았을 수 있는데 답을 받지 못하면 등록 메서드는 {@link JobRegistrationUnconfirmedException}을
  * 던진다. 작업이 등록돼 돌고 있을 수 있으므로 호출자는 등록되지 않았다고 단정하면 안 된다.
  *
+ * <p>모든 호출은 첫 인자로 신청에 저장된 clusterId를 명시한다. 구현체는 값이 없거나 설정되지 않은 경우
+ * 다른 클러스터로 대체하지 않고 실패해야 한다.
+ *
  * <p>baseline·noprobe·full 세 방식이 모두 이 창구를 쓴다. 방식 차이(재시도, 결과 확인, 접근 시험)는 실행기 쪽에서만
  * 나므로 호출자는 방식을 모른다.
  */
@@ -32,7 +35,7 @@ public interface JobClient {
      * @return 등록된 작업 번호. 응답에 없으면 null
      * @throws BusinessException 같은 신청의 생성 작업이 아직 끝나지 않았거나(409, INVALID_REQUEST_STATUS) 등록이 실패한 경우
      */
-    Long registerProvision(ProvisionRegisterRequestDTO body);
+    Long registerProvision(String clusterId, ProvisionRegisterRequestDTO body);
 
     /**
      * 마이그레이션 작업을 등록한다.
@@ -40,7 +43,7 @@ public interface JobClient {
      * @return 등록된 작업 번호. 응답에 없으면 null
      * @throws BusinessException 같은 신청의 마이그레이션 작업이 아직 끝나지 않았거나(409) 등록이 거절·실패한 경우
      */
-    Long registerMigrate(MigrateRegisterRequestDTO body);
+    Long registerMigrate(String clusterId, MigrateRegisterRequestDTO body);
 
     /**
      * 회수 작업(컨테이너, deleteAccount면 계정까지)을 등록한다.
@@ -49,7 +52,7 @@ public interface JobClient {
      * @return 등록된 작업 번호. 응답에 없으면 null
      * @throws BusinessException 같은 신청의 회수 작업이 아직 끝나지 않았거나(409, INVALID_REQUEST_STATUS) 등록이 실패한 경우
      */
-    Long registerRevoke(RevokeRegisterRequestDTO body, ErrorCode failureCode);
+    Long registerRevoke(String clusterId, RevokeRegisterRequestDTO body, ErrorCode failureCode);
 
     /**
      * 로그인 비밀번호 교체 작업을 등록한다. 실행기는 계정 원장·계정 Secret·떠 있는 컨테이너를 같은 해시로 바꾸고,
@@ -58,7 +61,7 @@ public interface JobClient {
      * @return 등록된 작업 번호. 응답에 없으면 null
      * @throws BusinessException 같은 재설정 신청의 작업이 아직 끝나지 않았거나(409, INVALID_REQUEST_STATUS) 등록이 실패한 경우
      */
-    Long registerPasswordChange(PasswordChangeRegisterRequestDTO body);
+    Long registerPasswordChange(String clusterId, PasswordChangeRegisterRequestDTO body);
 
     /**
      * 공용 그룹 작업(생성·멤버 추가·제거)을 등록한다. 실행기는 AD·계정 원장·떠 있는 컨테이너를 차례로
@@ -68,7 +71,7 @@ public interface JobClient {
      * @throws BusinessException 이름 충돌·없는 계정이나 그룹처럼 요청 내용 때문에 거절됐거나(각각의 오류 코드),
      *                           같은 번호의 작업이 아직 끝나지 않았거나(409, GROUP_OPERATION_IN_PROGRESS) 등록이 실패한 경우
      */
-    Long registerGroupChange(GroupChangeRegisterRequestDTO body);
+    Long registerGroupChange(String clusterId, GroupChangeRegisterRequestDTO body);
 
     /**
      * 보존 기간이 지난 홈 삭제 작업을 등록한다. 실행기는 그 계정의 컨테이너가 없고 홈 소유자가 보낸 uid일 때만
@@ -77,7 +80,7 @@ public interface JobClient {
      * @return 등록된 작업 번호. 응답에 없으면 null
      * @throws BusinessException 같은 번호의 작업이 아직 끝나지 않았거나(409, INVALID_REQUEST_STATUS) 등록이 실패한 경우
      */
-    Long registerHomeDelete(HomeDeleteRegisterRequestDTO body);
+    Long registerHomeDelete(String clusterId, HomeDeleteRegisterRequestDTO body);
 
     /**
      * 추가 포트 변경 작업을 등록한다. 실행기는 컨테이너를 다시 만들지 않고 빠진 포트를 닫고 새 포트를 연다.
@@ -86,7 +89,7 @@ public interface JobClient {
      * @return 등록된 작업 번호. 응답에 없으면 null
      * @throws BusinessException 같은 번호의 작업이 아직 끝나지 않았거나(409, INVALID_REQUEST_STATUS) 등록이 거절·실패한 경우
      */
-    Long registerPortChange(PortChangeRegisterRequestDTO body);
+    Long registerPortChange(String clusterId, PortChangeRegisterRequestDTO body);
 
     /**
      * 계정의 접속 차단·해제 작업을 등록한다. 실행기는 그 계정의 모든 컨테이너의 모든 접속 포트를 막거나 풀며,
@@ -95,7 +98,7 @@ public interface JobClient {
      * @return 등록된 작업 번호. 응답에 없으면 null
      * @throws BusinessException 같은 번호의 작업이 아직 끝나지 않았거나(409, INVALID_REQUEST_STATUS) 등록이 실패한 경우
      */
-    Long registerAccessChange(AccessChangeRegisterRequestDTO body);
+    Long registerAccessChange(String clusterId, AccessChangeRegisterRequestDTO body);
 
     /**
      * 작업 결과를 조회한다. 등록 이력이 없으면 phase가 {@link JobResults#PHASE_NONE}으로 온다.
@@ -106,11 +109,11 @@ public interface JobClient {
      * @param requestId 신청 번호. 비밀번호 교체는 비밀번호 재설정 신청 번호, 그룹 작업은 그룹 작업 번호, 홈 삭제는 홈 정리 번호,
      *                  포트 변경은 포트 작업 번호, 접속 차단·해제는 접속 작업 번호
      */
-    JobResultResponseDTO getResult(String kind, Long requestId);
+    JobResultResponseDTO getResult(String clusterId, String kind, Long requestId);
 
     /** 컨테이너 생성 진행 상황을 조회한다. 생성 이력이 없으면 stage가 unknown으로 온다. */
-    ProvisioningStatusResponseDTO getProvisioningStatus(Long requestId);
+    ProvisioningStatusResponseDTO getProvisioningStatus(String clusterId, Long requestId);
 
     /** 작업 단계 기록을 조회한다. 작업이 없으면 jobs가 빈 목록으로 온다. */
-    JobStepsResponseDTO getSteps(String kind, Long requestId);
+    JobStepsResponseDTO getSteps(String clusterId, String kind, Long requestId);
 }

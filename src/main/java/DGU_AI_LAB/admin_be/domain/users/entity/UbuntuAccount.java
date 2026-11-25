@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.users.entity;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
+import DGU_AI_LAB.admin_be.global.cluster.ClusterId;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -32,7 +33,7 @@ public class UbuntuAccount extends BaseTimeEntity {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(name = "server_name", nullable = false, length = 300)
+    @Column(name = "server_name", nullable = false, updatable = false, length = 16)
     private String serverName;
 
     /** 이 서버에서 쓰는 유저네임. 가입 때 고른 이름이 기본값이고, 서버가 달라 이름이 다른 사람(이전 계정)은 다른 값을 가진다. */
@@ -51,12 +52,12 @@ public class UbuntuAccount extends BaseTimeEntity {
 
     UbuntuAccount(User user, String serverName, String username) {
         this.user = user;
-        this.serverName = serverName;
+        this.serverName = ClusterId.canonical(serverName);
         this.username = username;
     }
 
     public boolean isServer(String serverName) {
-        return this.serverName.equalsIgnoreCase(serverName);
+        return this.serverName.equals(ClusterId.canonical(serverName));
     }
 
     public boolean isActive() {

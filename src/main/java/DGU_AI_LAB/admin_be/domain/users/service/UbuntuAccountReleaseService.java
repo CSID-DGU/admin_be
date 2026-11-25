@@ -90,7 +90,7 @@ public class UbuntuAccountReleaseService {
 
         boolean allReleased = true;
         for (NodeJob node : snapshot.nodes()) {
-            if (!isReleased(userId, snapshot.username(), node)) {
+            if (!isReleased(userId, serverName, snapshot.username(), node)) {
                 allReleased = false;
             }
         }
@@ -145,14 +145,14 @@ public class UbuntuAccountReleaseService {
     }
 
     /** 이 노드에서 계정 회수가 끝났는가. 아직 등록하지 않았으면 등록한다. */
-    private boolean isReleased(Long userId, String username, NodeJob node) {
+    private boolean isReleased(Long userId, String serverName, String username, NodeJob node) {
         if (node.jobId() == null) {
-            register(userId, username, node);
+            register(userId, serverName, username, node);
             return false;
         }
         JobResultResponseDTO result;
         try {
-            result = jobClient.getResult(JobResults.KIND_REVOKE, node.requestId());
+            result = jobClient.getResult(serverName, JobResults.KIND_REVOKE, node.requestId());
         } catch (Exception e) {
             log.warn("[계정 회수] 작업 결과 조회 실패 - 다음 바퀴에 다시 조회: userId={}, requestId={}", userId, node.requestId(), e);
             return false;
@@ -178,10 +178,10 @@ public class UbuntuAccountReleaseService {
         };
     }
 
-    private void register(Long userId, String username, NodeJob node) {
+    private void register(Long userId, String serverName, String username, NodeJob node) {
         Long jobId;
         try {
-            jobId = ubuntuAccountService.registerAccountRevoke(username, node.nodeName(), node.requestId());
+            jobId = ubuntuAccountService.registerAccountRevoke(serverName, username, node.nodeName(), node.requestId());
         } catch (BusinessException e) {
             if (e.getErrorCode() == ErrorCode.INVALID_REQUEST_STATUS) {
                 // 같은 신청 번호의 회수 작업이 아직 돈다. 끝나면 다음 바퀴에 다시 등록한다.

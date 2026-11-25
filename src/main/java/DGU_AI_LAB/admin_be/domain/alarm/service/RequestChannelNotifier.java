@@ -64,7 +64,9 @@ public class RequestChannelNotifier {
         User user = request.getUser();
         var resourceGroup = request.getResourceGroup();
         var image = request.getContainerImage();
-        String serverName = resourceGroup.getServerName();
+        // 신청 뒤 자원그룹 행의 서버가 바뀌어도 최초 신청 클러스터의 채널과
+        // Config Server 계정 정보를 사용해야 한다. Request.clusterId가 정본이다.
+        String serverName = request.getServerName();
         LocalDate appliedOn = request.getCreatedAt() != null
                 ? request.getCreatedAt().toLocalDate()
                 : LocalDate.now(ZoneId.of("Asia/Seoul"));
@@ -110,7 +112,7 @@ public class RequestChannelNotifier {
     public Runnable prepareRequestCancelledNotification(Request request) {
         User user = request.getUser();
         var resourceGroup = request.getResourceGroup();
-        String serverName = resourceGroup.getServerName();
+        String serverName = request.getServerName();
         LocalDateTime receivedAt = request.getCreatedAt() != null
                 ? request.getCreatedAt()
                 : LocalDateTime.now(ZoneId.of("Asia/Seoul"));
@@ -132,7 +134,7 @@ public class RequestChannelNotifier {
     public void sendRequestRejectedNotification(Request request, String adminComment) {
         safely("신청 거절 알림", () -> {
             User user = request.getUser();
-            String serverName = request.getResourceGroup().getServerName();
+            String serverName = request.getServerName();
 
             String message = messageUtils.get("notification.admin.request-rejected",
                     String.valueOf(request.getRequestId()),                    // {0}
@@ -152,7 +154,7 @@ public class RequestChannelNotifier {
         safely("생성 완료 알림", () -> {
             User user = request.getUser();
             var image = request.getContainerImage();
-            String serverName = request.getResourceGroup().getServerName();
+            String serverName = request.getServerName();
             LocalDateTime receivedAt = request.getCreatedAt() != null
                     ? request.getCreatedAt()
                     : LocalDateTime.now(ZoneId.of("Asia/Seoul"));

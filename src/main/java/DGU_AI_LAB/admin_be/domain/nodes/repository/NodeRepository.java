@@ -13,7 +13,7 @@ import java.util.Optional;
 
 @Repository
 public interface NodeRepository extends JpaRepository<Node, String> {
-    @Query("SELECT n FROM Node n LEFT JOIN FETCH n.gpus WHERE n.nodeId = :nodeId")
+    @Query("SELECT DISTINCT n FROM Node n JOIN FETCH n.resourceGroup LEFT JOIN FETCH n.gpus WHERE n.nodeId = :nodeId")
     Optional<Node> findByIdWithGpus(@Param("nodeId") String nodeId);
 
     List<Node> findAllByResourceGroup(ResourceGroup resourceGroup);

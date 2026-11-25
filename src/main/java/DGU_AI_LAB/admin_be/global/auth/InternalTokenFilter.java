@@ -2,6 +2,9 @@ package DGU_AI_LAB.admin_be.global.auth;
 
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.dto.ErrorResponse;
+import DGU_AI_LAB.admin_be.global.cluster.ClusterClientProperties;
+import DGU_AI_LAB.admin_be.global.cluster.ClusterClientRegistry;
+import DGU_AI_LAB.admin_be.global.cluster.ClusterId;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -15,17 +18,24 @@ import org.springframework.web.util.UrlPathHelper;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
- * config-server·인프라 전용 API는 사용자 JWT 대신 공유 토큰(X-Internal-Token)으로만 연다.
- * admin_be가 config-server를 부를 때 쓰는 config.api-token과 같은 값이다. 이 경로들은 사용자
- * 신청의 우분투 비밀번호 같은 값을 돌려주므로, 토큰이 설정돼 있지 않으면 전부 거절한다(fail-closed).
+ * config-server·인프라 전용 API는 사용자 JWT 대신 클러스터별 X-Internal-Token과
+ * X-Cluster-Id를 함께 검증한다. 토큰 하나만 맞아도 다른 클러스터의 신청을 읽을 수 있는
+ * 구조가 되지 않도록 토큰과 클러스터 설정을 한 묶음으로 비교한다.
  */
 @Slf4j
 public class InternalTokenFilter extends OncePerRequestFilter {
 
-    public static final String HEADER = "X-Internal-Token";
+    public static final String TOKEN_HEADER = ClusterClientRegistry.API_TOKEN_HEADER;
+    public static final String CLUSTER_HEADER = ClusterClientRegistry.CLUSTER_ID_HEADER;
+    public static final String VERIFIED_CLUSTER_ATTRIBUTE =
+            "DGU_AI_LAB.admin_be.global.auth.InternalTokenFilter.verifiedClusterId";
 
     static final List<String> PROTECTED_PATHS = List.of("/api/requests/config/**", "/api/internal/**");
     // 신청 화면에서 로그인한 사용자가 부르는 이름 중복 확인은 내부 토큰이 아니라 JWT로 확인한다.
@@ -33,13 +43,35 @@ public class InternalTokenFilter extends OncePerRequestFilter {
 
     private static final AntPathMatcher pathMatcher = new AntPathMatcher();
 
-    private final byte[] expected;
+    private final Map<String, byte[]> expectedByCluster;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public InternalTokenFilter(String apiToken) {
-        this.expected = apiToken == null ? new byte[0] : apiToken.getBytes(StandardCharsets.UTF_8);
-        if (expected.length == 0) {
-            log.warn("[InternalTokenFilter] config.api-token 미설정 — 내부 전용 API를 모두 거절합니다.");
+    public InternalTokenFilter(ClusterClientProperties properties) {
+        Map<String, byte[]> configured = new LinkedHashMap<>();
+        Set<String> configuredTokens = new HashSet<>();
+        if (properties != null && properties.clusters() != null) {
+            properties.clusters().forEach((rawClusterId, cluster) -> {
+                String clusterId = ClusterId.canonical(rawClusterId);
+                if (cluster == null || cluster.apiToken() == null || cluster.apiToken().isBlank()) {
+                    throw new IllegalStateException(
+                            "provi.clusters." + clusterId + ".api-token 설정이 비어 있습니다.");
+                }
+                if (!configuredTokens.add(cluster.apiToken())) {
+                    throw new IllegalStateException(
+                            "클러스터별 api-token은 서로 다른 값이어야 합니다: " + clusterId);
+                }
+                if (configured.putIfAbsent(
+                        clusterId,
+                        cluster.apiToken().getBytes(StandardCharsets.UTF_8)
+                ) != null) {
+                    throw new IllegalStateException(
+                            "provi.clusters에 대소문자만 다른 clusterId가 겹칩니다: " + rawClusterId);
+                }
+            });
+        }
+        this.expectedByCluster = Map.copyOf(configured);
+        if (expectedByCluster.isEmpty()) {
+            log.warn("[InternalTokenFilter] provi.clusters 미설정 — 내부 전용 API를 모두 거절합니다.");
         }
     }
 
@@ -57,21 +89,36 @@ public class InternalTokenFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        if (!isValid(request.getHeader(HEADER))) {
-            log.warn("[InternalTokenFilter] 내부 토큰 불일치로 거절: uri={}, remote={}",
-                    request.getRequestURI(), request.getRemoteAddr());
-            response.setStatus(ErrorCode.UNAUTHORIZED.getHttpStatus().value());
+        String clusterId = canonicalOrNull(request.getHeader(CLUSTER_HEADER));
+        if (!isValid(clusterId, request.getHeader(TOKEN_HEADER))) {
+            log.warn("[InternalTokenFilter] 내부 클러스터 인증 실패: uri={}, cluster={}, remote={}",
+                    request.getRequestURI(), clusterId, request.getRemoteAddr());
+            response.setStatus(ErrorCode.INTERNAL_CLUSTER_AUTHENTICATION_FAILED.getHttpStatus().value());
             response.setContentType("application/json;charset=UTF-8");
-            objectMapper.writeValue(response.getWriter(), ErrorResponse.of(ErrorCode.UNAUTHORIZED));
+            objectMapper.writeValue(
+                    response.getWriter(),
+                    ErrorResponse.of(ErrorCode.INTERNAL_CLUSTER_AUTHENTICATION_FAILED)
+            );
             return;
         }
+        request.setAttribute(VERIFIED_CLUSTER_ATTRIBUTE, clusterId);
         chain.doFilter(request, response);
     }
 
-    private boolean isValid(String sent) {
-        if (expected.length == 0 || sent == null) {
+    private String canonicalOrNull(String rawClusterId) {
+        try {
+            return ClusterId.canonical(rawClusterId);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private boolean isValid(String clusterId, String sent) {
+        if (clusterId == null || sent == null) {
             return false;
         }
-        return MessageDigest.isEqual(sent.getBytes(StandardCharsets.UTF_8), expected);
+        byte[] expected = expectedByCluster.get(clusterId);
+        return expected != null
+                && MessageDigest.isEqual(sent.getBytes(StandardCharsets.UTF_8), expected);
     }
 }

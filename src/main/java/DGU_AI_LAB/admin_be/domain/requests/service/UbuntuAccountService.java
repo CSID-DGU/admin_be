@@ -28,13 +28,14 @@ public class UbuntuAccountService {
      * @return 등록된 작업 번호. 응답에 없으면 null
      * @throws BusinessException 같은 신청의 회수 작업이 아직 끝나지 않았거나(409) 등록이 실패한 경우
      */
-    public Long registerAccountRevoke(String username, String nodeName, Long requestId) {
+    public Long registerAccountRevoke(String clusterId, String username, String nodeName, Long requestId) {
         if (requestId == null) {
             throw new BusinessException("신청 번호 없이 계정을 회수할 수 없습니다: " + username,
                     ErrorCode.UBUNTU_USER_DELETION_FAILED);
         }
-        log.info("계정 회수 작업 등록: {}, node={}, requestId={}", username, nodeName, requestId);
-        return jobClient.registerRevoke(
+        log.info("계정 회수 작업 등록: clusterId={}, username={}, node={}, requestId={}",
+                clusterId, username, nodeName, requestId);
+        return jobClient.registerRevoke(clusterId,
                 new RevokeRegisterRequestDTO(requestId, null, username, nodeName, true),
                 ErrorCode.UBUNTU_USER_DELETION_FAILED);
     }

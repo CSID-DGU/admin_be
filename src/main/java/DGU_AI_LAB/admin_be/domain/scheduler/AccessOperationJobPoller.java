@@ -46,6 +46,11 @@ public class AccessOperationJobPoller extends OperationJobPoller<AccessOperation
     }
 
     @Override
+    protected String clusterId(AccessOperation operation) {
+        return operation.getClusterId();
+    }
+
+    @Override
     protected Long jobId(AccessOperation operation) {
         return operation.getJobId();
     }

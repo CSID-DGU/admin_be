@@ -6,11 +6,11 @@ import DGU_AI_LAB.admin_be.domain.pod.dto.response.StoppedPodDTO;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.UserPodListing;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.cluster.ClusterClientRegistry;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.PodResource;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
@@ -35,18 +35,15 @@ public class PodQueryService {
     private static final String USER_POD_LABEL = "app";
     private static final String USER_POD_LABEL_VALUE = "ailab-guest";
 
-    private final KubernetesClient client;
-    // 사용자 Pod가 만들어지는 네임스페이스. 설치 환경·스택마다 다르므로 기본값 없이 설정으로만 받는다 —
-    // 틀린 값으로 조용히 뜨면 관리자 화면에서 모든 컨테이너가 "확인 불가"로 보인다.
-    private final String namespace;
+    private final ClusterClientRegistry clients;
 
-    public PodQueryService(KubernetesClient client,
-                           @Value("${kubernetes.pod-namespace}") String namespace) {
-        this.client = client;
-        this.namespace = namespace;
+    public PodQueryService(ClusterClientRegistry clients) {
+        this.clients = clients;
     }
 
-    public List<String> getPodNames() {
+    public List<String> getPodNames(String clusterId) {
+        KubernetesClient client = clients.kubernetesClient(clusterId);
+        String namespace = clients.podNamespace(clusterId);
         try {
             return client.pods()
                     .inNamespace(namespace)
@@ -56,13 +53,15 @@ public class PodQueryService {
                     .map(pod -> pod.getMetadata().getName())
                     .collect(Collectors.toList());
         } catch (Exception e) {
-            log.error("[PodQuery] pod 목록 조회 실패", e);
+            log.error("[PodQuery] pod 목록 조회 실패: clusterId={}", clusterId, e);
             throw e;
         }
     }
 
     /** 사용자 Pod 전체를 한 번에 읽는다. 상태 캐시와 멈춘 컨테이너 알림이 같은 결과를 쓴다. */
-    public UserPodListing listUserPods() {
+    public UserPodListing listUserPods(String clusterId) {
+        KubernetesClient client = clients.kubernetesClient(clusterId);
+        String namespace = clients.podNamespace(clusterId);
         List<Pod> pods;
         try {
             pods = client.pods()
@@ -73,7 +72,7 @@ public class PodQueryService {
                     .filter(PodQueryService::isUserPod)
                     .toList();
         } catch (Exception e) {
-            log.error("[PodQuery] 사용자 pod 목록 조회 실패", e);
+            log.error("[PodQuery] 사용자 pod 목록 조회 실패: clusterId={}", clusterId, e);
             throw e;
         }
         return new UserPodListing(
@@ -81,7 +80,9 @@ public class PodQueryService {
                 pods.stream().map(StoppedPodDTO::from).flatMap(Optional::stream).toList());
     }
 
-    public PodResponseDTO getPodDetail(String podName) {
+    public PodResponseDTO getPodDetail(String clusterId, String podName) {
+        KubernetesClient client = clients.kubernetesClient(clusterId);
+        String namespace = clients.podNamespace(clusterId);
         Pod pod;
         try {
             pod = client.pods()
@@ -89,7 +90,7 @@ public class PodQueryService {
                     .withName(podName)
                     .get();
         } catch (Exception e) {
-            log.error("[PodQuery] pod 상세 조회 실패: podName={}", podName, e);
+            log.error("[PodQuery] pod 상세 조회 실패: clusterId={}, podName={}", clusterId, podName, e);
             throw e;
         }
 
@@ -103,13 +104,15 @@ public class PodQueryService {
     /**
      * @param containerName 생략하면(null) 첫 번째 컨테이너의 로그를 반환한다.
      */
-    public String getPodLogs(String podName, String containerName) {
+    public String getPodLogs(String clusterId, String podName, String containerName) {
+        KubernetesClient client = clients.kubernetesClient(clusterId);
+        String namespace = clients.podNamespace(clusterId);
         PodResource podResource = client.pods().inNamespace(namespace).withName(podName);
         Pod pod;
         try {
             pod = podResource.get();
         } catch (Exception e) {
-            log.error("[PodQuery] 로그 조회 대상 pod 확인 실패: podName={}", podName, e);
+            log.error("[PodQuery] 로그 조회 대상 pod 확인 실패: clusterId={}, podName={}", clusterId, podName, e);
             throw e;
         }
         // 사용자 컨테이너가 아니면 없는 것으로 답한다. 이름만 알면 DB·admin_be·config-server의 로그(쿼리, 계정 이름,
@@ -128,8 +131,8 @@ public class PodQueryService {
             // 오류가 아니라 "아직 로그가 없다"는 정상 상황이므로 빈 문자열로 처리한다. 다만 RBAC
             // 권한 누락(pods/log 403) 등 진짜 오류도 같은 catch로 들어와 여태 조용히 묻혔으므로,
             // 동작은 그대로 두되(빈 문자열 반환) 최소한 로그는 남긴다.
-            log.warn("[PodQuery] pod 로그 조회 실패, 빈 문자열로 처리: podName={}, container={}",
-                    podName, containerName, e);
+            log.warn("[PodQuery] pod 로그 조회 실패, 빈 문자열로 처리: clusterId={}, podName={}, container={}",
+                    clusterId, podName, containerName, e);
             return "";
         }
     }
@@ -139,7 +142,9 @@ public class PodQueryService {
         return labels != null && USER_POD_LABEL_VALUE.equals(labels.get(USER_POD_LABEL));
     }
 
-    public List<PodEventDTO> getPodEvents(String podName) {
+    public List<PodEventDTO> getPodEvents(String clusterId, String podName) {
+        KubernetesClient client = clients.kubernetesClient(clusterId);
+        String namespace = clients.podNamespace(clusterId);
         try {
             return client.v1().events()
                     .inNamespace(namespace)
@@ -152,7 +157,7 @@ public class PodQueryService {
                     .limit(EVENT_LIMIT)
                     .collect(Collectors.toList());
         } catch (Exception e) {
-            log.error("[PodQuery] pod 이벤트 조회 실패: podName={}", podName, e);
+            log.error("[PodQuery] pod 이벤트 조회 실패: clusterId={}, podName={}", clusterId, podName, e);
             throw e;
         }
     }

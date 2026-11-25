@@ -41,7 +41,7 @@ public record ChangeRequestNotice(
                 user.getDepartment(),
                 user.getEmail(),
                 request == null ? user.getUbuntuUsername() : request.getUbuntuUsername(),
-                request == null ? null : request.getResourceGroup().getServerName(),
+                request == null ? null : request.getServerName(),
                 request == null ? null : request.getRequestId(),
                 change,
                 changeRequest.getReason());

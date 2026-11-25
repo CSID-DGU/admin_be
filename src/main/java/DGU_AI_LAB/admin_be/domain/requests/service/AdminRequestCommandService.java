@@ -30,6 +30,7 @@ import DGU_AI_LAB.admin_be.domain.users.repository.UserRepository;
 import DGU_AI_LAB.admin_be.domain.warnings.service.SuspensionGuard;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.cluster.ClusterId;
 import DGU_AI_LAB.admin_be.global.util.AfterCommit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -136,12 +137,13 @@ public class AdminRequestCommandService {
             if (req.getStatus() != Status.PENDING) {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST_STATUS);
             }
-            req.markAsProcessing(); // 다른 관리자의 중복 승인 시도 차단
             // 관리자가 고른 이미지/자원그룹/코멘트는 작업이 끝난 뒤 다른 스레드가 확정하므로 지금 남겨 둔다.
             ContainerImage image = containerImageRepository.findById(dto.imageId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
             ResourceGroup resourceGroup = resourceGroupRepository.findById(dto.resourceGroupId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+            requireSameApprovalCluster(req, resourceGroup);
+            req.markAsProcessing(); // 다른 관리자의 중복 승인 시도 차단
             req.prepareAsyncApproval(image, resourceGroup, dto.adminComment());
             if (dto.professorApprovedByAdminId() != null) {
                 req.confirmProfessorApproval(dto.professorApprovedByAdminId());
@@ -181,7 +183,7 @@ public class AdminRequestCommandService {
             // 응답은 트랜잭션 안에서 만든다. 밖에서 만들면 DTO가 새로 읽는 lazy 연관(예: user.userGroups)마다
             // 초기화 목록을 따로 맞춰야 하고, 빠뜨리면 승인은 진행됐는데 관리자는 500을 받는다.
             return new ApprovalPreparation(req.getUser().getUserId(), req.getUbuntuUsername(),
-                    req.getResourceGroup().getServerName(), creation, SaveRequestResponseDTO.fromEntity(req));
+                    req.getServerName(), creation, SaveRequestResponseDTO.fromEntity(req));
         });
         Long requestId = dto.requestId();
         Long userId = prepared.userId();
@@ -238,9 +240,31 @@ public class AdminRequestCommandService {
         return prepared.response();
     }
 
+    /**
+     * 신청 시 확정한 클러스터는 승인 시점의 자원그룹 선택으로 바뀌지 않는다. 바뀌면 FARM 그룹을 LAB
+     * provision에 싣거나 이후 회수·폴링을 다른 Config Server로 보내므로 상태 변경 전에 거절한다.
+     */
+    private static void requireSameApprovalCluster(Request request, ResourceGroup selectedResourceGroup) {
+        try {
+            String requestCluster = ClusterId.canonical(request.getServerName());
+            String selectedCluster = ClusterId.canonical(selectedResourceGroup.getServerName());
+            if (!requestCluster.equals(selectedCluster)) {
+                throw new BusinessException(
+                        "신청 클러스터(" + requestCluster + ")와 승인 자원그룹 클러스터("
+                                + selectedCluster + ")가 다릅니다.",
+                        ErrorCode.INVALID_INPUT_VALUE);
+            }
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(
+                    "신청 또는 승인 자원그룹의 클러스터 식별자가 올바르지 않습니다.",
+                    ErrorCode.INVALID_INPUT_VALUE,
+                    e);
+        }
+    }
+
     private Long registerProvisionJob(ProvisionRegisterRequestDTO body, Long requestId, String username, String serverName) {
         try {
-            return jobClient.registerProvision(body);
+            return jobClient.registerProvision(serverName, body);
         } catch (Exception e) {
             return registeredJobDespiteFailure(requestId, username, serverName, e);
         }
@@ -263,7 +287,7 @@ public class AdminRequestCommandService {
         }
         JobResultResponseDTO job;
         try {
-            job = jobClient.getResult(JobResults.KIND_PROVISION, requestId);
+            job = jobClient.getResult(serverName, JobResults.KIND_PROVISION, requestId);
         } catch (Exception lookupFailure) {
             log.warn("생성 작업 등록 실패 후 작업 상태 조회도 실패 — PROCESSING 유지, 재조정에 맡김: requestId={}", requestId, lookupFailure);
             alarmService.alertNeedsAction("notification.admin.approval.register-unconfirmed",
@@ -361,7 +385,7 @@ public class AdminRequestCommandService {
             // 트랜잭션 종료 후 사용되는 모든 lazy 연관 초기화
             req.getUser().getEmail();
             req.getContainerImage().getImageName();
-            req.getResourceGroup().getServerName();
+            req.getServerName();
             req.getRequestGroups().size();
             return new ApprovalOutcome(req, null);
         });
@@ -446,7 +470,7 @@ public class AdminRequestCommandService {
         try {
             return new TransactionTemplate(transactionManager).execute(status ->
                     requestRepository.findById(requestId)
-                            .map(req -> req.getResourceGroup().getServerName())
+                            .map(Request::getServerName)
                             .orElse(null));
         } catch (Exception e) {
             log.warn("서버 구분 조회 실패: requestId={}", requestId, e);
@@ -514,7 +538,7 @@ public class AdminRequestCommandService {
         if (JobResults.awaitingRegistration(request.getJobId(), request.getUpdatedAt())) {
             throw new BusinessException(ErrorCode.PROVISION_JOB_IN_PROGRESS);
         }
-        JobResultResponseDTO job = jobClient.getResult(JobResults.KIND_PROVISION, requestId);
+        JobResultResponseDTO job = jobClient.getResult(request.getServerName(), JobResults.KIND_PROVISION, requestId);
         if (JobResults.isFromOtherJob(request.getJobId(), job)) {
             // 이번 승인의 작업이 아직 보이지 않는다(이전 작업 결과가 보임).
             throw new BusinessException(ErrorCode.PROVISION_JOB_IN_PROGRESS);

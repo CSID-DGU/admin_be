@@ -72,6 +72,9 @@ public class PodMigrationService {
     // 성공 결과를 받지 못해 반영을 멈춘 신청은 폴러가 매 바퀴 다시 부른다. 같은 알림이 반복되지 않게 한다.
     private final AlertDeduplicator alertDeduplicator;
 
+    private record MigrationRegistration(String clusterId, MigrateRegisterRequestDTO body) {
+    }
+
     /**
      * 이미 끝난 마이그레이션 결과를 앞당겨 반영한다.
      *
@@ -90,7 +93,7 @@ public class PodMigrationService {
                     || JobResults.awaitingRegistration(req.getJobId(), req.getUpdatedAt())) {
                 return;
             }
-            JobResultResponseDTO result = jobClient.getResult(JobResults.KIND_MIGRATE, requestId);
+            JobResultResponseDTO result = jobClient.getResult(req.getServerName(), JobResults.KIND_MIGRATE, requestId);
             if (JobResults.isFromOtherJob(req.getJobId(), result)) {
                 return;
             }
@@ -179,16 +182,18 @@ public class PodMigrationService {
     private void start(Long requestId, Consumer<Request> authorize, Consumer<Request> admit,
                        Function<Request, MigrateRegisterRequestDTO> job) {
         settleFinishedMigration(requestId);
-        MigrateRegisterRequestDTO body = new TransactionTemplate(transactionManager).execute(status -> {
+        MigrationRegistration registration = new TransactionTemplate(transactionManager).execute(status -> {
             Request req = requestRepository.findByIdForUpdate(requestId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
             authorize.accept(req);
             req.beginMigration();
             admit.accept(req);
             // 이용 정지 중인 사용자의 새 Pod 는 접속 포트를 막힌 채로 만든다(관리자가 옮기거나 다시 만드는 경우).
-            return job.apply(req).accessBlocked(suspensionGuard.isSuspended(req.getUser().getUserId()));
+            MigrateRegisterRequestDTO body = job.apply(req)
+                    .accessBlocked(suspensionGuard.isSuspended(req.getUser().getUserId()));
+            return new MigrationRegistration(req.getServerName(), body);
         });
-        Long jobId = registerMigration(body);
+        Long jobId = registerMigration(registration.clusterId(), registration.body());
         // 결과 폴러가 이 번호의 결과만 반영하게 남긴다. 그 사이 끝났거나 되돌려졌으면 건드리지 않는다.
         new TransactionTemplate(transactionManager).execute(status -> {
             requestRepository.findByIdForUpdate(requestId)
@@ -197,24 +202,27 @@ public class PodMigrationService {
             return null;
         });
         log.info("마이그레이션 작업 등록: requestId={}, username={}, pod={}, recreate={}",
-                requestId, body.username(), body.podName(), body.recreate());
+                requestId, registration.body().username(), registration.body().podName(), registration.body().recreate());
     }
 
     private MigrationResultResponseDTO latestMigrationOf(Long requestId) {
-        JobResultResponseDTO job = jobClient.getResult(JobResults.KIND_MIGRATE, requestId);
-        return MigrationResultResponseDTO.from(job, completedStepsOf(requestId, job));
+        Request request = requestRepository.findById(requestId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        String clusterId = request.getServerName();
+        JobResultResponseDTO job = jobClient.getResult(clusterId, JobResults.KIND_MIGRATE, requestId);
+        return MigrationResultResponseDTO.from(job, completedStepsOf(clusterId, requestId, job));
     }
 
     /**
      * 진행 중인 작업에서 이미 끝난 단계 이름. 화면이 지금 어느 단계인지 보여 주는 데만 쓰므로, 단계 기록을
      * 읽지 못해도 결과 조회는 실패시키지 않는다.
      */
-    private List<String> completedStepsOf(Long requestId, JobResultResponseDTO job) {
+    private List<String> completedStepsOf(String clusterId, Long requestId, JobResultResponseDTO job) {
         if (!JobResults.isRunning(job.phase()) || job.jobId() == null) {
             return List.of();
         }
         try {
-            return jobClient.getSteps(JobResults.KIND_MIGRATE, requestId).jobs().stream()
+            return jobClient.getSteps(clusterId, JobResults.KIND_MIGRATE, requestId).jobs().stream()
                     .filter(j -> job.jobId().equals(j.jobId()) && j.steps() != null)
                     .flatMap(j -> j.steps().stream())
                     .filter(s -> JobResults.PHASE_SUCCESS.equals(s.phase()) && s.action() != null)
@@ -263,10 +271,10 @@ public class PodMigrationService {
      * 지워진 옛 Pod를 가리키게 된다. 그래서 MIGRATING으로 두고 이어받는다. 요청이 닿지도 않았거나 작업이 없으면
      * FULFILLED로 되돌리고, 작업 상태를 모르면 MIGRATING으로 두어 결과 폴러와 재조정 알림에 맡긴다.
      */
-    private Long registerMigration(MigrateRegisterRequestDTO body) {
+    private Long registerMigration(String clusterId, MigrateRegisterRequestDTO body) {
         Long requestId = body.requestId();
         try {
-            return jobClient.registerMigrate(body);
+            return jobClient.registerMigrate(clusterId, body);
         } catch (RuntimeException e) {
             if (JobResults.neverReachedServer(e)) {
                 log.error("config-server에 닿지 못해 마이그레이션 작업이 등록되지 않음 — FULFILLED로 되돌림: requestId={}", requestId, e);
@@ -275,7 +283,7 @@ public class PodMigrationService {
             }
             JobResultResponseDTO job;
             try {
-                job = jobClient.getResult(JobResults.KIND_MIGRATE, requestId);
+                job = jobClient.getResult(clusterId, JobResults.KIND_MIGRATE, requestId);
             } catch (Exception lookupFailure) {
                 alert(lookupFailure, "notification.admin.migration.register-unconfirmed",
                         requestId, e.getMessage());
@@ -339,7 +347,7 @@ public class PodMigrationService {
                     if (made.ports() != null && !made.ports().isEmpty() && !oldPorts.equals(newPortKeys(made.ports()))) {
                         // 커밋 뒤 안내 메일에서 쓰는 지연 연관을 트랜잭션 안에서 채워 둔다.
                         req.getUser().getEmail();
-                        req.getResourceGroup().getServerName();
+                        req.getServerName();
                         portsChangedRequest[0] = req;
                     }
                 }

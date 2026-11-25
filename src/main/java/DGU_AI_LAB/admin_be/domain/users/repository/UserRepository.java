@@ -107,9 +107,9 @@ public interface UserRepository extends JpaRepository<User,Long> {
     @Query("SELECT u FROM User u " +
             "WHERE u.ubuntuUsername IS NOT NULL AND u.ubuntuUid IS NOT NULL " +
             "  AND NOT EXISTS (SELECT r FROM Request r WHERE r.user = u AND r.status IN :openStatuses " +
-            "         AND LOWER(r.resourceGroup.serverName) = LOWER(:serverName)) " +
+            "         AND r.clusterId = UPPER(:serverName)) " +
             "  AND (SELECT MAX(d.updatedAt) FROM Request d WHERE d.user = u " +
-            "         AND LOWER(d.resourceGroup.serverName) = LOWER(:serverName) " +
+            "         AND d.clusterId = UPPER(:serverName) " +
             "         AND d.status = DGU_AI_LAB.admin_be.domain.requests.entity.Status.DELETED " +
             "         AND d.approvedAt IS NOT NULL) < :endedBefore")
     List<User> findHomeCleanupCandidates(@Param("endedBefore") LocalDateTime endedBefore,
@@ -123,13 +123,13 @@ public interface UserRepository extends JpaRepository<User,Long> {
     @Query("SELECT u FROM User u " +
             "WHERE u.ubuntuUsername IS NOT NULL AND u.ubuntuUid IS NOT NULL AND u.deletedAt IS NULL AND u.isActive = true " +
             "  AND NOT EXISTS (SELECT r FROM Request r WHERE r.user = u AND r.status IN :openStatuses " +
-            "         AND LOWER(r.resourceGroup.serverName) = LOWER(:serverName)) " +
+            "         AND r.clusterId = UPPER(:serverName)) " +
             "  AND (SELECT MAX(d.updatedAt) FROM Request d WHERE d.user = u " +
-            "         AND LOWER(d.resourceGroup.serverName) = LOWER(:serverName) " +
+            "         AND d.clusterId = UPPER(:serverName) " +
             "         AND d.status = DGU_AI_LAB.admin_be.domain.requests.entity.Status.DELETED " +
             "         AND d.approvedAt IS NOT NULL) >= :from " +
             "  AND (SELECT MAX(d.updatedAt) FROM Request d WHERE d.user = u " +
-            "         AND LOWER(d.resourceGroup.serverName) = LOWER(:serverName) " +
+            "         AND d.clusterId = UPPER(:serverName) " +
             "         AND d.status = DGU_AI_LAB.admin_be.domain.requests.entity.Status.DELETED " +
             "         AND d.approvedAt IS NOT NULL) < :to")
     List<User> findHomeReminderCandidates(@Param("from") LocalDateTime from,

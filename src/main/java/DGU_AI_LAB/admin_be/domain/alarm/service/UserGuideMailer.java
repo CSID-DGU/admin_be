@@ -40,7 +40,7 @@ public class UserGuideMailer {
     public void sendContainerCreatedEmail(Request request, String sshPort, String jupyterPort) {
         User user = request.getUser();
         var image = request.getContainerImage();
-        String serverName = request.getResourceGroup().getServerName();
+        String serverName = request.getServerName();
 
         // 공인 주소가 NodePort를 다른 포트 대역으로 포워딩하는 서버면 사용자에겐 공인 포트를 안내해야 한다.
         sshPort = serverProfileRegistry.publicPort(serverName, sshPort);
@@ -70,7 +70,7 @@ public class UserGuideMailer {
      */
     public void sendContainerPortsChangedEmail(Request request) {
         User user = request.getUser();
-        String serverName = request.getResourceGroup().getServerName();
+        String serverName = request.getServerName();
         List<PodExternalPort> allPorts = podExternalPortRepository.findByRequestRequestId(request.getRequestId());
 
         String sshPort = serverProfileRegistry.publicPort(serverName, externalPortOf(allPorts, "ssh"));
@@ -95,7 +95,7 @@ public class UserGuideMailer {
      */
     public void sendExtraPortsChangedEmail(Request request) {
         User user = request.getUser();
-        String serverName = request.getResourceGroup().getServerName();
+        String serverName = request.getServerName();
         List<PodExternalPort> allPorts = podExternalPortRepository.findByRequestRequestId(request.getRequestId());
 
         String extraPorts = PodPortUtils.extraPorts(allPorts).stream()
@@ -133,7 +133,7 @@ public class UserGuideMailer {
      */
     public void sendContainerExtendedEmail(Request request, LocalDateTime oldExpiresAt, LocalDateTime newExpiresAt) {
         User user = request.getUser();
-        String serverName = request.getResourceGroup().getServerName();
+        String serverName = request.getServerName();
         List<PodExternalPort> ports = podExternalPortRepository.findByRequestRequestId(request.getRequestId());
         String oldDate = oldExpiresAt != null ? oldExpiresAt.toLocalDate().toString() : "이전 기록 없음";
         String podName = request.getPodName() != null ? request.getPodName() : "미배정";
@@ -163,7 +163,7 @@ public class UserGuideMailer {
 
     public void sendRequestRejectedEmail(Request request, String adminComment) {
         User user = request.getUser();
-        String serverName = request.getResourceGroup().getServerName();
+        String serverName = request.getServerName();
 
         String subject = messageUtils.get("email.request.rejected.subject", serverName);
         String body = messageUtils.get("email.request.rejected.body",
