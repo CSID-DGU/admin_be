@@ -79,10 +79,10 @@ class RequestExpiryContractTest {
         service = new RequestExpiryService(
                 requestRepository, jobClient, podExternalPortRepository, eventPublisher, transactionManager,
                 homeRetentionNotice);
-        when(mockRg.getServerName()).thenReturn("FARM-01");
+        when(mockRg.getServerName()).thenReturn("FARM");
         when(mockUser.getName()).thenReturn("테스트유저");
         when(mockUser.getEmail()).thenReturn("test@dgu.ac.kr");
-        when(jobClient.registerRevoke(any(), any())).thenReturn(900L);
+        when(jobClient.registerRevoke(any(String.class), any(), any())).thenReturn(900L);
     }
 
     private Request given(Long requestId, Status status) {
@@ -93,6 +93,7 @@ class RequestExpiryContractTest {
         doAnswer(inv -> { current.set(Status.FULFILLED); return null; }).when(request).endExpiry();
         doAnswer(inv -> { current.set(Status.DELETED); return null; }).when(request).deleteAfterCleanup();
         when(request.getUbuntuUsername()).thenReturn("testuser");
+        when(request.getServerName()).thenReturn("FARM");
         when(request.getUser()).thenReturn(mockUser);
         when(request.getResourceGroup()).thenReturn(mockRg);
         when(request.getPodName()).thenReturn(POD_NAME);
@@ -112,7 +113,7 @@ class RequestExpiryContractTest {
         InOrder order = inOrder(requestRepository, request, jobClient);
         order.verify(requestRepository).findByIdForUpdate(100L);
         order.verify(request).beginExpiry();
-        order.verify(jobClient).registerRevoke(any(), eq(ErrorCode.POD_DELETION_FAILED));
+        order.verify(jobClient).registerRevoke(any(String.class), any(), eq(ErrorCode.POD_DELETION_FAILED));
         order.verify(request).recordJob(900L);
     }
 
@@ -124,9 +125,9 @@ class RequestExpiryContractTest {
     @DisplayName("등록이 실패하면 선점 → 등록 시도 → FULFILLED 되돌림 순서로 끝나고 예외를 전파한다")
     void registrationFails_revertsAfterAttempt() {
         Request request = given(101L, Status.FULFILLED);
-        when(jobClient.registerRevoke(any(), any()))
+        when(jobClient.registerRevoke(any(String.class), any(), any()))
                 .thenThrow(new BusinessException(ErrorCode.POD_DELETION_FAILED));
-        when(jobClient.getResult(JobResults.KIND_REVOKE, 101L)).thenReturn(
+        when(jobClient.getResult("FARM", JobResults.KIND_REVOKE, 101L)).thenReturn(
                 new JobResultResponseDTO("101", JobResults.KIND_REVOKE, null, JobResults.PHASE_NONE, null, null, null));
 
         assertThatThrownBy(() -> service.deleteExpiredRequest(101L))
@@ -136,7 +137,7 @@ class RequestExpiryContractTest {
 
         InOrder order = inOrder(request, jobClient);
         order.verify(request).beginExpiry();
-        order.verify(jobClient).registerRevoke(any(), any());
+        order.verify(jobClient).registerRevoke(any(String.class), any(), any());
         order.verify(request).endExpiry();
         assertThat(request.getStatus()).isEqualTo(Status.FULFILLED);
     }

@@ -3,6 +3,10 @@ package DGU_AI_LAB.admin_be.domain.requests.job;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobHistoryResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobStepsResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.ProvisioningStatusResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
+import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,6 +30,7 @@ public class JobHistoryService {
     static final Duration CLOCK_SKEW = Duration.ofMinutes(1);
 
     private final JobClient jobClient;
+    private final RequestRepository requestRepository;
 
     /**
      * 한 신청의 생성·회수·마이그레이션 작업 단계 기록을 함께 조회한다.
@@ -36,16 +41,23 @@ public class JobHistoryService {
      * @param requestCreatedAt 신청 생성 시각(서버 시간대 {@link #REQUEST_ZONE} 기준으로 저장된 값)
      */
     public JobHistoryResponseDTO getJobHistory(Long requestId, LocalDateTime requestCreatedAt) {
+        String clusterId = clusterIdOf(requestId);
         Instant notBefore = requestCreatedAt.atZone(REQUEST_ZONE).toInstant().minus(CLOCK_SKEW);
         return new JobHistoryResponseDTO(
-                withoutJobsStartedBefore(jobClient.getSteps(JobResults.KIND_PROVISION, requestId), notBefore),
-                withoutJobsStartedBefore(jobClient.getSteps(JobResults.KIND_REVOKE, requestId), notBefore),
-                withoutJobsStartedBefore(jobClient.getSteps(JobResults.KIND_MIGRATE, requestId), notBefore));
+                withoutJobsStartedBefore(jobClient.getSteps(clusterId, JobResults.KIND_PROVISION, requestId), notBefore),
+                withoutJobsStartedBefore(jobClient.getSteps(clusterId, JobResults.KIND_REVOKE, requestId), notBefore),
+                withoutJobsStartedBefore(jobClient.getSteps(clusterId, JobResults.KIND_MIGRATE, requestId), notBefore));
     }
 
     /** 컨테이너 생성 진행 상황. 화면이 실행기를 직접 부르지 않도록 여기서 받아 전한다. */
     public ProvisioningStatusResponseDTO getProvisioningStatus(Long requestId) {
-        return jobClient.getProvisioningStatus(requestId);
+        return jobClient.getProvisioningStatus(clusterIdOf(requestId), requestId);
+    }
+
+    private String clusterIdOf(Long requestId) {
+        return requestRepository.findById(requestId)
+                .map(Request::getServerName)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
     }
 
     private static JobStepsResponseDTO withoutJobsStartedBefore(JobStepsResponseDTO steps, Instant notBefore) {

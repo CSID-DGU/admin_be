@@ -1,6 +1,8 @@
 package DGU_AI_LAB.admin_be.domain.pod.service;
 
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.UserPodListing;
+import DGU_AI_LAB.admin_be.global.cluster.ClusterClientRegistry;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -16,22 +18,25 @@ import java.util.concurrent.atomic.AtomicReference;
  * ({@code ContainerStopWatcher})이 한 번에 읽어 둔 값을 돌려준다. k8s가 원본이라 DB에는 남기지 않는다.
  */
 @Component
+@Slf4j
 public class PodStatusCache {
 
     /** 수동 새로고침을 연달아 눌러도 이 간격 안에서는 k8s를 다시 읽지 않는다. */
     static final Duration MANUAL_REFRESH_MIN_INTERVAL = Duration.ofSeconds(10);
 
     private final PodQueryService podQueryService;
+    private final ClusterClientRegistry clients;
     private final Clock clock;
     private final AtomicReference<PodStatusSnapshot> current = new AtomicReference<>(PodStatusSnapshot.EMPTY);
 
     @Autowired
-    public PodStatusCache(PodQueryService podQueryService) {
-        this(podQueryService, Clock.system(ZoneId.of("Asia/Seoul")));
+    public PodStatusCache(PodQueryService podQueryService, ClusterClientRegistry clients) {
+        this(podQueryService, clients, Clock.system(ZoneId.of("Asia/Seoul")));
     }
 
-    PodStatusCache(PodQueryService podQueryService, Clock clock) {
+    PodStatusCache(PodQueryService podQueryService, ClusterClientRegistry clients, Clock clock) {
         this.podQueryService = podQueryService;
+        this.clients = clients;
         this.clock = clock;
     }
 
@@ -40,21 +45,44 @@ public class PodStatusCache {
     }
 
     /** k8s를 다시 읽어 바꾼다. 읽지 못하면 이전 값을(읽은 시각째로) 그대로 두고 던진다. */
-    public synchronized PodStatusSnapshot refresh() {
-        UserPodListing listing = podQueryService.listUserPods();
+    public synchronized PodStatusSnapshot refresh(String clusterId) {
+        UserPodListing listing = podQueryService.listUserPods(clusterId);
         // 화면에는 초까지만 보인다. 나노초까지 넘기면 브라우저의 날짜 해석(소수 3자리까지)이 흔들린다.
-        PodStatusSnapshot next = PodStatusSnapshot.of(listing, LocalDateTime.now(clock).truncatedTo(ChronoUnit.SECONDS));
+        PodStatusSnapshot next = current.get().withCluster(
+                clusterId, listing, LocalDateTime.now(clock).truncatedTo(ChronoUnit.SECONDS));
         current.set(next);
         return next;
     }
 
+    /** 모든 클러스터를 독립적으로 갱신한다. 한 곳의 장애가 다른 클러스터의 성공값을 버리지 않는다. */
+    public synchronized PodStatusSnapshot refresh() {
+        RuntimeException firstFailure = null;
+        int succeeded = 0;
+        for (String clusterId : clients.clusterIds()) {
+            try {
+                refresh(clusterId);
+                succeeded++;
+            } catch (RuntimeException e) {
+                log.warn("Pod 상태 갱신 실패 - 기존 값을 유지: clusterId={}", clusterId, e);
+                if (firstFailure == null) {
+                    firstFailure = e;
+                }
+            }
+        }
+        if (succeeded == 0 && firstFailure != null) {
+            throw firstFailure;
+        }
+        return current.get();
+    }
+
     /** 관리자의 수동 새로고침. 방금 읽었으면 그 값을 돌려준다. */
-    public synchronized PodStatusSnapshot refreshUnlessFresh() {
+    public synchronized PodStatusSnapshot refreshUnlessFresh(String clusterId) {
         PodStatusSnapshot snapshot = current.get();
-        if (snapshot.checkedAt() != null
-                && snapshot.checkedAt().isAfter(LocalDateTime.now(clock).minus(MANUAL_REFRESH_MIN_INTERVAL))) {
+        LocalDateTime checkedAt = snapshot.checkedAt(clusterId);
+        if (checkedAt != null
+                && checkedAt.isAfter(LocalDateTime.now(clock).minus(MANUAL_REFRESH_MIN_INTERVAL))) {
             return snapshot;
         }
-        return refresh();
+        return refresh(clusterId);
     }
 }

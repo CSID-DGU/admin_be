@@ -101,7 +101,9 @@ public class AdminRequestQueryService {
         }
         return requests.stream()
                 .map(request -> ContainerInfoDTO.fromEntity(
-                        request, snapshot.pod(request.getPodName()), snapshot.checkedAt()))
+                        request,
+                        snapshot.pod(request.getServerName(), request.getPodName()),
+                        snapshot.checkedAt(request.getServerName())))
                 .toList();
     }
 

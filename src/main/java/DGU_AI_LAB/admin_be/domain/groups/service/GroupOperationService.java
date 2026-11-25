@@ -86,13 +86,14 @@ public class GroupOperationService {
      * 호출자의 트랜잭션 안에서 불러야 한다 — 변경 요청과 원본 신청을 잠그고 검증한 그 트랜잭션이다.
      */
     public void startAdd(ChangeRequest changeRequest, Request originalRequest, User admin, String adminComment) {
+        requirePrimaryServer(originalRequest.getServerName());
         Set<Group> groups = groupsOf(changeRequest);
         // 접수 뒤에 다른 변경 요청이 먼저 승인됐을 수 있어 승인 때 한도를 다시 확인한다.
         groupMembershipPolicy.requireRoomFor(originalRequest.getUser(), groups);
         List<String> groupNames = groups.stream().map(Group::getGroupName).toList();
         GroupOperation operation = operationRepository.save(GroupOperation.add(
                 changeRequest, originalRequest.getUser(), originalRequest.getUbuntuUsername(), admin));
-        operation.registered(jobClient.registerGroupChange(GroupChangeRegisterRequestDTO.add(
+        operation.registered(jobClient.registerGroupChange(User.PRIMARY_SERVER, GroupChangeRegisterRequestDTO.add(
                 operation.getGroupOperationId(), originalRequest.getUbuntuUsername(), groupNames)));
         changeRequest.startProcessing(admin, adminComment);
         log.info("[groupOperation] operationId={} 그룹 추가 등록: changeRequestId={}, groups={}",
@@ -119,13 +120,19 @@ public class GroupOperationService {
             }
             GroupOperation operation = operationRepository.save(
                     GroupOperation.remove(user, group, userRepository.getReferenceById(adminId)));
-            operation.registered(jobClient.registerGroupChange(GroupChangeRegisterRequestDTO.remove(
+            operation.registered(jobClient.registerGroupChange(User.PRIMARY_SERVER, GroupChangeRegisterRequestDTO.remove(
                     operation.getGroupOperationId(), user.getUbuntuUsername(), group.getGroupName())));
             return GroupOperationResponseDTO.of(operation, null);
         });
         log.info("[groupOperation] operationId={} 그룹 제거 요청: userId={}, groupId={}, status={}",
                 response.operationId(), userId, groupId, response.status());
         return response;
+    }
+
+    private static void requirePrimaryServer(String serverName) {
+        if (serverName == null || !User.PRIMARY_SERVER.equalsIgnoreCase(serverName)) {
+            throw new BusinessException("공용 그룹 변경은 FARM 계정만 지원합니다.", ErrorCode.INVALID_REQUEST_STATUS);
+        }
     }
 
     /** 작업이 성공했다. 결과를 DB 에 반영한다. 이미 끝난 작업이면 아무것도 하지 않는다. */
@@ -243,7 +250,7 @@ public class GroupOperationService {
         }
         changeRequest.returnToPending();
         return new FailureNotice(changeRequest.getChangeRequestId(),
-                changeRequest.getRequest().getResourceGroup().getServerName(), operation.getUbuntuUsername());
+                changeRequest.getRequest().getServerName(), operation.getUbuntuUsername());
     }
 
     private void removeFromDb(User user, Long groupId) {

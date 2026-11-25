@@ -7,6 +7,7 @@ import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
+import DGU_AI_LAB.admin_be.global.cluster.ClusterId;
 import DGU_AI_LAB.admin_be.global.event.RequestRowChangeListener;
 import jakarta.persistence.*;
 import lombok.*;
@@ -87,6 +88,13 @@ public class Request extends BaseTimeEntity {
     @JoinColumn(name = "rsgroup_id", nullable = false)
     private ResourceGroup resourceGroup;
 
+    /**
+     * 작업을 보낼 클러스터의 고정값. 자원그룹 행이 나중에 바뀌더라도 이미 등록한 작업의
+     * 조회·회수 대상이 다른 클러스터로 이동하지 않도록 요청 자체에 FARM/LAB을 보존한다.
+     */
+    @Column(name = "cluster_id", nullable = false, length = 16)
+    private String clusterId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "image_id", nullable = false)
     private ContainerImage containerImage;
@@ -121,6 +129,7 @@ public class Request extends BaseTimeEntity {
         this.formAnswers = formAnswers;
         this.user = user;
         this.resourceGroup = resourceGroup;
+        this.clusterId = clusterIdOf(resourceGroup);
         this.containerImage = containerImage;
     }
 
@@ -176,8 +185,20 @@ public class Request extends BaseTimeEntity {
      * 아직 컨테이너가 없는 신청이 승인 완료로 보이면 안 되기 때문이다.
      */
     public void prepareAsyncApproval(ContainerImage image, ResourceGroup resourceGroup, String adminComment) {
+        String approvedClusterId = clusterIdOf(resourceGroup);
+        if (this.clusterId != null && approvedClusterId != null
+                && !this.clusterId.equals(approvedClusterId)) {
+            throw new BusinessException(
+                    "신청 시 확정한 클러스터는 승인 중 변경할 수 없습니다.",
+                    ErrorCode.INVALID_INPUT_VALUE);
+        }
         this.containerImage = image;
         this.resourceGroup = resourceGroup;
+        // 이전 테스트/레거시 객체처럼 아직 snapshot이 없는 경우에만 최초 확정한다. DB의 실제 신청은
+        // 생성 시 이미 clusterId가 채워지며, 이후에는 위 검증으로 불변이다.
+        if (this.clusterId == null) {
+            this.clusterId = approvedClusterId;
+        }
 
         if (adminComment != null && !adminComment.isBlank()) {
             this.adminComment = adminComment;
@@ -340,9 +361,16 @@ public class Request extends BaseTimeEntity {
         this.jobId = null;
     }
 
-    /** 이 신청이 쓰는 서버(리소스 그룹의 serverName). */
+    /** 이 신청에 고정해 둔 클러스터 식별자(FARM 또는 LAB). */
     public String getServerName() {
-        return resourceGroup.getServerName();
+        return clusterId;
+    }
+
+    private static String clusterIdOf(ResourceGroup resourceGroup) {
+        if (resourceGroup == null || resourceGroup.getServerName() == null) {
+            return null;
+        }
+        return ClusterId.canonical(resourceGroup.getServerName());
     }
 
     /** 신청의 서버에 있는 계정의 유저네임. 계정 행이 아직 없으면 가입 때 고른 이름이다. */

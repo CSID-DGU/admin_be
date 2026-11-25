@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.requests.dto.response;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 
@@ -24,7 +25,7 @@ public record ContainerInfoDTO(
         String podName,
         @Schema(description = "배포된 노드명", example = "farm1")
         String nodeName,
-        @Schema(description = "Ubuntu GID 목록", example = "[1005, 1006]")
+        @Schema(description = "FARM 공용 그룹의 Ubuntu GID 목록. LAB은 빈 목록", example = "[1005, 1006]")
         List<Long> ubuntuGids,
         @Schema(description = "리소스 그룹 ID", example = "1")
         Integer resourceGroupId,
@@ -56,11 +57,11 @@ public record ContainerInfoDTO(
                 .ubuntuUsername(request.getUbuntuUsername())
                 .podName(request.getPodName())
                 .nodeName(request.getNodeName())
-                .ubuntuGids(
-                        request.getUser().getUserGroups().stream()
+                .ubuntuGids(User.PRIMARY_SERVER.equalsIgnoreCase(request.getServerName())
+                        ? request.getUser().getUserGroups().stream()
                                 .map(ug -> ug.getGroup().getUbuntuGid())
                                 .toList()
-                )
+                        : List.of())
                 .resourceGroupId(request.getResourceGroup() != null
                         ? request.getResourceGroup().getRsgroupId()
                         : null)
@@ -68,7 +69,7 @@ public record ContainerInfoDTO(
                         ? request.getResourceGroup().getResourceGroupName()
                         : null)
                 .serverName(request.getResourceGroup() != null
-                        ? request.getResourceGroup().getServerName()
+                        ? request.getServerName()
                         : null)
                 .imageName(request.getContainerImage().getImageName())
                 .imageVersion(request.getContainerImage().getImageVersion())

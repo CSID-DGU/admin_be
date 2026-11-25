@@ -52,7 +52,7 @@ abstract class OperationJobPoller<T> {
         if (JobResults.awaitingRegistration(jobId, registrationWaitSince(operation))) {
             return;
         }
-        JobResultResponseDTO result = jobClient.getResult(kind, recordId);
+        JobResultResponseDTO result = jobClient.getResult(clusterId(operation), kind, recordId);
         if (JobResults.isFromOtherJob(jobId, result) || JobResults.isRunning(result.phase())) {
             return;
         }
@@ -65,6 +65,9 @@ abstract class OperationJobPoller<T> {
 
     /** 작업 기록의 키. 작업을 등록할 때 이 번호로 등록했다. */
     protected abstract Long recordId(T operation);
+
+    /** 작업이 등록된 Config Server를 고르는 불변 클러스터 ID. */
+    protected abstract String clusterId(T operation);
 
     /** 이번에 등록한 작업 번호(등록 결과를 확인하지 못했으면 null). */
     protected abstract Long jobId(T operation);

@@ -99,7 +99,7 @@ public class PortOperationService {
                 .map(port -> new PortChangeRegisterRequestDTO.Port(port.internalPort(), port.usagePurpose()))
                 .toList();
         PortOperation operation = operationRepository.save(new PortOperation(changeRequest, originalRequest, admin));
-        operation.registered(jobClient.registerPortChange(new PortChangeRegisterRequestDTO(
+        operation.registered(jobClient.registerPortChange(originalRequest.getServerName(), new PortChangeRegisterRequestDTO(
                 operation.getPortOperationId(), originalRequest.getUbuntuUsername(), originalRequest.getPodName(), ports,
                 suspensionGuard.isSuspended(originalRequest.getUser().getUserId()) ? Boolean.TRUE : null)));
         changeRequest.startProcessing(admin, adminComment);
@@ -137,7 +137,7 @@ public class PortOperationService {
             operation.markApplied();
             // 트랜잭션 종료 후(안내 발송 시점) 사용되는 지연 로딩 필드를 미리 초기화
             request.getUser().getEmail();
-            request.getResourceGroup().getServerName();
+            request.getServerName();
             return new AppliedNotice(request, ChangeRequestDecision.of(changeRequest));
         });
         log.info("[portOperation] operationId={} 작업 성공 반영", operationId);
@@ -170,7 +170,7 @@ public class PortOperationService {
             changeRequest.returnToPending();
             Request request = changeRequest.getRequest();
             return new FailureNotice(changeRequest.getChangeRequestId(),
-                    request.getResourceGroup().getServerName(), request.getUbuntuUsername());
+                    request.getServerName(), request.getUbuntuUsername());
         });
         log.error("[portOperation] operationId={} 작업 실패: error={}", operationId, errorCode);
         reblock(ownerId[0]);

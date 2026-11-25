@@ -100,6 +100,7 @@ class PortOperationServiceTest {
         when(request.getStatus()).thenReturn(Status.FULFILLED);
         when(request.getPodName()).thenReturn(POD);
         when(request.getUbuntuUsername()).thenReturn("alice");
+        when(request.getServerName()).thenReturn("FARM");
         when(request.getUser()).thenReturn(owner);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
         when(requestRepository.findByIdForUpdate(REQUEST_ID)).thenReturn(Optional.of(request));
@@ -117,7 +118,7 @@ class PortOperationServiceTest {
             ReflectionTestUtils.setField(saved, "portOperationId", OPERATION_ID);
             return saved;
         });
-        when(jobClient.registerPortChange(any())).thenReturn(JOB_ID);
+        when(jobClient.registerPortChange(any(String.class), any())).thenReturn(JOB_ID);
     }
 
     /** 승인돼 반영 중인 작업을 저장소에 둔다. */
@@ -148,7 +149,7 @@ class PortOperationServiceTest {
         service.start(changeRequest, request, admin, "승인합니다");
 
         ArgumentCaptor<PortChangeRegisterRequestDTO> body = ArgumentCaptor.forClass(PortChangeRegisterRequestDTO.class);
-        verify(jobClient).registerPortChange(body.capture());
+        verify(jobClient).registerPortChange(any(String.class), body.capture());
         assertThat(body.getValue()).isEqualTo(new PortChangeRegisterRequestDTO(OPERATION_ID, "alice", POD,
                 List.of(new PortChangeRegisterRequestDTO.Port(3000, "web")), null));
         assertThat(changeRequest.getStatus()).isEqualTo(Status.PROCESSING);
@@ -172,7 +173,7 @@ class PortOperationServiceTest {
     @Test
     @DisplayName("작업 등록이 실패하면 예외가 그대로 전파되고 변경 요청은 승인 대기로 남는다")
     void registrationFailurePropagates() {
-        when(jobClient.registerPortChange(any())).thenThrow(new BusinessException(ErrorCode.PORT_CHANGE_FAILED));
+        when(jobClient.registerPortChange(any(String.class), any())).thenThrow(new BusinessException(ErrorCode.PORT_CHANGE_FAILED));
 
         assertThatThrownBy(() -> service.start(changeRequest, request, admin, null))
                 .isInstanceOf(BusinessException.class)
@@ -327,7 +328,7 @@ class PortOperationServiceTest {
         service.start(changeRequest, request, admin, "승인합니다");
 
         ArgumentCaptor<PortChangeRegisterRequestDTO> body = ArgumentCaptor.forClass(PortChangeRegisterRequestDTO.class);
-        verify(jobClient).registerPortChange(body.capture());
+        verify(jobClient).registerPortChange(any(String.class), body.capture());
         assertThat(body.getValue().accessBlocked()).isTrue();
     }
 }

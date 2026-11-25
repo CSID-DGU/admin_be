@@ -46,6 +46,11 @@ public class PortOperationJobPoller extends OperationJobPoller<PortOperation> {
     }
 
     @Override
+    protected String clusterId(PortOperation operation) {
+        return operation.getRequest().getServerName();
+    }
+
+    @Override
     protected Long jobId(PortOperation operation) {
         return operation.getJobId();
     }

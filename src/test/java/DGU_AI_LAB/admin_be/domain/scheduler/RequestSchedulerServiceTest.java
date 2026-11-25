@@ -112,7 +112,7 @@ public class RequestSchedulerServiceTest {
                 .build());
 
         ResourceGroup testRg = resourceGroupRepository.save(ResourceGroup.builder()
-                .serverName("FARM-01")
+                .serverName("FARM")
                 .resourceGroupName("RTX 3090")
                 .build());
 
@@ -141,13 +141,13 @@ public class RequestSchedulerServiceTest {
             mockedTime.when(LocalDateTime::now).thenReturn(MOCK_NOW);
             mockedTime.when(() -> LocalDateTime.now(any(ZoneId.class))).thenReturn(MOCK_NOW);
 
-            when(jobClient.registerRevoke(any(), any())).thenReturn(555L);
+            when(jobClient.registerRevoke(any(String.class), any(), any())).thenReturn(555L);
             requestSchedulerService.runScheduler();
 
             // 만료 스케줄러는 회수 작업만 등록하고 돌아온다 — 결과는 회수 결과 폴러가 반영한다.
             assertThat(requestRepository.findById(reqExpired.getRequestId()).orElseThrow().getStatus())
                     .isEqualTo(Status.EXPIRING);
-            when(jobClient.getResult(JobResults.KIND_REVOKE, reqExpired.getRequestId())).thenReturn(
+            when(jobClient.getResult("FARM", JobResults.KIND_REVOKE, reqExpired.getRequestId())).thenReturn(
                     new JobResultResponseDTO(null, JobResults.KIND_REVOKE, 555L, JobResults.PHASE_SUCCESS, null, null, null));
             revokeJobPoller.pollRevokeJobs();
         }
@@ -158,7 +158,7 @@ public class RequestSchedulerServiceTest {
         Request deletedResult = requestRepository.findById(reqExpired.getRequestId()).orElseThrow();
         assertThat(deletedResult.getStatus()).isEqualTo(Status.DELETED);
         // 만료는 Pod만 지운다 — 우분투 계정은 웹 계정 소유라 사용자 삭제/비활성화에서만 회수된다.
-        verify(ubuntuAccountService, never()).registerAccountRevoke(anyString(), any(), any());
+        verify(ubuntuAccountService, never()).registerAccountRevoke(anyString(), anyString(), any(), any());
 
         // [이벤트 리스너 검증] -> 삭제 완료 알림 (MessageUtils 사용 검증)
         // subject: notification.expired.detail.subject
@@ -166,7 +166,7 @@ public class RequestSchedulerServiceTest {
         // 테스트 요청은 podName 미설정(null), 포트 없음("없음"). 30일 남은 컨테이너가 있어 홈은 유지된다고 알린다.
         String expectedDelSubject = messageUtils.get("notification.expired.detail.subject");
         String expectedDelBody = messageUtils.get("notification.expired.detail.body",
-                testUser.getName(), "FARM-01", "testuser",
+                testUser.getName(), "FARM", "testuser",
                 reqExpired.getPodName(),
                 "없음",
                 reqExpired.getExpiresAt().toLocalDate().toString(),
@@ -182,7 +182,7 @@ public class RequestSchedulerServiceTest {
         // 처리 기록 검증: 삭제 1회
         // notification.admin.delete.success ({0}서버 표시, {1}계정, {2}서버)
         assertThat(Alerts.recorded(alarmService))
-                .containsExactly("notification.admin.delete.success FARM-01 testuser FARM-01");
+                .containsExactly("notification.admin.delete.success FARM testuser FARM");
 
 
         // 2. [알림 검증] 1일 전 (req1Day)
@@ -215,7 +215,7 @@ public class RequestSchedulerServiceTest {
                 .build());
 
         ResourceGroup testRg = resourceGroupRepository.save(ResourceGroup.builder()
-                .serverName("FARM-01")
+                .serverName("FARM")
                 .resourceGroupName("RTX 3090")
                 .build());
 
@@ -254,7 +254,7 @@ public class RequestSchedulerServiceTest {
         em.clear();
 
         // 생성 작업이 등록되지 않은 채 멈춘 신청 — 되돌림 대상이다.
-        when(jobClient.getResult(anyString(), anyLong())).thenReturn(
+        when(jobClient.getResult(any(String.class), anyString(), anyLong())).thenReturn(
                 new JobResultResponseDTO(null, JobResults.KIND_PROVISION, null, JobResults.PHASE_NONE, null, null, null));
 
         try (MockedStatic<LocalDateTime> mockedTime = Mockito.mockStatic(LocalDateTime.class, Mockito.CALLS_REAL_METHODS)) {

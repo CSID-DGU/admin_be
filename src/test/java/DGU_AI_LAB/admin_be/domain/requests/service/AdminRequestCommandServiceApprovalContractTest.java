@@ -115,7 +115,7 @@ class AdminRequestCommandServiceApprovalContractTest {
         when(userRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(mockUser));
         when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
         when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
-        when(mockRg.getServerName()).thenReturn("farm2");
+        when(mockRg.getServerName()).thenReturn("FARM");
     }
 
     /**
@@ -127,6 +127,7 @@ class AdminRequestCommandServiceApprovalContractTest {
         when(request.getRequestId()).thenReturn(requestId);
         when(request.getStatus()).thenReturn(Status.PENDING, Status.PROCESSING);
         when(request.getUbuntuUsername()).thenReturn("testuser");
+        when(request.getServerName()).thenReturn("FARM");
         when(mockUser.getUbuntuPasswordHash()).thenReturn("$6$salt$hash");
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
         when(request.getUser()).thenReturn(mockUser);
@@ -148,7 +149,7 @@ class AdminRequestCommandServiceApprovalContractTest {
         order.verify(requestRepository).findByIdForUpdate(requestId);
         order.verify(request).markAsProcessing();
         order.verify(request).prepareAsyncApproval(mockImage, mockRg, "승인합니다");
-        order.verify(jobClient).registerProvision(any(ProvisionRegisterRequestDTO.class));
+        order.verify(jobClient).registerProvision(any(String.class), any(ProvisionRegisterRequestDTO.class));
 
     }
 
@@ -185,7 +186,7 @@ class AdminRequestCommandServiceApprovalContractTest {
         service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
 
         ArgumentCaptor<ProvisionRegisterRequestDTO> captor = ArgumentCaptor.forClass(ProvisionRegisterRequestDTO.class);
-        verify(jobClient).registerProvision(captor.capture());
+        verify(jobClient).registerProvision(any(String.class), captor.capture());
         assertThat(captor.getValue().account().expectedUid()).isEqualTo(55000L);
     }
 
@@ -194,12 +195,12 @@ class AdminRequestCommandServiceApprovalContractTest {
     void recordsRegisteredJobId() {
         Long requestId = 303L;
         Request request = approvableRequest(requestId);
-        when(jobClient.registerProvision(any(ProvisionRegisterRequestDTO.class))).thenReturn(3616L);
+        when(jobClient.registerProvision(any(String.class), any(ProvisionRegisterRequestDTO.class))).thenReturn(3616L);
 
         service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
 
         InOrder order = inOrder(jobClient, request);
-        order.verify(jobClient).registerProvision(any(ProvisionRegisterRequestDTO.class));
+        order.verify(jobClient).registerProvision(any(String.class), any(ProvisionRegisterRequestDTO.class));
         order.verify(request).recordJob(3616L);
     }
 
@@ -215,7 +216,7 @@ class AdminRequestCommandServiceApprovalContractTest {
         ArgumentCaptor<ProvisionRegisterRequestDTO> captor = ArgumentCaptor.forClass(ProvisionRegisterRequestDTO.class);
         InOrder order = inOrder(request, jobClient);
         order.verify(request).prepareAsyncApproval(mockImage, mockRg, null);
-        order.verify(jobClient).registerProvision(captor.capture());
+        order.verify(jobClient).registerProvision(any(String.class), captor.capture());
         assertThat(captor.getValue().account()).isNull();
 
     }
@@ -226,13 +227,13 @@ class AdminRequestCommandServiceApprovalContractTest {
         Long requestId = 303L;
         Request request = approvableRequest(requestId);
         doThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED))
-                .when(jobClient).registerProvision(any());
+                .when(jobClient).registerProvision(any(String.class), any());
 
         assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
                 .isInstanceOf(BusinessException.class);
 
         InOrder order = inOrder(jobClient, alarmService, request);
-        order.verify(jobClient).registerProvision(any(ProvisionRegisterRequestDTO.class));
+        order.verify(jobClient).registerProvision(any(String.class), any(ProvisionRegisterRequestDTO.class));
         order.verify(alarmService).alertNeedsAction(
                 eq("notification.admin.approval.register-failed"), any(Object[].class));
         order.verify(request).revertToPending();

@@ -19,17 +19,19 @@ public interface AccessOperationRepository extends JpaRepository<AccessOperation
 
     List<AccessOperation> findAllByStatus(AccessOperationStatus status);
 
-    boolean existsByUser_UserIdAndStatus(Long userId, AccessOperationStatus status);
+    boolean existsByUser_UserIdAndClusterIdAndStatus(
+            Long userId, String clusterId, AccessOperationStatus status);
 
-    boolean existsByUser_UserIdAndStatusAndBlocked(Long userId, AccessOperationStatus status, boolean blocked);
+    boolean existsByUser_UserIdAndClusterIdAndStatusAndBlocked(
+            Long userId, String clusterId, AccessOperationStatus status, boolean blocked);
 
-    /** 그 사용자에게 마지막으로 성공한 작업. 이 작업의 blocked 가 지금 실제로 적용된 상태다. */
-    Optional<AccessOperation> findFirstByUser_UserIdAndStatusOrderByAccessOperationIdDesc(
-            Long userId, AccessOperationStatus status);
+    /** 그 사용자의 해당 클러스터에서 마지막으로 성공한 작업. 이 작업의 blocked 가 지금 실제 적용 상태다. */
+    Optional<AccessOperation> findFirstByUser_UserIdAndClusterIdAndStatusOrderByAccessOperationIdDesc(
+            Long userId, String clusterId, AccessOperationStatus status);
 
-    /** 지금 접속이 막혀 있는 사용자 — 마지막으로 성공한 작업이 차단인 사용자. */
-    @Query("SELECT o.user.userId FROM AccessOperation o WHERE o.status = :applied AND o.blocked = true "
+    /** 어느 클러스터에서든 마지막 성공 작업이 차단인 사용자. */
+    @Query("SELECT DISTINCT o.user.userId FROM AccessOperation o WHERE o.status = :applied AND o.blocked = true "
             + "AND o.accessOperationId = (SELECT MAX(latest.accessOperationId) FROM AccessOperation latest "
-            + "WHERE latest.user = o.user AND latest.status = :applied)")
+            + "WHERE latest.user = o.user AND latest.clusterId = o.clusterId AND latest.status = :applied)")
     List<Long> findBlockedUserIds(@Param("applied") AccessOperationStatus applied);
 }

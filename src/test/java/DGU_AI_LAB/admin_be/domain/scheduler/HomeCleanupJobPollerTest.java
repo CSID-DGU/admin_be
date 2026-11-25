@@ -61,7 +61,7 @@ class HomeCleanupJobPollerTest {
     }
 
     private void result(Long jobId, String phase, String errorCode) {
-        when(jobClient.getResult(JobResults.KIND_HOME, CLEANUP_ID)).thenReturn(new JobResultResponseDTO(
+        when(jobClient.getResult("FARM", JobResults.KIND_HOME, CLEANUP_ID)).thenReturn(new JobResultResponseDTO(
                 String.valueOf(CLEANUP_ID), JobResults.KIND_HOME, jobId, phase, errorCode, null, null));
     }
 
@@ -82,7 +82,7 @@ class HomeCleanupJobPollerTest {
     @DisplayName("작업 결과의 홈 크기를 삭제 완료에 실어 보낸다")
     void successCarriesSize() {
         processing();
-        when(jobClient.getResult(JobResults.KIND_HOME, CLEANUP_ID)).thenReturn(new JobResultResponseDTO(
+        when(jobClient.getResult("FARM", JobResults.KIND_HOME, CLEANUP_ID)).thenReturn(new JobResultResponseDTO(
                 String.valueOf(CLEANUP_ID), JobResults.KIND_HOME, JOB_ID, JobResults.PHASE_SUCCESS, null, null,
                 new JobResultResponseDTO.Result(null, null, null, null, null, null, null, null, null, null, null,
                         null, null, 5_000L)));
@@ -167,7 +167,7 @@ class HomeCleanupJobPollerTest {
     @DisplayName("결과 조회가 실패하면 닫지 않고 다음 바퀴에 다시 본다")
     void lookupFailureLeavesAttemptOpen() {
         processing();
-        when(jobClient.getResult(any(), any())).thenThrow(new RuntimeException("timeout"));
+        when(jobClient.getResult(any(String.class), any(), any())).thenThrow(new RuntimeException("timeout"));
 
         poller.pollHomeCleanups();
 

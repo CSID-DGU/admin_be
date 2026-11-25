@@ -21,7 +21,9 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -34,8 +36,9 @@ import java.util.function.Supplier;
  * 기록과 상관없이 다시 막는다({@link #reapply}).
  * 결과는 AccessOperationJobPoller 가 {@link #complete}·{@link #fail}로 반영한다.
  *
- * <p>작업 등록은 트랜잭션 안에서 한다. PROCESSING 이 보이는 시점에는 그 작업이 이미 등록돼 있어, 폴러가 등록 전의
- * 작업을 "기록 없음"으로 읽어 실패로 닫지 않는다. 등록이 실패하면 아무것도 남지 않고, 다음 점검 때 다시 맞춘다.
+ * <p>서버별 활성 UbuntuAccount마다 독립된 작업 행과 트랜잭션을 쓴다. PROCESSING 이 보이는 시점에는 그 서버 작업이
+ * 이미 등록돼 있어, 폴러가 등록 전의 작업을 "기록 없음"으로 읽어 실패로 닫지 않는다. 뒤 서버 등록이 실패해도 앞서
+ * 커밋한 작업은 남아 폴러가 끝까지 추적하며, 실패한 서버만 다음 점검에서 다시 맞춘다.
  */
 @Slf4j
 @Service
@@ -52,9 +55,10 @@ public class AccessEnforcementService {
     private final MessageUtils messageUtils;
     private final PlatformTransactionManager transactionManager;
 
-    private record Applied(Long userId, boolean blocked, String name, String email) {}
+    private record Applied(Long userId, String clusterId, boolean blocked, boolean notifyEnded,
+                           String name, String email) {}
 
-    private record Failed(String username, boolean blocked) {}
+    private record Failed(String clusterId, String username, boolean blocked) {}
 
     /** 이 사용자의 접속을 정지 여부에 맞춘다. 이미 맞거나 작업이 도는 중이면 아무것도 하지 않는다. */
     public void enforce(Long userId) {
@@ -92,37 +96,62 @@ public class AccessEnforcementService {
     }
 
     private void align(Long userId, boolean reapplyBlock) {
-        inTransaction(() -> {
-            // 같은 사용자의 작업 등록을 사용자 행 잠금으로 줄 세운다.
+        // 활성 서버 목록을 잠금 안에서 고정한 뒤, 서버마다 별도 트랜잭션으로 등록한다. LAB 등록이 실패해도
+        // 이미 커밋된 FARM PROCESSING 행을 잃지 않아 폴러가 실제 작업 결과를 계속 추적할 수 있다.
+        List<String> clusters = inTransaction(() -> {
             User user = userRepository.findByIdForUpdate(userId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+            return user.getUbuntuAccounts().stream()
+                    .filter(account -> account.isActive() && account.getUsername() != null
+                            && !account.getUsername().isBlank())
+                    .map(account -> account.getServerName())
+                    .sorted(Comparator.naturalOrder())
+                    .toList();
+        });
+        for (String clusterId : clusters) {
+            alignCluster(userId, clusterId, reapplyBlock);
+        }
+    }
+
+    /** 한 서버의 외부 작업 등록과 PROCESSING 행 생성을 하나의 독립 트랜잭션으로 묶는다. */
+    private void alignCluster(Long userId, String clusterId, boolean reapplyBlock) {
+        inTransaction(() -> {
+            // 같은 사용자·서버의 등록을 사용자 행 잠금으로 줄 세운다.
+            User user = userRepository.findByIdForUpdate(userId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+            var account = user.ubuntuAccount(clusterId)
+                    .filter(a -> a.isActive() && a.getUsername() != null && !a.getUsername().isBlank())
+                    .orElse(null);
+            if (account == null) {
+                return null;
+            }
             boolean wanted = suspensionRepository
                     .findFirstByUser_UserIdAndEndsAtAfterOrderByEndsAtDesc(userId, LocalDateTime.now()).isPresent();
-            if (operationRepository.existsByUser_UserIdAndStatus(userId, AccessOperationStatus.PROCESSING)) {
+            if (operationRepository.existsByUser_UserIdAndClusterIdAndStatus(
+                    userId, clusterId, AccessOperationStatus.PROCESSING)) {
                 // 도는 작업이 끝나면 complete 가 다시 맞춘다. 다시 걸기만은 기다리지 않는다 — 도는 차단 작업은 방금
                 // 만들어진 포트를 못 봤을 수 있고, 차단끼리는 겹쳐도 결과가 같다. 해제가 도는 중이면 순서가 뒤바뀌어
                 // 열린 채로 끝날 수 있으므로 기다린다(해제가 끝난 뒤의 차단이 그 포트까지 막는다).
                 boolean overlapSafe = wanted && reapplyBlock && !operationRepository
-                        .existsByUser_UserIdAndStatusAndBlocked(userId, AccessOperationStatus.PROCESSING, false);
+                        .existsByUser_UserIdAndClusterIdAndStatusAndBlocked(
+                                userId, clusterId, AccessOperationStatus.PROCESSING, false);
                 if (!overlapSafe) {
                     return null;
                 }
             }
             boolean applied = operationRepository
-                    .findFirstByUser_UserIdAndStatusOrderByAccessOperationIdDesc(userId, AccessOperationStatus.APPLIED)
+                    .findFirstByUser_UserIdAndClusterIdAndStatusOrderByAccessOperationIdDesc(
+                            userId, clusterId, AccessOperationStatus.APPLIED)
                     .map(AccessOperation::isBlocked).orElse(false);
             if (wanted == applied && !(wanted && reapplyBlock)) {
                 return null;
             }
-            if (user.getUbuntuUsername() == null || user.getUbuntuUsername().isBlank()) {
-                // 리눅스 계정을 정한 적이 없으면 컨테이너도 없다. 막을 포트가 없다.
-                return null;
-            }
-            AccessOperation operation = operationRepository.save(new AccessOperation(user, wanted));
-            operation.registered(jobClient.registerAccessChange(new AccessChangeRegisterRequestDTO(
-                    operation.getAccessOperationId(), operation.getUsername(), wanted)));
-            log.info("[access] operationId={} 접속 {} 등록: userId={}",
-                    operation.getAccessOperationId(), wanted ? "차단" : "해제", userId);
+            AccessOperation operation = operationRepository.save(
+                    new AccessOperation(user, clusterId, account.getUsername(), wanted));
+            operation.registered(jobClient.registerAccessChange(clusterId, new AccessChangeRegisterRequestDTO(
+                    operation.getAccessOperationId(), account.getUsername(), wanted)));
+            log.info("[access] operationId={} cluster={} 접속 {} 등록: userId={}",
+                    operation.getAccessOperationId(), clusterId, wanted ? "차단" : "해제", userId);
             return null;
         });
     }
@@ -134,15 +163,24 @@ public class AccessEnforcementService {
             if (!operation.isProcessing()) {
                 return null;
             }
-            operation.markApplied();
             User user = operation.getUser();
-            return new Applied(user.getUserId(), operation.isBlocked(), user.getName(), user.getEmail());
+            userRepository.findByIdForUpdate(user.getUserId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+            operation.markApplied();
+            boolean suspensionEnded = suspensionRepository
+                    .findFirstByUser_UserIdAndEndsAtAfterOrderByEndsAtDesc(
+                            user.getUserId(), LocalDateTime.now()).isEmpty();
+            boolean notifyEnded = !operation.isBlocked() && suspensionEnded
+                    && allActiveAccountsUnblocked(user, operation);
+            return new Applied(user.getUserId(), operation.getClusterId(), operation.isBlocked(), notifyEnded,
+                    user.getName(), user.getEmail());
         });
         if (applied == null) {
             return;
         }
-        log.info("[access] operationId={} 접속 {} 반영", operationId, applied.blocked() ? "차단" : "해제");
-        if (!applied.blocked()) {
+        log.info("[access] operationId={} cluster={} 접속 {} 반영", operationId, applied.clusterId(),
+                applied.blocked() ? "차단" : "해제");
+        if (applied.notifyEnded()) {
             AfterCommit.run("이용 정지 종료 안내, userId " + applied.userId(), () -> alarmService.notifyUser(
                     applied.name(), applied.email(),
                     messageUtils.get("notification.user.suspension.ended.subject"),
@@ -160,9 +198,10 @@ public class AccessEnforcementService {
                 return null;
             }
             operation.markFailed(truncate(errorCode));
-            return new Failed(operation.getUsername(), operation.isBlocked());
+            return new Failed(operation.getClusterId(), operation.getUsername(), operation.isBlocked());
         });
-        log.error("[access] operationId={} 작업 실패: error={}", operationId, errorCode);
+        log.error("[access] operationId={} cluster={} 작업 실패: error={}", operationId,
+                failed == null ? "unknown" : failed.clusterId(), errorCode);
         if (failed != null) {
             alarmService.alertNeedsAction("notification.admin.access.change-failed",
                     failed.blocked() ? "차단" : "해제", failed.username(), operationId, errorCode);
@@ -172,6 +211,22 @@ public class AccessEnforcementService {
     private AccessOperation lock(Long operationId) {
         return operationRepository.findByIdForUpdate(operationId)
                 .orElseThrow(() -> new EntityNotFoundException(ErrorCode.RESOURCE_NOT_FOUND));
+    }
+
+    /** 현재 완료 행을 포함해 모든 활성 서버의 마지막 성공 상태가 해제인지 확인한다. */
+    private boolean allActiveAccountsUnblocked(User user, AccessOperation completed) {
+        return user.getUbuntuAccounts().stream()
+                .filter(account -> account.isActive())
+                .allMatch(account -> {
+                    if (account.isServer(completed.getClusterId())) {
+                        return !completed.isBlocked();
+                    }
+                    return operationRepository
+                            .findFirstByUser_UserIdAndClusterIdAndStatusOrderByAccessOperationIdDesc(
+                                    user.getUserId(), account.getServerName(), AccessOperationStatus.APPLIED)
+                            .map(operation -> !operation.isBlocked())
+                            .orElse(false);
+                });
     }
 
     private static String truncate(String errorCode) {

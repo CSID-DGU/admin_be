@@ -42,6 +42,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ConfigRequestServiceTest {
 
+    private static final String FARM = "FARM";
+
     @Mock private RequestRepository requestRepository;
     @Mock private UserRepository userRepository;
     @Mock private PortRequestRepository portRequestRepository;
@@ -75,8 +77,10 @@ class ConfigRequestServiceTest {
         User user = mockUserWithGroups(); // when(...).thenReturn() 인자 자리에서 다른 mock을 세팅하면 안 됨(Mockito 스터빙 상태 오염)
         when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
+        when(request.getServerName()).thenReturn(FARM);
 
-        when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
+        when(requestRepository.findByUbuntuAccountUsernameAndClusterIdAndStatusInOrderByRequestIdDesc(
+                username, FARM, Status.openStatuses()))
                 .thenReturn(List.of(request));
         when(portRequestRepository.findByRequestRequestId(requestId)).thenReturn(List.of());
         when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of());
@@ -132,14 +136,16 @@ class ConfigRequestServiceTest {
         User user = mockUserWithGroups(owned);
         when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
+        when(request.getServerName()).thenReturn(FARM);
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>(List.of(askedAilab, askedTeam)));
-        when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
+        when(requestRepository.findByUbuntuAccountUsernameAndClusterIdAndStatusInOrderByRequestIdDesc(
+                username, FARM, Status.openStatuses()))
                 .thenReturn(List.of(request));
         when(portRequestRepository.findByRequestRequestId(1L)).thenReturn(List.of());
         when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of());
 
         // When
-        AcceptInfoResponseDTO result = service.getAcceptInfo(username);
+        AcceptInfoResponseDTO result = service.getAcceptInfo(FARM, username);
 
         // Then
         assertThat(result.groups()).extracting(AcceptInfoResponseDTO.GroupDTO::gid)
@@ -166,13 +172,15 @@ class ConfigRequestServiceTest {
         User user = mockUserWithGroups();
         when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
+        when(request.getServerName()).thenReturn(FARM);
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>(List.of(askedVision, askedNlp)));
-        when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
+        when(requestRepository.findByUbuntuAccountUsernameAndClusterIdAndStatusInOrderByRequestIdDesc(
+                username, FARM, Status.openStatuses()))
                 .thenReturn(List.of(request));
         when(portRequestRepository.findByRequestRequestId(1L)).thenReturn(List.of());
         when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of());
 
-        AcceptInfoResponseDTO result = service.getAcceptInfo(username);
+        AcceptInfoResponseDTO result = service.getAcceptInfo(FARM, username);
 
         assertThat(result.groups()).containsExactly(
                 new AcceptInfoResponseDTO.GroupDTO(null, "vision-lab"),
@@ -212,14 +220,16 @@ class ConfigRequestServiceTest {
         User user = mockUserWithGroups(ug1, ug2);
         when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
+        when(request.getServerName()).thenReturn(FARM);
 
-        when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
+        when(requestRepository.findByUbuntuAccountUsernameAndClusterIdAndStatusInOrderByRequestIdDesc(
+                username, FARM, Status.openStatuses()))
                 .thenReturn(List.of(request));
         when(portRequestRepository.findByRequestRequestId(1L)).thenReturn(List.of());
         when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of());
 
         // When
-        AcceptInfoResponseDTO result = service.getAcceptInfo(username);
+        AcceptInfoResponseDTO result = service.getAcceptInfo(FARM, username);
 
         // Then
         assertThat(result.groups()).hasSize(2);
@@ -254,14 +264,16 @@ class ConfigRequestServiceTest {
         User user = mockUserWithGroups();
         when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
+        when(request.getServerName()).thenReturn(FARM);
 
-        when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
+        when(requestRepository.findByUbuntuAccountUsernameAndClusterIdAndStatusInOrderByRequestIdDesc(
+                username, FARM, Status.openStatuses()))
                 .thenReturn(List.of(request));
         when(portRequestRepository.findByRequestRequestId(2L)).thenReturn(List.of());
         when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of(node));
 
         // When
-        AcceptInfoResponseDTO result = service.getAcceptInfo(username);
+        AcceptInfoResponseDTO result = service.getAcceptInfo(FARM, username);
 
         // Then
         assertThat(result.gpu_nodes()).hasSize(1);
@@ -291,8 +303,10 @@ class ConfigRequestServiceTest {
         User user = mockUserWithGroups();
         when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
+        when(request.getServerName()).thenReturn(FARM);
 
-        when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
+        when(requestRepository.findByUbuntuAccountUsernameAndClusterIdAndStatusInOrderByRequestIdDesc(
+                username, FARM, Status.openStatuses()))
                 .thenReturn(List.of(request));
         when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of());
 
@@ -308,7 +322,7 @@ class ConfigRequestServiceTest {
                 .thenReturn(List.of(tensorboard, webapp));
 
         // When
-        AcceptInfoResponseDTO result = service.getAcceptInfo(username);
+        AcceptInfoResponseDTO result = service.getAcceptInfo(FARM, username);
 
         // Then
         assertThat(result).isNotNull();
@@ -341,8 +355,10 @@ class ConfigRequestServiceTest {
         User user = mockUserWithGroups();
         when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
+        when(request.getServerName()).thenReturn(FARM);
 
-        when(requestRepository.findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(username, Status.openStatuses()))
+        when(requestRepository.findByUbuntuAccountUsernameAndClusterIdAndStatusInOrderByRequestIdDesc(
+                username, FARM, Status.openStatuses()))
                 .thenReturn(List.of(request));
         when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of());
 
@@ -354,7 +370,7 @@ class ConfigRequestServiceTest {
                 .thenReturn(List.of(portReq));
 
         // When
-        AcceptInfoResponseDTO result = service.getAcceptInfo(username);
+        AcceptInfoResponseDTO result = service.getAcceptInfo(FARM, username);
 
         // Then
         assertThat(result.additional_ports()).hasSize(1);
@@ -372,7 +388,7 @@ class ConfigRequestServiceTest {
         mockRequest(3L, username, resourceGroup);
 
         // When
-        AcceptInfoResponseDTO result = service.getAcceptInfo(username);
+        AcceptInfoResponseDTO result = service.getAcceptInfo(FARM, username);
 
         // Then
         assertThat(result.additional_ports()).isEmpty();
@@ -394,14 +410,16 @@ class ConfigRequestServiceTest {
         User user = mockUserWithGroups();
         when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
+        when(request.getServerName()).thenReturn(FARM);
 
         when(requestRepository.findById(5L)).thenReturn(Optional.of(request));
         when(portRequestRepository.findByRequestRequestId(5L)).thenReturn(List.of());
         when(nodeRepository.findAllByResourceGroup(resourceGroup)).thenReturn(List.of());
 
-        AcceptInfoResponseDTO result = service.getAcceptInfoByRequestId(5L);
+        AcceptInfoResponseDTO result = service.getAcceptInfoByRequestId(FARM, 5L);
 
         assertThat(result).isNotNull();
+        assertThat(result.cluster_id()).isEqualTo(FARM);
     }
 
     @ParameterizedTest(name = "status={0}")
@@ -412,7 +430,7 @@ class ConfigRequestServiceTest {
         when(request.getStatus()).thenReturn(status);
         when(requestRepository.findById(6L)).thenReturn(Optional.of(request));
 
-        assertThatThrownBy(() -> service.getAcceptInfoByRequestId(6L))
+        assertThatThrownBy(() -> service.getAcceptInfoByRequestId(FARM, 6L))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.USER_APPROVAL_NOT_FOUND);
@@ -425,10 +443,54 @@ class ConfigRequestServiceTest {
     void getAcceptInfoByRequestId_throws_whenNotFound() {
         when(requestRepository.findById(99L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.getAcceptInfoByRequestId(99L))
+        assertThatThrownBy(() -> service.getAcceptInfoByRequestId(FARM, 99L))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.USER_APPROVAL_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("requestId가 존재해도 호출 클러스터와 저장된 신청 클러스터가 다르면 403 오류로 차단한다")
+    void getAcceptInfoByRequestId_rejectsRequestFromAnotherCluster() {
+        Request request = mock(Request.class);
+        when(request.getStatus()).thenReturn(Status.FULFILLED);
+        when(request.getServerName()).thenReturn("LAB");
+        when(requestRepository.findById(77L)).thenReturn(Optional.of(request));
+
+        assertThatThrownBy(() -> service.getAcceptInfoByRequestId(FARM, 77L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.REQUEST_CLUSTER_MISMATCH);
+
+        verifyNoInteractions(portRequestRepository, nodeRepository);
+    }
+
+    @Test
+    @DisplayName("레거시 username 조회도 호출 클러스터에 속한 신청만 허용한다")
+    void getAcceptInfo_rejectsUsernameFoundOnlyInAnotherCluster() {
+        Request labRequest = mock(Request.class);
+        when(requestRepository.findByUbuntuAccountUsernameAndClusterIdAndStatusInOrderByRequestIdDesc(
+                "alice", FARM, Status.openStatuses())).thenReturn(List.of());
+        when(requestRepository.findByUbuntuAccountUsernameAndStatusInOrderByRequestIdDesc(
+                "alice", Status.openStatuses())).thenReturn(List.of(labRequest));
+
+        assertThatThrownBy(() -> service.getAcceptInfo(FARM, "alice"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.REQUEST_CLUSTER_MISMATCH);
+
+        verifyNoInteractions(portRequestRepository, nodeRepository);
+    }
+
+    @Test
+    @DisplayName("clusterId가 없으면 저장소를 조회하지 않고 내부 인증 오류로 차단한다")
+    void getAcceptInfoByRequestId_rejectsMissingCluster() {
+        assertThatThrownBy(() -> service.getAcceptInfoByRequestId(" ", 5L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INTERNAL_CLUSTER_AUTHENTICATION_FAILED);
+
+        verifyNoInteractions(requestRepository, portRequestRepository, nodeRepository);
     }
 
 }

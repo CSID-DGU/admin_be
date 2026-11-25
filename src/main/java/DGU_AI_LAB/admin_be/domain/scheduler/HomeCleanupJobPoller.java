@@ -8,6 +8,7 @@ import DGU_AI_LAB.admin_be.domain.home.service.HomeCleanupService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -52,6 +53,11 @@ public class HomeCleanupJobPoller extends OperationJobPoller<HomeCleanup> {
     @Override
     protected Long recordId(HomeCleanup cleanup) {
         return cleanup.getHomeCleanupId();
+    }
+
+    @Override
+    protected String clusterId(HomeCleanup cleanup) {
+        return User.PRIMARY_SERVER;
     }
 
     @Override

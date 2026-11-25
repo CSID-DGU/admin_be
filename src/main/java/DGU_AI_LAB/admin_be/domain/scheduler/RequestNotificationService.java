@@ -46,7 +46,7 @@ public class RequestNotificationService {
                 }
 
                 User user = request.getUser();
-                String serverName = request.getResourceGroup().getServerName();
+                String serverName = request.getServerName();
                 String expireDate = request.getExpiresAt().toLocalDate().toString();
                 String subject = messageUtils.get("notification.pre-expiry.subject", dayLabel);
                 String message = messageUtils.get("notification.pre-expiry.body",

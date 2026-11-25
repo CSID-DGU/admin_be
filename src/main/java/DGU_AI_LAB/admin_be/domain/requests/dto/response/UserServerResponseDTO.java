@@ -13,6 +13,8 @@ import java.time.LocalDateTime;
 public record UserServerResponseDTO(
         @Schema(description = "서버 신청 고유 ID", example = "1")
         Long requestId,
+        @Schema(description = "신청에 고정된 클러스터 식별자", example = "FARM", allowableValues = {"FARM", "LAB"})
+        String serverName,
         @Schema(description = "서버 사용 만료일", example = "2025-12-31T23:59:59")
         LocalDateTime expiresAt,
         @Schema(description = "할당된 CPU 코어 수", example = "8")
@@ -30,6 +32,7 @@ public record UserServerResponseDTO(
     public static UserServerResponseDTO fromEntity(Request request, Integer cpuCoreCount, Integer memoryGB, String resourceGroupName, ContainerImageResponseDTO containerImage) {
         return UserServerResponseDTO.builder()
                 .requestId(request.getRequestId())
+                .serverName(request.getServerName())
                 .expiresAt(request.getExpiresAt())
                 .cpuCoreCount(cpuCoreCount)
                 .memoryGB(memoryGB)

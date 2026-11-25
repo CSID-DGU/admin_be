@@ -6,6 +6,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.cluster.ClusterClientRegistry;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +42,7 @@ class PodServiceTest {
     private PodService podService;
 
     @Mock private WebClient webClient;
+    @Mock private ClusterClientRegistry clients;
     @Mock private WebClient.RequestBodyUriSpec requestBodyUriSpec;
     @Mock private WebClient.RequestBodySpec requestBodySpec;
     @Mock private WebClient.RequestHeadersSpec<?> requestHeadersSpec;
@@ -52,7 +54,8 @@ class PodServiceTest {
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setUp() {
-        podService = new PodService(webClient, requestRepository);
+        podService = new PodService(clients, requestRepository);
+        when(clients.podWebClient("FARM")).thenReturn(webClient);
 
         when(webClient.post()).thenReturn(requestBodyUriSpec);
         when(requestBodyUriSpec.uri(anyString())).thenReturn(requestBodySpec);
@@ -71,11 +74,12 @@ class PodServiceTest {
         @Test
         @DisplayName("대응하는 Request가 없으면 실제 Pod 삭제를 호출한다")
         void deleteOrphanPod_noMatchingRequest_deletesPod() {
-            when(requestRepository.existsByPodName("orphan-pod")).thenReturn(false);
+            when(requestRepository.existsByPodNameAndClusterIdIgnoreCase("orphan-pod", "FARM"))
+                    .thenReturn(false);
             when(responseSpec.bodyToMono(Map.class))
                     .thenReturn(Mono.just(Map.of("status", "ok")));
 
-            assertThatCode(() -> podService.deleteOrphanPod("orphan-pod"))
+            assertThatCode(() -> podService.deleteOrphanPod("FARM", "orphan-pod"))
                     .doesNotThrowAnyException();
 
             verify(webClient).delete();
@@ -84,9 +88,10 @@ class PodServiceTest {
         @Test
         @DisplayName("대응하는 Request가 있으면 삭제를 거부하고 실제 Pod 삭제는 호출하지 않는다")
         void deleteOrphanPod_matchingRequestExists_rejectsWithoutDeleting() {
-            when(requestRepository.existsByPodName("tracked-pod")).thenReturn(true);
+            when(requestRepository.existsByPodNameAndClusterIdIgnoreCase("tracked-pod", "FARM"))
+                    .thenReturn(true);
 
-            assertThatThrownBy(() -> podService.deleteOrphanPod("tracked-pod"))
+            assertThatThrownBy(() -> podService.deleteOrphanPod("FARM", "tracked-pod"))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_NOT_ORPHAN);
@@ -97,11 +102,12 @@ class PodServiceTest {
         @Test
         @DisplayName("이름의 사용자에게 생성·이동 작업이 돌고 있으면 podName이 아직 없어도 삭제를 거부한다")
         void deleteOrphanPod_ownerHasPodJob_rejectsWithoutDeleting() {
-            when(requestRepository.existsByPodName("ailab-my-user-1a2b3c4d")).thenReturn(false);
-            when(requestRepository.existsByUser_UbuntuUsernameAndStatusIn(
-                    "my-user", List.of(Status.PROCESSING, Status.MIGRATING))).thenReturn(true);
+            when(requestRepository.existsByPodNameAndClusterIdIgnoreCase(
+                    "ailab-my-user-1a2b3c4d", "FARM")).thenReturn(false);
+            when(requestRepository.existsByUbuntuAccountUsernameAndClusterIdAndStatusIn(
+                    "my-user", "FARM", List.of(Status.PROCESSING, Status.MIGRATING))).thenReturn(true);
 
-            assertThatThrownBy(() -> podService.deleteOrphanPod("ailab-my-user-1a2b3c4d"))
+            assertThatThrownBy(() -> podService.deleteOrphanPod("FARM", "ailab-my-user-1a2b3c4d"))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.POD_JOB_IN_PROGRESS);
@@ -110,13 +116,33 @@ class PodServiceTest {
         }
 
         @Test
+        @DisplayName("LAB Pod 이름은 FARM 이름이 아니라 LAB UbuntuAccount 이름으로 진행 중 작업을 확인한다")
+        void deleteOrphanPod_labOwnerUsesLabScopedUsername() {
+            when(requestRepository.existsByPodNameAndClusterIdIgnoreCase(
+                    "ailab-alice-lab-1a2b3c4d", "LAB")).thenReturn(false);
+            when(requestRepository.existsByUbuntuAccountUsernameAndClusterIdAndStatusIn(
+                    "alice-lab", "LAB", List.of(Status.PROCESSING, Status.MIGRATING))).thenReturn(true);
+
+            assertThatThrownBy(() -> podService.deleteOrphanPod("LAB", "ailab-alice-lab-1a2b3c4d"))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.POD_JOB_IN_PROGRESS);
+
+            verify(requestRepository).existsByUbuntuAccountUsernameAndClusterIdAndStatusIn(
+                    "alice-lab", "LAB", List.of(Status.PROCESSING, Status.MIGRATING));
+            verifyNoInteractions(webClient);
+        }
+
+        @Test
         @DisplayName("이름의 사용자에게 도는 작업이 없으면 삭제한다")
         void deleteOrphanPod_ownerHasNoPodJob_deletesPod() {
-            when(requestRepository.existsByPodName("ailab-alice-1a2b3c4d")).thenReturn(false);
-            when(requestRepository.existsByUser_UbuntuUsernameAndStatusIn(eq("alice"), any())).thenReturn(false);
+            when(requestRepository.existsByPodNameAndClusterIdIgnoreCase(
+                    "ailab-alice-1a2b3c4d", "FARM")).thenReturn(false);
+            when(requestRepository.existsByUbuntuAccountUsernameAndClusterIdAndStatusIn(
+                    eq("alice"), eq("FARM"), any())).thenReturn(false);
             when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "ok")));
 
-            assertThatCode(() -> podService.deleteOrphanPod("ailab-alice-1a2b3c4d"))
+            assertThatCode(() -> podService.deleteOrphanPod("FARM", "ailab-alice-1a2b3c4d"))
                     .doesNotThrowAnyException();
 
             verify(webClient).delete();
@@ -125,13 +151,16 @@ class PodServiceTest {
         @Test
         @DisplayName("관리 규칙 이름이 아닌 Pod는 작업 확인 없이 삭제한다")
         void deleteOrphanPod_unmanagedName_skipsJobCheck() {
-            when(requestRepository.existsByPodName("ailab-alice-manual")).thenReturn(false);
+            when(requestRepository.existsByPodNameAndClusterIdIgnoreCase(
+                    "ailab-alice-manual", "FARM")).thenReturn(false);
             when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "ok")));
 
-            assertThatCode(() -> podService.deleteOrphanPod("ailab-alice-manual"))
+            assertThatCode(() -> podService.deleteOrphanPod("FARM", "ailab-alice-manual"))
                     .doesNotThrowAnyException();
 
-            verify(requestRepository, never()).existsByUser_UbuntuUsernameAndStatusIn(anyString(), any());
+            verify(requestRepository, never())
+                    .existsByUbuntuAccountUsernameAndClusterIdAndStatusIn(
+                            anyString(), anyString(), any());
             verify(webClient).delete();
         }
     }

@@ -78,6 +78,7 @@ class RequestNotificationServiceTest {
         Request request = mock(Request.class);
         when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(rg);
+        when(request.getServerName()).thenReturn(serverName);
         when(request.getUbuntuUsername()).thenReturn(ubuntuUsername);
         when(request.getExpiresAt()).thenReturn(expiresAt);
 

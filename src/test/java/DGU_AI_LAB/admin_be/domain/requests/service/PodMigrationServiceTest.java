@@ -81,9 +81,11 @@ class PodMigrationServiceTest {
         when(request.getUbuntuUsername()).thenReturn("testuser");
         when(request.getPodName()).thenReturn("ailab-testuser-old");
         when(request.getRequestId()).thenReturn(1L);
+        when(request.getServerName()).thenReturn("FARM");
         when(requestRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(request));
         when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
+        when(resourceGroup.getServerName()).thenReturn("FARM");
     }
 
     private Node node(String nodeId) {
@@ -111,7 +113,7 @@ class PodMigrationServiceTest {
         when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
         when(request.getStatus()).thenReturn(Status.MIGRATING);
         when(request.getJobId()).thenReturn(11L);
-        when(jobClient.getResult(JobResults.KIND_MIGRATE, 1L))
+        when(jobClient.getResult("FARM", JobResults.KIND_MIGRATE, 1L))
                 .thenReturn(result(JobResults.PHASE_SUCCESS, migrated(null)));
 
         service.settleFinishedMigration(1L);
@@ -125,7 +127,7 @@ class PodMigrationServiceTest {
     void settleAppliesFinishedResult() {
         when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
         when(request.getStatus()).thenReturn(Status.MIGRATING);
-        when(jobClient.getResult(JobResults.KIND_MIGRATE, 1L))
+        when(jobClient.getResult("FARM", JobResults.KIND_MIGRATE, 1L))
                 .thenReturn(result(JobResults.PHASE_SUCCESS, migrated(null)));
 
         service.settleFinishedMigration(1L);
@@ -139,7 +141,7 @@ class PodMigrationServiceTest {
     void settleIgnoresRunningJob() {
         when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
         when(request.getStatus()).thenReturn(Status.MIGRATING);
-        when(jobClient.getResult(JobResults.KIND_MIGRATE, 1L))
+        when(jobClient.getResult("FARM", JobResults.KIND_MIGRATE, 1L))
                 .thenReturn(result(JobResults.PHASE_START, null));
 
         service.settleFinishedMigration(1L);
@@ -155,7 +157,7 @@ class PodMigrationServiceTest {
 
         service.settleFinishedMigration(1L);
 
-        verify(jobClient, never()).getResult(anyString(), any());
+        verify(jobClient, never()).getResult(any(String.class), anyString(), any());
     }
 
     @Test
@@ -165,7 +167,7 @@ class PodMigrationServiceTest {
 
         verify(request).beginMigration();
         ArgumentCaptor<MigrateRegisterRequestDTO> captor = ArgumentCaptor.forClass(MigrateRegisterRequestDTO.class);
-        verify(jobClient).registerMigrate(captor.capture());
+        verify(jobClient).registerMigrate(any(String.class), captor.capture());
         assertThat(captor.getValue()).isEqualTo(MigrateRegisterRequestDTO.move(1L, "ailab-testuser-old", "testuser",
                 List.of("farm2", "farm7"), null, true));
     }
@@ -176,7 +178,7 @@ class PodMigrationServiceTest {
         service.startRestart(1L, new RestartPodRequestDTO(false, null));
 
         verify(request).beginMigration();
-        verify(jobClient).registerMigrate(MigrateRegisterRequestDTO.restart(1L, "ailab-testuser-old", "testuser", false));
+        verify(jobClient).registerMigrate("FARM", MigrateRegisterRequestDTO.restart(1L, "ailab-testuser-old", "testuser", false));
         verifyNoInteractions(restartThrottle, nodeRepository);
     }
 
@@ -189,7 +191,7 @@ class PodMigrationServiceTest {
         service.startOwnRestart(7L, 1L, null);
 
         verify(restartThrottle).acquire(7L);
-        verify(jobClient).registerMigrate(MigrateRegisterRequestDTO.restart(1L, "ailab-testuser-old", "testuser", true));
+        verify(jobClient).registerMigrate("FARM", MigrateRegisterRequestDTO.restart(1L, "ailab-testuser-old", "testuser", true));
     }
 
     @Test
@@ -252,7 +254,7 @@ class PodMigrationServiceTest {
     @Test
     @DisplayName("등록한 작업 번호를 신청에 남긴다")
     void startRecordsJobId() {
-        when(jobClient.registerMigrate(any())).thenReturn(3700L);
+        when(jobClient.registerMigrate(any(String.class), any())).thenReturn(3700L);
         when(request.getStatus()).thenReturn(Status.MIGRATING);
 
         service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null));
@@ -274,7 +276,7 @@ class PodMigrationServiceTest {
     @DisplayName("등록이 실패하면 FULFILLED로 되돌리고 오류를 전파한다")
     void startRevertsWhenRegistrationFails() {
         when(request.getStatus()).thenReturn(Status.MIGRATING);
-        doThrow(new BusinessException(ErrorCode.INFRA_REQUEST_REJECTED)).when(jobClient).registerMigrate(any());
+        doThrow(new BusinessException(ErrorCode.INFRA_REQUEST_REJECTED)).when(jobClient).registerMigrate(any(String.class), any());
 
         assertThatThrownBy(() -> service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null)))
                 .isInstanceOf(BusinessException.class);
@@ -287,8 +289,8 @@ class PodMigrationServiceTest {
         when(request.getStatus()).thenReturn(Status.MIGRATING);
         doThrow(new BusinessException("작업 등록 중 오류: timeout", ErrorCode.POD_MIGRATION_FAILED,
                 new java.util.concurrent.TimeoutException()))
-                .when(jobClient).registerMigrate(any());
-        when(jobClient.getResult("migrate", 1L)).thenReturn(
+                .when(jobClient).registerMigrate(any(String.class), any());
+        when(jobClient.getResult("FARM", "migrate", 1L)).thenReturn(
                 new JobResultResponseDTO("1", "migrate", 3800L, "RETRY", null, null, null));
 
         service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null));
@@ -303,11 +305,11 @@ class PodMigrationServiceTest {
         when(request.getStatus()).thenReturn(Status.MIGRATING);
         doThrow(new BusinessException("작업 등록 중 오류", ErrorCode.POD_MIGRATION_FAILED,
                 new java.net.ConnectException("refused")))
-                .when(jobClient).registerMigrate(any());
+                .when(jobClient).registerMigrate(any(String.class), any());
 
         assertThatThrownBy(() -> service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null)))
                 .isInstanceOf(BusinessException.class);
-        verify(jobClient, never()).getResult(anyString(), any());
+        verify(jobClient, never()).getResult(any(String.class), anyString(), any());
         verify(request).endMigration();
     }
 
@@ -317,8 +319,8 @@ class PodMigrationServiceTest {
         when(request.getStatus()).thenReturn(Status.MIGRATING);
         doThrow(new BusinessException("작업 등록 중 오류: timeout", ErrorCode.POD_MIGRATION_FAILED,
                 new java.util.concurrent.TimeoutException()))
-                .when(jobClient).registerMigrate(any());
-        when(jobClient.getResult("migrate", 1L)).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
+                .when(jobClient).registerMigrate(any(String.class), any());
+        when(jobClient.getResult("FARM", "migrate", 1L)).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
 
         assertThatThrownBy(() -> service.startMigration(1L, new MigratePodRequestDTO(List.of("farm2"), null, null)))
                 .isInstanceOf(BusinessException.class);
@@ -487,9 +489,10 @@ class PodMigrationServiceTest {
     @DisplayName("진행 중인 작업이면 그 작업에서 끝난 단계 이름을 함께 준다")
     void latestMigrationCarriesCompletedStepsWhileRunning() {
         when(requestRepository.existsById(1L)).thenReturn(true);
-        when(jobClient.getResult("migrate", 1L)).thenReturn(
+        when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
+        when(jobClient.getResult("FARM", "migrate", 1L)).thenReturn(
                 new JobResultResponseDTO("1", "migrate", 9L, "START", null, null, null));
-        when(jobClient.getSteps("migrate", 1L)).thenReturn(new JobStepsResponseDTO("1", "migrate", List.of(
+        when(jobClient.getSteps("FARM", "migrate", 1L)).thenReturn(new JobStepsResponseDTO("1", "migrate", List.of(
                 new JobStepsResponseDTO.Job(9L, null, null, "START", null, List.of(
                         new JobStepsResponseDTO.Step(null, "SELECT_NODE", "SUCCESS", 1, null, null, null, null, null),
                         new JobStepsResponseDTO.Step(null, "COMMIT_IMAGE", "SUCCESS", 1, null, null, null, null, null),
@@ -504,9 +507,10 @@ class PodMigrationServiceTest {
     @DisplayName("단계 기록을 읽지 못해도 결과 조회는 실패하지 않는다")
     void latestMigrationSurvivesStepLookupFailure() {
         when(requestRepository.existsById(1L)).thenReturn(true);
-        when(jobClient.getResult("migrate", 1L)).thenReturn(
+        when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
+        when(jobClient.getResult("FARM", "migrate", 1L)).thenReturn(
                 new JobResultResponseDTO("1", "migrate", 9L, "START", null, null, null));
-        when(jobClient.getSteps("migrate", 1L)).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
+        when(jobClient.getSteps("FARM", "migrate", 1L)).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
 
         assertThat(service.getLatestMigration(1L).completedSteps()).isEmpty();
     }
@@ -515,7 +519,8 @@ class PodMigrationServiceTest {
     @DisplayName("마지막 마이그레이션 결과를 화면용으로 바꿔 준다")
     void latestMigration() {
         when(requestRepository.existsById(1L)).thenReturn(true);
-        when(jobClient.getResult("migrate", 1L)).thenReturn(
+        when(requestRepository.findById(1L)).thenReturn(Optional.of(request));
+        when(jobClient.getResult("FARM", "migrate", 1L)).thenReturn(
                 new JobResultResponseDTO("1", "migrate", 9L, "SUCCESS", null, "2026-09-15 12:00:00", migrated(null)));
 
         MigrationResultResponseDTO result = service.getLatestMigration(1L);
@@ -548,7 +553,7 @@ class PodMigrationServiceTest {
 
         service.startRestart(1L, new RestartPodRequestDTO(false, null));
 
-        verify(jobClient).registerMigrate(
+        verify(jobClient).registerMigrate("FARM",
                 MigrateRegisterRequestDTO.restart(1L, "ailab-testuser-old", "testuser", false).accessBlocked(true));
     }
 
@@ -579,7 +584,7 @@ class PodMigrationServiceTest {
 
         service.startRestart(1L, new RestartPodRequestDTO(null, 5L));
 
-        verify(jobClient).registerMigrate(
+        verify(jobClient).registerMigrate("FARM",
                 MigrateRegisterRequestDTO.restart(1L, "ailab-testuser-old", "testuser", false, "dguailab/decs:2"));
     }
 

@@ -29,17 +29,42 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     int updateSlackMessageTs(@Param("requestId") Long requestId, @Param("ts") String ts);
 
     List<Request> findAllByUser_UserId(Long userId);
-    List<Request> findAllByStatus(Status status);
+    /**
+     * 작업 결과 폴러는 트랜잭션 밖에서 신청의 클러스터를 골라야 한다. ResourceGroup을 함께 읽지 않으면
+     * {@code Request.getServerName()}이 지연 로딩 프록시를 열다가 실패해 결과를 영원히 반영하지 못한다.
+     */
+    @Query("SELECT r FROM Request r JOIN FETCH r.resourceGroup WHERE r.status = :status")
+    List<Request> findAllByStatus(@Param("status") Status status);
     List<Request> findAllByTestTrueAndStatusOrderByRequestIdAsc(Status status);
 
     List<Request> findAllByUser_UserIdAndStatus(Long userId, Status status);
     boolean existsByPodName(String podName);
-    @Query("SELECT r FROM Request r JOIN FETCH r.user WHERE r.podName IN :podNames")
-    List<Request> findAllByPodNameIn(@Param("podNames") Collection<String> podNames);
+    boolean existsByPodNameAndClusterIdIgnoreCase(String podName, String clusterId);
+    /** GPU 프로세스 소유자 해석용. 같은 Pod 이름의 다른 클러스터·노드·종료 신청을 섞지 않는다. */
+    @Query("SELECT r FROM Request r JOIN FETCH r.user " +
+           "WHERE r.podName IN :podNames " +
+           "AND LOWER(r.clusterId) = LOWER(:clusterId) " +
+           "AND LOWER(r.nodeName) = LOWER(:nodeName) " +
+           "AND r.status IN :statuses")
+    List<Request> findAllByPodNameInAndClusterIdAndNodeNameAndStatusIn(
+            @Param("podNames") Collection<String> podNames,
+            @Param("clusterId") String clusterId,
+            @Param("nodeName") String nodeName,
+            @Param("statuses") Collection<Status> statuses);
 
     @Query("SELECT r FROM Request r JOIN FETCH r.user WHERE r.requestId = :requestId")
     Optional<Request> findByIdWithUser(@Param("requestId") Long requestId);
-    boolean existsByUser_UbuntuUsernameAndStatusIn(String ubuntuUsername, Collection<Status> statuses);
+    /**
+     * Pod 이름에서 읽은 유저네임이 같은 클러스터의 서버별 계정에 속하고, 그 사용자의 같은 클러스터 신청이
+     * 생성·이동 중인가. User.ubuntuUsername은 FARM/LAB에서 이름이 다른 이전 계정을 표현하지 못하므로 쓰지 않는다.
+     */
+    @Query("SELECT COUNT(r) > 0 FROM Request r JOIN r.user u JOIN u.ubuntuAccounts a " +
+           "WHERE a.username = :username AND LOWER(a.serverName) = LOWER(:clusterId) " +
+           "AND LOWER(r.clusterId) = LOWER(:clusterId) AND r.status IN :statuses")
+    boolean existsByUbuntuAccountUsernameAndClusterIdAndStatusIn(
+            @Param("username") String username,
+            @Param("clusterId") String clusterId,
+            @Param("statuses") Collection<Status> statuses);
     boolean existsByUser_UserIdAndStatus(Long userId, Status status);
     boolean existsByUser_UserIdAndStatusIn(Long userId, Collection<Status> statuses);
     long countByUser_UserIdAndStatusIn(Long userId, Collection<Status> statuses);
@@ -51,13 +76,25 @@ public interface RequestRepository extends JpaRepository<Request, Long> {
     List<Request> findAllByUser_UserIdAndStatusIn(Long userId, List<Status> statuses);
 
     /**
-     * 유저네임은 웹 계정(User)에 하나라 같은 유저네임의 종료된 신청(DENIED/DELETED) 이력이 계속 쌓인다. 따라서 유저네임으로
-     * 신청을 찾을 때는 반드시 살아있는 상태로 범위를 좁혀야 하고, 그 안에서 가장 최근 건을
-     * 쓴다. 정상 운영에서는 사용자당 살아있는 신청이 하나뿐이라 결과도 하나다.
+     * 서버별 UbuntuAccount의 유저네임과 그 서버의 신청이 함께 맞는 열린 신청만 찾는다. 계정의 FARM 이름이
+     * LAB 신청과 교차 결합되지 않도록 account.serverName과 Request의 불변 clusterId를 같은 값으로 묶는다.
      */
-    @Query("SELECT r FROM Request r JOIN FETCH r.user u WHERE u.ubuntuUsername = :username AND r.status IN :statuses ORDER BY r.requestId DESC")
-    List<Request> findByUbuntuUsernameAndStatusInOrderByRequestIdDesc(@Param("username") String username,
-                                                                      @Param("statuses") List<Status> statuses);
+    @Query("SELECT DISTINCT r FROM Request r JOIN FETCH r.user u JOIN u.ubuntuAccounts a " +
+           "WHERE a.username = :username AND LOWER(a.serverName) = LOWER(r.clusterId) " +
+           "AND r.status IN :statuses ORDER BY r.requestId DESC")
+    List<Request> findByUbuntuAccountUsernameAndStatusInOrderByRequestIdDesc(
+            @Param("username") String username,
+            @Param("statuses") List<Status> statuses);
+
+    /** Config Server의 레거시 username 조회도 호출 클러스터의 UbuntuAccount로만 신청을 고른다. */
+    @Query("SELECT DISTINCT r FROM Request r JOIN FETCH r.user u JOIN u.ubuntuAccounts a " +
+           "WHERE a.username = :username AND LOWER(a.serverName) = LOWER(:clusterId) " +
+           "AND LOWER(r.clusterId) = LOWER(:clusterId) " +
+           "AND r.status IN :statuses ORDER BY r.requestId DESC")
+    List<Request> findByUbuntuAccountUsernameAndClusterIdAndStatusInOrderByRequestIdDesc(
+            @Param("username") String username,
+            @Param("clusterId") String clusterId,
+            @Param("statuses") List<Status> statuses);
 
     /**
      * 이 사용자의 리눅스 계정이 배포된 farm 노드가 남은 신청을 최신순으로 반환한다.

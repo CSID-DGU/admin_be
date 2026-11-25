@@ -40,7 +40,7 @@ public record SaveRequestResponseDTO(
         Long ubuntuUid,
         @Schema(description = "Ubuntu primary GID", example = "2001", nullable = true)
         Long ubuntuGid,
-        @Schema(description = "Ubuntu GID 목록 — 계정에 이미 들어가 있는 그룹(이 신청이 고른 그룹이 아니다)", example = "[1005, 1006]")
+        @Schema(description = "FARM 계정에 이미 들어가 있는 공용 그룹 GID(이 신청이 고른 그룹이 아니다). LAB은 빈 목록", example = "[1005, 1006]")
         List<Long> ubuntuGids,
         @Schema(description = "이 신청이 고른 공유 그룹. 새 그룹(pending)은 승인되면 만들어진다")
         List<RequestedGroupDTO> requestedGroups,
@@ -80,12 +80,12 @@ public record SaveRequestResponseDTO(
             @Schema(description = "서버명", example = "LAB")
             String serverName
     ) {
-        public static AdminResourceGroupInfo fromEntity(ResourceGroup resourceGroup) {
+        public static AdminResourceGroupInfo fromEntity(ResourceGroup resourceGroup, String requestClusterId) {
             return AdminResourceGroupInfo.builder()
                     .rsgroupId(resourceGroup.getRsgroupId())
                     .resourceGroupName(resourceGroup.getResourceGroupName())
                     .description(resourceGroup.getDescription())
-                    .serverName(resourceGroup.getServerName())
+                    .serverName(requestClusterId)
                     .build();
         }
     }
@@ -173,7 +173,7 @@ public record SaveRequestResponseDTO(
         return SaveRequestResponseDTO.builder()
                 .requestId(request.getRequestId())
                 .resourceGroupId(request.getResourceGroup().getRsgroupId())
-                .resourceGroup(AdminResourceGroupInfo.fromEntity(request.getResourceGroup()))
+                .resourceGroup(AdminResourceGroupInfo.fromEntity(request.getResourceGroup(), request.getServerName()))
                 .user(AdminUserInfo.fromEntity(request.getUser()))
                 .imageId(request.getContainerImage().getImageId())
                 .imageName(request.getContainerImage().getImageName())
@@ -181,7 +181,7 @@ public record SaveRequestResponseDTO(
                 .ubuntuUsername(request.getUbuntuUsername())
                 .ubuntuUid(request.getUbuntuUid())
                 .ubuntuGid(request.getUbuntuGid())
-                .ubuntuGids(ubuntuGids)
+                .ubuntuGids(User.PRIMARY_SERVER.equalsIgnoreCase(request.getServerName()) ? ubuntuGids : List.of())
                 .requestedGroups(requestedGroups.stream()
                         .map(RequestedGroupDTO::fromEntity)
                         .sorted(Comparator.comparing(RequestedGroupDTO::groupName))

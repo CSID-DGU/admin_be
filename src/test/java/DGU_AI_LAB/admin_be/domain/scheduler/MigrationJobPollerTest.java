@@ -37,12 +37,13 @@ class MigrationJobPollerTest {
         poller = new MigrationJobPoller(requestRepository, jobClient, new InMemoryAlertDeduplicator(), podMigrationService);
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(1L);
+        when(request.getServerName()).thenReturn("FARM");
         when(request.getJobId()).thenReturn(5L); // given()의 작업 번호와 같다
         when(requestRepository.findAllByStatus(Status.MIGRATING)).thenReturn(List.of(request));
     }
 
     private void given(String phase, String errorCode, JobResultResponseDTO.Result made) {
-        when(jobClient.getResult("migrate", 1L))
+        when(jobClient.getResult("FARM", "migrate", 1L))
                 .thenReturn(new JobResultResponseDTO("1", "migrate", 5L, phase, errorCode, null, made));
     }
 
@@ -81,13 +82,13 @@ class MigrationJobPollerTest {
         given("UNKNOWN", null, null);
         poller.pollMigrationJobs();
         poller.pollMigrationJobs();
-        verify(jobClient, times(1)).getResult("migrate", 1L);
+        verify(jobClient, times(1)).getResult("FARM", "migrate", 1L);
 
         JobResultResponseDTO.Result made = new JobResultResponseDTO.Result(null, null, "p", "farm7", List.of());
         given("SUCCESS", null, made);
         poller.clock = java.time.Clock.fixed(start.plus(JobResultPoller.UNRESOLVED_RECHECK_INTERVAL), java.time.ZoneOffset.UTC);
         poller.pollMigrationJobs();
-        verify(jobClient, times(2)).getResult("migrate", 1L);
+        verify(jobClient, times(2)).getResult("FARM", "migrate", 1L);
         verify(podMigrationService).completeMigrationJob(1L, made);
     }
 
@@ -99,13 +100,14 @@ class MigrationJobPollerTest {
 
         Request retried = mock(Request.class);
         when(retried.getRequestId()).thenReturn(1L);
+        when(retried.getServerName()).thenReturn("FARM");
         when(retried.getJobId()).thenReturn(6L);
         when(requestRepository.findAllByStatus(Status.MIGRATING)).thenReturn(List.of(retried));
-        when(jobClient.getResult("migrate", 1L))
+        when(jobClient.getResult("FARM", "migrate", 1L))
                 .thenReturn(new JobResultResponseDTO("1", "migrate", 6L, "FAIL", "POD_NOT_FOUND", null, null));
         poller.pollMigrationJobs();
 
-        verify(jobClient, times(2)).getResult("migrate", 1L);
+        verify(jobClient, times(2)).getResult("FARM", "migrate", 1L);
         verify(podMigrationService).failMigrationJob(any(), any());
     }
 
@@ -135,6 +137,7 @@ class MigrationJobPollerTest {
     void ignoresPreviousJobResult() {
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(1L);
+        when(request.getServerName()).thenReturn("FARM");
         when(request.getJobId()).thenReturn(6L);
         when(requestRepository.findAllByStatus(Status.MIGRATING)).thenReturn(List.of(request));
         given("SUCCESS", null, null);

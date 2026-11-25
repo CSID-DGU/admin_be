@@ -68,7 +68,7 @@ class HomeCleanupSchedulerTest {
     void registersJob() {
         candidates(7L);
         when(homeCleanupService.begin(eq(7L), any())).thenReturn(Optional.of(TARGET));
-        when(jobClient.registerHomeDelete(new HomeDeleteRegisterRequestDTO(CLEANUP_ID, "hong", 55010L)))
+        when(jobClient.registerHomeDelete("FARM", new HomeDeleteRegisterRequestDTO(CLEANUP_ID, "hong", 55010L)))
                 .thenReturn(900L);
 
         scheduler.runHomeCleanup();
@@ -93,7 +93,7 @@ class HomeCleanupSchedulerTest {
     void unconfirmedRegistrationIsLeftToPoller() {
         candidates(7L);
         when(homeCleanupService.begin(eq(7L), any())).thenReturn(Optional.of(TARGET));
-        when(jobClient.registerHomeDelete(any())).thenThrow(new JobRegistrationUnconfirmedException(
+        when(jobClient.registerHomeDelete(any(String.class), any())).thenThrow(new JobRegistrationUnconfirmedException(
                 "timeout", ErrorCode.HOME_DELETE_FAILED, new RuntimeException()));
 
         scheduler.runHomeCleanup();
@@ -107,7 +107,7 @@ class HomeCleanupSchedulerTest {
     void rejectedRegistrationFailsAndNotifies() {
         candidates(7L);
         when(homeCleanupService.begin(eq(7L), any())).thenReturn(Optional.of(TARGET));
-        when(jobClient.registerHomeDelete(any())).thenThrow(new RuntimeException("400"));
+        when(jobClient.registerHomeDelete(any(String.class), any())).thenThrow(new RuntimeException("400"));
         when(homeCleanupService.fail(CLEANUP_ID, HomeCleanupScheduler.REGISTRATION_FAILED))
                 .thenReturn(Optional.of(TARGET));
 
@@ -122,7 +122,7 @@ class HomeCleanupSchedulerTest {
         candidates(7L, 8L);
         when(homeCleanupService.begin(eq(7L), any())).thenThrow(new RuntimeException("db"));
         when(homeCleanupService.begin(eq(8L), any())).thenReturn(Optional.of(TARGET));
-        when(jobClient.registerHomeDelete(any())).thenReturn(901L);
+        when(jobClient.registerHomeDelete(any(String.class), any())).thenReturn(901L);
 
         scheduler.runHomeCleanup();
 

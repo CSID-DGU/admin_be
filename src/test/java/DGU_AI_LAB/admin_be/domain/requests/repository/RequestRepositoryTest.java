@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -54,11 +55,12 @@ class RequestRepositoryTest {
                 .department("컴퓨터공학과")
                 .ubuntuUsername("pendinguser")
                 .build());
+        user.ubuntuAccountFor("FARM");
 
         resourceGroup = resourceGroupRepository.save(ResourceGroup.builder()
                 .resourceGroupName("GPU Server A")
                 .description("메인 GPU 서버")
-                .serverName("server-01")
+                .serverName("FARM")
                 .build());
 
         containerImage = containerImageRepository.save(ContainerImage.builder()
@@ -86,6 +88,7 @@ class RequestRepositoryTest {
                 .department("컴퓨터공학과")
                 .ubuntuUsername("fulfilleduser")
                 .build());
+        fulfilledOwner.ubuntuAccountFor("FARM");
 
         Request req2 = Request.builder()
                 .expiresAt(LocalDateTime.now().plusDays(60))
@@ -127,14 +130,14 @@ class RequestRepositoryTest {
     }
 
     @Nested
-    @DisplayName("findByUbuntuUsernameAndStatusInOrderByRequestIdDesc")
+    @DisplayName("findByUbuntuAccountUsernameAndStatusInOrderByRequestIdDesc")
     class FindByUbuntuUsernameAndStatusIn {
 
         @Test
         @DisplayName("살아있는 상태의 Request만 반환한다")
         void returnsOpenRequest_whenExists() {
             List<Request> result = requestRepository
-                    .findByUbuntuUsernameAndStatusInOrderByRequestIdDesc("pendinguser", Status.openStatuses());
+                    .findByUbuntuAccountUsernameAndStatusInOrderByRequestIdDesc("pendinguser", Status.openStatuses());
 
             assertThat(result).hasSize(1);
             assertThat(result.get(0).getStatus()).isEqualTo(Status.PENDING);
@@ -144,7 +147,7 @@ class RequestRepositoryTest {
         @DisplayName("존재하지 않는 ubuntuUsername으로 조회하면 빈 목록을 반환한다")
         void returnsEmpty_whenNotExists() {
             List<Request> result = requestRepository
-                    .findByUbuntuUsernameAndStatusInOrderByRequestIdDesc("notexist", Status.openStatuses());
+                    .findByUbuntuAccountUsernameAndStatusInOrderByRequestIdDesc("notexist", Status.openStatuses());
 
             assertThat(result).isEmpty();
         }
@@ -156,10 +159,43 @@ class RequestRepositoryTest {
             assertThat(all).filteredOn(r -> "pendinguser".equals(r.getUbuntuUsername())).hasSize(2);
 
             List<Request> result = requestRepository
-                    .findByUbuntuUsernameAndStatusInOrderByRequestIdDesc("pendinguser", Status.openStatuses());
+                    .findByUbuntuAccountUsernameAndStatusInOrderByRequestIdDesc("pendinguser", Status.openStatuses());
 
             assertThat(result).hasSize(1);
             assertThat(result.get(0).getStatus()).isEqualTo(Status.PENDING);
+        }
+
+        @Test
+        @DisplayName("FARM과 LAB 유저네임이 다르면 계정의 서버와 신청 서버가 모두 맞는 행만 반환한다")
+        void scopesDifferentServerUsernamesToMatchingAccountAndRequest() {
+            ResourceGroup lab = resourceGroupRepository.save(ResourceGroup.builder()
+                    .resourceGroupName("LAB GPU")
+                    .description("LAB")
+                    .serverName("LAB")
+                    .build());
+            var labAccount = user.ubuntuAccountFor("LAB");
+            ReflectionTestUtils.setField(labAccount, "username", "pendinguser-lab");
+            Request labRequest = requestRepository.saveAndFlush(Request.builder()
+                    .expiresAt(LocalDateTime.now().plusDays(30))
+                    .usagePurpose("LAB 연구")
+                    .formAnswers("{}")
+                    .user(user)
+                    .resourceGroup(lab)
+                    .containerImage(containerImage)
+                    .build());
+
+            assertThat(requestRepository.findByUbuntuAccountUsernameAndClusterIdAndStatusInOrderByRequestIdDesc(
+                    "pendinguser-lab", "LAB", Status.openStatuses()))
+                    .extracting(Request::getRequestId).containsExactly(labRequest.getRequestId());
+            assertThat(requestRepository.findByUbuntuAccountUsernameAndClusterIdAndStatusInOrderByRequestIdDesc(
+                    "pendinguser", "LAB", Status.openStatuses())).isEmpty();
+            assertThat(requestRepository.findByUbuntuAccountUsernameAndStatusInOrderByRequestIdDesc(
+                    "pendinguser-lab", Status.openStatuses()))
+                    .extracting(Request::getRequestId).containsExactly(labRequest.getRequestId());
+            assertThat(requestRepository.existsByUbuntuAccountUsernameAndClusterIdAndStatusIn(
+                    "pendinguser-lab", "LAB", List.of(Status.PENDING))).isTrue();
+            assertThat(requestRepository.existsByUbuntuAccountUsernameAndClusterIdAndStatusIn(
+                    "pendinguser", "LAB", List.of(Status.PENDING))).isFalse();
         }
     }
 

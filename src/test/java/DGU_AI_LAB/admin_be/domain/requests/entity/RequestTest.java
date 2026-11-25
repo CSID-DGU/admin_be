@@ -42,6 +42,26 @@ class RequestTest {
         request.completeApproval();
     }
 
+    @Test
+    @DisplayName("요청은 생성 때 선택한 FARM/LAB을 보존하고 승인에서 바꾸지 못한다")
+    void snapshotsClusterId() {
+        Request clustered = Request.builder()
+                .resourceGroup(ResourceGroup.builder().serverName(" farm ").build())
+                .build();
+
+        assertThat(clustered.getServerName()).isEqualTo("FARM");
+
+        clustered.markAsProcessing();
+        assertThatThrownBy(() -> clustered.prepareAsyncApproval(
+                    mock(ContainerImage.class),
+                    ResourceGroup.builder().serverName("lab").build(),
+                    null))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", DGU_AI_LAB.admin_be.error.ErrorCode.INVALID_INPUT_VALUE);
+
+        assertThat(clustered.getServerName()).isEqualTo("FARM");
+    }
+
     @Nested
     @DisplayName("교수 승인 확인 기록의 정리")
     class ProfessorApprovalRecordCleanup {

@@ -3,6 +3,8 @@ package DGU_AI_LAB.admin_be.domain.scheduler;
 import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.StoppedPodDTO;
 import DGU_AI_LAB.admin_be.domain.pod.service.PodStatusCache;
+import DGU_AI_LAB.admin_be.domain.pod.service.PodStatusSnapshot.ClusterStoppedPod;
+import DGU_AI_LAB.admin_be.domain.pod.service.PodStatusSnapshot.PodKey;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -48,7 +50,7 @@ public class ContainerStopWatcher {
 
     @Scheduled(fixedDelayString = "${containers.stop-watch.poll-ms:300000}")
     public void watchStoppedContainers() {
-        List<StoppedPodDTO> stopped;
+        List<ClusterStoppedPod> stopped;
         try {
             stopped = podStatusCache.refresh().stopped();
         } catch (Exception e) {
@@ -58,12 +60,15 @@ public class ContainerStopWatcher {
         if (stopped.isEmpty()) {
             return;
         }
-        Map<String, Request> requestByPod = requestRepository
+        Map<PodKey, Request> requestByPod = requestRepository
                 .findAllByStatusInWithAssociations(List.of(Status.FULFILLED)).stream()
                 .filter(request -> request.getPodName() != null)
-                .collect(Collectors.toMap(Request::getPodName, Function.identity(), (first, second) -> first));
-        for (StoppedPodDTO pod : stopped) {
-            Request request = requestByPod.get(pod.name());
+                .collect(Collectors.toMap(
+                        request -> new PodKey(request.getServerName(), request.getPodName()),
+                        Function.identity(), (first, second) -> first));
+        for (ClusterStoppedPod stoppedPod : stopped) {
+            StoppedPodDTO pod = stoppedPod.pod();
+            Request request = requestByPod.get(new PodKey(stoppedPod.clusterId(), pod.name()));
             if (request != null) {
                 alertOnce(request, pod);
             }
@@ -79,7 +84,7 @@ public class ContainerStopWatcher {
                 request.getRequestId(), pod.name(), pod.reason(), pod.exitCode());
         alarmService.alertNeedsAction("notification.admin.container.stopped",
                 request.getRequestId(), request.getUbuntuUsername(),
-                request.getResourceGroup().getServerName(),
+                request.getServerName(),
                 REASON_LABELS.getOrDefault(pod.reason(), pod.reason()),
                 pod.exitCode() != null ? pod.exitCode().toString() : "-",
                 formatTime(pod.finishedAt()),

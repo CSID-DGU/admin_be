@@ -70,6 +70,7 @@ class IssuanceSheetRowsTest {
         when(request.getUbuntuGid()).thenReturn(56000L + userId);
         when(request.getContainerImage()).thenReturn(image);
         when(request.getResourceGroup()).thenReturn(resourceGroup);
+        when(request.getServerName()).thenReturn(serverName);
         when(request.getNodeName()).thenReturn(nodeName);
         when(request.getPodName()).thenReturn("ailab-user" + userId + "-" + id);
         when(request.getAdminComment()).thenReturn("연구실 과제");

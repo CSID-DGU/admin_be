@@ -71,7 +71,7 @@ class RequestRepositoryLockingTest {
         ResourceGroup resourceGroup = resourceGroupRepository.save(ResourceGroup.builder()
                 .resourceGroupName("Locking Test Server")
                 .description("잠금 테스트용")
-                .serverName("server-lock")
+                .serverName("FARM")
                 .build());
 
         ContainerImage containerImage = containerImageRepository.save(ContainerImage.builder()

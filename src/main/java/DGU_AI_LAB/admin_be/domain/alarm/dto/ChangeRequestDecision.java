@@ -34,7 +34,7 @@ public record ChangeRequestDecision(
                 changeRequest.getChangeType(),
                 user.getName(),
                 user.getEmail(),
-                request == null ? null : request.getResourceGroup().getServerName(),
+                request == null ? null : request.getServerName(),
                 changeRequest.getStatus() == Status.FULFILLED,
                 changeRequest.getAdminComment(),
                 changeRequest.getSlackMessageTs());

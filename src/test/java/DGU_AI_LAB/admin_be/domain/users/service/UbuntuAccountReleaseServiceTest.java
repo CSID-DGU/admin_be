@@ -93,7 +93,7 @@ class UbuntuAccountReleaseServiceTest {
     }
 
     private void givenResult(long requestId, Long jobId, String phase, String errorCode) {
-        when(jobClient.getResult(JobResults.KIND_REVOKE, requestId)).thenReturn(
+        when(jobClient.getResult("FARM", JobResults.KIND_REVOKE, requestId)).thenReturn(
                 new JobResultResponseDTO(String.valueOf(requestId), JobResults.KIND_REVOKE, jobId, phase, errorCode, null, null));
     }
 
@@ -126,12 +126,13 @@ class UbuntuAccountReleaseServiceTest {
         Request farm1Older = request(10L, Status.DELETED, "farm1", null);
         Request farm2 = request(20L, Status.DELETED, "farm2", null);
         request(40L, Status.PENDING, null, null);
-        when(ubuntuAccountService.registerAccountRevoke("testuser", "farm1", 30L)).thenReturn(501L);
-        when(ubuntuAccountService.registerAccountRevoke("testuser", "farm2", 20L)).thenReturn(502L);
+        when(ubuntuAccountService.registerAccountRevoke("FARM", "testuser", "farm1", 30L)).thenReturn(501L);
+        when(ubuntuAccountService.registerAccountRevoke("FARM", "testuser", "farm2", 20L)).thenReturn(502L);
 
         service.advance(USER_ID);
 
-        verify(ubuntuAccountService, times(2)).registerAccountRevoke(anyString(), anyString(), anyLong());
+        verify(ubuntuAccountService, times(2))
+                .registerAccountRevoke(eq("FARM"), anyString(), anyString(), anyLong());
         verify(farm1Latest).recordJob(501L);
         verify(farm2).recordJob(502L);
         verify(farm1Older, never()).recordJob(any());
@@ -205,7 +206,7 @@ class UbuntuAccountReleaseServiceTest {
     @DisplayName("같은 신청의 회수가 아직 돌아 등록이 409면 기록·알림 없이 다음 바퀴에 다시 등록한다")
     void conflictRetriesLater() {
         Request farm1 = request(30L, Status.DELETED, "farm1", null);
-        when(ubuntuAccountService.registerAccountRevoke(anyString(), anyString(), anyLong()))
+        when(ubuntuAccountService.registerAccountRevoke(anyString(), anyString(), anyString(), anyLong()))
                 .thenThrow(new BusinessException("이미 처리 중", ErrorCode.INVALID_REQUEST_STATUS));
 
         service.advance(USER_ID);
@@ -218,13 +219,14 @@ class UbuntuAccountReleaseServiceTest {
     @DisplayName("등록 실패는 계속 재시도하되 알림은 한 번만 보낸다")
     void registrationFailureAlertsOnce() {
         request(30L, Status.DELETED, "farm1", null);
-        when(ubuntuAccountService.registerAccountRevoke(anyString(), anyString(), anyLong()))
+        when(ubuntuAccountService.registerAccountRevoke(anyString(), anyString(), anyString(), anyLong()))
                 .thenThrow(new BusinessException("작업 등록 실패", ErrorCode.UBUNTU_USER_DELETION_FAILED));
 
         service.advance(USER_ID);
         service.advance(USER_ID);
 
-        verify(ubuntuAccountService, times(2)).registerAccountRevoke(anyString(), anyString(), anyLong());
+        verify(ubuntuAccountService, times(2))
+                .registerAccountRevoke(anyString(), anyString(), anyString(), anyLong());
         assertThat(Alerts.needsAction(alarmService)).hasSize(1);
     }
 

@@ -3,6 +3,7 @@ package DGU_AI_LAB.admin_be.domain.warnings.entity;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.cluster.ClusterId;
 import DGU_AI_LAB.admin_be.global.common.BaseTimeEntity;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -10,8 +11,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 계정의 접속 차단·해제 작업 하나. 접속은 config-server 작업으로만 막고 풀며, 한 계정의 모든 컨테이너·모든 포트가
- * 한 작업의 대상이다. 마지막으로 성공한 작업의 {@code blocked}가 지금 실제로 적용된 상태다.
+ * 서버별 계정의 접속 차단·해제 작업 하나. 접속은 config-server 작업으로만 막고 풀며, 그 서버 계정의 모든
+ * 컨테이너·모든 포트가 한 작업의 대상이다. 같은 사용자·클러스터에서 마지막으로 성공한 작업의
+ * {@code blocked}가 지금 실제로 적용된 상태다.
  * 상태 전이는 {@link AccessOperationStatus} 참고.
  */
 @Entity
@@ -37,6 +39,10 @@ public class AccessOperation extends BaseTimeEntity {
     @Column(name = "username", nullable = false, length = 100)
     private String username;
 
+    /** 작업을 등록하고 결과를 조회할 클러스터. 작업 도중 자원그룹이 바뀌어도 이 값은 바꾸지 않는다. */
+    @Column(name = "cluster_id", nullable = false, updatable = false, length = 16)
+    private String clusterId;
+
     /** 등록한 작업의 번호. 같은 번호로 조회되는 다른 작업의 결과와 가리는 데 쓴다. */
     @Column(name = "job_id")
     private Long jobId;
@@ -49,9 +55,10 @@ public class AccessOperation extends BaseTimeEntity {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    public AccessOperation(User user, boolean blocked) {
+    public AccessOperation(User user, String clusterId, String username, boolean blocked) {
         this.user = user;
-        this.username = user.getUbuntuUsername();
+        this.clusterId = ClusterId.canonical(clusterId);
+        this.username = username;
         this.blocked = blocked;
     }
 

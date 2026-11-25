@@ -5,6 +5,7 @@ import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
 import DGU_AI_LAB.admin_be.domain.users.entity.PasswordResetRequest;
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import DGU_AI_LAB.admin_be.domain.users.repository.PasswordResetRequestRepository;
 import DGU_AI_LAB.admin_be.domain.users.service.PasswordResetNotifier;
 import DGU_AI_LAB.admin_be.domain.users.service.PasswordResetService;
@@ -53,6 +54,11 @@ public class PasswordResetJobPoller extends OperationJobPoller<PasswordResetRequ
     @Override
     protected Long recordId(PasswordResetRequest reset) {
         return reset.getPasswordResetRequestId();
+    }
+
+    @Override
+    protected String clusterId(PasswordResetRequest reset) {
+        return User.PRIMARY_SERVER;
     }
 
     @Override

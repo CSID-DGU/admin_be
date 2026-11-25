@@ -57,9 +57,26 @@ app:
       public-host: lab.example.test
       admin-channel: lab-admin
 
+provi:
+  lab-enabled: true
+  clusters:
+    FARM:
+      base-url: http://localhost:9998
+      api-token: test-farm-internal-token
+      timeout-seconds: 1
+      pod-timeout-seconds: 2
+      kubeconfig-path: src/test/resources/kubeconfig-farm.yml
+      pod-namespace: farm-test
+    LAB:
+      base-url: http://localhost:9999
+      api-token: test-lab-internal-token
+      timeout-seconds: 1
+      pod-timeout-seconds: 2
+      kubeconfig-path: src/test/resources/kubeconfig-lab.yml
+      pod-namespace: lab-test
+
 config:
-  base-url: http://localhost:9999
-  timeout-seconds: 1
+  reserved-names-refresh-ms: 600000
 
 deployment:
   frontend:
@@ -113,6 +130,3 @@ logging:
     # org.hibernate.type.descriptor.sql.BasicBinder: trace
 prometheus:
   base-url: http://localhost:9090
-
-kubernetes:
-  pod-namespace: default

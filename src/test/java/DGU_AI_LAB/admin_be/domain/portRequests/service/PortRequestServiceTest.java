@@ -31,6 +31,7 @@ class PortRequestServiceTest {
     void createPortRequest_savesInternalPortAndPurpose() {
         ResourceGroup resourceGroup = ResourceGroup.builder()
                 .rsgroupId(1)
+                .serverName("FARM")
                 .build();
         Request request = Request.builder()
                 .usagePurpose("학습")

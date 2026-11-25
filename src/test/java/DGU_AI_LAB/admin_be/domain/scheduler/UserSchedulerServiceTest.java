@@ -186,7 +186,7 @@ class UserSchedulerServiceTest {
 
     private void createRequestForUser(User user, LocalDateTime expiresAt) {
         ResourceGroup rg = resourceGroupRepository.findAll().stream().findFirst()
-                .orElseGet(() -> resourceGroupRepository.save(ResourceGroup.builder().serverName("TestServer").resourceGroupName("G").build()));
+                .orElseGet(() -> resourceGroupRepository.save(ResourceGroup.builder().serverName("FARM").resourceGroupName("G").build()));
         ContainerImage img = containerImageRepository.findAll().stream().findFirst()
                 .orElseGet(() -> containerImageRepository.save(ContainerImage.builder().imageName("cuda").imageVersion("1").cudaVersion("1").description("d").build()));
 

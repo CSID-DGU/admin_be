@@ -7,6 +7,7 @@ import DGU_AI_LAB.admin_be.domain.groups.service.GroupOperationService;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobClient;
 import DGU_AI_LAB.admin_be.domain.requests.job.JobResults;
+import DGU_AI_LAB.admin_be.domain.users.entity.User;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -43,6 +44,11 @@ public class GroupOperationJobPoller extends OperationJobPoller<GroupOperation> 
     @Override
     protected Long recordId(GroupOperation operation) {
         return operation.getGroupOperationId();
+    }
+
+    @Override
+    protected String clusterId(GroupOperation operation) {
+        return User.PRIMARY_SERVER;
     }
 
     @Override

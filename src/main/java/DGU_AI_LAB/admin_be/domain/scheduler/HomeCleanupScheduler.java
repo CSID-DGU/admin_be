@@ -51,7 +51,7 @@ public class HomeCleanupScheduler {
 
     private void register(HomeCleanupService.Target target) {
         try {
-            Long jobId = jobClient.registerHomeDelete(new HomeDeleteRegisterRequestDTO(
+            Long jobId = jobClient.registerHomeDelete(User.PRIMARY_SERVER, new HomeDeleteRegisterRequestDTO(
                     target.cleanupId(), target.ubuntuUsername(), target.ubuntuUid()));
             homeCleanupService.recordJob(target.cleanupId(), jobId);
             log.info("[homeCleanup] 홈 삭제 작업 등록: cleanupId={}, username={}, jobId={}",

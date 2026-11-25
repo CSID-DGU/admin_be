@@ -27,6 +27,7 @@ import org.springframework.transaction.TransactionStatus;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -34,6 +35,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -58,6 +60,7 @@ class AccessEnforcementServiceTest {
 
     private AccessEnforcementService service;
     private User user;
+    private AtomicLong operationIds;
 
     @BeforeEach
     void setUp() {
@@ -67,14 +70,16 @@ class AccessEnforcementServiceTest {
 
         user = User.builder().email("alice@dgu.ac.kr").name("alice").ubuntuUsername("alice").build();
         ReflectionTestUtils.setField(user, "userId", USER_ID);
+        user.assignUbuntuAccount("FARM", 10_001L, 10_001L);
         when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user));
         // 저장하면 번호가 붙는다(IDENTITY).
+        operationIds = new AtomicLong(OPERATION_ID);
         when(operationRepository.save(any(AccessOperation.class))).thenAnswer(invocation -> {
             AccessOperation saved = invocation.getArgument(0);
-            ReflectionTestUtils.setField(saved, "accessOperationId", OPERATION_ID);
+            ReflectionTestUtils.setField(saved, "accessOperationId", operationIds.getAndIncrement());
             return saved;
         });
-        when(jobClient.registerAccessChange(any())).thenReturn(JOB_ID);
+        when(jobClient.registerAccessChange(any(String.class), any())).thenReturn(JOB_ID);
         when(messageUtils.get(any(), any())).thenReturn("문구");
     }
 
@@ -85,17 +90,26 @@ class AccessEnforcementServiceTest {
 
     /** 마지막으로 성공한 작업이 차단이었는지. */
     private void applied(boolean blocked) {
-        AccessOperation last = new AccessOperation(user, blocked);
+        applied("FARM", "alice", blocked);
+    }
+
+    private AccessOperation applied(String clusterId, String username, boolean blocked) {
+        AccessOperation last = new AccessOperation(user, clusterId, username, blocked);
         last.markApplied();
-        when(operationRepository.findFirstByUser_UserIdAndStatusOrderByAccessOperationIdDesc(
-                USER_ID, AccessOperationStatus.APPLIED)).thenReturn(Optional.of(last));
+        when(operationRepository.findFirstByUser_UserIdAndClusterIdAndStatusOrderByAccessOperationIdDesc(
+                USER_ID, clusterId, AccessOperationStatus.APPLIED)).thenReturn(Optional.of(last));
+        return last;
     }
 
     private AccessOperation processing(boolean blocked) {
-        AccessOperation operation = new AccessOperation(user, blocked);
-        ReflectionTestUtils.setField(operation, "accessOperationId", OPERATION_ID);
+        return processing(OPERATION_ID, "FARM", "alice", blocked);
+    }
+
+    private AccessOperation processing(Long operationId, String clusterId, String username, boolean blocked) {
+        AccessOperation operation = new AccessOperation(user, clusterId, username, blocked);
+        ReflectionTestUtils.setField(operation, "accessOperationId", operationId);
         operation.registered(JOB_ID);
-        when(operationRepository.findByIdForUpdate(OPERATION_ID)).thenReturn(Optional.of(operation));
+        when(operationRepository.findByIdForUpdate(operationId)).thenReturn(Optional.of(operation));
         return operation;
     }
 
@@ -106,7 +120,7 @@ class AccessEnforcementServiceTest {
 
         service.enforce(USER_ID);
 
-        verify(jobClient).registerAccessChange(new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", true));
+        verify(jobClient).registerAccessChange("FARM", new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", true));
     }
 
     @Test
@@ -117,7 +131,7 @@ class AccessEnforcementServiceTest {
 
         service.enforce(USER_ID);
 
-        verify(jobClient).registerAccessChange(new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", false));
+        verify(jobClient).registerAccessChange("FARM", new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", false));
     }
 
     @Test
@@ -148,7 +162,8 @@ class AccessEnforcementServiceTest {
     @DisplayName("작업이 도는 중이면 새 작업을 등록하지 않는다 — 끝난 뒤 다시 맞춘다")
     void waitsForRunningOperation() {
         suspended(true);
-        when(operationRepository.existsByUser_UserIdAndStatus(USER_ID, AccessOperationStatus.PROCESSING)).thenReturn(true);
+        when(operationRepository.existsByUser_UserIdAndClusterIdAndStatus(
+                USER_ID, "FARM", AccessOperationStatus.PROCESSING)).thenReturn(true);
 
         service.enforce(USER_ID);
 
@@ -159,21 +174,25 @@ class AccessEnforcementServiceTest {
     @DisplayName("다시 걸기는 차단 작업이 도는 중이어도 등록한다 — 도는 작업은 방금 만들어진 포트를 못 봤을 수 있다")
     void reapplyOverlapsRunningBlock() {
         suspended(true);
-        when(operationRepository.existsByUser_UserIdAndStatus(USER_ID, AccessOperationStatus.PROCESSING)).thenReturn(true);
-        when(operationRepository.existsByUser_UserIdAndStatusAndBlocked(USER_ID, AccessOperationStatus.PROCESSING, false))
+        when(operationRepository.existsByUser_UserIdAndClusterIdAndStatus(
+                USER_ID, "FARM", AccessOperationStatus.PROCESSING)).thenReturn(true);
+        when(operationRepository.existsByUser_UserIdAndClusterIdAndStatusAndBlocked(
+                USER_ID, "FARM", AccessOperationStatus.PROCESSING, false))
                 .thenReturn(false);
 
         service.reapply(USER_ID);
 
-        verify(jobClient).registerAccessChange(new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", true));
+        verify(jobClient).registerAccessChange("FARM", new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", true));
     }
 
     @Test
     @DisplayName("다시 걸기도 해제 작업이 도는 중이면 기다린다 — 순서가 뒤바뀌면 열린 채로 끝난다")
     void reapplyWaitsForRunningUnblock() {
         suspended(true);
-        when(operationRepository.existsByUser_UserIdAndStatus(USER_ID, AccessOperationStatus.PROCESSING)).thenReturn(true);
-        when(operationRepository.existsByUser_UserIdAndStatusAndBlocked(USER_ID, AccessOperationStatus.PROCESSING, false))
+        when(operationRepository.existsByUser_UserIdAndClusterIdAndStatus(
+                USER_ID, "FARM", AccessOperationStatus.PROCESSING)).thenReturn(true);
+        when(operationRepository.existsByUser_UserIdAndClusterIdAndStatusAndBlocked(
+                USER_ID, "FARM", AccessOperationStatus.PROCESSING, false))
                 .thenReturn(true);
 
         service.reapply(USER_ID);
@@ -184,6 +203,7 @@ class AccessEnforcementServiceTest {
     @Test
     @DisplayName("리눅스 계정을 정한 적이 없는 사용자는 막을 포트가 없어 작업을 등록하지 않는다")
     void userWithoutLinuxAccountHasNothingToBlock() {
+        user.getUbuntuAccounts().clear();
         ReflectionTestUtils.setField(user, "ubuntuUsername", null);
         suspended(true);
 
@@ -200,7 +220,7 @@ class AccessEnforcementServiceTest {
 
         service.reapply(USER_ID);
 
-        verify(jobClient).registerAccessChange(new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", true));
+        verify(jobClient).registerAccessChange("FARM", new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", true));
     }
 
     @Test
@@ -217,9 +237,52 @@ class AccessEnforcementServiceTest {
     @DisplayName("등록이 실패하면 예외를 올린다 — 호출자가 다음 점검에 맡긴다")
     void registrationFailurePropagates() {
         suspended(true);
-        when(jobClient.registerAccessChange(any())).thenThrow(new BusinessException(ErrorCode.ACCESS_CHANGE_FAILED));
+        when(jobClient.registerAccessChange(any(String.class), any())).thenThrow(new BusinessException(ErrorCode.ACCESS_CHANGE_FAILED));
 
         assertThatThrownBy(() -> service.enforce(USER_ID)).isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    @DisplayName("FARM/LAB 활성 계정은 각 클러스터 유저네임으로 별도 차단 작업을 등록한다")
+    void fansOutAccessChangeToEveryActiveClusterAccount() {
+        user.assignUbuntuAccount("LAB", 20_001L, 20_001L);
+        ReflectionTestUtils.setField(user.ubuntuAccount("LAB").orElseThrow(), "username", "alice-lab");
+        suspended(true);
+
+        service.enforce(USER_ID);
+
+        verify(jobClient).registerAccessChange("FARM",
+                new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", true));
+        verify(jobClient).registerAccessChange("LAB",
+                new AccessChangeRegisterRequestDTO(OPERATION_ID + 1, "alice-lab", true));
+    }
+
+    @Test
+    @DisplayName("두 번째 클러스터 등록이 실패해도 첫 클러스터 등록 트랜잭션은 이미 커밋되어 추적 행을 잃지 않는다")
+    void clusterRegistrationsUseIndependentTransactions() {
+        user.assignUbuntuAccount("LAB", 20_001L, 20_001L);
+        ReflectionTestUtils.setField(user.ubuntuAccount("LAB").orElseThrow(), "username", "alice-lab");
+        suspended(true);
+        doAnswer(invocation -> {
+            String clusterId = invocation.getArgument(0);
+            if ("LAB".equals(clusterId)) {
+                throw new BusinessException(ErrorCode.ACCESS_CHANGE_FAILED);
+            }
+            return JOB_ID;
+        }).when(jobClient).registerAccessChange(any(String.class), any());
+
+        assertThatThrownBy(() -> service.enforce(USER_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(error -> ((BusinessException) error).getErrorCode())
+                .isEqualTo(ErrorCode.ACCESS_CHANGE_FAILED);
+
+        verify(jobClient).registerAccessChange("FARM",
+                new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", true));
+        verify(jobClient).registerAccessChange("LAB",
+                new AccessChangeRegisterRequestDTO(OPERATION_ID + 1, "alice-lab", true));
+        // 활성 서버 목록 조회 + FARM 등록은 커밋되고, 별도 LAB 등록만 롤백된다.
+        verify(transactionManager, times(2)).commit(transactionStatus);
+        verify(transactionManager).rollback(transactionStatus);
     }
 
     @Test
@@ -232,6 +295,42 @@ class AccessEnforcementServiceTest {
 
         assertThat(operation.getStatus()).isEqualTo(AccessOperationStatus.APPLIED);
         verify(alarmService).notifyUser(eq("alice"), eq("alice@dgu.ac.kr"), any(), any());
+    }
+
+    @Test
+    @DisplayName("FARM/LAB 해제가 모두 성공한 뒤 마지막 완료에서만 정지 종료를 한 번 알린다")
+    void completedUnblockNotifiesOnceAfterEveryClusterApplied() {
+        user.assignUbuntuAccount("LAB", 20_001L, 20_001L);
+        ReflectionTestUtils.setField(user.ubuntuAccount("LAB").orElseThrow(), "username", "alice-lab");
+        AccessOperation farm = processing(OPERATION_ID, "FARM", "alice", false);
+        AccessOperation lab = processing(OPERATION_ID + 1, "LAB", "alice-lab", false);
+        AccessOperation oldLabBlocked = new AccessOperation(user, "LAB", "alice-lab", true);
+        oldLabBlocked.markApplied();
+        suspended(false);
+
+        when(operationRepository.existsByUser_UserIdAndClusterIdAndStatus(
+                eq(USER_ID), any(String.class), eq(AccessOperationStatus.PROCESSING)))
+                .thenAnswer(invocation -> {
+                    String cluster = invocation.getArgument(1);
+                    return "FARM".equals(cluster) ? farm.isProcessing() : lab.isProcessing();
+                });
+        when(operationRepository.findFirstByUser_UserIdAndClusterIdAndStatusOrderByAccessOperationIdDesc(
+                eq(USER_ID), any(String.class), eq(AccessOperationStatus.APPLIED)))
+                .thenAnswer(invocation -> {
+                    String cluster = invocation.getArgument(1);
+                    if ("FARM".equals(cluster)) {
+                        return farm.getStatus() == AccessOperationStatus.APPLIED
+                                ? Optional.of(farm) : Optional.empty();
+                    }
+                    return lab.getStatus() == AccessOperationStatus.APPLIED
+                            ? Optional.of(lab) : Optional.of(oldLabBlocked);
+                });
+
+        service.complete(OPERATION_ID);
+        verifyNoInteractions(alarmService);
+
+        service.complete(OPERATION_ID + 1);
+        verify(alarmService, times(1)).notifyUser(eq("alice"), eq("alice@dgu.ac.kr"), any(), any());
     }
 
     @Test
@@ -256,7 +355,7 @@ class AccessEnforcementServiceTest {
 
         service.complete(OPERATION_ID);
 
-        verify(jobClient).registerAccessChange(new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", false));
+        verify(jobClient).registerAccessChange("FARM", new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", false));
     }
 
     @Test
@@ -297,9 +396,10 @@ class AccessEnforcementServiceTest {
         service.enforceAll();
 
         verify(userRepository, times(1)).findByIdForUpdate(1L);
-        verify(userRepository, times(1)).findByIdForUpdate(USER_ID);
-        verify(userRepository, times(1)).findByIdForUpdate(9L);
-        verify(jobClient, never()).registerAccessChange(new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", false));
+        // 활성 서버 목록을 읽는 트랜잭션과 그 서버 작업을 등록하는 독립 트랜잭션에서 각각 잠근다.
+        verify(userRepository, times(2)).findByIdForUpdate(USER_ID);
+        verify(userRepository, times(2)).findByIdForUpdate(9L);
+        verify(jobClient, never()).registerAccessChange("FARM", new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", false));
     }
 
     @Test
@@ -312,6 +412,6 @@ class AccessEnforcementServiceTest {
 
         service.enforceAll();
 
-        verify(jobClient).registerAccessChange(new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", true));
+        verify(jobClient).registerAccessChange("FARM", new AccessChangeRegisterRequestDTO(OPERATION_ID, "alice", true));
     }
 }

@@ -17,22 +17,24 @@ import java.util.Map;
 @Tag(name = "3. 관리자 시스템", description = "컨테이너 이미지, K8s Pod, 알림 템플릿 관리 API")
 public interface PodApi {
 
-    @Operation(summary = "전체 Pod 목록 조회", description = "사용자 Pod 네임스페이스(kubernetes.pod-namespace, 기본 ailab-infra)의 모든 Pod 이름을 조회합니다.")
+    @Operation(summary = "클러스터 Pod 목록 조회", description = "지정한 클러스터의 사용자 Pod 네임스페이스에서 Pod 이름을 조회합니다.")
     @ApiResponse(responseCode = "200", description = "조회 성공")
     @ApiResponse(responseCode = "500", description = "K8s 연동 오류", content = @Content)
-    List<String> getPods();
+    List<String> getPods(@Parameter(description = "클러스터 ID", example = "FARM") String clusterId);
 
     @Operation(summary = "컨테이너 상태 즉시 갱신", description = "관리자 화면이 보여 주는 사용자 Pod 상태를 k8s에서 지금 다시 읽습니다. " +
             "평소에는 5분마다 자동으로 읽습니다. 10초 안에 다시 부르면 다시 읽지 않고 직전 값을 씁니다.")
     @ApiResponse(responseCode = "200", description = "갱신 성공 — data.statusCheckedAt이 읽은 시각")
     @ApiResponse(responseCode = "500", description = "K8s 연동 오류(직전 값은 그대로 남음)", content = @Content)
-    ResponseEntity<SuccessResponse<?>> refreshPodStatus();
+    ResponseEntity<SuccessResponse<?>> refreshPodStatus(
+            @Parameter(description = "클러스터 ID", example = "FARM") String clusterId);
 
     @Operation(summary = "Pod 상세 조회", description = "Pod 이름으로 특정 Pod의 상세 정보를 조회합니다.")
     @ApiResponse(responseCode = "200", description = "조회 성공",
             content = @Content(schema = @Schema(implementation = PodResponseDTO.class)))
     @ApiResponse(responseCode = "404", description = "해당 이름의 Pod를 찾을 수 없음", content = @Content)
     PodResponseDTO getPodDetail(
+            @Parameter(description = "클러스터 ID", example = "FARM") String clusterId,
             @Parameter(description = "Pod 이름") String podName
     );
 
@@ -40,6 +42,7 @@ public interface PodApi {
     @ApiResponse(responseCode = "200", description = "조회 성공")
     @ApiResponse(responseCode = "404", description = "해당 이름의 Pod를 찾을 수 없음", content = @Content)
     Map<String, String> getPodLogs(
+            @Parameter(description = "클러스터 ID", example = "FARM") String clusterId,
             @Parameter(description = "Pod 이름") String podName,
             @Parameter(description = "컨테이너 이름 (생략 시 첫 번째 컨테이너)") String container
     );
@@ -48,6 +51,7 @@ public interface PodApi {
     @ApiResponse(responseCode = "200", description = "조회 성공",
             content = @Content(schema = @Schema(implementation = PodEventDTO.class)))
     List<PodEventDTO> getPodEvents(
+            @Parameter(description = "클러스터 ID", example = "FARM") String clusterId,
             @Parameter(description = "Pod 이름") String podName
     );
 
@@ -57,6 +61,7 @@ public interface PodApi {
     @ApiResponse(responseCode = "409", description = "신청 이력이 있거나, 이름의 사용자에게 생성·이동 작업이 진행 중이라 거부됨", content = @Content)
     @ApiResponse(responseCode = "502", description = "K8s/config-server 연동 오류", content = @Content)
     ResponseEntity<SuccessResponse<?>> deleteOrphanPod(
+            @Parameter(description = "클러스터 ID", example = "FARM") String clusterId,
             @Parameter(description = "Pod 이름") String podName
     );
 }

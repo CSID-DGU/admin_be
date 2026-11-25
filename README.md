@@ -84,6 +84,49 @@ java -jar build/libs/admin_be-0.0.1-SNAPSHOT.jar
 ### 3. ⚙️ 환경 변수 설정
 `src/main/resources/application.yml` 파일에 노션에 정리된 설정값을 필수로 입력해야 정상 동작합니다.
 
+### FARM/LAB 멀티클러스터 설정
+
+Master Desktop의 Admin BE는 FARM과 LAB의 Config Server·Kubernetes 인증정보를 서로 다른 프로필로 받습니다.
+요청의 `cluster_id`와 프로필 이름은 `FARM`, `LAB`만 허용하며, 프로필이 없거나 인증정보를 읽지 못하면
+다른 클러스터로 대체하지 않고 기동 또는 요청 처리를 중단합니다.
+
+```yaml
+provi:
+  # LAB profile을 미리 설정해도 이 값이 false이면 LAB client와 내부 token은 활성화되지 않는다.
+  lab-enabled: false
+  clusters:
+    FARM:
+      base-url: <FARM_CONFIG_SERVER_BASE_URL>
+      api-token: <FARM_CONFIG_SERVER_TOKEN>
+      timeout-seconds: 600
+      pod-timeout-seconds: 300
+      in-cluster: false
+      kubeconfig-path: /run/secrets/provi/farm-kubeconfig
+      pod-namespace: <FARM_POD_NAMESPACE>
+    LAB:
+      base-url: <LAB_CONFIG_SERVER_BASE_URL>
+      api-token: <LAB_CONFIG_SERVER_TOKEN>
+      timeout-seconds: 600
+      pod-timeout-seconds: 300
+      in-cluster: false
+      kubeconfig-path: /run/secrets/provi/lab-kubeconfig
+      pod-namespace: <LAB_POD_NAMESPACE>
+```
+
+- 두 `api-token`은 서로 다른 값이어야 합니다.
+- `provi.lab-enabled`의 기본값은 `false`입니다. Phase 7 검증 전에는 LAB profile을 넣어도 이 값을 켜지 않습니다.
+- Master Desktop에서는 두 kubeconfig를 읽기 전용 파일로 각각 mount합니다.
+- `in-cluster: true`는 Admin BE 자체가 관리 대상 클러스터 안에서 실행될 때 한 프로필에만 사용할 수 있습니다.
+- 이전의 단일 `config.base-url`, `config.api-token`, `kubernetes.kubeconfig` 설정은 사용하지 않습니다.
+- 배포 전 `resource_groups.server_name`에 FARM/LAB 이외의 값이 없는지 확인해야 합니다.
+
+```sql
+SELECT rsgroup_id, resource_group_name, server_name
+FROM resource_groups
+WHERE UPPER(TRIM(server_name)) NOT IN ('FARM', 'LAB')
+   OR server_name IS NULL;
+```
+
 ### 브랜치·배포 규칙
 
 admin_fe·admin_be·admin_infra·admin_infra-proposed 네 저장소가 같은 규칙을 쓴다. 전문은 admin_wiki [`md/브랜치-규칙.md`](https://github.com/CSID-DGU/admin_wiki/blob/main/md/브랜치-규칙.md).
@@ -137,4 +180,3 @@ CI/CD 작동을 위해 GitHub Repository Secrets에 다음 변수들이 등록�
 > 관련 링크 <br>
 > [인프라 서버](https://github.com/CSID-DGU/admin_infra) <br>
 > [프론트엔드](https://github.com/CSID-DGU/AILab-FE) <br>
-
