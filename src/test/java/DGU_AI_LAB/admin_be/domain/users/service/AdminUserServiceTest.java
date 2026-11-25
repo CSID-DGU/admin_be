@@ -384,6 +384,10 @@ class AdminUserServiceTest {
             adminUserService.withdrawInactiveUser(1L);
         }
 
+        private java.time.LocalDate serviceToday() {
+            return java.time.LocalDate.now(java.time.ZoneId.of("Asia/Seoul"));
+        }
+
         @Test
         @DisplayName("졸업 예정일이 없으면 1년 미사용 안내 문구를 쓴다")
         void noGraduationDate_usesInactivityNotice() {
@@ -396,7 +400,7 @@ class AdminUserServiceTest {
         @Test
         @DisplayName("졸업 예정일이 먼 미래라 1년 미사용으로 비활성화되면 1년 미사용 안내 문구를 쓴다")
         void farFutureGraduation_usesInactivityNotice() {
-            withdrawWithGraduation(java.time.LocalDate.now().plusYears(5));
+            withdrawWithGraduation(serviceToday().plusYears(5));
 
             verify(messageUtils).get(eq("notification.user.soft-delete.subject"));
             verify(messageUtils, never()).get(eq("notification.user.soft-delete.graduation.subject"));
@@ -405,7 +409,7 @@ class AdminUserServiceTest {
         @Test
         @DisplayName("졸업 예정일 + 30일이 아직 안 지났으면(내일) 1년 미사용 안내 문구를 쓴다")
         void graceNotYetOver_usesInactivityNotice() {
-            withdrawWithGraduation(java.time.LocalDate.now().minusDays(30).plusDays(1));
+            withdrawWithGraduation(serviceToday().minusDays(30).plusDays(1));
 
             verify(messageUtils).get(eq("notification.user.soft-delete.subject"));
             verify(messageUtils, never()).get(eq("notification.user.soft-delete.graduation.subject"));
@@ -414,7 +418,7 @@ class AdminUserServiceTest {
         @Test
         @DisplayName("졸업 예정일 + 30일이 정확히 오늘이면 졸업 안내 문구를 쓴다 (경계)")
         void graceEndsToday_usesGraduationNotice() {
-            withdrawWithGraduation(java.time.LocalDate.now().minusDays(30));
+            withdrawWithGraduation(serviceToday().minusDays(30));
 
             verify(messageUtils).get(eq("notification.user.soft-delete.graduation.subject"));
             verify(messageUtils, never()).get(eq("notification.user.soft-delete.subject"));
@@ -423,7 +427,7 @@ class AdminUserServiceTest {
         @Test
         @DisplayName("졸업 예정일 + 30일이 이미 지났으면 졸업 안내 문구를 쓴다")
         void gracePassed_usesGraduationNotice() {
-            withdrawWithGraduation(java.time.LocalDate.now().minusDays(60));
+            withdrawWithGraduation(serviceToday().minusDays(60));
 
             verify(messageUtils).get(eq("notification.user.soft-delete.graduation.subject"));
             verify(messageUtils, never()).get(eq("notification.user.soft-delete.subject"));
@@ -433,7 +437,7 @@ class AdminUserServiceTest {
         @DisplayName("졸업 기한(+30일)이 1년 미사용 기한보다 먼저 지났으면 졸업 안내 문구를 쓴다")
         void graduationEarlierThanInactivity_usesGraduationNotice() {
             ReflectionTestUtils.setField(mockUser, "createdAt", java.time.LocalDateTime.now().minusMonths(13));
-            withdrawWithGraduation(java.time.LocalDate.now().minusDays(70));
+            withdrawWithGraduation(serviceToday().minusDays(70));
 
             verify(messageUtils).get(eq("notification.user.soft-delete.graduation.subject"));
             verify(messageUtils, never()).get(eq("notification.user.soft-delete.subject"));
@@ -443,7 +447,7 @@ class AdminUserServiceTest {
         @DisplayName("졸업 기한이 지났어도 1년 미사용 기한이 먼저면 1년 미사용 안내 문구를 쓴다")
         void inactivityEarlierThanGraduation_usesInactivityNotice() {
             ReflectionTestUtils.setField(mockUser, "createdAt", java.time.LocalDateTime.now().minusMonths(13));
-            withdrawWithGraduation(java.time.LocalDate.now().minusDays(40));
+            withdrawWithGraduation(serviceToday().minusDays(40));
 
             verify(messageUtils).get(eq("notification.user.soft-delete.subject"));
             verify(messageUtils, never()).get(eq("notification.user.soft-delete.graduation.subject"));
