@@ -47,7 +47,11 @@ public class ClusterClientRegistry implements AutoCloseable {
         if (properties == null || properties.clusters() == null || properties.clusters().isEmpty()) {
             throw new IllegalStateException("provi.clusters 설정이 비어 있습니다.");
         }
-        long inClusterProfiles = properties.clusters().values().stream()
+        Map<String, Cluster> enabledClusters = properties.enabledClusters();
+        if (enabledClusters == null || enabledClusters.isEmpty()) {
+            throw new IllegalStateException("활성화된 provi.clusters 설정이 비어 있습니다.");
+        }
+        long inClusterProfiles = enabledClusters.values().stream()
                 .filter(settings -> settings != null && settings.inCluster())
                 .count();
         if (inClusterProfiles > 1) {
@@ -55,7 +59,7 @@ public class ClusterClientRegistry implements AutoCloseable {
                     "in-cluster 프로필은 하나만 설정할 수 있습니다. 여러 프로필은 같은 로컬 클러스터를 가리킵니다.");
         }
 
-        Map<String, PreparedCluster> prepared = prepareClusters(properties.clusters());
+        Map<String, PreparedCluster> prepared = prepareClusters(enabledClusters);
         Map<String, Clients> built = new LinkedHashMap<>();
         try {
             prepared.forEach((clusterId, cluster) -> built.put(

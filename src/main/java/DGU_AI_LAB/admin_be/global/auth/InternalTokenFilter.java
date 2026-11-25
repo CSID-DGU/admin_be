@@ -49,8 +49,10 @@ public class InternalTokenFilter extends OncePerRequestFilter {
     public InternalTokenFilter(ClusterClientProperties properties) {
         Map<String, byte[]> configured = new LinkedHashMap<>();
         Set<String> configuredTokens = new HashSet<>();
-        if (properties != null && properties.clusters() != null) {
-            properties.clusters().forEach((rawClusterId, cluster) -> {
+        Map<String, ClusterClientProperties.Cluster> enabledClusters =
+                properties == null ? null : properties.enabledClusters();
+        if (enabledClusters != null) {
+            enabledClusters.forEach((rawClusterId, cluster) -> {
                 String clusterId = ClusterId.canonical(rawClusterId);
                 if (cluster == null || cluster.apiToken() == null || cluster.apiToken().isBlank()) {
                     throw new IllegalStateException(

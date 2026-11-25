@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotEmpty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -20,8 +21,26 @@ import java.util.Map;
 @Validated
 @ConfigurationProperties(prefix = "provi")
 public record ClusterClientProperties(
-        @NotEmpty Map<String, @Valid Cluster> clusters
+        @NotEmpty Map<String, @Valid Cluster> clusters,
+        boolean labEnabled
 ) {
+
+    /**
+     * LAB profile을 미리 배치해도 feature flag를 켜기 전에는 client와 내부 token을 활성화하지 않는다.
+     * FARM은 전환 중 기존 관리 경로를 유지해야 하므로 항상 활성 대상이다.
+     */
+    public Map<String, Cluster> enabledClusters() {
+        if (clusters == null || labEnabled) {
+            return clusters;
+        }
+        Map<String, Cluster> enabled = new LinkedHashMap<>();
+        clusters.forEach((rawClusterId, settings) -> {
+            if (!"LAB".equals(ClusterId.canonical(rawClusterId))) {
+                enabled.put(rawClusterId, settings);
+            }
+        });
+        return Map.copyOf(enabled);
+    }
 
     public record Cluster(
             @NotBlank String baseUrl,
