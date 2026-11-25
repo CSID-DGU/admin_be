@@ -9,6 +9,7 @@ import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodEventDTO;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.PodResponseDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.cluster.ClusterClientRegistry;
 import io.fabric8.kubernetes.api.model.Event;
 import io.fabric8.kubernetes.api.model.EventBuilder;
 import io.fabric8.kubernetes.api.model.EventList;
@@ -42,7 +43,6 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -53,6 +53,7 @@ import static org.mockito.Mockito.when;
 class PodQueryServiceTest {
 
     @Mock private KubernetesClient client;
+    @Mock private ClusterClientRegistry clients;
     @Mock private MixedOperation<Pod, PodList, PodResource> pods;
     @Mock private NonNamespaceOperation<Pod, PodList, PodResource> inNamespace;
     @Mock private PodResource podResource;
@@ -67,7 +68,9 @@ class PodQueryServiceTest {
 
     @BeforeEach
     void setUp() {
-        podQueryService = new PodQueryService(client, "ailab-infra");
+        podQueryService = new PodQueryService(clients);
+        when(clients.kubernetesClient("FARM")).thenReturn(client);
+        when(clients.podNamespace("FARM")).thenReturn("ailab-infra");
         when(client.pods()).thenReturn(pods);
         when(pods.inNamespace("ailab-infra")).thenReturn(inNamespace);
     }
@@ -90,7 +93,7 @@ class PodQueryServiceTest {
             PodList podList = new PodListBuilder().withItems(pod1, pod2).build();
             when(inNamespace.list()).thenReturn(podList);
 
-            List<String> result = podQueryService.getPodNames();
+            List<String> result = podQueryService.getPodNames("FARM");
 
             assertThat(result).containsExactly("pod-a", "pod-b");
         }
@@ -101,7 +104,7 @@ class PodQueryServiceTest {
             PodList emptyList = new PodListBuilder().withItems(List.of()).build();
             when(inNamespace.list()).thenReturn(emptyList);
 
-            List<String> result = podQueryService.getPodNames();
+            List<String> result = podQueryService.getPodNames("FARM");
 
             assertThat(result).isEmpty();
         }
@@ -135,7 +138,7 @@ class PodQueryServiceTest {
             when(inNamespace.list()).thenReturn(new PodListBuilder().withItems(
                     pod("running", "Running", null, null), system).build());
 
-            UserPodListing listing = podQueryService.listUserPods();
+            UserPodListing listing = podQueryService.listUserPods("FARM");
 
             assertThat(listing.pods()).extracting(PodResponseDTO::name, PodResponseDTO::status)
                     .containsExactly(org.assertj.core.groups.Tuple.tuple("running", "Running"));
@@ -154,7 +157,7 @@ class PodQueryServiceTest {
                     pod("done", "Succeeded", null, new ContainerStateTerminatedBuilder()
                             .withReason("Completed").withExitCode(0).build())).build());
 
-            assertThat(podQueryService.listUserPods().stopped()).containsExactly(
+            assertThat(podQueryService.listUserPods("FARM").stopped()).containsExactly(
                     new StoppedPodDTO("oom", "farm9", "OOMKilled", 137, "2026-10-07T00:24:14Z"),
                     new StoppedPodDTO("done", "farm9", "Completed", 0, null));
         }
@@ -165,7 +168,7 @@ class PodQueryServiceTest {
             when(inNamespace.list()).thenReturn(new PodListBuilder().withItems(
                     pod("evicted", "Failed", "Evicted", null)).build());
 
-            assertThat(podQueryService.listUserPods().stopped()).containsExactly(
+            assertThat(podQueryService.listUserPods("FARM").stopped()).containsExactly(
                     new StoppedPodDTO("evicted", "farm9", "Evicted", null, null));
         }
 
@@ -175,7 +178,7 @@ class PodQueryServiceTest {
             when(inNamespace.list()).thenReturn(new PodListBuilder().withItems(
                     pod("bare", "Failed", null, null)).build());
 
-            assertThat(podQueryService.listUserPods().stopped()).containsExactly(
+            assertThat(podQueryService.listUserPods("FARM").stopped()).containsExactly(
                     new StoppedPodDTO("bare", "farm9", "Failed", null, null));
         }
     }
@@ -190,7 +193,7 @@ class PodQueryServiceTest {
             when(inNamespace.withName("pod-a")).thenReturn(podResource);
             when(podResource.get()).thenReturn(podNamed("pod-a"));
 
-            PodResponseDTO result = podQueryService.getPodDetail("pod-a");
+            PodResponseDTO result = podQueryService.getPodDetail("FARM", "pod-a");
 
             assertThat(result.name()).isEqualTo("pod-a");
         }
@@ -201,7 +204,7 @@ class PodQueryServiceTest {
             when(inNamespace.withName("missing-pod")).thenReturn(podResource);
             when(podResource.get()).thenReturn(null);
 
-            assertThatThrownBy(() -> podQueryService.getPodDetail("missing-pod"))
+            assertThatThrownBy(() -> podQueryService.getPodDetail("FARM", "missing-pod"))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
@@ -220,7 +223,7 @@ class PodQueryServiceTest {
             when(podResource.tailingLines(500)).thenReturn(prettyLoggable);
             when(prettyLoggable.getLog()).thenReturn("line1\nline2");
 
-            String result = podQueryService.getPodLogs("pod-a", null);
+            String result = podQueryService.getPodLogs("FARM", "pod-a", null);
 
             assertThat(result).isEqualTo("line1\nline2");
         }
@@ -234,7 +237,7 @@ class PodQueryServiceTest {
             when(containerResource.tailingLines(500)).thenReturn(prettyLoggable);
             when(prettyLoggable.getLog()).thenReturn("jupyter log");
 
-            String result = podQueryService.getPodLogs("pod-a", "jupyter");
+            String result = podQueryService.getPodLogs("FARM", "pod-a", "jupyter");
 
             assertThat(result).isEqualTo("jupyter log");
         }
@@ -245,7 +248,7 @@ class PodQueryServiceTest {
             when(inNamespace.withName("missing-pod")).thenReturn(podResource);
             when(podResource.get()).thenReturn(null);
 
-            assertThatThrownBy(() -> podQueryService.getPodLogs("missing-pod", null))
+            assertThatThrownBy(() -> podQueryService.getPodLogs("FARM", "missing-pod", null))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
@@ -260,7 +263,7 @@ class PodQueryServiceTest {
             when(inNamespace.withName("mysql-0")).thenReturn(podResource);
             when(podResource.get()).thenReturn(database);
 
-            assertThatThrownBy(() -> podQueryService.getPodLogs("mysql-0", null))
+            assertThatThrownBy(() -> podQueryService.getPodLogs("FARM", "mysql-0", null))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
@@ -274,7 +277,7 @@ class PodQueryServiceTest {
             when(podResource.get()).thenReturn(podNamed("pod-a"));
             when(podResource.tailingLines(anyInt())).thenThrow(new RuntimeException("container is not running"));
 
-            String result = podQueryService.getPodLogs("pod-a", null);
+            String result = podQueryService.getPodLogs("FARM", "pod-a", null);
 
             assertThat(result).isEmpty();
         }
@@ -303,7 +306,7 @@ class PodQueryServiceTest {
             when(eventsInNamespace.withField("involvedObject.name", "pod-a")).thenReturn(eventsFiltered);
             when(eventsFiltered.list()).thenReturn(eventList);
 
-            List<PodEventDTO> result = podQueryService.getPodEvents("pod-a");
+            List<PodEventDTO> result = podQueryService.getPodEvents("FARM", "pod-a");
 
             assertThat(result).extracting(PodEventDTO::reason).containsExactly("FailedScheduling", "Scheduled");
             assertThat(result.get(0).count()).isEqualTo(3);
@@ -313,11 +316,12 @@ class PodQueryServiceTest {
     @Test
     @DisplayName("설정한 네임스페이스에서 Pod를 조회한다 (실험 스택은 스택 네임스페이스에 Pod를 만든다)")
     void usesConfiguredNamespace() {
-        PodQueryService stackService = new PodQueryService(client, "ailab-noprobe");
+        when(clients.kubernetesClient("LAB")).thenReturn(client);
+        when(clients.podNamespace("LAB")).thenReturn("ailab-noprobe");
         when(pods.inNamespace("ailab-noprobe")).thenReturn(inNamespace);
 
         try {
-            stackService.getPodNames();
+            podQueryService.getPodNames("LAB");
         } catch (Exception ignored) {
             // 목록 결과는 이 테스트의 관심사가 아니다 — 어느 네임스페이스로 조회했는지만 본다.
         }

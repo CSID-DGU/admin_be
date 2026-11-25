@@ -765,6 +765,20 @@ class AlarmServiceTest {
         }
 
         @Test
+        @DisplayName("새 신청 알림은 자원그룹 행이 바뀌어도 Request의 클러스터 스냅샷 채널로 간다")
+        void newRequest_usesClusterSnapshot() {
+            Request request = mockRequest("홍길동", "FARM");
+            when(request.getResourceGroup().getServerName()).thenReturn("LAB");
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("새 신청");
+
+            requestChannelNotifier.sendNewRequestNotification(request, List.of(), 0);
+
+            SlackMessageDto dto = queued();
+            assertThat(dto.getChannelId()).isEqualTo(FARM_REQUEST_CHANNEL_ID);
+            assertThat(dto.getWebhookUrl()).isEqualTo(FARM_REQUEST_WEBHOOK);
+        }
+
+        @Test
         @DisplayName("테스트용 계정의 신청서는 봇으로 올릴 때도 서버 신청서 채널이 아니라 알림 기록 채널로만 간다")
         void newRequest_ofTestAccount_neverReachesServerChannel() {
             ReflectionTestUtils.setField(channels, "notiChannelId", NOTI_CHANNEL_ID);
@@ -809,6 +823,19 @@ class AlarmServiceTest {
             assertThat(dto.getType()).isEqualTo(SlackMessageDto.MessageType.WEBHOOK);
             assertThat(dto.getWebhookUrl()).isEqualTo(FARM_REQUEST_WEBHOOK);
             assertThat(dto.isBlockLayout()).isTrue();
+        }
+
+        @Test
+        @DisplayName("취소 알림은 자원그룹 행이 바뀌어도 Request의 클러스터 스냅샷 채널로 간다")
+        void cancel_usesClusterSnapshot() {
+            Request request = mockRequest("홍길동", "FARM");
+            when(request.getResourceGroup().getServerName()).thenReturn("LAB");
+            when(messageUtils.get(anyString(), any(Object[].class))).thenReturn("취소 알림");
+
+            requestChannelNotifier.prepareRequestCancelledNotification(request).run();
+
+            SlackMessageDto dto = queued();
+            assertThat(dto.getWebhookUrl()).isEqualTo(FARM_REQUEST_WEBHOOK);
         }
 
         @Test
@@ -1282,6 +1309,7 @@ class AlarmServiceTest {
         Request request = mock(Request.class);
         when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(rg);
+        when(request.getServerName()).thenReturn(serverName);
         when(request.getPodName()).thenReturn(podName);
         when(request.getUbuntuUsername()).thenReturn("testuser");
         if (requestId != null) {
@@ -1305,6 +1333,7 @@ class AlarmServiceTest {
         Request request = mock(Request.class);
         when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(rg);
+        when(request.getServerName()).thenReturn(serverName);
         when(request.getUbuntuUsername()).thenReturn("testuser");
         when(request.getUsagePurpose()).thenReturn("테스트 목적");
         when(request.getExpiresAt()).thenReturn(java.time.LocalDateTime.of(2026, 12, 31, 23, 59));
@@ -1320,6 +1349,7 @@ class AlarmServiceTest {
         Request request = mock(Request.class);
         when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(rg);
+        when(request.getServerName()).thenReturn(serverName);
         return request;
     }
 
@@ -1345,6 +1375,7 @@ class AlarmServiceTest {
         Request request = mock(Request.class);
         when(request.getUser()).thenReturn(user);
         when(request.getResourceGroup()).thenReturn(rg);
+        when(request.getServerName()).thenReturn(serverName);
         when(request.getContainerImage()).thenReturn(image);
         when(request.getUbuntuUsername()).thenReturn("testuser");
         when(request.getRequestId()).thenReturn(requestId);

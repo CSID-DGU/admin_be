@@ -248,7 +248,7 @@ class AdminRequestQueryServiceTest {
             when(request.getResourceGroup()).thenReturn(resourceGroup);
             when(resourceGroup.getRsgroupId()).thenReturn(3);
             when(resourceGroup.getResourceGroupName()).thenReturn("RTX A6000 Cluster");
-            when(resourceGroup.getServerName()).thenReturn("FARM");
+            when(request.getServerName()).thenReturn("FARM");
             when(request.getContainerImage()).thenReturn(containerImage);
             when(podStatusCache.snapshot()).thenReturn(PodStatusSnapshot.EMPTY);
             when(requestRepository.findAllByStatusInWithAssociations(Status.activeStatuses())).thenReturn(List.of(request));
@@ -267,7 +267,6 @@ class AdminRequestQueryServiceTest {
             var user = mock(DGU_AI_LAB.admin_be.domain.users.entity.User.class);
             var containerImage = mock(DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage.class);
             when(request.getUser()).thenReturn(user);
-            when(user.getUserGroups()).thenReturn(java.util.Set.of());
             when(request.getResourceGroup()).thenReturn(null);
             when(request.getContainerImage()).thenReturn(containerImage);
             when(podStatusCache.snapshot()).thenReturn(PodStatusSnapshot.EMPTY);
@@ -288,14 +287,20 @@ class AdminRequestQueryServiceTest {
             Request podGone = mock(Request.class);
             for (Request request : List.of(withPod, podGone)) {
                 var user = mock(DGU_AI_LAB.admin_be.domain.users.entity.User.class);
+                var resourceGroup = mock(DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup.class);
                 when(request.getUser()).thenReturn(user);
                 when(user.getUserGroups()).thenReturn(java.util.Set.of());
+                when(request.getResourceGroup()).thenReturn(resourceGroup);
+                when(request.getServerName()).thenReturn("FARM");
                 when(request.getContainerImage()).thenReturn(mock(DGU_AI_LAB.admin_be.domain.containerImage.entity.ContainerImage.class));
                 when(request.getStatus()).thenReturn(Status.FULFILLED);
             }
             when(withPod.getPodName()).thenReturn("ailab-a-1");
             when(podGone.getPodName()).thenReturn("ailab-b-1");
-            when(podStatusCache.snapshot()).thenReturn(new PodStatusSnapshot(Map.of("ailab-a-1", running), List.of(), checkedAt));
+            when(podStatusCache.snapshot()).thenReturn(new PodStatusSnapshot(
+                    Map.of(new PodStatusSnapshot.PodKey("FARM", "ailab-a-1"), running),
+                    List.of(),
+                    Map.of("FARM", checkedAt)));
             when(requestRepository.findAllByStatusInWithAssociations(Status.activeStatuses())).thenReturn(List.of(withPod, podGone));
 
             List<ContainerInfoDTO> result = adminRequestQueryService.getAllActiveContainers();

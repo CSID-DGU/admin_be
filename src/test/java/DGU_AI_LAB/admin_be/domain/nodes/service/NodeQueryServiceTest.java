@@ -31,7 +31,7 @@ class NodeQueryServiceTest {
         ResourceGroup rg = ResourceGroup.builder()
                 .resourceGroupName("3090ti")
                 .description("desc")
-                .serverName("farm1")
+                .serverName("FARM")
                 .build();
         Node node = Node.builder()
                 .nodeId("farm1")
@@ -64,9 +64,9 @@ class NodeQueryServiceTest {
     @DisplayName("여러 노드가 있으면 전부 매핑해 반환한다")
     void getAllNodes_returnsAllMappedNodes_whenMultipleNodes() {
         ResourceGroup rg1 = ResourceGroup.builder()
-                .resourceGroupName("3090ti").description("desc").serverName("farm1").build();
+                .resourceGroupName("3090ti").description("desc").serverName("FARM").build();
         ResourceGroup rg2 = ResourceGroup.builder()
-                .resourceGroupName("a100").description("desc").serverName("farm2").build();
+                .resourceGroupName("a100").description("desc").serverName("LAB").build();
         Node node1 = Node.builder().nodeId("farm1").resourceGroup(rg1).memorySizeGB(128).cpuCoreCount(32).build();
         Node node2 = Node.builder().nodeId("farm2").resourceGroup(rg2).memorySizeGB(256).cpuCoreCount(64).build();
 

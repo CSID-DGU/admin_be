@@ -201,11 +201,11 @@ class PasswordResetServiceTest {
         void registersJobAndWaits() {
             withAccount();
             PasswordResetRequest reset = pendingReset();
-            when(jobClient.registerPasswordChange(any())).thenReturn(77L);
+            when(jobClient.registerPasswordChange(any(String.class), any())).thenReturn(77L);
 
             PasswordResetSummaryDTO result = service.approve(CHANGE_ID, ADMIN_ID, "확인");
 
-            verify(jobClient).registerPasswordChange(
+            verify(jobClient).registerPasswordChange("FARM",
                     new PasswordChangeRegisterRequestDTO(RESET_ID, "honggildong", "$6$new$hash"));
             assertThat(result.status()).isEqualTo("PROCESSING");
             assertThat(reset.getStatus()).isEqualTo(Status.PROCESSING);
@@ -247,7 +247,7 @@ class PasswordResetServiceTest {
             order.verify(userRepository).findByIdForUpdate(USER_ID);
             order.verify(resetRepository).findByChangeRequestIdForUpdate(CHANGE_ID);
             order.verify(requestRepository).existsByUser_UserIdAndStatus(USER_ID, Status.PROCESSING);
-            order.verify(jobClient).registerPasswordChange(any());
+            order.verify(jobClient).registerPasswordChange(any(String.class), any());
         }
 
         @Test
@@ -285,7 +285,7 @@ class PasswordResetServiceTest {
         void registrationFailureLeavesPending() {
             withAccount();
             PasswordResetRequest reset = pendingReset();
-            when(jobClient.registerPasswordChange(any()))
+            when(jobClient.registerPasswordChange(any(String.class), any()))
                     .thenThrow(new BusinessException(ErrorCode.UBUNTU_PASSWORD_CHANGE_FAILED));
 
             assertThatThrownBy(() -> service.approve(CHANGE_ID, ADMIN_ID, "확인"))
@@ -302,7 +302,7 @@ class PasswordResetServiceTest {
         void unconfirmedRegistrationWaitsForPoller() {
             withAccount();
             PasswordResetRequest reset = pendingReset();
-            when(jobClient.registerPasswordChange(any())).thenThrow(new JobRegistrationUnconfirmedException(
+            when(jobClient.registerPasswordChange(any(String.class), any())).thenThrow(new JobRegistrationUnconfirmedException(
                     "응답 없음", ErrorCode.UBUNTU_PASSWORD_CHANGE_FAILED, new RuntimeException("read timeout")));
 
             PasswordResetSummaryDTO result = service.approve(CHANGE_ID, ADMIN_ID, "확인");

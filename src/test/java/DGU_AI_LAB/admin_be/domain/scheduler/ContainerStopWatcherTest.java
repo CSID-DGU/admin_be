@@ -4,6 +4,7 @@ import DGU_AI_LAB.admin_be.domain.alarm.service.AlarmService;
 import DGU_AI_LAB.admin_be.domain.pod.dto.response.StoppedPodDTO;
 import DGU_AI_LAB.admin_be.domain.pod.service.PodStatusCache;
 import DGU_AI_LAB.admin_be.domain.pod.service.PodStatusSnapshot;
+import DGU_AI_LAB.admin_be.domain.pod.service.PodStatusSnapshot.ClusterStoppedPod;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
@@ -52,7 +53,10 @@ class ContainerStopWatcherTest {
     }
 
     private static PodStatusSnapshot stopped(List<StoppedPodDTO> pods) {
-        return new PodStatusSnapshot(Map.of(), pods, LocalDateTime.of(2026, 10, 15, 21, 25));
+        return new PodStatusSnapshot(
+                Map.of(),
+                pods.stream().map(pod -> new ClusterStoppedPod("FARM", pod)).toList(),
+                Map.of("FARM", LocalDateTime.of(2026, 10, 15, 21, 25)));
     }
 
     private void fulfilled(long requestId, String podName) {
@@ -62,6 +66,7 @@ class ContainerStopWatcherTest {
         when(request.getRequestId()).thenReturn(requestId);
         when(request.getPodName()).thenReturn(podName);
         when(request.getUbuntuUsername()).thenReturn("a");
+        when(request.getServerName()).thenReturn("FARM");
         when(request.getResourceGroup()).thenReturn(group);
         when(requestRepository.findAllByStatusInWithAssociations(List.of(Status.FULFILLED)))
                 .thenReturn(List.of(request));

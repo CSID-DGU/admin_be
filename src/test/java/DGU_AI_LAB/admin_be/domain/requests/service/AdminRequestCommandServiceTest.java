@@ -131,6 +131,7 @@ class AdminRequestCommandServiceTest {
         when(userRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(mockUser));
         when(mockImage.getImageId()).thenReturn(1L);
         when(mockRg.getRsgroupId()).thenReturn(1);
+        when(mockRg.getServerName()).thenReturn("FARM");
     }
 
     /** 공통 Request mock 설정 */
@@ -142,6 +143,7 @@ class AdminRequestCommandServiceTest {
         // 바뀌진 않으므로, 호출 순서에 맞춰 반환값을 순차 지정한다.
         when(request.getStatus()).thenReturn(Status.PENDING, Status.PROCESSING);
         when(request.getUbuntuUsername()).thenReturn("testuser");
+        when(request.getServerName()).thenReturn("FARM");
         when(mockUser.getUbuntuPasswordHash()).thenReturn("$6$salt$hash");
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
         when(request.getUser()).thenReturn(mockUser);
@@ -171,7 +173,7 @@ class AdminRequestCommandServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
 
-            verify(jobClient, never()).registerProvision(any());
+            verify(jobClient, never()).registerProvision(any(String.class), any());
         }
 
         @Test
@@ -223,7 +225,7 @@ class AdminRequestCommandServiceTest {
         @DisplayName("PROCESSING 요청은 생성 작업이 실패로 끝났으면 거절할 수 있다")
         void rejectRequest_success_whenProvisionJobFailed() {
             Request request = buildMockedRequestWithStatus(34L, Status.PROCESSING);
-            when(jobClient.getResult(JobResults.KIND_PROVISION, 34L))
+            when(jobClient.getResult("FARM", JobResults.KIND_PROVISION, 34L))
                     .thenReturn(job("FAIL", null));
 
             service.rejectRequest(new RejectRequestDTO(34L, "승인 취소"));
@@ -235,7 +237,7 @@ class AdminRequestCommandServiceTest {
         @DisplayName("PROCESSING 요청은 생성 작업이 도는 중이면 거절할 수 없다")
         void rejectRequest_throws_whenProvisionJobRunning() {
             Request request = buildMockedRequestWithStatus(35L, Status.PROCESSING);
-            when(jobClient.getResult(JobResults.KIND_PROVISION, 35L))
+            when(jobClient.getResult("FARM", JobResults.KIND_PROVISION, 35L))
                     .thenReturn(job("START", null));
 
             assertThatThrownBy(() -> service.rejectRequest(new RejectRequestDTO(35L, "취소")))
@@ -249,7 +251,7 @@ class AdminRequestCommandServiceTest {
         @DisplayName("PROCESSING 요청은 단계 재시도(RETRY) 중이어도 거절할 수 없다 — START만 보면 재시도 중인 작업을 놓친다")
         void rejectRequest_throws_whenProvisionJobRetrying() {
             Request request = buildMockedRequestWithStatus(40L, Status.PROCESSING);
-            when(jobClient.getResult(JobResults.KIND_PROVISION, 40L))
+            when(jobClient.getResult("FARM", JobResults.KIND_PROVISION, 40L))
                     .thenReturn(job("RETRY", null));
 
             assertThatThrownBy(() -> service.rejectRequest(new RejectRequestDTO(40L, "취소")))
@@ -263,7 +265,7 @@ class AdminRequestCommandServiceTest {
         @DisplayName("PROCESSING 요청은 작업이 성공했는데 아직 반영 전이면 거절할 수 없다")
         void rejectRequest_throws_whenProvisionSucceededButNotApplied() {
             Request request = buildMockedRequestWithStatus(36L, Status.PROCESSING);
-            when(jobClient.getResult(JobResults.KIND_PROVISION, 36L))
+            when(jobClient.getResult("FARM", JobResults.KIND_PROVISION, 36L))
                     .thenReturn(job("SUCCESS", new JobResultResponseDTO.Result(1L, 1L, "ailab-testuser-x", "farm2", List.of())));
 
             assertThatThrownBy(() -> service.rejectRequest(new RejectRequestDTO(36L, "취소")))
@@ -277,7 +279,7 @@ class AdminRequestCommandServiceTest {
         @DisplayName("성공 결과를 잃어 갇힌 PROCESSING 요청은 거절할 수 있다")
         void rejectRequest_success_whenSuccessResultMissing() {
             Request request = buildMockedRequestWithStatus(37L, Status.PROCESSING);
-            when(jobClient.getResult(JobResults.KIND_PROVISION, 37L))
+            when(jobClient.getResult("FARM", JobResults.KIND_PROVISION, 37L))
                     .thenReturn(job("SUCCESS", null));
 
             service.rejectRequest(new RejectRequestDTO(37L, "정리"));
@@ -296,7 +298,7 @@ class AdminRequestCommandServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.PROVISION_JOB_IN_PROGRESS);
-            verify(jobClient, never()).getResult(any(), any());
+            verify(jobClient, never()).getResult(any(String.class), any(), any());
         }
 
         @Test
@@ -413,6 +415,7 @@ class AdminRequestCommandServiceTest {
         when(request.getStatus()).thenReturn(status);
         when(request.getJobId()).thenReturn(1L);   // job()이 돌려주는 작업 번호와 같은 작업
         when(request.getUbuntuUsername()).thenReturn("testuser");
+        when(request.getServerName()).thenReturn("FARM");
         when(mockUser.getUbuntuPasswordHash()).thenReturn("$6$salt$hash");
         when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
         when(request.getUser()).thenReturn(mockUser);
@@ -437,6 +440,7 @@ class AdminRequestCommandServiceTest {
             Request request = mock(Request.class);
             when(request.getRequestId()).thenReturn(requestId);
             when(request.getStatus()).thenReturn(Status.PROCESSING);
+            when(request.getServerName()).thenReturn("FARM");
             when(request.getUser()).thenReturn(mockUser);
             when(request.getResourceGroup()).thenReturn(mockRg);
             when(request.getContainerImage()).thenReturn(mockImage);
@@ -458,7 +462,7 @@ class AdminRequestCommandServiceTest {
             // Then
             ArgumentCaptor<ProvisionRegisterRequestDTO> captor =
                     ArgumentCaptor.forClass(ProvisionRegisterRequestDTO.class);
-            verify(jobClient).registerProvision(captor.capture());
+            verify(jobClient).registerProvision(any(String.class), captor.capture());
             ProvisionRegisterRequestDTO body = captor.getValue();
             assertThat(body.requestId()).isEqualTo(requestId);
             assertThat(body.username()).isEqualTo("testuser");
@@ -474,6 +478,27 @@ class AdminRequestCommandServiceTest {
         }
 
         @Test
+        @DisplayName("FARM 신청을 LAB 자원그룹으로 승인하려 하면 그룹·상태를 건드리기 전에 거절한다")
+        void rejectsApprovalThatChangesImmutableRequestCluster() {
+            Long requestId = 208L;
+            Request request = buildMockedRequest(requestId);
+            RequestGroup requestedGroup = mock(RequestGroup.class);
+            when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>(List.of(requestedGroup)));
+            ResourceGroup labGroup = mock(ResourceGroup.class);
+            when(labGroup.getServerName()).thenReturn("LAB");
+            when(resourceGroupRepository.findById(2)).thenReturn(Optional.of(labGroup));
+
+            assertThatThrownBy(() -> service.approveRequest(
+                    new ApproveRequestDTO(requestId, 1L, 2, "잘못된 클러스터 승인")))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_INPUT_VALUE);
+
+            verify(request, never()).markAsProcessing();
+            verify(request, never()).prepareAsyncApproval(any(), any(), any());
+            verify(jobClient, never()).registerProvision(any(String.class), any());
+        }
+
+        @Test
         @DisplayName("자기 자신만 PROCESSING이면(정상적인 단독 승인) 충돌로 보지 않고 그대로 등록한다")
         void doesNotConflictWithItself() {
             Long requestId = 220L;
@@ -484,7 +509,7 @@ class AdminRequestCommandServiceTest {
 
             service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
 
-            verify(jobClient).registerProvision(any());
+            verify(jobClient).registerProvision(any(String.class), any());
             verify(request, never()).revertToPending();
         }
 
@@ -504,7 +529,7 @@ class AdminRequestCommandServiceTest {
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_APPROVAL_ALREADY_IN_PROGRESS)
                     .hasMessageContaining("[999]");
 
-            verify(jobClient, never()).registerProvision(any());
+            verify(jobClient, never()).registerProvision(any(String.class), any());
             verify(request).revertToPending();
         }
 
@@ -518,7 +543,7 @@ class AdminRequestCommandServiceTest {
             assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_ACCOUNT_RELEASING);
-            verify(jobClient, never()).registerProvision(any());
+            verify(jobClient, never()).registerProvision(any(String.class), any());
         }
 
         @Test
@@ -532,7 +557,7 @@ class AdminRequestCommandServiceTest {
             assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PASSWORD_RESET_IN_PROGRESS);
-            verify(jobClient, never()).registerProvision(any());
+            verify(jobClient, never()).registerProvision(any(String.class), any());
         }
 
         @Test
@@ -549,7 +574,7 @@ class AdminRequestCommandServiceTest {
             // Then
             ArgumentCaptor<ProvisionRegisterRequestDTO> captor =
                     ArgumentCaptor.forClass(ProvisionRegisterRequestDTO.class);
-            verify(jobClient).registerProvision(captor.capture());
+            verify(jobClient).registerProvision(any(String.class), captor.capture());
             assertThat(captor.getValue().account()).isNull();
             assertThat(captor.getValue().supplementaryGroups()).isEmpty();
         }
@@ -580,7 +605,7 @@ class AdminRequestCommandServiceTest {
             Long requestId = 203L;
             Request request = buildMockedRequest(requestId);
             doThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED))
-                    .when(jobClient).registerProvision(any());
+                    .when(jobClient).registerProvision(any(String.class), any());
 
             // When & Then
             assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
@@ -594,8 +619,8 @@ class AdminRequestCommandServiceTest {
             Long requestId = 205L;
             Request request = buildMockedRequest(requestId);
             doThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED))
-                    .when(jobClient).registerProvision(any());
-            when(jobClient.getResult(JobResults.KIND_PROVISION, requestId))
+                    .when(jobClient).registerProvision(any(String.class), any());
+            when(jobClient.getResult("FARM", JobResults.KIND_PROVISION, requestId))
                     .thenReturn(job("START", null, 77L));
 
             service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
@@ -610,8 +635,8 @@ class AdminRequestCommandServiceTest {
             Long requestId = 210L;
             Request request = buildMockedRequest(requestId);
             doThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED))
-                    .when(jobClient).registerProvision(any());
-            when(jobClient.getResult(JobResults.KIND_PROVISION, requestId))
+                    .when(jobClient).registerProvision(any(String.class), any());
+            when(jobClient.getResult("FARM", JobResults.KIND_PROVISION, requestId))
                     .thenReturn(job("RETRY", null, 78L));
 
             service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
@@ -627,12 +652,12 @@ class AdminRequestCommandServiceTest {
             Request request = buildMockedRequest(requestId);
             doThrow(new BusinessException("작업 등록 중 오류", ErrorCode.POD_CREATION_FAILED,
                     new RuntimeException(new java.net.ConnectException("Connection refused"))))
-                    .when(jobClient).registerProvision(any());
+                    .when(jobClient).registerProvision(any(String.class), any());
 
             assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
                     .isInstanceOf(BusinessException.class);
             verify(request).revertToPending();
-            verify(jobClient, never()).getResult(any(), any());
+            verify(jobClient, never()).getResult(any(String.class), any(), any());
         }
 
         @Test
@@ -641,8 +666,8 @@ class AdminRequestCommandServiceTest {
             Long requestId = 206L;
             Request request = buildMockedRequest(requestId);
             doThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED))
-                    .when(jobClient).registerProvision(any());
-            when(jobClient.getResult(JobResults.KIND_PROVISION, requestId))
+                    .when(jobClient).registerProvision(any(String.class), any());
+            when(jobClient.getResult("FARM", JobResults.KIND_PROVISION, requestId))
                     .thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
 
             assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
@@ -815,7 +840,7 @@ class AdminRequestCommandServiceTest {
             ReflectionTestUtils.setField(created, "groupId", 4L);
             when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));
             when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(mockRg));
-            when(jobClient.registerProvision(any())).thenReturn(9001L);
+            when(jobClient.registerProvision(any(String.class), any())).thenReturn(9001L);
         }
 
         /** 생성 작업이 돌고 있는(PROCESSING) 신청. */
@@ -823,6 +848,7 @@ class AdminRequestCommandServiceTest {
             Request request = mock(Request.class);
             when(request.getRequestId()).thenReturn(requestId);
             when(request.getStatus()).thenReturn(Status.PROCESSING);
+            when(request.getServerName()).thenReturn("FARM");
             when(request.getUser()).thenReturn(mockUser);
             when(request.getResourceGroup()).thenReturn(mockRg);
             when(request.getContainerImage()).thenReturn(mockImage);
@@ -854,7 +880,7 @@ class AdminRequestCommandServiceTest {
             service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null));
 
             ArgumentCaptor<ProvisionRegisterRequestDTO> captor = ArgumentCaptor.forClass(ProvisionRegisterRequestDTO.class);
-            verify(jobClient).registerProvision(captor.capture());
+            verify(jobClient).registerProvision(any(String.class), captor.capture());
             List<UserCreationRequestDTO.SupplementaryGroup> groups = captor.getValue().account().supplementaryGroups();
             assertThat(groups).containsExactly(
                     new UserCreationRequestDTO.SupplementaryGroup("vision-lab", null),
@@ -880,7 +906,7 @@ class AdminRequestCommandServiceTest {
             assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(requestId, 1L, 1, null)))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PENDING_GROUP_IN_PROGRESS);
-            verify(jobClient, never()).registerProvision(any());
+            verify(jobClient, never()).registerProvision(any(String.class), any());
             // 승인 시작(PROCESSING) 표시는 같은 트랜잭션이라 함께 롤백된다.
             verify(transactionManager).rollback(transactionStatus);
         }
@@ -987,6 +1013,7 @@ class AdminRequestCommandServiceTest {
             when(request.getRequestId()).thenReturn(requestId);
             when(request.getStatus()).thenReturn(Status.PENDING, Status.PROCESSING);
             when(request.getUbuntuUsername()).thenReturn("user" + requestId);
+            when(request.getServerName()).thenReturn("FARM");
             when(request.getRequestGroups()).thenReturn(new LinkedHashSet<>());
             when(request.getUser()).thenReturn(owner);
             when(request.getResourceGroup()).thenReturn(mockRg);
@@ -999,8 +1026,8 @@ class AdminRequestCommandServiceTest {
             java.util.concurrent.CountDownLatch entered = new java.util.concurrent.CountDownLatch(1);
             java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
             java.util.concurrent.atomic.AtomicLong nextJobId = new java.util.concurrent.atomic.AtomicLong(7000L);
-            when(jobClient.registerProvision(any())).thenAnswer(inv -> {
-                ProvisionRegisterRequestDTO body = inv.getArgument(0);
+            when(jobClient.registerProvision(any(String.class), any())).thenAnswer(inv -> {
+                ProvisionRegisterRequestDTO body = inv.getArgument(1);
                 if (heldRequestId.equals(body.requestId())) {
                     entered.countDown();
                     if (!release.await(WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)) {
@@ -1078,7 +1105,7 @@ class AdminRequestCommandServiceTest {
         @DisplayName("잠금 개수는 고정이다 — 승인한 사용자 수만큼 늘지 않는다")
         void lockCountDoesNotGrowWithUsers() {
             java.util.concurrent.atomic.AtomicLong jobIds = new java.util.concurrent.atomic.AtomicLong(1L);
-            when(jobClient.registerProvision(any())).thenAnswer(inv -> jobIds.incrementAndGet());
+            when(jobClient.registerProvision(any(String.class), any())).thenAnswer(inv -> jobIds.incrementAndGet());
             Object[] before = (Object[]) ReflectionTestUtils.getField(service, "approvalLocks");
 
             for (long userId = 10_000; userId < 10_200; userId++) {
@@ -1091,7 +1118,7 @@ class AdminRequestCommandServiceTest {
             assertThat(after).isSameAs(before).hasSize(AdminRequestCommandService.APPROVAL_LOCK_STRIPES);
             assertThat(java.util.Arrays.stream(after).distinct().count())
                     .isEqualTo(AdminRequestCommandService.APPROVAL_LOCK_STRIPES);
-            verify(jobClient, times(200)).registerProvision(any());
+            verify(jobClient, times(200)).registerProvision(any(String.class), any());
         }
 
         @Test
@@ -1109,13 +1136,13 @@ class AdminRequestCommandServiceTest {
             awaitBlocked(second);
 
             // 앞선 등록이 잠금을 쥔 동안 뒤쪽은 PROCESSING 조회조차 하지 못한다.
-            verify(jobClient, times(1)).registerProvision(any());
+            verify(jobClient, times(1)).registerProvision(any(String.class), any());
             verify(requestRepository, times(1)).findAllByUser_UserIdAndStatus(100L, Status.PROCESSING);
 
             latches[1].countDown();
             joinAll(first, second);
             assertThat(failures).isEmpty();
-            verify(jobClient, times(2)).registerProvision(any());
+            verify(jobClient, times(2)).registerProvision(any(String.class), any());
         }
 
         @Test
@@ -1137,7 +1164,7 @@ class AdminRequestCommandServiceTest {
             latches[1].countDown();
             joinAll(first);
             assertThat(failures).isEmpty();
-            verify(jobClient, times(2)).registerProvision(any());
+            verify(jobClient, times(2)).registerProvision(any(String.class), any());
         }
 
         @Test
@@ -1156,12 +1183,12 @@ class AdminRequestCommandServiceTest {
             assertThat(latches[0].await(WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
             Thread second = approveAsync(322L, failures);
             awaitBlocked(second);
-            verify(jobClient, times(1)).registerProvision(any());
+            verify(jobClient, times(1)).registerProvision(any(String.class), any());
 
             latches[1].countDown();
             joinAll(first, second);
             assertThat(failures).isEmpty();
-            verify(jobClient, times(2)).registerProvision(any());
+            verify(jobClient, times(2)).registerProvision(any(String.class), any());
             // 다른 사용자라 서로를 "처리 중인 같은 사용자 신청"으로 보지 않는다.
             verify(requestRepository).findAllByUser_UserIdAndStatus(a, Status.PROCESSING);
             verify(requestRepository).findAllByUser_UserIdAndStatus(b, Status.PROCESSING);
@@ -1173,14 +1200,14 @@ class AdminRequestCommandServiceTest {
             User owner = userWithId(100L);
             pendingRequestOf(331L, owner);
             pendingRequestOf(332L, owner);
-            when(jobClient.registerProvision(any()))
+            when(jobClient.registerProvision(any(String.class), any()))
                     .thenThrow(new BusinessException(ErrorCode.POD_CREATION_FAILED))
                     .thenReturn(7332L);
 
             assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(331L, 1L, 1, null)))
                     .isInstanceOf(BusinessException.class);
             assertThat(service.approveRequest(new ApproveRequestDTO(332L, 1L, 1, null))).isNotNull();
-            verify(jobClient, times(2)).registerProvision(any());
+            verify(jobClient, times(2)).registerProvision(any(String.class), any());
         }
 
         @Test
@@ -1193,7 +1220,7 @@ class AdminRequestCommandServiceTest {
             when(requestRepository.findAllByUser_UserIdAndStatus(100L, Status.PROCESSING))
                     .thenReturn(List.of(blocking))
                     .thenReturn(List.of());
-            when(jobClient.registerProvision(any())).thenReturn(7341L);
+            when(jobClient.registerProvision(any(String.class), any())).thenReturn(7341L);
 
             assertThatThrownBy(() -> service.approveRequest(new ApproveRequestDTO(341L, 1L, 1, null)))
                     .isInstanceOf(BusinessException.class)
@@ -1201,7 +1228,7 @@ class AdminRequestCommandServiceTest {
 
             pendingRequestOf(341L, owner); // PENDING으로 되돌아간 뒤 관리자가 다시 승인
             assertThat(service.approveRequest(new ApproveRequestDTO(341L, 1L, 1, null))).isNotNull();
-            verify(jobClient, times(1)).registerProvision(any());
+            verify(jobClient, times(1)).registerProvision(any(String.class), any());
         }
     }
 
@@ -1210,6 +1237,7 @@ class AdminRequestCommandServiceTest {
     void approveRequest_refusedWhileOwnerSuspended() {
         Request request = mock(Request.class);
         when(request.getStatus()).thenReturn(Status.PENDING);
+        when(request.getServerName()).thenReturn("FARM");
         when(request.getUser()).thenReturn(mockUser);
         when(requestRepository.findByIdForUpdate(14L)).thenReturn(Optional.of(request));
         when(containerImageRepository.findById(1L)).thenReturn(Optional.of(mockImage));

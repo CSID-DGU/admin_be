@@ -44,7 +44,11 @@ class PortOperationJobPollerTest {
 
     private static PortOperation operation(Long operationId) {
         PortOperation operation = mock(PortOperation.class);
+        DGU_AI_LAB.admin_be.domain.requests.entity.Request request =
+                mock(DGU_AI_LAB.admin_be.domain.requests.entity.Request.class);
         when(operation.getPortOperationId()).thenReturn(operationId);
+        when(operation.getRequest()).thenReturn(request);
+        when(request.getServerName()).thenReturn("FARM");
         when(operation.getJobId()).thenReturn(JOB_ID);
         return operation;
     }
@@ -54,7 +58,7 @@ class PortOperationJobPollerTest {
     }
 
     private void result(Long operationId, Long jobId, String phase, String errorCode) {
-        when(jobClient.getResult(JobResults.KIND_PORT, operationId)).thenReturn(new JobResultResponseDTO(
+        when(jobClient.getResult("FARM", JobResults.KIND_PORT, operationId)).thenReturn(new JobResultResponseDTO(
                 String.valueOf(operationId), JobResults.KIND_PORT, jobId, phase, errorCode, null, RESULT));
     }
 
@@ -110,7 +114,7 @@ class PortOperationJobPollerTest {
     @DisplayName("한 작업의 조회 실패가 나머지 작업 처리를 막지 않는다")
     void oneFailureDoesNotBlockTheRest() {
         processing(operation(6L), operation(OPERATION_ID));
-        when(jobClient.getResult(JobResults.KIND_PORT, 6L)).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
+        when(jobClient.getResult("FARM", JobResults.KIND_PORT, 6L)).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
         result(OPERATION_ID, JOB_ID, JobResults.PHASE_SUCCESS, null);
 
         poller.pollPortOperations();

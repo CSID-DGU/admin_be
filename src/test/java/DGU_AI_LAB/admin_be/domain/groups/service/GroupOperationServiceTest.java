@@ -104,7 +104,7 @@ class GroupOperationServiceTest {
             ReflectionTestUtils.setField(saved, "groupOperationId", OPERATION_ID);
             return saved;
         });
-        when(jobClient.registerGroupChange(any())).thenReturn(JOB_ID);
+        when(jobClient.registerGroupChange(any(String.class), any())).thenReturn(JOB_ID);
     }
 
     private static User user(Long id, String ubuntuUsername) {
@@ -130,7 +130,7 @@ class GroupOperationServiceTest {
 
     private GroupChangeRegisterRequestDTO registered() {
         ArgumentCaptor<GroupChangeRegisterRequestDTO> captor = ArgumentCaptor.forClass(GroupChangeRegisterRequestDTO.class);
-        verify(jobClient).registerGroupChange(captor.capture());
+        verify(jobClient).registerGroupChange(eq(User.PRIMARY_SERVER), captor.capture());
         return captor.getValue();
     }
 
@@ -202,6 +202,7 @@ class GroupOperationServiceTest {
             originalRequest = mock(Request.class);
             when(originalRequest.getUser()).thenReturn(user);
             when(originalRequest.getUbuntuUsername()).thenReturn("alice");
+            when(originalRequest.getServerName()).thenReturn("FARM");
             when(originalRequest.getResourceGroup()).thenReturn(resourceGroup);
             changeRequest = ChangeRequest.builder().request(originalRequest).changeType(ChangeType.GROUP)
                     .newValue("[70000]").reason("팀 합류").requestedBy(user).build();
@@ -219,6 +220,20 @@ class GroupOperationServiceTest {
             assertThat(changeRequest.getStatus()).isEqualTo(Status.PROCESSING);
             assertThat(changeRequest.getAdminComment()).isEqualTo("승인합니다");
             assertThat(user.getUserGroups()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("LAB 신청의 그룹 추가는 FARM 작업으로 잘못 보내지 않고 즉시 거절한다")
+        void labRequestIsRejectedBeforeRegistration() {
+            when(originalRequest.getServerName()).thenReturn("LAB");
+
+            assertThatThrownBy(() -> service.startAdd(changeRequest, originalRequest, admin, null))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+
+            verifyNoInteractions(jobClient, groupMembershipPolicy);
+            verify(operationRepository, never()).save(any());
+            assertThat(changeRequest.getStatus()).isEqualTo(Status.PENDING);
         }
 
         @Test
@@ -247,8 +262,9 @@ class GroupOperationServiceTest {
         }
 
         @Test
-        @DisplayName("작업이 성공하면 계정에 그룹을 기록하고 승인을 끝낸 뒤 안내 메일을 보낸다")
+        @DisplayName("작업이 성공하면 신청 클러스터 스냅샷으로 알리고 계정에 그룹을 기록한다")
         void successRecordsGroupsAndCompletesApproval() {
+            when(originalRequest.getResourceGroup().getServerName()).thenReturn("LAB");
             changeRequest.startProcessing(admin, "승인합니다");
             GroupOperation operation = processing(GroupOperation.add(changeRequest, user, "alice", admin));
 
@@ -260,7 +276,8 @@ class GroupOperationServiceTest {
             verify(userGuideMailer).sendGroupAddedEmail(changeRequest, "승인합니다", List.of("teamx"));
             // 승인을 누른 때가 아니라 반영이 끝난 지금, 접수 알림에 결과를 댓글로 남긴다.
             verify(requestChannelNotifier).sendChangeRequestDecidedNotification(argThat(decision -> decision.approved()
-                    && decision.changeType() == ChangeType.GROUP && "승인합니다".equals(decision.adminComment())));
+                    && decision.changeType() == ChangeType.GROUP && "승인합니다".equals(decision.adminComment())
+                    && "FARM".equals(decision.serverName())));
         }
 
         @Test
@@ -280,8 +297,9 @@ class GroupOperationServiceTest {
         }
 
         @Test
-        @DisplayName("작업이 실패하면 변경 요청을 승인 대기로 되돌리고 관리자에게 알린다")
+        @DisplayName("작업이 실패하면 신청 클러스터 스냅샷으로 관리자에게 알리고 승인 대기로 되돌린다")
         void failureReturnsTheChangeRequestToPending() {
+            when(originalRequest.getResourceGroup().getServerName()).thenReturn("LAB");
             changeRequest.startProcessing(admin, "승인합니다");
             GroupOperation operation = processing(GroupOperation.add(changeRequest, user, "alice", admin));
 
@@ -291,7 +309,8 @@ class GroupOperationServiceTest {
             assertThat(changeRequest.getReviewedBy()).isNull();
             assertThat(operation.getStatus()).isEqualTo(GroupOperationStatus.FAILED);
             assertThat(user.getUserGroups()).isEmpty();
-            assertThat(Alerts.needsAction(alarmService)).hasSize(1);
+            assertThat(Alerts.needsAction(alarmService)).containsExactly(
+                    "notification.admin.group.add-failed FARM 9 alice AD_GROUP_MEMBER_FAILED");
         }
     }
 

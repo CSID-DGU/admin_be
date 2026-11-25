@@ -54,15 +54,16 @@ class RequestSchedulerServiceUnitTest {
                 requestRepository, alarmService, requestExpiryService, requestNotificationService,
                 adminRequestCommandService, jobClient
         );
-        when(mockRg.getServerName()).thenReturn("FARM-01");
+        when(mockRg.getServerName()).thenReturn("FARM");
         // 기본: 등록된 생성 작업이 없는 신청 (승인 도중 admin_be가 죽어 작업 등록 전에 멈춘 경우)
-        when(jobClient.getResult(eq(JobResults.KIND_PROVISION), any())).thenReturn(provisionJob(JobResults.PHASE_NONE));
+        when(jobClient.getResult(any(String.class), eq(JobResults.KIND_PROVISION), any())).thenReturn(provisionJob(JobResults.PHASE_NONE));
     }
 
     private Request buildMockedRequest(Long requestId) {
         Request request = mock(Request.class);
         when(request.getRequestId()).thenReturn(requestId);
         when(request.getUbuntuUsername()).thenReturn("testuser");
+        when(request.getServerName()).thenReturn("FARM");
         when(request.getResourceGroup()).thenReturn(mockRg);
         return request;
     }
@@ -79,7 +80,7 @@ class RequestSchedulerServiceUnitTest {
 
         service.processExpiredRequests(now);
 
-        assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("FARM-01")).hasSize(1);
+        assertThat(Alerts.needsAction(alarmService)).filteredOn(alert -> alert.contains("FARM")).hasSize(1);
         assertThat(Alerts.needsAction(alarmService)).hasSize(1);
     }
 
@@ -139,7 +140,7 @@ class RequestSchedulerServiceUnitTest {
 
         service.reconcileStaleInFlightRequests();
 
-        verify(adminRequestCommandService).revertToPendingIfStillProcessing(10L, "FARM-01");
+        verify(adminRequestCommandService).revertToPendingIfStillProcessing(10L, "FARM");
         assertThat(Alerts.needsAction(alarmService)).hasSize(1);
     }
 
@@ -179,7 +180,7 @@ class RequestSchedulerServiceUnitTest {
     void reconcile_staleProcessing_jobStillRunning_doesNotRevert() {
         Request request = buildMockedRequest(11L);
         when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.PROCESSING), any())).thenReturn(List.of(request));
-        when(jobClient.getResult(JobResults.KIND_PROVISION, 11L))
+        when(jobClient.getResult("FARM", JobResults.KIND_PROVISION, 11L))
                 .thenReturn(provisionJob(JobResults.PHASE_START));
 
         service.reconcileStaleInFlightRequests();
@@ -193,12 +194,12 @@ class RequestSchedulerServiceUnitTest {
     void reconcile_staleProcessing_jobFailed_reverts() {
         Request request = buildMockedRequest(12L);
         when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.PROCESSING), any())).thenReturn(List.of(request));
-        when(jobClient.getResult(JobResults.KIND_PROVISION, 12L))
+        when(jobClient.getResult("FARM", JobResults.KIND_PROVISION, 12L))
                 .thenReturn(provisionJob(JobResults.PHASE_FAIL));
 
         service.reconcileStaleInFlightRequests();
 
-        verify(adminRequestCommandService).revertToPendingIfStillProcessing(12L, "FARM-01");
+        verify(adminRequestCommandService).revertToPendingIfStillProcessing(12L, "FARM");
     }
 
     @Test
@@ -206,7 +207,7 @@ class RequestSchedulerServiceUnitTest {
     void reconcile_staleProcessing_jobDegraded_doesNotRevert() {
         Request request = buildMockedRequest(16L);
         when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.PROCESSING), any())).thenReturn(List.of(request));
-        when(jobClient.getResult(JobResults.KIND_PROVISION, 16L)).thenReturn(
+        when(jobClient.getResult("FARM", JobResults.KIND_PROVISION, 16L)).thenReturn(
                 new JobResultResponseDTO(null, JobResults.KIND_PROVISION, null, JobResults.PHASE_FAIL, "DEGRADED", null, null));
 
         service.reconcileStaleInFlightRequests();
@@ -220,9 +221,9 @@ class RequestSchedulerServiceUnitTest {
         Request succeeded = buildMockedRequest(13L);
         Request unknown = buildMockedRequest(14L);
         when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.PROCESSING), any())).thenReturn(List.of(succeeded, unknown));
-        when(jobClient.getResult(JobResults.KIND_PROVISION, 13L))
+        when(jobClient.getResult("FARM", JobResults.KIND_PROVISION, 13L))
                 .thenReturn(provisionJob(JobResults.PHASE_SUCCESS));
-        when(jobClient.getResult(JobResults.KIND_PROVISION, 14L))
+        when(jobClient.getResult("FARM", JobResults.KIND_PROVISION, 14L))
                 .thenReturn(provisionJob(JobResults.PHASE_UNKNOWN));
 
         service.reconcileStaleInFlightRequests();
@@ -235,7 +236,7 @@ class RequestSchedulerServiceUnitTest {
     void reconcile_staleProcessing_jobLookupFails_doesNotRevert() {
         Request request = buildMockedRequest(15L);
         when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.PROCESSING), any())).thenReturn(List.of(request));
-        when(jobClient.getResult(JobResults.KIND_PROVISION, 15L))
+        when(jobClient.getResult("FARM", JobResults.KIND_PROVISION, 15L))
                 .thenThrow(new RuntimeException("config-server down"));
 
         service.reconcileStaleInFlightRequests();
@@ -252,7 +253,7 @@ class RequestSchedulerServiceUnitTest {
     void reconcile_staleExpiring_withoutJob_reverts() {
         Request request = buildMockedRequest(30L);
         when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.EXPIRING), any())).thenReturn(List.of(request));
-        when(jobClient.getResult(JobResults.KIND_REVOKE, 30L)).thenReturn(revokeJob(JobResults.PHASE_NONE));
+        when(jobClient.getResult("FARM", JobResults.KIND_REVOKE, 30L)).thenReturn(revokeJob(JobResults.PHASE_NONE));
 
         service.reconcileStaleInFlightRequests();
 
@@ -266,7 +267,7 @@ class RequestSchedulerServiceUnitTest {
         when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.EXPIRING), any())).thenReturn(List.of(request));
         for (String phase : List.of(JobResults.PHASE_START, JobResults.PHASE_SUCCESS,
                 JobResults.PHASE_FAIL, JobResults.PHASE_UNKNOWN)) {
-            when(jobClient.getResult(JobResults.KIND_REVOKE, 31L)).thenReturn(revokeJob(phase));
+            when(jobClient.getResult("FARM", JobResults.KIND_REVOKE, 31L)).thenReturn(revokeJob(phase));
 
             service.reconcileStaleInFlightRequests();
         }
@@ -279,7 +280,7 @@ class RequestSchedulerServiceUnitTest {
     void reconcile_staleExpiring_lookupFails_doesNotRevert() {
         Request request = buildMockedRequest(32L);
         when(requestRepository.findAllByStatusAndUpdatedAtBefore(eq(Status.EXPIRING), any())).thenReturn(List.of(request));
-        when(jobClient.getResult(JobResults.KIND_REVOKE, 32L)).thenThrow(new RuntimeException("down"));
+        when(jobClient.getResult("FARM", JobResults.KIND_REVOKE, 32L)).thenThrow(new RuntimeException("down"));
 
         service.reconcileStaleInFlightRequests();
 

@@ -31,6 +31,7 @@ class RequestChannelNotifierTestPodTest {
         when(rg.getServerName()).thenReturn("FARM");
         when(r.getUser()).thenReturn(u);
         when(r.getResourceGroup()).thenReturn(rg);
+        when(r.getServerName()).thenReturn("FARM");
         when(r.isTest()).thenReturn(test);
         when(r.getRequestId()).thenReturn(1L);
         when(messages.get(any(), any(Object[].class))).thenReturn("msg");

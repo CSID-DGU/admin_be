@@ -8,7 +8,9 @@ import DGU_AI_LAB.admin_be.domain.nodes.repository.NodeRepository;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
 import DGU_AI_LAB.admin_be.domain.requests.entity.Status;
 import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
+import DGU_AI_LAB.admin_be.domain.resourceGroups.entity.ResourceGroup;
 import DGU_AI_LAB.admin_be.domain.users.entity.User;
+import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
@@ -23,12 +25,17 @@ import org.mockito.quality.Strictness;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -55,6 +62,9 @@ class MyGpuUsageServiceTest {
         when(r.getPodName()).thenReturn(pod);
         when(r.getNodeName()).thenReturn(node);
         when(r.getStatus()).thenReturn(Status.FULFILLED);
+        when(r.getServerName()).thenReturn("FARM");
+        when(r.getUbuntuUsername()).thenReturn("u" + userId);
+        when(r.getRequestId()).thenReturn(userId);
         return r;
     }
 
@@ -63,6 +73,17 @@ class MyGpuUsageServiceTest {
         // 대부분의 테스트는 exporter가 이 노드에서 프로세스 목록을 읽고 있다고 가정한다.
         when(prometheus.querySeries(contains("gpu_process_metrics_up"))).thenReturn(List.of(
                 s(1, "hostname", "FARM6")));
+        Node farmNode = nodeIn("FARM", List.of());
+        when(nodeRepository.findByIdWithGpus(anyString())).thenReturn(Optional.of(farmNode));
+    }
+
+    private Node nodeIn(String clusterId, List<String> gpuModels) {
+        ResourceGroup resourceGroup = mock(ResourceGroup.class);
+        when(resourceGroup.getServerName()).thenReturn(clusterId);
+        Node node = mock(Node.class);
+        when(node.getResourceGroup()).thenReturn(resourceGroup);
+        when(node.getGpuModels()).thenReturn(gpuModels);
+        return node;
     }
 
     private static Sample s(double v, String... kv) {
@@ -101,7 +122,8 @@ class MyGpuUsageServiceTest {
                 s(1, "container_id", C_DOCKER.substring(0, 12), "gpu_uuid", "GPU-1", "ubuntu_username", "dave")));
         Request bob = request(2L, "pod-secret-x", "node-a");
         Request amy = request(3L, "pod-secret-y", "node-a");
-        when(requestRepository.findAllByPodNameIn(anyCollection())).thenReturn(List.of(mine, bob, amy));
+        when(requestRepository.findAllByPodNameInAndClusterIdAndNodeNameAndStatusIn(
+                anyCollection(), anyString(), anyString(), anyCollection())).thenReturn(List.of(mine, bob, amy));
 
         // 내 Pod의 RAM(512MiB)만 응답에 담긴다. 다른 사용자 Pod의 RAM은 어디에도 나오지 않는다.
         when(prometheus.querySeries(contains("pod=\"pod-mine\""))).thenReturn(List.of(s(512 * 1048576.0)));
@@ -123,6 +145,89 @@ class MyGpuUsageServiceTest {
         String json = new ObjectMapper().writeValueAsString(dto);
         assertThat(json).doesNotContain("secret").doesNotContain("bob").doesNotContain("amy")
                 .doesNotContain("train").doesNotContain("dave").doesNotContain("\"pid\"").doesNotContain("777");
+    }
+
+    @Test
+    @DisplayName("Pod 소유자는 FARM 기본 유저네임이 아니라 신청 클러스터의 유저네임으로 식별한다")
+    void ownerResolutionUsesRequestClusterUsername() {
+        Request labRequest = request(1L, "pod-lab", "lab-node");
+        when(labRequest.getServerName()).thenReturn("LAB");
+        User labUser = labRequest.getUser();
+        when(labUser.getUbuntuUsername()).thenReturn("farm-alice");
+        when(labRequest.getUbuntuUsername()).thenReturn("lab-alice");
+        Node labNode = nodeIn("LAB", List.of());
+        when(nodeRepository.findByIdWithGpus("lab-node")).thenReturn(Optional.of(labNode));
+        stubGpu("GPU-1", "0", "m", 1);
+        when(prometheus.querySeries(contains("gpu_process_memory_used_bytes"))).thenReturn(List.of(
+                s(1048576.0, "gpu_uuid", "GPU-1", "container_id", C_MINE, "pid", "11")));
+        when(prometheus.querySeries(contains("gpu_process_elapsed_seconds"))).thenReturn(List.of());
+        when(prometheus.querySeries(contains("kube_pod_container_info"))).thenReturn(List.of(
+                s(1, "container_id", "containerd://" + C_MINE, "pod", "pod-lab")));
+        when(prometheus.querySeries(contains("sum by (pod)"))).thenReturn(List.of());
+        when(requestRepository.findAllByPodNameInAndClusterIdAndNodeNameAndStatusIn(
+                anyCollection(), anyString(), anyString(), anyCollection())).thenReturn(List.of(labRequest));
+
+        MyGpuUsageService.Snapshot snapshot = service.snapshot("lab-node");
+        MyGpuUsageService.Owner owner = snapshot.podOwnerByContainer().get(C_MINE);
+
+        assertThat(MyGpuUsageService.ownerKey(labRequest)).isEqualTo("lab-alice");
+        assertThat(owner.key()).isEqualTo("lab-alice");
+        assertThat(owner.ubuntuUsername()).isEqualTo("lab-alice");
+    }
+
+    @Test
+    @DisplayName("FARM과 LAB에 같은 Pod 이름이 있어도 LAB 신청은 LAB 노드의 소유자만 사용한다")
+    void samePodNameAcrossClustersStaysInRequestClusterAndNode() {
+        Request lab = request(1L, "shared-pod", "lab1");
+        when(lab.getServerName()).thenReturn("LAB");
+        when(lab.getUbuntuUsername()).thenReturn("lab-alice");
+        Request farm = request(2L, "shared-pod", "farm1");
+        when(farm.getUbuntuUsername()).thenReturn("farm-bob");
+        when(requestRepository.findByIdWithUser(10L)).thenReturn(Optional.of(lab));
+        Node labNode = nodeIn("LAB", List.of());
+        when(nodeRepository.findByIdWithGpus("lab1")).thenReturn(Optional.of(labNode));
+        stubGpu("GPU-1", "0", "m", 1);
+        when(prometheus.querySeries(contains("gpu_process_memory_used_bytes"))).thenReturn(List.of(
+                s(1048576.0, "gpu_uuid", "GPU-1", "container_id", C_MINE, "pid", "11", "process_name", "python")));
+        when(prometheus.querySeries(contains("gpu_process_elapsed_seconds"))).thenReturn(List.of());
+        when(prometheus.querySeries(contains("kube_pod_container_info"))).thenReturn(List.of(
+                s(1, "container_id", "containerd://" + C_MINE, "pod", "shared-pod")));
+        // 저장소가 잘못된 범위의 행을 함께 돌려줘도 서비스의 scope key가 FARM 행을 버린다.
+        when(requestRepository.findAllByPodNameInAndClusterIdAndNodeNameAndStatusIn(
+                anyCollection(), anyString(), anyString(), anyCollection())).thenReturn(List.of(farm, lab));
+
+        MyGpuUsageResponseDTO.Gpu gpu = service.getMyGpuUsage(10L, 1L).gpus().get(0);
+
+        assertThat(gpu.myProcesses()).hasSize(1);
+        assertThat(gpu.otherUserCount()).isZero();
+        verify(requestRepository).findAllByPodNameInAndClusterIdAndNodeNameAndStatusIn(
+                eq(Set.of("shared-pod")), eq("LAB"), eq("lab1"), eq(Status.activeStatuses()));
+        verify(prometheus).querySeries(
+                "gpu_process_memory_used_bytes{gpu_uuid=~\"GPU-1\",hostname=~\"(?i)lab1([.].*)?\"}");
+        verify(prometheus).querySeries(
+                "gpu_process_elapsed_seconds{gpu_uuid=~\"GPU-1\",hostname=~\"(?i)lab1([.].*)?\"}");
+        verify(prometheus).querySeries(
+                "kube_pod_container_info{container_id=~\".+://(" + C_MINE + ")\",node=~\"(?i)lab1([.].*)?\"}");
+        verify(prometheus).querySeries(
+                "sum by (pod) (container_memory_working_set_bytes{pod=~\"shared-pod\",node=~\"(?i)lab1([.].*)?\",container!=\"\",container!=\"POD\"})");
+        verify(prometheus).querySeries(
+                "sum(container_memory_working_set_bytes{pod=\"shared-pod\",node=~\"(?i)lab1([.].*)?\",container!=\"\",container!=\"POD\"})");
+    }
+
+    @Test
+    @DisplayName("Request 클러스터와 등록 노드 클러스터가 다르면 Prometheus를 조회하지 않는다")
+    void requestAndNodeClusterMismatchFailsClosed() {
+        Request lab = request(1L, "pod-lab", "farm6");
+        when(lab.getServerName()).thenReturn("LAB");
+        when(requestRepository.findByIdWithUser(10L)).thenReturn(Optional.of(lab));
+        Node farmNode = nodeIn("FARM", List.of());
+        when(nodeRepository.findByIdWithGpus("farm6")).thenReturn(Optional.of(farmNode));
+
+        assertThatThrownBy(() -> service.getMyGpuUsage(10L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
+
+        verifyNoInteractions(prometheus);
     }
 
     @Test
@@ -210,22 +315,21 @@ class MyGpuUsageServiceTest {
     }
 
     @Test
-    @DisplayName("노드에 등록된 모델의 GPU만 보인다(표기 차이는 무시), 노드 정보가 없으면 전부 보인다")
+    @DisplayName("노드에 등록된 모델의 GPU만 보이고, 신청 노드가 카탈로그에 없으면 조회를 거절한다")
     void filtersGpusByNodeModels() {
         Request r = request(1L, "p", "farm6");
         when(requestRepository.findByIdWithUser(10L)).thenReturn(Optional.of(r));
         when(prometheus.querySeries(contains("DCGM_FI_DEV_GPU_UTIL"))).thenReturn(List.of(
                 s(1, "UUID", "GPU-1", "gpu", "0", "modelName", "NVIDIA GeForce RTX 3090"),
                 s(1, "UUID", "GPU-2", "gpu", "1", "modelName", "NVIDIA RTX A5000")));
-        Node node = mock(Node.class);
-        when(node.getGpuModels()).thenReturn(List.of("RTX 3090"));
+        Node node = nodeIn("FARM", List.of("RTX 3090"));
         when(nodeRepository.findByIdWithGpus("farm6")).thenReturn(Optional.of(node));
 
         assertThat(service.getMyGpuUsage(10L, 1L).gpus()).extracting(MyGpuUsageResponseDTO.Gpu::index).containsExactly(0);
 
         when(nodeRepository.findByIdWithGpus("farm6")).thenReturn(Optional.empty());
         MyGpuUsageService fresh = new MyGpuUsageService(prometheus, requestRepository, nodeRepository);
-        assertThat(fresh.getMyGpuUsage(10L, 1L).gpus()).hasSize(2);
+        assertThatThrownBy(() -> fresh.getMyGpuUsage(10L, 1L)).isInstanceOf(BusinessException.class);
     }
 
     @Test
@@ -271,6 +375,9 @@ class MyGpuUsageServiceTest {
 
         assertThat(g.myProcesses()).isEmpty();
         assertThat(g.otherUserCount()).isEqualTo(1);
+        verify(prometheus).querySeries(
+                "docker_gpu_user_container_info{container_id=~\"" + C_DOCKER.substring(0, 12) +
+                        "\",hostname=~\"(?i)farm6([.].*)?\"}");
     }
 
     @Test

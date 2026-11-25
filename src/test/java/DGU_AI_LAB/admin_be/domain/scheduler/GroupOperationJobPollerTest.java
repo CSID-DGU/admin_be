@@ -53,7 +53,7 @@ class GroupOperationJobPollerTest {
     }
 
     private void result(Long operationId, Long jobId, String phase, String errorCode) {
-        when(jobClient.getResult(JobResults.KIND_GROUP, operationId)).thenReturn(new JobResultResponseDTO(
+        when(jobClient.getResult("FARM", JobResults.KIND_GROUP, operationId)).thenReturn(new JobResultResponseDTO(
                 String.valueOf(operationId), JobResults.KIND_GROUP, jobId, phase, errorCode, null, RESULT));
     }
 
@@ -109,7 +109,7 @@ class GroupOperationJobPollerTest {
     @DisplayName("한 작업의 조회 실패가 나머지 작업 처리를 막지 않는다")
     void oneFailureDoesNotBlockTheRest() {
         processing(operation(6L), operation(OPERATION_ID));
-        when(jobClient.getResult(JobResults.KIND_GROUP, 6L)).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
+        when(jobClient.getResult("FARM", JobResults.KIND_GROUP, 6L)).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
         result(OPERATION_ID, JOB_ID, JobResults.PHASE_SUCCESS, null);
 
         poller.pollGroupOperations();

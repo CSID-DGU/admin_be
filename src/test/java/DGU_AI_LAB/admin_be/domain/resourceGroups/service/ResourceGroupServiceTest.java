@@ -42,7 +42,7 @@ class ResourceGroupServiceTest {
             ResourceGroup rg = ResourceGroup.builder()
                     .resourceGroupName("GPU-Server-A")
                     .description("메인 GPU 서버")
-                    .serverName("server-01")
+                    .serverName("FARM")
                     .build();
 
             when(resourceGroupRepository.findAll()).thenReturn(List.of(rg));

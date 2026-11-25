@@ -230,7 +230,7 @@ class RequestQueryServiceTest {
         when(resourceGroup.getRsgroupId()).thenReturn(1);
         when(resourceGroup.getResourceGroupName()).thenReturn("RTX 4090 Cluster");
         when(resourceGroup.getDescription()).thenReturn("GPU cluster");
-        when(resourceGroup.getServerName()).thenReturn("LAB");
+        when(request.getServerName()).thenReturn("LAB");
         when(request.getUser()).thenReturn(user);
         when(user.getUserId()).thenReturn(1L);
         when(user.getEmail()).thenReturn("user@example.com");

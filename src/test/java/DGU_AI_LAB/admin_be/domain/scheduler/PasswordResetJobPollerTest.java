@@ -64,7 +64,7 @@ class PasswordResetJobPollerTest {
     }
 
     private void result(Long jobId, String phase, String errorCode) {
-        when(jobClient.getResult(JobResults.KIND_PASSWORD, RESET_ID)).thenReturn(new JobResultResponseDTO(
+        when(jobClient.getResult("FARM", JobResults.KIND_PASSWORD, RESET_ID)).thenReturn(new JobResultResponseDTO(
                 String.valueOf(RESET_ID), JobResults.KIND_PASSWORD, jobId, phase, errorCode, null, null));
     }
 
@@ -201,7 +201,7 @@ class PasswordResetJobPollerTest {
         PasswordResetRequest broken = reset(39L, 11L, JOB_ID, LocalDateTime.now());
         PasswordResetRequest fine = reset(CHANGE_ID, RESET_ID, JOB_ID, LocalDateTime.now());
         when(resetRepository.findAllByStatus(Status.PROCESSING)).thenReturn(List.of(broken, fine));
-        when(jobClient.getResult(JobResults.KIND_PASSWORD, 11L)).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
+        when(jobClient.getResult("FARM", JobResults.KIND_PASSWORD, 11L)).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_ERROR));
         result(JOB_ID, JobResults.PHASE_SUCCESS, null);
 
         poller.pollPasswordResets();

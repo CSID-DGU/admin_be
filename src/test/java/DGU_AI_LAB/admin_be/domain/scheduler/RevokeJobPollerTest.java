@@ -55,6 +55,7 @@ class RevokeJobPollerTest {
     void setUp() {
         expiring = mock(Request.class);
         when(expiring.getRequestId()).thenReturn(REQUEST_ID);
+        when(expiring.getServerName()).thenReturn("FARM");
         when(expiring.getStatus()).thenReturn(Status.EXPIRING);
         when(expiring.getJobId()).thenReturn(JOB_ID);
         when(expiring.getPodName()).thenReturn("pod-a");
@@ -63,7 +64,7 @@ class RevokeJobPollerTest {
     }
 
     private void givenResult(String phase, Long jobId, String errorCode) {
-        when(jobClient.getResult(JobResults.KIND_REVOKE, REQUEST_ID)).thenReturn(
+        when(jobClient.getResult("FARM", JobResults.KIND_REVOKE, REQUEST_ID)).thenReturn(
                 new JobResultResponseDTO(String.valueOf(REQUEST_ID), JobResults.KIND_REVOKE, jobId, phase, errorCode, null, null));
     }
 
@@ -132,7 +133,7 @@ class RevokeJobPollerTest {
 
         poller.pollRevokeJobs();
 
-        verify(jobClient, never()).getResult(any(), any());
+        verify(jobClient, never()).getResult(any(String.class), any(), any());
     }
 
     @Test
@@ -151,10 +152,11 @@ class RevokeJobPollerTest {
     void lookupFailureIsIsolated() {
         Request other = mock(Request.class);
         when(other.getRequestId()).thenReturn(42L);
+        when(other.getServerName()).thenReturn("FARM");
         when(other.getJobId()).thenReturn(901L);
         when(requestRepository.findAllByStatus(Status.EXPIRING)).thenReturn(List.of(expiring, other));
-        when(jobClient.getResult(JobResults.KIND_REVOKE, REQUEST_ID)).thenThrow(new RuntimeException("reset"));
-        when(jobClient.getResult(JobResults.KIND_REVOKE, 42L)).thenReturn(
+        when(jobClient.getResult("FARM", JobResults.KIND_REVOKE, REQUEST_ID)).thenThrow(new RuntimeException("reset"));
+        when(jobClient.getResult("FARM", JobResults.KIND_REVOKE, 42L)).thenReturn(
                 new JobResultResponseDTO("42", JobResults.KIND_REVOKE, 901L, JobResults.PHASE_SUCCESS, null, null, null));
 
         poller.pollRevokeJobs();

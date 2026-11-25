@@ -9,6 +9,7 @@ import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobResultResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobStepsResponseDTO;
 import DGU_AI_LAB.admin_be.error.ErrorCode;
 import DGU_AI_LAB.admin_be.error.exception.BusinessException;
+import DGU_AI_LAB.admin_be.global.cluster.ClusterClientRegistry;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,6 +45,9 @@ import static org.mockito.Mockito.*;
 @DisplayName("ConfigServerJobClient")
 class ConfigServerJobClientTest {
 
+    private static final String CLUSTER_ID = "FARM";
+
+    @Mock private ClusterClientRegistry clients;
     @Mock private WebClient configWebClient;
     @Mock private WebClient.RequestBodyUriSpec postUriSpec;
     @Mock private WebClient.RequestBodySpec postBodySpec;
@@ -59,7 +63,8 @@ class ConfigServerJobClientTest {
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setUp() {
-        service = new ConfigServerJobClient(configWebClient);
+        service = new ConfigServerJobClient(clients);
+        when(clients.configWebClient(CLUSTER_ID)).thenReturn(configWebClient);
 
         when(configWebClient.post()).thenReturn(postUriSpec);
         when(postUriSpec.uri(anyString())).thenReturn(postBodySpec);
@@ -81,8 +86,9 @@ class ConfigServerJobClientTest {
 
         when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "accepted", "job_id", 3616)));
 
-        assertThat(service.registerProvision(body)).isEqualTo(3616L);
+        assertThat(service.registerProvision(CLUSTER_ID, body)).isEqualTo(3616L);
 
+        verify(clients).configWebClient(CLUSTER_ID);
         verify(postUriSpec).uri("/operations/provision");
         verify(postBodySpec).bodyValue(body);
     }
@@ -94,7 +100,7 @@ class ConfigServerJobClientTest {
                 new RevokeRegisterRequestDTO(41L, "ailab-exp-np-001-abcd", "exp-np-001", "farm2", true);
         when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "accepted", "job_id", 3617)));
 
-        assertThat(service.registerRevoke(body, ErrorCode.POD_DELETION_FAILED)).isEqualTo(3617L);
+        assertThat(service.registerRevoke(CLUSTER_ID, body, ErrorCode.POD_DELETION_FAILED)).isEqualTo(3617L);
 
         verify(postUriSpec).uri("/operations/revoke");
         verify(postBodySpec).bodyValue(body);
@@ -106,7 +112,7 @@ class ConfigServerJobClientTest {
         PasswordChangeRegisterRequestDTO body = new PasswordChangeRegisterRequestDTO(12L, "exp-np-001", "$6$salt$hash");
         when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "accepted", "job_id", 3618)));
 
-        assertThat(service.registerPasswordChange(body)).isEqualTo(3618L);
+        assertThat(service.registerPasswordChange(CLUSTER_ID, body)).isEqualTo(3618L);
 
         verify(postUriSpec).uri("/operations/password");
         verify(postBodySpec).bodyValue(body);
@@ -123,7 +129,7 @@ class ConfigServerJobClientTest {
         GroupChangeRegisterRequestDTO body = GroupChangeRegisterRequestDTO.add(7L, "exp-np-001", List.of("teamx"));
         when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.just(Map.of("status", "accepted", "job_id", 3620)));
 
-        assertThat(service.registerGroupChange(body)).isEqualTo(3620L);
+        assertThat(service.registerGroupChange(CLUSTER_ID, body)).isEqualTo(3620L);
 
         verify(postUriSpec).uri("/operations/group");
         JsonNode json = objectMapper.valueToTree(body);
@@ -163,12 +169,34 @@ class ConfigServerJobClientTest {
     }
 
     @Test
+    @DisplayName("409 CLUSTER_ID_MISMATCH는 중복 작업이 아니라 Config Server 연결 구성 오류로 알린다")
+    void clusterMismatchConflictIsAuthenticationFailure() {
+        String body = "{\"error\":\"CLUSTER_ID_MISMATCH\",\"detail\":\"expected LAB\"}";
+
+        assertThat(ConfigServerJobClient.registrationError(
+                HttpStatusCode.valueOf(409), body, ErrorCode.POD_CREATION_FAILED).getErrorCode())
+                .isEqualTo(ErrorCode.INTERNAL_CLUSTER_AUTHENTICATION_FAILED);
+        assertThat(ConfigServerJobClient.groupRegistrationError(
+                HttpStatusCode.valueOf(409), body).getErrorCode())
+                .isEqualTo(ErrorCode.INTERNAL_CLUSTER_AUTHENTICATION_FAILED);
+    }
+
+    @Test
+    @DisplayName("일반 409는 기존처럼 같은 번호 작업 진행 중으로 처리한다")
+    void ordinaryConflictRemainsInvalidRequestStatus() {
+        assertThat(ConfigServerJobClient.registrationError(
+                HttpStatusCode.valueOf(409), "{\"error\":\"JOB_ALREADY_REGISTERED\"}",
+                ErrorCode.POD_CREATION_FAILED).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST_STATUS);
+    }
+
+    @Test
     @DisplayName("비밀번호 교체 결과는 재설정 신청 번호로 조회한다")
     void getsPasswordChangeResult() {
         JobResultResponseDTO expected = new JobResultResponseDTO("12", "password", 3618L, "SUCCESS", null, null, null);
         when(responseSpec.bodyToMono(JobResultResponseDTO.class)).thenReturn(Mono.just(expected));
 
-        assertThat(service.getResult(JobResults.KIND_PASSWORD, 12L)).isEqualTo(expected);
+        assertThat(service.getResult(CLUSTER_ID, JobResults.KIND_PASSWORD, 12L)).isEqualTo(expected);
         verify(getUriSpec).uri("/operations/password/12");
     }
 
@@ -180,7 +208,7 @@ class ConfigServerJobClientTest {
                 new JobResultResponseDTO.Result(50001L, 50001L, "ailab-exp-np-001-abcd", "farm2", List.of()));
         when(responseSpec.bodyToMono(JobResultResponseDTO.class)).thenReturn(Mono.just(expected));
 
-        JobResultResponseDTO actual = service.getResult(JobResults.KIND_PROVISION, 41L);
+        JobResultResponseDTO actual = service.getResult(CLUSTER_ID, JobResults.KIND_PROVISION, 41L);
 
         verify(getUriSpec).uri("/operations/provision/41");
         assertThat(actual).isEqualTo(expected);
@@ -191,9 +219,24 @@ class ConfigServerJobClientTest {
     void failsOnEmptyResult() {
         when(responseSpec.bodyToMono(JobResultResponseDTO.class)).thenReturn(Mono.empty());
 
-        assertThatThrownBy(() -> service.getResult(JobResults.KIND_PROVISION, 41L))
+        assertThatThrownBy(() -> service.getResult(CLUSTER_ID, JobResults.KIND_PROVISION, 41L))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EXTERNAL_API_ERROR);
+    }
+
+    @Test
+    @DisplayName("설정되지 않은 클러스터는 다른 클라이언트로 대체하거나 결과 불명으로 감싸지 않는다")
+    void unknownClusterFailsBeforeSending() {
+        when(clients.configWebClient("UNKNOWN"))
+                .thenThrow(new IllegalArgumentException("설정되지 않은 clusterId입니다: UNKNOWN"));
+
+        assertThatThrownBy(() -> service.registerProvision(
+                "UNKNOWN", ProvisionRegisterRequestDTO.podOnly(41L, "exp-np-001")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .isNotInstanceOf(JobRegistrationUnconfirmedException.class)
+                .hasMessageContaining("UNKNOWN");
+
+        verify(configWebClient, never()).post();
     }
 
     @Test
@@ -201,7 +244,7 @@ class ConfigServerJobClientTest {
     void failsOnEmptySteps() {
         when(responseSpec.bodyToMono(JobStepsResponseDTO.class)).thenReturn(Mono.empty());
 
-        assertThatThrownBy(() -> service.getSteps(JobResults.KIND_PROVISION, 41L))
+        assertThatThrownBy(() -> service.getSteps(CLUSTER_ID, JobResults.KIND_PROVISION, 41L))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EXTERNAL_API_ERROR);
     }
@@ -215,7 +258,7 @@ class ConfigServerJobClientTest {
 
             CompletableFuture<Throwable> call = CompletableFuture.supplyAsync(() -> {
                 try {
-                    service.getResult(JobResults.KIND_PROVISION, 41L);
+                    service.getResult(CLUSTER_ID, JobResults.KIND_PROVISION, 41L);
                     return null;
                 } catch (Throwable t) {
                     return t;
@@ -249,7 +292,7 @@ class ConfigServerJobClientTest {
             when(responseSpec.bodyToMono(Map.class))
                     .thenReturn(Mono.error(new BusinessException("이미 처리 중", ErrorCode.INVALID_REQUEST_STATUS)));
 
-            assertThatThrownBy(() -> service.registerRevoke(podRevoke, ErrorCode.POD_DELETION_FAILED))
+            assertThatThrownBy(() -> service.registerRevoke(CLUSTER_ID, podRevoke, ErrorCode.POD_DELETION_FAILED))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REQUEST_STATUS);
         }
@@ -259,7 +302,8 @@ class ConfigServerJobClientTest {
         void unexpectedErrorUsesCallerCode() {
             when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.error(new RuntimeException("connection reset")));
 
-            assertThatThrownBy(() -> service.registerRevoke(podRevoke, ErrorCode.UBUNTU_USER_DELETION_FAILED))
+            assertThatThrownBy(() -> service.registerRevoke(
+                    CLUSTER_ID, podRevoke, ErrorCode.UBUNTU_USER_DELETION_FAILED))
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_USER_DELETION_FAILED);
         }
@@ -275,7 +319,7 @@ class ConfigServerJobClientTest {
             when(responseSpec.bodyToMono(Map.class)).thenReturn(
                     Mono.error(new RuntimeException(new java.net.ConnectException("refused"))));
 
-            assertThatThrownBy(() -> service.registerRevoke(
+            assertThatThrownBy(() -> service.registerRevoke(CLUSTER_ID,
                     new RevokeRegisterRequestDTO(41L, "pod", null, null, false), ErrorCode.POD_DELETION_FAILED))
                     .isInstanceOf(BusinessException.class)
                     .isNotInstanceOf(JobRegistrationUnconfirmedException.class)
@@ -287,7 +331,7 @@ class ConfigServerJobClientTest {
         void lostResponseIsUnconfirmed() {
             when(responseSpec.bodyToMono(Map.class)).thenReturn(Mono.error(new RuntimeException("connection reset")));
 
-            assertThatThrownBy(() -> service.registerPasswordChange(
+            assertThatThrownBy(() -> service.registerPasswordChange(CLUSTER_ID,
                     new PasswordChangeRegisterRequestDTO(12L, "honggildong", "$6$new$hash")))
                     .isInstanceOf(JobRegistrationUnconfirmedException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UBUNTU_PASSWORD_CHANGE_FAILED);
@@ -299,7 +343,7 @@ class ConfigServerJobClientTest {
             when(responseSpec.bodyToMono(Map.class))
                     .thenReturn(Mono.error(new BusinessException("이미 처리 중", ErrorCode.INVALID_REQUEST_STATUS)));
 
-            assertThatThrownBy(() -> service.registerPasswordChange(
+            assertThatThrownBy(() -> service.registerPasswordChange(CLUSTER_ID,
                     new PasswordChangeRegisterRequestDTO(12L, "honggildong", "$6$new$hash")))
                     .isNotInstanceOf(JobRegistrationUnconfirmedException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REQUEST_STATUS);

@@ -136,7 +136,7 @@ class RequestCommandServiceTest {
         @DisplayName("슬랙 알림은 트랜잭션 커밋 후에만 보낸다 — 사용자 행 잠금을 쥔 채 전송하지 않고, 롤백되면 보내지 않는다")
         void createRequest_sendsSlackOnlyAfterCommit() {
             User user = userWithUbuntuUsername("honggildong");
-            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
+            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("FARM").build();
             ContainerImage img = ContainerImage.builder()
                     .imageName("cuda").imageVersion("11.8").cudaVersion("11.8").description("test").build();
             Request savedReq = Request.builder()
@@ -184,7 +184,7 @@ class RequestCommandServiceTest {
         @DisplayName("사용 중인 컨테이너가 있어도 새 신청을 막지 않는다 — 승인 대기·처리 중인 신청만 센다")
         void createRequest_succeeds_evenWhenUserAlreadyHasActiveContainer() {
             User user = userWithUbuntuUsername("honggildong");
-            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
+            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("FARM").build();
             ContainerImage img = ContainerImage.builder()
                     .imageName("cuda").imageVersion("11.8").cudaVersion("11.8").description("test").build();
 
@@ -217,7 +217,7 @@ class RequestCommandServiceTest {
         @DisplayName("승인 대기·처리 중인 신청이 있으면 저장하지 않고 409로 거절하며 하루 한도에 세지 않는다")
         void createRequest_rejected_whenUserHasRequestAwaitingDecision() {
             User user = userWithUbuntuUsername("honggildong");
-            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
+            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("FARM").build();
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
             when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
@@ -238,7 +238,7 @@ class RequestCommandServiceTest {
         @DisplayName("홈을 지우는 중이면 신청을 받지 않는다")
         void createRequest_homeCleanupInProgress_rejects() {
             User user = userWithUbuntuUsername("honggildong");
-            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
+            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("FARM").build();
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
             when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(resourceGroupRepository.findById(any())).thenReturn(Optional.of(rg));
@@ -261,7 +261,7 @@ class RequestCommandServiceTest {
                     .email("test@dgu.ac.kr").password("pw").name("홍길동")
                     .studentId("2021001234").phone("010-0000-0000").department("컴퓨터공학과")
                     .build();
-            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
+            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("FARM").build();
 
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
             when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
@@ -363,6 +363,7 @@ class RequestCommandServiceTest {
             Request request = mock(Request.class);
             when(request.getUser()).thenReturn(owner);
             when(request.getStatus()).thenReturn(Status.FULFILLED);
+            when(request.getServerName()).thenReturn("FARM");
             when(requestRepository.findByIdForUpdate(12L)).thenReturn(Optional.of(request));
             when(changeRequestRepository.existsByRequest_RequestIdAndChangeTypeAndStatus(12L, ChangeType.GROUP, Status.PENDING))
                     .thenReturn(true);
@@ -386,6 +387,7 @@ class RequestCommandServiceTest {
             Request request = mock(Request.class);
             when(request.getUser()).thenReturn(owner);
             when(request.getStatus()).thenReturn(Status.FULFILLED);
+            when(request.getServerName()).thenReturn("FARM");
             when(requestRepository.findByIdForUpdate(14L)).thenReturn(Optional.of(request));
             Group wanted = Group.builder().groupName("ailab").ubuntuGid(1005L).build();
             when(groupRepository.findAllByUbuntuGidIn(Set.of(1005L))).thenReturn(List.of(wanted));
@@ -402,16 +404,36 @@ class RequestCommandServiceTest {
         }
 
         @Test
+        @DisplayName("LAB 신청에는 공용 그룹 변경 요청을 만들 수 없다")
+        void createSingleChangeRequest_groupChangeForLab_isRejected() {
+            User owner = mock(User.class);
+            when(owner.getUserId()).thenReturn(1L);
+            Request request = mock(Request.class);
+            when(request.getUser()).thenReturn(owner);
+            when(request.getStatus()).thenReturn(Status.FULFILLED);
+            when(request.getServerName()).thenReturn("LAB");
+            when(requestRepository.findByIdForUpdate(15L)).thenReturn(Optional.of(request));
+
+            SingleChangeRequestDTO dto = new SingleChangeRequestDTO(15L, ChangeType.GROUP, "[1005]", REASON);
+
+            assertThatThrownBy(() -> requestCommandService.createSingleChangeRequest(1L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+            verify(changeRequestRepository, never()).save(any());
+            verifyNoInteractions(groupRepository, groupMembershipPolicy);
+        }
+
+        @Test
         @DisplayName("변경 요청을 받으면 알림 기록 채널에 접수 사실을 남긴다")
         void createSingleChangeRequest_recordsReceipt() {
             User owner = mock(User.class);
             when(owner.getUserId()).thenReturn(1L);
             when(owner.getName()).thenReturn("홍길동");
-            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("FARM").build();
             Request request = mock(Request.class);
             when(request.getUser()).thenReturn(owner);
             when(request.getStatus()).thenReturn(Status.FULFILLED);
-            when(request.getResourceGroup()).thenReturn(rg);
+            when(request.getServerName()).thenReturn("FARM");
             when(request.getUbuntuUsername()).thenReturn("honggildong");
             when(requestRepository.findByIdForUpdate(13L)).thenReturn(Optional.of(request));
 
@@ -441,7 +463,7 @@ class RequestCommandServiceTest {
         @DisplayName("컨테이너 이미지가 없으면 BusinessException을 던진다")
         void createRequest_throwsException_whenContainerImageNotFound() {
             User user = userWithUbuntuUsername("newuser");
-            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
+            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("FARM").build();
 
             when(userRepository.findById(1L)).thenReturn(Optional.of(user));
             when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(user));
@@ -460,7 +482,7 @@ class RequestCommandServiceTest {
         @DisplayName("그룹 ID 중 존재하지 않는 GID가 있으면 BusinessException을 던진다")
         void createRequest_throwsException_whenGroupGidNotFound() {
             User user = userWithUbuntuUsername("newuser");
-            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
+            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("FARM").build();
             ContainerImage img = ContainerImage.builder()
                     .imageName("cuda").imageVersion("11.8").cudaVersion("11.8").description("test").build();
 
@@ -483,10 +505,10 @@ class RequestCommandServiceTest {
         }
 
         @Test
-        @DisplayName("Request의 ubuntuUsername은 신청 입력이 아니라 가입 시 정해진 User.ubuntuUsername에서 가져온다")
-        void createRequest_derivesUbuntuUsernameFromUser() {
+        @DisplayName("LAB 첫 신청은 가입 시 유저네임으로 LAB UbuntuAccount 원장을 만들고 그 이름을 사용한다")
+        void createRequest_createsClusterScopedUbuntuAccountLedger() {
             User user = userWithUbuntuUsername("honggildong");
-            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
+            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("LAB GPU-A").serverName("LAB").build();
             ContainerImage img = ContainerImage.builder()
                     .imageName("cuda").imageVersion("11.8").cudaVersion("11.8").description("test").build();
 
@@ -514,10 +536,15 @@ class RequestCommandServiceTest {
 
             verify(dto).toEntity(eq(user), eq(rg), eq(img));
             assertThat(response.ubuntuUsername()).isEqualTo("honggildong");
+            assertThat(user.ubuntuAccount("LAB"))
+                    .get()
+                    .extracting(account -> account.getUsername())
+                    .isEqualTo("honggildong");
+            assertThat(user.ubuntuAccount("FARM")).isEmpty();
         }
 
         private SaveRequestRequestDTO stubbedCreate(User user) {
-            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("server01").build();
+            ResourceGroup rg = ResourceGroup.builder().resourceGroupName("GPU-A").serverName("FARM").build();
             ContainerImage img = ContainerImage.builder()
                     .imageName("cuda").imageVersion("11.8").cudaVersion("11.8").description("test").build();
             lenient().when(userRepository.findById(1L)).thenReturn(Optional.of(user));
@@ -648,6 +675,40 @@ class RequestCommandServiceTest {
                     .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
             verify(requestRepository, never()).saveAndFlush(any());
             verifyNoInteractions(requestCreateThrottle);
+        }
+
+        @Test
+        @DisplayName("LAB 신규 신청은 groupIds로 공용 그룹을 고를 수 없다")
+        void createRequest_labWithGroupIds_isRejectedBeforeSave() {
+            User user = userWithUbuntuUsername("honggildong");
+            SaveRequestRequestDTO dto = stubbedCreate(user);
+            ResourceGroup lab = ResourceGroup.builder().resourceGroupName("LAB GPU").serverName("LAB").build();
+            when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(lab));
+            when(dto.groupIds()).thenReturn(Set.of(3L));
+
+            assertThatThrownBy(() -> requestCommandService.createRequest(1L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+            verify(requestRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(groupRepository, requestCreateThrottle);
+        }
+
+        @Test
+        @DisplayName("LAB 신규 신청은 예전 ubuntuGids 필드로도 공용 그룹을 고를 수 없다")
+        void createRequest_labWithLegacyUbuntuGids_isRejectedBeforeSave() {
+            User user = userWithUbuntuUsername("honggildong");
+            SaveRequestRequestDTO dto = stubbedCreate(user);
+            ResourceGroup lab = ResourceGroup.builder().resourceGroupName("LAB GPU").serverName("LAB").build();
+            when(resourceGroupRepository.findById(1)).thenReturn(Optional.of(lab));
+            when(dto.ubuntuGids()).thenReturn(Set.of(2001L));
+
+            assertThatThrownBy(() -> requestCommandService.createRequest(1L, dto))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+            verify(requestRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(groupRepository, requestCreateThrottle);
         }
 
         @Test

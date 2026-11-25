@@ -2,6 +2,8 @@ package DGU_AI_LAB.admin_be.domain.requests.job;
 
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobHistoryResponseDTO;
 import DGU_AI_LAB.admin_be.domain.requests.dto.response.JobStepsResponseDTO;
+import DGU_AI_LAB.admin_be.domain.requests.entity.Request;
+import DGU_AI_LAB.admin_be.domain.requests.repository.RequestRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -11,8 +13,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -23,6 +27,7 @@ class JobHistoryServiceTest {
     private static final LocalDateTime REQUEST_CREATED_AT = LocalDateTime.of(2026, 9, 15, 10, 20, 41);
 
     @Mock private JobClient jobClient;
+    @Mock private RequestRepository requestRepository;
     @InjectMocks private JobHistoryService service;
 
     private static JobStepsResponseDTO.Job jobStartedAt(long jobId, String startedAt) {
@@ -32,9 +37,12 @@ class JobHistoryServiceTest {
     private void givenSteps(long requestId, List<JobStepsResponseDTO.Job> provision, List<JobStepsResponseDTO.Job> revoke,
                             List<JobStepsResponseDTO.Job> migrate) {
         String id = String.valueOf(requestId);
-        when(jobClient.getSteps(JobResults.KIND_PROVISION, requestId)).thenReturn(new JobStepsResponseDTO(id, "provision", provision));
-        when(jobClient.getSteps(JobResults.KIND_REVOKE, requestId)).thenReturn(new JobStepsResponseDTO(id, "revoke", revoke));
-        when(jobClient.getSteps(JobResults.KIND_MIGRATE, requestId)).thenReturn(new JobStepsResponseDTO(id, "migrate", migrate));
+        Request request = mock(Request.class);
+        when(request.getServerName()).thenReturn("FARM");
+        when(requestRepository.findById(requestId)).thenReturn(Optional.of(request));
+        when(jobClient.getSteps("FARM", JobResults.KIND_PROVISION, requestId)).thenReturn(new JobStepsResponseDTO(id, "provision", provision));
+        when(jobClient.getSteps("FARM", JobResults.KIND_REVOKE, requestId)).thenReturn(new JobStepsResponseDTO(id, "revoke", revoke));
+        when(jobClient.getSteps("FARM", JobResults.KIND_MIGRATE, requestId)).thenReturn(new JobStepsResponseDTO(id, "migrate", migrate));
     }
 
     @Test

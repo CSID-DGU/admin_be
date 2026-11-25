@@ -80,7 +80,7 @@ class DashboardServiceTest {
         @Test
         @DisplayName("요청이 여러 개여도 노드 조회는 findAllByResourceGroupIn 한 번만 호출한다 (N+1 방지)")
         void getUserServers_callsBatchNodeQuery_onceForAllResourceGroups() {
-            ResourceGroup rg = new ResourceGroup(1, "rg-name", "desc", "server1");
+            ResourceGroup rg = new ResourceGroup(1, "rg-name", "desc", "FARM");
             Request req1 = Request.builder().resourceGroup(rg).build();
             Request req2 = Request.builder().resourceGroup(rg).build();
             Node node = Node.builder().nodeId("node-1").resourceGroup(rg).cpuCoreCount(8).memorySizeGB(32).build();
@@ -98,7 +98,7 @@ class DashboardServiceTest {
         @Test
         @DisplayName("노드 정보를 DTO에 올바르게 매핑한다")
         void getUserServers_mapsNodeInfoToDTO() {
-            ResourceGroup rg = new ResourceGroup(1, "rg-name", "desc", "server1");
+            ResourceGroup rg = new ResourceGroup(1, "rg-name", "desc", "FARM");
             Request req = Request.builder().resourceGroup(rg).build();
             Node node = Node.builder().nodeId("node-1").resourceGroup(rg).cpuCoreCount(16).memorySizeGB(64).build();
 
@@ -112,6 +112,24 @@ class DashboardServiceTest {
             assertThat(dto.cpuCoreCount()).isEqualTo(16);
             assertThat(dto.memoryGB()).isEqualTo(64);
             assertThat(dto.resourceGroupName()).isEqualTo("desc");
+            assertThat(dto.serverName()).isEqualTo("FARM");
+        }
+
+        @Test
+        @DisplayName("대시보드 클러스터 식별자는 변경 가능한 ResourceGroup이 아니라 Request snapshot에서 읽는다")
+        void getUserServers_mapsImmutableRequestCluster() {
+            ResourceGroup currentResourceGroup = new ResourceGroup(1, "rg-name", "desc", "LAB");
+            Request request = mock(Request.class);
+            when(request.getResourceGroup()).thenReturn(currentResourceGroup);
+            when(request.getServerName()).thenReturn("FARM");
+
+            when(requestRepository.findAllByUser_UserId(1L)).thenReturn(List.of(request));
+            when(nodeRepository.findAllByResourceGroupIn(anySet())).thenReturn(List.of());
+
+            List<UserServerResponseDTO> result = dashboardService.getUserServers(1L, StatusFilter.ALL);
+
+            assertThat(result).singleElement().extracting(UserServerResponseDTO::serverName)
+                    .isEqualTo("FARM");
         }
 
         @Test
