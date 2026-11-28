@@ -28,9 +28,9 @@ import java.util.Map;
  *       public-host: 203.0.113.10
  *       admin-channel: lab-admin
  *       port-forwarding:
- *         node-port-base: 30100
+ *         node-port-base: 30130
  *         public-port-base: 9400
- *         size: 2668
+ *         size: 2638
  * </pre>
  *
  * <p>같은 키 이름으로 {@code slack-channel-id.<키>}에 Slack 채널 ID를 적어 두면(선택) 신청서를 봇으로 올리고, 그 신청의

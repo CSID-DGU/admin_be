@@ -57,9 +57,9 @@ app:
       public-host: lab.example.test
       admin-channel: lab-admin
       port-forwarding:
-        node-port-base: 30100
+        node-port-base: 30130
         public-port-base: 9400
-        size: 2668
+        size: 2638
 
 provi:
   lab-enabled: true
