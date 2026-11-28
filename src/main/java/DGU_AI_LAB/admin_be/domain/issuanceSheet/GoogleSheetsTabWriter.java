@@ -2,6 +2,7 @@ package DGU_AI_LAB.admin_be.domain.issuanceSheet;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -20,6 +21,7 @@ import java.util.function.Supplier;
  * 남지 않고, 열이 줄어도 옛 열이 남지 않는다.
  */
 @Component
+@ConditionalOnProperty(prefix = "provi", name = "runtime-mode", havingValue = "ACTIVE")
 public class GoogleSheetsTabWriter implements SheetTabWriter {
 
     static final String API = "https://sheets.googleapis.com/v4/spreadsheets";
