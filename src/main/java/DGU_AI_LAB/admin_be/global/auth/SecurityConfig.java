@@ -6,9 +6,11 @@ import DGU_AI_LAB.admin_be.global.auth.jwt.JwtAuthenticationFilter;
 import DGU_AI_LAB.admin_be.global.auth.jwt.JwtProvider;
 import DGU_AI_LAB.admin_be.global.cluster.ClusterClientProperties;
 import DGU_AI_LAB.admin_be.global.config.CorsConfig;
+import DGU_AI_LAB.admin_be.global.config.RuntimeModeProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -22,6 +24,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @RequiredArgsConstructor
 @EnableWebSecurity
 @EnableMethodSecurity
+@EnableConfigurationProperties(RuntimeModeProperties.class)
 @Configuration
 public class SecurityConfig {
 
@@ -31,6 +34,7 @@ public class SecurityConfig {
     private final JwtProvider jwtProvider;
     private final CustomUserDetailsService customUserDetailsService;
     private final ClusterClientProperties clusterClientProperties;
+    private final RuntimeModeProperties runtimeModeProperties;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -52,6 +56,10 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .addFilter(corsConfig.corsFilter())
+                .addFilterBefore(
+                        new ShadowModeMutationFilter(runtimeModeProperties),
+                        UsernamePasswordAuthenticationFilter.class
+                )
                 .addFilterBefore(
                         new JwtAuthenticationFilter(jwtProvider, customUserDetailsService),
                         UsernamePasswordAuthenticationFilter.class

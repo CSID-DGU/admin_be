@@ -62,6 +62,7 @@ app:
         size: 2638
 
 provi:
+  runtime-mode: ACTIVE
   lab-enabled: true
   clusters:
     FARM:
