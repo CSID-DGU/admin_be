@@ -23,7 +23,7 @@ class ServerProfileRegistryTest {
     private static final Server FARM = new Server("farm.example.org", "farm-admin", null,
             new PortForwarding(30000, 9300, 80));
     private static final Server LAB = new Server("lab.example.org", "lab-admin", null,
-            new PortForwarding(30100, 9400, 2668));
+            new PortForwarding(30130, 9400, 2638));
 
     @Test
     @DisplayName("서버 이름은 대소문자·앞뒤 공백을 가리지 않고 찾는다")
@@ -81,9 +81,9 @@ class ServerProfileRegistryTest {
                         .withProperty("slack-webhook-url.farm-admin", FARM_WEBHOOK)
                         .withProperty("slack-webhook-url.lab-admin", "https://hooks.slack.com/lab"));
 
-        assertThat(registry.publicPort("LAB", "30100")).isEqualTo("9400");
-        assertThat(registry.publicPort("LAB", "32767")).isEqualTo("12067");
-        assertThat(registry.publicPort("LAB", "30099")).isEqualTo("30099");
+        assertThat(registry.publicPort("LAB", "30130")).isEqualTo("9400");
+        assertThat(registry.publicPort("LAB", "32767")).isEqualTo("12037");
+        assertThat(registry.publicPort("LAB", "30129")).isEqualTo("30129");
     }
 
     @Test
