@@ -21,7 +21,9 @@ class ServerProfileRegistryTest {
     }
 
     private static final Server FARM = new Server("farm.example.org", "farm-admin", null,
-            new PortForwarding(30000, 9300, 98));
+            new PortForwarding(30000, 9300, 80));
+    private static final Server LAB = new Server("lab.example.org", "lab-admin", null,
+            new PortForwarding(30100, 9400, 2668));
 
     @Test
     @DisplayName("서버 이름은 대소문자·앞뒤 공백을 가리지 않고 찾는다")
@@ -64,10 +66,24 @@ class ServerProfileRegistryTest {
         ServerProfileRegistry registry = registry(Map.of("FARM", FARM));
 
         assertThat(registry.publicPort("FARM", "30000")).isEqualTo("9300");
-        assertThat(registry.publicPort("FARM", "30097")).isEqualTo("9397");
-        assertThat(registry.publicPort("FARM", "30098")).isEqualTo("30098");
+        assertThat(registry.publicPort("FARM", "30079")).isEqualTo("9379");
+        assertThat(registry.publicPort("FARM", "30080")).isEqualTo("30080");
         assertThat(registry.publicPort("FARM", "29999")).isEqualTo("29999");
         assertThat(registry.publicPort("FARM", "")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("LAB 사용자 NodePort 전 구간을 9400부터 같은 오프셋으로 안내한다")
+    void labPublicPortMapsTheDedicatedBand() {
+        ServerProfileRegistry registry = new ServerProfileRegistry(
+                new ServerProfileProperties(Map.of("FARM", FARM, "LAB", LAB)),
+                new MockEnvironment()
+                        .withProperty("slack-webhook-url.farm-admin", FARM_WEBHOOK)
+                        .withProperty("slack-webhook-url.lab-admin", "https://hooks.slack.com/lab"));
+
+        assertThat(registry.publicPort("LAB", "30100")).isEqualTo("9400");
+        assertThat(registry.publicPort("LAB", "32767")).isEqualTo("12067");
+        assertThat(registry.publicPort("LAB", "30099")).isEqualTo("30099");
     }
 
     @Test
